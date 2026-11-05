@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19kmux2",
+        // Pre e3 = 0x100, R6 = 0x23; mux 010 behaves like mux 001.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x100 },
+            .{ .bank = .r, .index = 6, .value = 0x23 },
+        },
+        .src =
+        \\x19.kmux2 s9, e3, R6, #6
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 9, .value = 0x123 } }},
+    },
+    .{
         .name = "own-x19kabs",
         // Pre s3 = 0xFFFD (-3 as 16-bit signed); s4 <- |s3| = 3.
         .pre = &.{.{ .bank = .s, .index = 3, .value = 0xFFFD }},

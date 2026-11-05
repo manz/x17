@@ -178,6 +178,13 @@ x19.kabs	b	s	3	6	s3
 x19.kimm	dest_s	s	21	24	head
 x19.kimm	imm	imm	5	20	head
 
+# x19.kmux2 (4 syllables): AGU10 via mux 010.
+# Grammar: x19.kmux2 <dest_s>, <x_e>, <y_R>, #<fn>
+x19.kmux2	dest_s	s	21	24	head
+x19.kmux2	x_e	e	25	28	s3
+x19.kmux2	y_R	R	11	14	s3
+x19.kmux2	fn	imm	24	27	s1
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

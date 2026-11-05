@@ -828,7 +828,7 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const mux: u32 = (w1 >> 12) & 0x7;
     const w1_mod: u32 = (w1 >> 15) & 0x7;
     const v: u32 = switch (mux) {
-        1 => blk: {
+        1, 2 => blk: {
             if (w1_mod == 5 or w1_mod == 7) {
                 // own-x19kalu (m=5, a-b) and own-x19kabs (m=7, |b|).
                 const a_s: u32 = (w1 >> 4) & 0xF;
@@ -861,7 +861,7 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         },
         else => return RunError.UnknownForm,
     };
-    if (mux == 1 and (w1_mod == 5 or w1_mod == 7)) return;
+    if ((mux == 1 or mux == 2) and (w1_mod == 5 or w1_mod == 7)) return;
     if (dest_s != 0) state.s[dest_s] = v;
 }
 

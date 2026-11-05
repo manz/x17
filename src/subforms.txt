@@ -89,6 +89,10 @@ x19.kabs   4   0x00000019   0x66079000   0x02D80000   0x06543000
 # fact 240 / own-x19kimm.
 x19.kimm   4   0x00000019   0x66046006   0x02D80000   0x06543000
 
+# x19.kmux2: class (3,0,0) with mux w1[14:12]=010 (same AGU10 as mux 001).
+# fact 240 / own-x19kmux2.
+x19.kmux2  4   0x00000019   0x60042006   0x02D80000   0x00540000
+
 # x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)
