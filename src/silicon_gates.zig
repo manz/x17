@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19k00",
+        // Pre e3 = 0x100, R6 = 0x23; mux 001: s9 <- AGU10[6](e3, R6) = 0x123.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x100 },
+            .{ .bank = .r, .index = 6, .value = 0x23 },
+        },
+        .src =
+        \\x19.k00 s9, e3, R6, #1, #6, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 9, .value = 0x123 } }},
+    },
+    .{
         .name = "own-x19a43",
         // s4 <- (0x381 << 1) | 1 = 0x703.
         .src =

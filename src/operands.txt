@@ -151,6 +151,15 @@ x19.a43	dest_s	s	21	24	head
 x19.a43	agu3_fn	imm	20	24	s3
 x19.a43	i_base	imm	0	14	s3
 
+# x19.k00 (4 syllables): muxed s write.
+# Grammar: x19.k00 <dest_s>, <x_e>, <y_R>, #<mux>, #<fn>, #<imm>
+x19.k00	dest_s	s	21	24	head
+x19.k00	x_e	e	25	28	s3
+x19.k00	y_R	R	11	14	s3
+x19.k00	mux	imm	12	14	s1
+x19.k00	fn	imm	24	27	s1
+x19.k00	imm	imm	5	20	head
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

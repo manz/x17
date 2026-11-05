@@ -72,6 +72,11 @@ x19.alu44  4   0x00000419   0x00005808   0x80008101   0x81E18008
 # s <- AGU3[25]((w3[14:0] << 1) | w2[31]).  fact 151 / own-x19a43.
 x19.a43    4   0x00000019   0x08008002   0x80000000   0x60058000
 
+# x19.k00: 4-syllable low5 0x19 class (3,0,0) (fact 235 / own-x19k00
+# and 240 / own-x19kimm).  Muxed s write; mux 001 = AGU10(x, y), mux 110 =
+# head imm.
+x19.k00    4   0x00000019   0x60040006   0x02D80000   0x00540000
+
 # x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)
