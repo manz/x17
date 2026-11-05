@@ -415,6 +415,18 @@ fn alu05Base(code: u32, a: u32, b: u32) RunError!u32 {
         // Shift ops: a is the shift count (signed 24-bit), b is the value.
         // asr/asrrs treat b as signed; lsr unsigned.  Negative count shifts
         // left.  fact 33, upstream/tools/sm1isa/emu.py `shift`.
+        0x26, 0x2A, 0x2C, 0x2D => blk: {
+            // sel: sign of (sx24(a) + sx24(b)) picks a (>=0) or b.
+            const as: i32 = if (am & 0x800000 != 0)
+                @bitCast(am | 0xFF000000)
+            else
+                @intCast(am);
+            const bs: i32 = if (bm & 0x800000 != 0)
+                @bitCast(bm | 0xFF000000)
+            else
+                @intCast(bm);
+            break :blk if (as + bs >= 0) am else bm;
+        },
         0x06, 0x1A => alu05Shift(am, bm, .asr),
         0x07 => alu05Shift(am, bm, .asrrs),
         0x08, 0x1B, 0x3E => alu05Shift(am, bm, .lsr),
