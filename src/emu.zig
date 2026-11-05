@@ -580,7 +580,26 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 1) {
         return execX19Imm(gpa, state, bundle);
     }
+    if (w1_class == 0 and w2_class == 0 and w3_class == 0) {
+        return execX19Agu(gpa, state, bundle);
+    }
     return RunError.UnknownForm;
+}
+
+fn execX19Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const w1 = bundle[1];
+    const w3 = bundle[3];
+    const fn_op: u32 = (w1 >> 24) & 0xF;
+    const dest_e: u32 = (w1 >> 20) & 0xF;
+    const dest_r: u32 = (w3 >> 7) & 0xF;
+    const x_e: u32 = (w3 >> 25) & 0xF;
+    const y_r: u32 = (w3 >> 11) & 0xF;
+    const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
+    const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
+    const v = try agu10Eval(fn_op, x_val, y_val);
+    if (dest_e != 0) state.e[dest_e] = v;
+    if (dest_r != 0) state.r[dest_r] = v;
 }
 
 fn execX19Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

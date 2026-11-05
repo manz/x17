@@ -33,6 +33,12 @@ x15.alu    2   0x00000015   0xA1E00000
 #   s<S2[13:10]> <- v, e<2*S1[2:0]> <- v
 x17.agu2   3   0x00000017   0x28001800   0x00000000
 
+# x19.agu: 4-syllable low5 0x19 class (0,0,0).  AGU writes R and e in
+# parallel (fact 143 / own-x19agu):
+#   v = AGU10[w1[27:24]](x = e<w3[28:25]>, y = R<w3[14:11]>)
+#   R<w3[10:7]> <- v, e<w1[23:20]> <- v
+x19.agu    4   0x00000019   0x10040000   0x02C40000   0x00000000
+
 # x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)

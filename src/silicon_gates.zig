@@ -564,6 +564,22 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19agu",
+        // Pre e3 = 0x700, R1 = 2; fn 6 (x+y) → 0x702; R3 and e5 both get v.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x700 },
+            .{ .bank = .r, .index = 1, .value = 2 },
+        },
+        .src =
+        \\x19.agu R3, e5, e3, R1, #6
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .r_reg = .{ .index = 3, .value = 0x702 } },
+            .{ .e_reg = .{ .index = 5, .value = 0x702 } },
+        },
+    },
+    .{
         .name = "own-x17agu2",
         // Pre R3 = 0x700; fn 10 (y+i) with imm 2 yields 0x702; dest_e_low=1
         // so e2 = 0x702 and s5 = 0x702.

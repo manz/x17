@@ -94,6 +94,14 @@ x17.agu2	y_R	R	27	30	head
 x17.agu2	fn	imm	7	10	s1
 x17.agu2	imm	imm	11	26	head
 
+# x19.agu (4 syllables): AGU writes R and e in parallel.
+# Grammar: x19.agu <dest_R>, <dest_e>, <x_e>, <y_R>, #<fn>
+x19.agu	dest_R	R	7	10	s3
+x19.agu	dest_e	e	20	23	s1
+x19.agu	x_e	e	25	28	s3
+x19.agu	y_R	R	11	14	s3
+x19.agu	fn	imm	24	27	s1
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2
