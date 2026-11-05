@@ -86,6 +86,14 @@ x15.alu	code	imm	5	10	head
 x15.alu	m	imm	23	25	head
 x15.alu	dest_s2	s	7	10	s1
 
+# x17.agu2 (3 syllables): AGU y+i broadcast to s and e.
+# Grammar: x17.agu2 <dest_s>, <dest_e_low>, <y_R>, #<fn>, #<imm>
+x17.agu2	dest_s	s	10	13	s2
+x17.agu2	dest_e_low	imm	0	2	s1
+x17.agu2	y_R	R	27	30	head
+x17.agu2	fn	imm	7	10	s1
+x17.agu2	imm	imm	11	26	head
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

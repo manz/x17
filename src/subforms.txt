@@ -27,6 +27,12 @@ x12.agu    2   0x00000012   0x20000000
 # code 0x0E (add) is modelled; wider ops OPEN.
 x15.alu    2   0x00000015   0xA1E00000
 
+# x17.agu2: 3-syllable x17 S1 class 001 S2 class 000 (fact 136 /
+# own-x17agu2):
+#   v = AGU10[S1[10:7]](y = R<head[30:27]>, i = head[26:11])
+#   s<S2[13:10]> <- v, e<2*S1[2:0]> <- v
+x17.agu2   3   0x00000017   0x28001800   0x00000000
+
 # x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)

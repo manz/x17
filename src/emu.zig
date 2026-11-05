@@ -698,6 +698,7 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class == 0b011 and s2_class == 0b111) return execX17Imm(gpa, state, bundle);
     if (s2_class == 0b111) return execX17Alu(gpa, state, bundle);
     if (s1_class == 0b001 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
+    if (s1_class == 0b001 and s2_class == 0b000) return execX17Agu2(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b100) return execX17E(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b011) return execX17Ld(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b110) return execX17Alu05(gpa, state, bundle);
@@ -765,6 +766,26 @@ fn execX17Mve(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
     const src_val: u32 = if (src_s == 0) 0 else state.s[src_s];
     state.e[dest_e] = (src_val +% 1) & M24;
+}
+
+fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    const fn_op: u32 = (s1 >> 7) & 0xF;
+    const y_r: u32 = (head >> 27) & 0xF;
+    const imm: u32 = (head >> 11) & 0xFFFF;
+    const dest_s: u32 = (s2 >> 10) & 0xF;
+    const dest_e: u32 = (2 * (s1 & 0x7)) & 0xF;
+    const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
+    // AGU10[10] = "y+i" (the imm lives in head[26:11], not an s/e reg).
+    const result: u32 = switch (fn_op) {
+        10 => (y_val +% imm) & 0xFFFF,
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0) state.s[dest_s] = result;
+    if (dest_e != 0) state.e[dest_e] = result;
 }
 
 fn execX17Alu05(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

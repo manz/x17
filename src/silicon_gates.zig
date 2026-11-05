@@ -564,6 +564,20 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x17agu2",
+        // Pre R3 = 0x700; fn 10 (y+i) with imm 2 yields 0x702; dest_e_low=1
+        // so e2 = 0x702 and s5 = 0x702.
+        .pre = &.{.{ .bank = .r, .index = 3, .value = 0x700 }},
+        .src =
+        \\x17.agu2 s5, #1, R3, #10, #2
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 0x702 } },
+            .{ .e_reg = .{ .index = 2, .value = 0x702 } },
+        },
+    },
+    .{
         .name = "own-x15alu-sub",
         // Exercise ALU05 code 0x10 (sub) via x15.alu: s4 <- s7 - s3.
         .pre = &.{
