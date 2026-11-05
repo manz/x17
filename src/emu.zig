@@ -95,6 +95,12 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execXst(gpa, state, bundle);
     }
+    if (low5 == 0x0E and bundle.len >= 2) {
+        const hb: u32 = (head >> 30) & 0x3;
+        if (hb == 0) return execPtest(gpa, state, bundle);
+        if (hb == 1) return execPsel(gpa, state, bundle);
+        return execLd0e(gpa, state, bundle);
+    }
 
     const f = isa.classify(head) orelse return RunError.UnknownForm;
 
@@ -985,6 +991,46 @@ fn execStx(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const addr: u32 = state.a[a_idx];
     const v: u32 = state.s[src_s] & M24;
     try state.x_mem.put(gpa, addr, v);
+}
+
+fn execPtest(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const p_src: u32 = (s1 >> 24) & 0xF;
+    const fn_op: u32 = (s1 >> 21) & 0x7;
+    const pv: u8 = state.p[p_src];
+    const v: u32 = switch (fn_op) {
+        0 => if (pv == 0) 1 else 0, // !p
+        1 => @as(u32, pv), // p
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0) state.s[dest_s] = v;
+}
+
+fn execPsel(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    _ = bundle[0];
+    const s1 = bundle[1];
+    const dest_s: u32 = (s1 >> 8) & 0xF;
+    const a_s: u32 = (s1 >> 28) & 0xF;
+    const b_s: u32 = (s1 >> 4) & 0xF;
+    const op: u32 = (s1 >> 16) & 0x7;
+    const p_src: u32 = (s1 >> 24) & 0xF;
+    const pol: u32 = (s1 >> 21) & 1;
+    const raw: u8 = state.p[p_src];
+    const pv: u8 = if (pol == 1) raw else @as(u8, 1) -% raw;
+    const a_val: u32 = state.s[a_s] & M24;
+    const b_val: u32 = state.s[b_s] & M24;
+    const combined: u32 = switch (op) {
+        4 => (a_val +% b_val) & M24,
+        else => return RunError.UnknownForm,
+    };
+    const v: u32 = if (pv != 0) combined else b_val;
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

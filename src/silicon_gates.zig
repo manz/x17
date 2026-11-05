@@ -393,6 +393,54 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 14, .value = 0x1357 } }},
     },
     .{
+        .name = "own-ptest",
+        // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
+        .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},
+        .src =
+        \\ptest s5, p2, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 1 } }},
+    },
+    .{
+        .name = "own-ptest-0",
+        // p2 seeded = 0; s3 <- f0(p2) = !p2 = 1 (since f0 = !p and p=0).
+        .pre = &.{.{ .bank = .p, .index = 2, .value = 0 }},
+        .src =
+        \\ptest s3, p2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 1 } }},
+    },
+    .{
+        .name = "own-psel",
+        // p2 = 1, s1 = 0x1000, s2 = 0x23; s5 <- p2 ? s1+s2 : s2 = 0x1023.
+        .pre = &.{
+            .{ .bank = .p, .index = 2, .value = 1 },
+            .{ .bank = .s, .index = 1, .value = 0x1000 },
+            .{ .bank = .s, .index = 2, .value = 0x23 },
+        },
+        .src =
+        \\psel s5, s1, s2, p2, #1, #4
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x1023 } }},
+    },
+    .{
+        .name = "own-psel-0",
+        // p2 = 0, same operands; s5 <- p2 ? s1+s2 : s2 = s2 = 0x23.
+        .pre = &.{
+            .{ .bank = .p, .index = 2, .value = 0 },
+            .{ .bank = .s, .index = 1, .value = 0x1000 },
+            .{ .bank = .s, .index = 2, .value = 0x23 },
+        },
+        .src =
+        \\psel s5, s1, s2, p2, #1, #4
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x23 } }},
+    },
+    .{
         .name = "own-stx",
         // the probe list own-stx: X:[A6] <- s7 via low5 0x0A single syllable.
         // Expected byte: 0x4037300A.  Pre s7 = 0xF77, A6 = 0x3A0.

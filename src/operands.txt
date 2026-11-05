@@ -110,6 +110,21 @@ plog	op	imm	5	10	head
 ldy	dest	dest_ldi	26	30	head
 ldy	src_e	e	5	8	head
 
+# ptest (2 syllables): scalar from predicate function.
+# Grammar: ptest <dest_s>, <p_src>, #<fn>
+ptest	dest_s	s	21	24	head
+ptest	p_src	p	24	27	s1
+ptest	fn	imm	21	23	s1
+
+# psel (2 syllables): predicate-selected scalar add/choose.
+# Grammar: psel <dest_s>, <a_s>, <b_s>, <p_src>, #<pol>, #<op>
+psel	dest_s	s	8	11	s1
+psel	a_s	s	28	31	s1
+psel	b_s	s	4	7	s1
+psel	p_src	p	24	27	s1
+psel	pol	imm	21	21	s1
+psel	op	imm	16	18	s1
+
 # stx (1 syllable): X-memory store from s to A-indexed address.
 # Grammar: stx <dest_A>, <src_s>
 stx	dest_A	A	11	15	head

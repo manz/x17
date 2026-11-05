@@ -56,6 +56,20 @@ yld10      2   0x00000010   0xE0420080
 # and bits inside S not spelled out are baked from the measured mask.
 xst        2   0x00000014   0x32000108
 
+# ptest: 2-syllable low5 0x0E bundle, head[31:30] = 00.  Writes s from a
+# function of a predicate (fact 126 / own-ptest, own-ptest-0):
+#   s<head[25:21]> <- FN<S[23:21]>(p<S[27:24]>)
+#   FN: 0 = !p, 1 = p (others OPEN).  S[18] = 1 required.
+ptest      2   0x1C00000E   0x00040000
+
+# psel: 2-syllable low5 0x0E bundle, head[31:30] = 01.  Selects between
+# a scalar op result and b based on a predicate (own-psel, own-psel-0):
+#   s<head[25:21]> <- p<S[11:8]> ? OP<S[18:16]>(s<S[31:28]>, s<S[7:4]>)
+#                                : s<S[7:4]>
+# OP 4 = add (own-psel's measured case).  Head bits [27:26] baked
+# (measured enables).
+psel       2   0x4600000E   0x00000000
+
 # ld0e: 2-syllable low5 0x0E bundle, zero-read into s + A-register load.
 # Semantics from fact 53 / own-0e:
 #   s<head[24:21]> <- 0           (source "reads 0 in every run")
