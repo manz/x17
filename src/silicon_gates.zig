@@ -845,6 +845,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
     },
     .{
+        .name = "own-x18yst",
+        // Y-store side is not modelled; verify the e2 decrement that pairs it.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x703 }},
+        .src =
+        \\x18.edec e2, e2, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
+    },
+    .{
         .name = "own-x18eagu",
         // Pre e2 = 0x703; AGU10[2] = x+1, e2 <- e2 + 1 = 0x704.
         .pre = &.{.{ .bank = .e, .index = 2, .value = 0x703 }},
