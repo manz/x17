@@ -584,6 +584,19 @@ const GATES = [_]Gate{
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x110 } }},
     },
     .{
+        .name = "own-x03alu",
+        // Pre s3 = 0x100, s4 = 0x23; add: s9 <- s3 + s4 = 0x123.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x100 },
+            .{ .bank = .s, .index = 4, .value = 0x23 },
+        },
+        .src =
+        \\x03.alu s9, s3, s4, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 9, .value = 0x123 } }},
+    },
+    .{
         .name = "own-x04agu",
         // Pre R2 = 0x100; fn 10 (y+imm): R1 <- R2 + 0x93 = 0x193.
         .pre = &.{.{ .bank = .r, .index = 2, .value = 0x100 }},

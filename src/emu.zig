@@ -168,6 +168,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             try execX03Xrd(gpa, state, bundle);
             return execX03Agu(gpa, state, bundle);
         }
+        if (w4_mode == 0) return execX03Alu(gpa, state, bundle);
     }
     if (low5 == 0x04 and bundle.len >= 6) {
         const head_class: u32 = (head >> 29) & 0x7;
@@ -284,6 +285,20 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // Round: add 2^22, then shift.
     const v: u32 = @truncate(((prod + (1 << 22)) >> 23) & M24);
     if (dest_s != 0) state.s[dest_s] = v;
+}
+
+fn execX03Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const dest_s: u32 = (head >> 15) & 0xF;
+    const a_s: u32 = (head >> 11) & 0xF;
+    const b_s: u32 = (head >> 26) & 0xF;
+    const code: u32 = (head >> 5) & 0x3F;
+    if (dest_s == 0) return;
+    const av: u32 = if (a_s == 0) 0 else state.s[a_s];
+    const bv: u32 = if (b_s == 0) 0 else state.s[b_s];
+    const op = ALU05[code];
+    state.s[dest_s] = alu05Eval(op, sx24(av), sx24(bv));
 }
 
 fn execX04Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
