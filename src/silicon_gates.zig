@@ -194,6 +194,18 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x222 } }},
     },
     .{
+        .name = "own-x17ctl-continue",
+        // the probe list own-x17ctl: a mid-program x17.cont must fall through
+        // to the next bundle (silicon's "S1[22:20] = 000 continues" rule).
+        // Verify by writing s5 AFTER the continue; if cont halted, s5 stays 0.
+        .src =
+        \\x17.cont
+        \\x17.imm s5, #0x0042
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x0042 } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },

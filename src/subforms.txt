@@ -12,6 +12,12 @@
 # strings in isa.toml plus the silicon-measured byte patterns in
 # the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
 
+# x17.cont: control bundle that lets execution fall through.  S2 class 101
+# + S1[22:20] = 000.  Semantics from fact 133 / own-x17ctl:
+#   (no state change; the PC advances to the next bundle)
+# S1 base pins the class-001 + S1[28] + S1[15] enables as measured.
+x17.cont   3   0x00000017   0x31008000   0xA0000000
+
 # x17.halt: canonical stop bundle.  Head carries only the x17 opcode;
 # S1 = 0x31308000 is the standard "halt S1" (S1 class 001, S1[15]=1, ...);
 # S2 class 101 (bits [31:29] = 101).

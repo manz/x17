@@ -41,17 +41,20 @@ fn disasmX17(out: []u8, bundle: []const u32) DisasmError!usize {
     return writeFormLine(out, sf.name, ops, bundle);
 }
 
-/// Pick a sub-form whose base words' class bits ([31:29] of each syllable)
-/// match the bundle's.  Treats head low5 as a given (always 0x17 for x17).
+/// Pick a sub-form whose base matches the bundle on every bit the sub-form
+/// treats as a constant (i.e. not an operand field).  This is strict enough
+/// to tell apart sub-forms that share class bits but differ on an enable or
+/// mode marker - e.g. x17.halt vs x17.cont (both S2 class 101, split by
+/// S1[22:20]).
 fn matchSubForm(bundle: []const u32) ?*const isa.SubForm {
     for (isa.subforms) |*sf| {
         if (sf.syllables > bundle.len) continue;
+        const ops = isa.operandsFor(sf.name);
         var ok = true;
-        var i: usize = 1; // skip head
+        var i: usize = 0;
         while (i < sf.syllables) : (i += 1) {
-            const bundle_class = (bundle[i] >> 29) & 0x7;
-            const base_class = (sf.base[i] >> 29) & 0x7;
-            if (bundle_class != base_class) {
+            const mask: u32 = nonOperandMask(ops, @intCast(i));
+            if ((bundle[i] & mask) != (sf.base[i] & mask)) {
                 ok = false;
                 break;
             }
@@ -59,6 +62,20 @@ fn matchSubForm(bundle: []const u32) ?*const isa.SubForm {
         if (ok) return sf;
     }
     return null;
+}
+
+/// Build the "constant bits" mask for syllable `syll`: all 32 bits minus
+/// every operand field that lives in that syllable.  The result marks the
+/// bits the sub-form asserts about verbatim.
+fn nonOperandMask(ops: []const isa.Operand, syll: u8) u32 {
+    var mask: u32 = 0xFFFF_FFFF;
+    for (ops) |op| {
+        if (op.syll != syll) continue;
+        const width: u5 = @intCast(op.width());
+        const field: u32 = ((@as(u32, 1) << width) - 1) << @as(u5, @intCast(op.lo));
+        mask &= ~field;
+    }
+    return mask;
 }
 
 fn writeFormLine(

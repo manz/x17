@@ -625,7 +625,12 @@ pub fn bundleLen(head: u32) ?u8 {
 fn isHaltBundle(bundle: []const u32) bool {
     if (bundle.len < 3) return false;
     if ((bundle[0] & 0x1F) != 0x17) return false;
-    return ((bundle[2] >> 29) & 0x7) == 0b101;
+    // S2 class 101 is a control bundle; S1[22:20] decides.
+    //   011 -> halt       (the tail)
+    //   000 -> continue   (no state change, PC falls through)
+    if (((bundle[2] >> 29) & 0x7) != 0b101) return false;
+    const ctl: u32 = (bundle[1] >> 20) & 0x7;
+    return ctl == 0b011;
 }
 
 fn execLdi(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
