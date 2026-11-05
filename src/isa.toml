@@ -343,6 +343,13 @@ evidence = "INFERRED"
 ref = "the probe list fill-unbounded/fill-stride2, fact 17, 21: bounds the stub's fill; [8:7] and [24:23] are 2-bit selectors into V2/V13 (3 = none)"
 
 [[form]]
+name = "ldy"
+mask = "0x83FFFE1F"
+value = "0x0000020A"
+evidence = "MEASURED"
+ref = "fact 68 pass 94: s<[30:26]> (ldi numbering) <- Y:[e<[8:5]>]; bit 9 = 1 enables.  own-ldy."
+
+[[form]]
 name = "stx"
 mask = "0xFFF007FF"
 value = "0x4030000A"

@@ -332,6 +332,18 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-ldy",
+        // the probe list own-ldy: s14 <- Y:[e5].  Pre e5 = 0xA21, Y[0xA21] = 0x1357.
+        // Expected byte: 0x780002AA.
+        .pre = &.{.{ .bank = .e, .index = 5, .value = 0xA21 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0xA21, .value = 0x1357 }},
+        .src =
+        \\ldy s14, e5
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 14, .value = 0x1357 } }},
+    },
+    .{
         .name = "own-stx",
         // the probe list own-stx: X:[A6] <- s7 via low5 0x0A single syllable.
         // Expected byte: 0x4037300A.  Pre s7 = 0xF77, A6 = 0x3A0.

@@ -89,6 +89,11 @@ agu10r	x_e	e	25	28	s1
 agu10r	y_base	imm	27	28	head
 agu10r	fn_op	imm	1	4	s1
 
+# ldy (1 syllable): Y-memory load into s (ldi numbering).
+# Grammar: ldy <dest_s>, <src_e>
+ldy	dest	dest_ldi	26	30	head
+ldy	src_e	e	5	8	head
+
 # stx (1 syllable): X-memory store from s to A-indexed address.
 # Grammar: stx <dest_A>, <src_s>
 stx	dest_A	A	11	15	head
