@@ -482,6 +482,28 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x0BEE } }},
     },
     .{
+        .name = "own-ytst-even",
+        // Pre e5 = 0x702, Y[0x702] = 0x10 (even); p3 <- true.
+        .pre = &.{.{ .bank = .e, .index = 5, .value = 0x702 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x702, .value = 0x10 }},
+        .src =
+        \\ytst p3, e5
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 3, .value = 1 } }},
+    },
+    .{
+        .name = "own-ytst-odd",
+        // Pre e5 = 0x702, Y[0x702] = 0x11 (odd); p3 <- false.
+        .pre = &.{.{ .bank = .e, .index = 5, .value = 0x702 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x702, .value = 0x11 }},
+        .src =
+        \\ytst p3, e5
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 3, .value = 0 } }},
+    },
+    .{
         .name = "own-xst",
         // the probe list own-xst: X:[A11] <- s6 (sign-extended to 24 bits).
         // Expected bytes: 0xC1000034 0x3200016A.
