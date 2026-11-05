@@ -53,6 +53,13 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x17.alu05 (3 syllables): head carries an ALU05 word.
+# Grammar: x17.alu05 <dest>, <a>, <b>, #<op>
+x17.alu05	dest	s	15	18	head
+x17.alu05	a	s	11	14	head
+x17.alu05	b	s	25	28	s2
+x17.alu05	op	imm	5	10	head
+
 # x17.ld (3 syllables): scalar asr + Y-memory load.
 # Grammar: x17.ld <dest_s>, <src_s>, <dest_e_half>, <src_e_mem>, #<shift>
 # dest_e_half is 3 bits: the loaded Y value lands in e(2 * dest_e_half).

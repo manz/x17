@@ -103,7 +103,25 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class == 0b001 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b100) return execX17E(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b011) return execX17Ld(gpa, state, bundle);
+    if (s1_class == 0b000 and s2_class == 0b110) return execX17Alu05(gpa, state, bundle);
     return RunError.UnknownForm;
+}
+
+fn execX17Alu05(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const s2 = bundle[2];
+
+    const dest: u32 = (head >> 15) & 0xF;
+    const a_idx: u32 = (head >> 11) & 0xF;
+    const b_idx: u32 = (s2 >> 25) & 0xF;
+    const code: u32 = (head >> 5) & 0x3F;
+
+    const a_val: u32 = if (a_idx == 0) 0 else state.s[a_idx];
+    const b_val: u32 = if (b_idx == 0) 0 else state.s[b_idx];
+
+    const op = ALU05[code];
+    state.s[dest] = alu05Eval(op, sx24(a_val), sx24(b_val));
 }
 
 fn execX17Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

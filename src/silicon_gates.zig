@@ -131,6 +131,20 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x17alu05",
+        // the probe list own-x17alu05: pre s5 = 0x555, s3 = 0x333.
+        // Head is an ALU05 add word: s5 <- s3 + s5 = 0x888.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x333 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x17.alu05 s5, s3, s5, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x888 } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },

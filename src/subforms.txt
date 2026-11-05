@@ -22,6 +22,13 @@ x17.halt   3   0x00000017   0x31308000   0xA0000000
 # "enable" bit documented in isa.toml (needed, else wedge).
 x17.imm    3   0x00000017   0x60004000   0xE0000000
 
+# x17.alu05: head is an ALU05 word, continuing bundle.  S1 class 000 +
+# S2 class 110.  Semantics from fact 138 / own-x17alu05:
+#   s<head[18:15]> <- ALU05[head[10:5]](a = s<head[14:11]>, b = s<S2[28:25]>)
+# S1[13]=1 is the measured enable; S2 class 110 only.  Head base keeps the
+# low5=0x17 marker and lets dest/a/op OR on top.
+x17.alu05  3   0x00000017   0x00002000   0xC0000000
+
 # x17.ld: scalar asr + Y-memory load into element, continuing bundle.
 # S1 class 000 + S2 class 011.  Semantics from fact 137 / own-x17ld:
 #   s<S1[22:19]> <- s<S2[28:25]> asr S1[26:23]
