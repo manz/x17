@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19kalu",
+        // Pre s5 = 0x50, s3 = 3; ALU m=5 (a-b): s4 <- s5 - s3 = 0x4D.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x50 },
+            .{ .bank = .s, .index = 3, .value = 3 },
+        },
+        .src =
+        \\x19.kalu s9, s4, s5, s3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 4, .value = 0x4D } }},
+    },
+    .{
         .name = "own-x19k00",
         // Pre e3 = 0x100, R6 = 0x23; mux 001: s9 <- AGU10[6](e3, R6) = 0x123.
         .pre = &.{

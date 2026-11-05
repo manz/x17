@@ -77,6 +77,10 @@ x19.a43    4   0x00000019   0x08008002   0x80000000   0x60058000
 # head imm.
 x19.k00    4   0x00000019   0x60040006   0x02D80000   0x00540000
 
+# x19.kalu: class (3,0,0) with w1[17:15]=5.  ALU sub (a - b) into s.
+# fact 238 / own-x19kalu.
+x19.kalu   4   0x00000019   0x66069000   0x02D80000   0x06543000
+
 # x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)

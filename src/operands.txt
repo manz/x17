@@ -160,6 +160,13 @@ x19.k00	mux	imm	12	14	s1
 x19.k00	fn	imm	24	27	s1
 x19.k00	imm	imm	5	20	head
 
+# x19.kalu (4 syllables): ALU sub a - b into s via class (3,0,0) with mod 5.
+# Grammar: x19.kalu <dest_s>, <dest>, <a>, <b>
+x19.kalu	dest_s	s	21	24	head
+x19.kalu	dest	s	8	11	s1
+x19.kalu	a	s	4	7	s1
+x19.kalu	b	s	3	6	s3
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

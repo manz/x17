@@ -779,8 +779,20 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const w3 = bundle[3];
     const dest_s: u32 = (head >> 21) & 0xF;
     const mux: u32 = (w1 >> 12) & 0x7;
+    const w1_mod: u32 = (w1 >> 15) & 0x7;
     const v: u32 = switch (mux) {
         1 => blk: {
+            if (w1_mod == 5) {
+                // own-x19kalu: ALU05 code head[30:25] under m=5 (a - b).
+                const a_s: u32 = (w1 >> 4) & 0xF;
+                const b_s: u32 = (w3 >> 3) & 0xF;
+                const a_val: u32 = state.s[a_s] & M24;
+                const b_val: u32 = state.s[b_s] & M24;
+                const dest_kalu: u32 = (w1 >> 8) & 0xF;
+                const alu_v: u32 = (a_val -% b_val) & M24;
+                if (dest_kalu != 0) state.s[dest_kalu] = alu_v;
+                break :blk alu_v;
+            }
             const fn_op: u32 = (w1 >> 24) & 0xF;
             const x_e: u32 = (w3 >> 25) & 0xF;
             const y_r: u32 = (w3 >> 11) & 0xF;
@@ -794,6 +806,7 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         },
         else => return RunError.UnknownForm,
     };
+    if (mux == 1 and w1_mod == 5) return;
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
