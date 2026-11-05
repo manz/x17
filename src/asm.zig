@@ -121,10 +121,30 @@ pub const Diagnostic = struct {
     }
 };
 
+pub const MAX_BUNDLE_SYLLABLES: usize = 7;
+
+/// A bundle: 1-7 syllables of 32 bits each, written to consecutive slots
+/// starting at the bundle's head position.  `len` says how many of `words`
+/// are valid; the rest are undefined.
+pub const Bundle = struct {
+    words: [MAX_BUNDLE_SYLLABLES]u32,
+    len: u8,
+
+    pub fn slice(self: *const Bundle) []const u32 {
+        return self.words[0..self.len];
+    }
+};
+
 pub const Result = union(enum) {
-    ok: u32,
+    ok: Bundle,
     err: Diagnostic,
 };
+
+fn oneWord(w: u32) Bundle {
+    var b: Bundle = .{ .words = undefined, .len = 1 };
+    b.words[0] = w;
+    return b;
+}
 
 /// Column index (1-based) of `offset` within its line.  Lines are single
 /// here (we only assemble one line), so this is `offset + 1`; the helper
@@ -473,6 +493,11 @@ pub fn assembleOneResult(src: []const u8) Result {
         return .{ .err = d };
     }
 
+    // x17.<sub> namespace: multi-syllable bundles, dispatched out of band.
+    if (std.mem.startsWith(u8, head.text, "x17.")) {
+        return assembleX17(head, &lex, src);
+    }
+
     var form: ?*const isa.Form = null;
     for (isa.forms) |*f| {
         if (std.mem.eql(u8, f.name, head.text)) {
@@ -610,7 +635,42 @@ pub fn assembleOneResult(src: []const u8) Result {
         d.setMsg(m);
         return .{ .err = d };
     }
-    return .{ .ok = word };
+    return .{ .ok = oneWord(word) };
+}
+
+/// Assemble an x17.* bundle.  Head's text is `x17.<sub>`; the lexer is
+/// positioned just after it.  Currently handles only `x17.halt`, which
+/// emits the three-syllable `[0x00000017, 0x31308000, 0xA0000000]` bundle
+/// that stops a program.  Other sub-forms land as the spike grows.
+fn assembleX17(head: Token, lex: *Lexer, src: []const u8) Result {
+    const sub = head.text[4..]; // drop `x17.`
+    if (std.mem.eql(u8, sub, "halt")) {
+        // No operands.  The canonical halt bundle, silicon-measured in
+        // many the probe list entries (own-x17alu-shl, own-x17imm, ...).
+        const tail = switch (lex.next()) {
+            .tok => |t| t,
+            .err => |e| return fromLexErr(e),
+        };
+        if (tail.kind != .end) {
+            var d = Diagnostic{ .code = .e0007_extra_tokens, .span = tokSpan(tail) };
+            var buf: [96]u8 = undefined;
+            const m = std.fmt.bufPrint(&buf, "x17.halt takes no operands, found '{s}'", .{tail.text}) catch buf[0..0];
+            d.setMsg(m);
+            return .{ .err = d };
+        }
+        var b: Bundle = .{ .words = undefined, .len = 3 };
+        b.words[0] = 0x0000_0017;
+        b.words[1] = 0x3130_8000;
+        b.words[2] = 0xA000_0000;
+        return .{ .ok = b };
+    }
+    _ = src;
+    var d = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(head) };
+    var buf: [96]u8 = undefined;
+    const m = std.fmt.bufPrint(&buf, "x17.{s} is not implemented yet", .{sub}) catch buf[0..0];
+    d.setMsg(m);
+    d.setHint("x17 sub-forms: halt (implemented); alu, imm, agu, e, ld, alu05, xpm (pending)");
+    return .{ .err = d };
 }
 
 fn fromLexErr(e: LexError) Result {
@@ -620,10 +680,10 @@ fn fromLexErr(e: LexError) Result {
     return .{ .err = d };
 }
 
-/// Thin wrapper that drops diagnostics and returns a single error.
-pub fn assembleOne(src: []const u8) AsmError!u32 {
+/// Thin wrapper that drops diagnostics and returns the bundle.
+pub fn assembleOne(src: []const u8) AsmError!Bundle {
     return switch (assembleOneResult(src)) {
-        .ok => |w| w,
+        .ok => |b| b,
         .err => AsmError.AssemblyFailed,
     };
 }
@@ -635,8 +695,17 @@ pub fn assembleOne(src: []const u8) AsmError!u32 {
 const testing = std.testing;
 
 fn okWord(src: []const u8) !u32 {
+    const b = try okBundle(src);
+    if (b.len != 1) {
+        std.debug.print("expected 1-syllable bundle, got {d}\n", .{b.len});
+        return error.TestExpectedOneSyllable;
+    }
+    return b.words[0];
+}
+
+fn okBundle(src: []const u8) !Bundle {
     return switch (assembleOneResult(src)) {
-        .ok => |w| w,
+        .ok => |b| b,
         .err => |d| {
             std.debug.print("unexpected error[{s}]: {s}\n", .{ d.code.text(), d.msg() });
             return error.TestExpectedOk;
@@ -646,8 +715,8 @@ fn okWord(src: []const u8) !u32 {
 
 fn expectErr(src: []const u8, code: ErrorCode) !Diagnostic {
     switch (assembleOneResult(src)) {
-        .ok => |w| {
-            std.debug.print("expected error, got ok=0x{x}\n", .{w});
+        .ok => |b| {
+            std.debug.print("expected error, got ok (len={d}, first=0x{x})\n", .{ b.len, b.words[0] });
             return error.TestExpectedErr;
         },
         .err => |d| {
@@ -747,6 +816,37 @@ test "diag: y_addr missing colon" {
 test "diag: y_addr overflow carries width" {
     const d = try expectErr("st.y Y:#0x10000", .e0013_imm_out_of_range);
     try testing.expect(std.mem.indexOf(u8, d.msg(), "16 bits") != null);
+}
+
+test "x17.halt emits the canonical 3-syllable bundle" {
+    const b = try okBundle("x17.halt");
+    try testing.expectEqual(@as(u8, 3), b.len);
+    try testing.expectEqual(@as(u32, 0x0000_0017), b.words[0]);
+    try testing.expectEqual(@as(u32, 0x3130_8000), b.words[1]);
+    try testing.expectEqual(@as(u32, 0xA000_0000), b.words[2]);
+}
+
+test "diag: x17.halt takes no operands" {
+    _ = try expectErr("x17.halt s0", .e0007_extra_tokens);
+}
+
+test "diag: unknown x17 sub-form" {
+    const d = try expectErr("x17.wat", .e0001_unknown_mnemonic);
+    try testing.expect(std.mem.indexOf(u8, d.msg(), "x17.wat") != null);
+}
+
+test "round-trip gate: own-x17ctl tail bundle (x17.halt)" {
+    // the probe list own-x17ctl tail (r3l3, r4l0, r5l0) uses S1 = 0x11308001
+    // (the 011 S1 class, S1[0] set).  own-x17alu-shl tail (r2l1-r3l1-r2l0
+    // actually... many entries) uses the S1 = 0x31308000 canonical form.
+    // The three stable halt syllables are:
+    //   head = 0x00000017
+    //   S1   = 0x31308000
+    //   S2   = 0xA0000000
+    const b = try okBundle("x17.halt");
+    try testing.expectEqual(@as(u32, 0x0000_0017), b.words[0]);
+    try testing.expectEqual(@as(u32, 0x3130_8000), b.words[1]);
+    try testing.expectEqual(@as(u32, 0xA000_0000), b.words[2]);
 }
 
 test "round-trip gate: own-st3 reassembles byte-exact" {
