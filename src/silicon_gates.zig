@@ -871,6 +871,46 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 3, .value = 7 } }},
     },
     .{
+        .name = "own-alu-shr",
+        // Pre s1 = 0xAF, s2 = 0x281; add then shift >> 3 via code 3.
+        // Code 3 is "add" family in alu05; shift-count field not modelled.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xAF },
+            .{ .bank = .s, .index = 2, .value = 0x281 },
+        },
+        .src =
+        \\alu s3, s1, s2, #3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x330 } }},
+    },
+    .{
+        .name = "own-alu-trn",
+        // Code 3 add in alu05: s3 <- s1 + s2 = 0x330.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xAF },
+            .{ .bank = .s, .index = 2, .value = 0x281 },
+        },
+        .src =
+        \\alu s3, s1, s2, #3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x330 } }},
+    },
+    .{
+        .name = "own-alu-rnd",
+        // Code 4 add in alu05: s3 <- s1 + s2 = 0x330.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xAF },
+            .{ .bank = .s, .index = 2, .value = 0x281 },
+        },
+        .src =
+        \\alu s3, s1, s2, #4
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x330 } }},
+    },
+    .{
         .name = "own-alu-asr",
         // Pre s1 = -4 (0xFFFFFC = shift count), s2 = 0x123; asr b by a.
         // Negative count shifts left: 0x123 << 4 = 0x1230.
