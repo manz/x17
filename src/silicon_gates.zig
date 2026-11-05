@@ -539,6 +539,17 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x03xrd",
+        // s7 <- X:[A8] = 0xDB7A via the 6-syllable x03.xrd bundle.
+        .pre = &.{.{ .bank = .a, .index = 8, .value = 0x345 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x345, .value = 0xDB7A }},
+        .src =
+        \\x03.xrd s7, #2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0xDB7A } }},
+    },
+    .{
         .name = "own-x02xrd",
         // s1 <- X:[A2] = 0xEF41 via the 6-syllable x02.xrd bundle.
         .pre = &.{.{ .bank = .a, .index = 2, .value = 0x234 }},

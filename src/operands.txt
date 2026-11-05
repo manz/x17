@@ -79,6 +79,13 @@ x13.agu	x_e	e	21	24	s1
 x13.agu	y_R	R	13	16	s1
 x13.agu	fn	imm	17	20	s1
 
+# x03.xrd (6 syllables): X-memory read at low5 0x03 w4 mode 5.
+# Grammar: x03.xrd <dest_s>, #<a_hi>, #<a_lo>
+# A address = (a_hi << 2) | a_lo.
+x03.xrd	dest_s	s	3	6	s4
+x03.xrd	a_hi	imm	0	2	s1
+x03.xrd	a_lo	imm	30	31	head
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4
