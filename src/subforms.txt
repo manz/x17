@@ -213,6 +213,10 @@ x15.pt     2   0x00000015   0x20000000
 # Branch if p<w2[31:28]> by sext(w1[28:18]) bundles (fact 178).
 x18.br     4   0x00000018   0x00000000   0x00006000   0xC0000100
 
+# x02.agu: 6-syllable low5 0x02 w4 mode 0 R-AGU slot (fact 249).
+# R<w3[22:19]> <- AGU10B[w1[10:7]](y = R<w5[25:22]>).
+x02.agu    6   0x10049802   0x00000000   0x00004000   0x08000000   0x00008000   0x04000000
+
 # x02.xrd: 6-syllable VLIW at low5 0x02 w4 mode 5.  X-memory read into s
 # (fact 155 / own-x02xrd):
 #   s<w4[6:3]> <- X:[A<w4[21:17]>]

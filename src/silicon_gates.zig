@@ -845,6 +845,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
     },
     .{
+        .name = "own-x02agu",
+        // Pre R12 = 0x155; R1 <- R12 = 0x155.
+        .pre = &.{.{ .bank = .r, .index = 12, .value = 0x155 }},
+        .src =
+        \\x02.agu R1, R12, #10
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x155 } }},
+    },
+    .{
         .name = "own-x18br",
         // p3 = 1, branch offset +2 bundles.  Two delay-slot adds run, two
         // adds are skipped, one add at the target runs: s1 = 3.

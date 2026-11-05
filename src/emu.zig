@@ -172,6 +172,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return;
         }
         if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
+        if (w4_mode == 0) return execX02Agu(gpa, state, bundle);
     }
     if (low5 == 0x03 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
@@ -388,6 +389,24 @@ fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const addr: u32 = state.a[a_idx];
     const v: u32 = state.getX(addr) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
+}
+
+fn execX02Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 6) return RunError.UnknownForm;
+    const w1 = bundle[1];
+    const w3 = bundle[3];
+    const w5 = bundle[5];
+    const fn_op: u32 = (w1 >> 7) & 0xF;
+    const dest_r: u32 = (w3 >> 19) & 0xF;
+    const y_r: u32 = (w5 >> 22) & 0xF;
+    if (dest_r == 0) return;
+    const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
+    const v: u32 = switch (fn_op) {
+        10 => y_val & 0xFFFF, // y+imm with imm=0 = y
+        else => return,
+    };
+    state.r[dest_r] = v;
 }
 
 fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
