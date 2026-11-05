@@ -46,6 +46,17 @@ pub const State = struct {
     y_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
     /// X data memory, keyed by address.  Separate bank from Y per facts.
     x_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
+    /// Pending branch state.  `jump_delay` counts down bundles until the
+    /// jump fires; 0 means no pending jump.  `jump_target` is the syllable
+    /// index to resume at when the delay elapses.  sm1 takes TWO delay-slot
+    /// bundles (fact 94): the jmp bundle sets delay = 2, the two
+    /// following bundles run, then i jumps to `jump_target`.
+    jump_delay: u8 = 0,
+    jump_target: usize = 0,
+    /// Set by a jmp/br/bcc instruction to request a jump.  Measured in
+    /// syllables relative to the jmp bundle's own syllable position; null
+    /// when no jump requested this bundle.  runLinear consumes it.
+    pending_jmp_offset: ?i32 = null,
 
     pub fn deinit(self: *State, gpa: std.mem.Allocator) void {
         self.y_mem.deinit(gpa);
@@ -102,6 +113,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x12 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execX12Agu(gpa, state, bundle);
+    }
+    if (low5 == 0x0B) {
+        const high3: u32 = (head >> 29) & 0x7;
+        if (high3 == 0b010) return execJmp(gpa, state, head);
     }
     if (low5 == 0x15 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
@@ -269,6 +284,26 @@ fn execX12Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_e != 0) state.e[dest_e] = v;
     if (s_dest != 0) state.s[s_dest] = v;
     if (dest_r != 0) state.r[dest_r] = v;
+}
+
+fn execJmp(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    _ = gpa;
+    // offset [20:5]: signed 16-bit in syllables.
+    const off_bits: u32 = (head >> 5) & 0xFFFF;
+    const off_signed: i32 = if (off_bits & 0x8000 != 0)
+        @as(i32, @bitCast(off_bits | 0xFFFF0000))
+    else
+        @as(i32, @intCast(off_bits));
+    const mode: u32 = (head >> 21) & 0x1F;
+    const pred_idx: u32 = (head >> 26) & 0x7;
+    const p_val: u32 = state.p[pred_idx];
+    const taken: bool = switch (mode) {
+        1 => true,
+        2 => p_val == 0,
+        3 => p_val != 0,
+        else => return RunError.UnknownForm,
+    };
+    if (taken) state.pending_jmp_offset = off_signed;
 }
 
 fn execX15Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -1110,9 +1145,27 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
         const len = bundleLen(head) orelse return RunError.UnknownBundleLength;
         if (i + len > syllables.len) return RunError.UnknownBundleLength;
         const slice = syllables[i .. i + len];
+        const pc_at_bundle = i;
         try executeBundle(gpa, state, slice);
         i += len;
         if (isHaltBundle(slice)) return bundles_run + 1;
+        // Resolve a pending jmp/br/bcc issued by this bundle.  Target is
+        // syllable offset relative to the jump bundle's own start.  TWO
+        // delay-slot bundles run before the jump fires (fact 94).
+        if (state.pending_jmp_offset) |off| {
+            const target_i64: i64 = @as(i64, @intCast(pc_at_bundle)) + off;
+            if (target_i64 < 0 or target_i64 > @as(i64, @intCast(syllables.len))) {
+                return RunError.UnknownBundleLength;
+            }
+            state.jump_target = @intCast(target_i64);
+            state.jump_delay = 2;
+            state.pending_jmp_offset = null;
+        } else if (state.jump_delay > 0) {
+            state.jump_delay -= 1;
+            if (state.jump_delay == 0) {
+                i = state.jump_target;
+            }
+        }
     }
     return bundles_run;
 }

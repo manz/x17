@@ -32,6 +32,13 @@ rli	imm16	imm	5	20	head
 ldi	dest	dest_ldi	21	25	head
 ldi	imm16	imm	5	20	head
 
+# jmp: 1-syllable control flow.
+# Grammar: jmp #<mode>, #<pred>, #<offset>
+# mode: 1=always, 2=if !p<pred>, 3=if p<pred>.  offset in syllables.
+jmp	mode	imm	21	25	head
+jmp	pred	imm	26	28	head
+jmp	offset	imm	5	20	head
+
 # st.y (1 syllable):
 # "[20:5] is a 16-bit immediate; [31:29]=001 selects it."  The stored value
 # is the LANE's data register (implicit; not an encoded operand); sel bits

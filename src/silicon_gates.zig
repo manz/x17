@@ -510,6 +510,23 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-jmp",
+        // Pre p1 = 0, so !p1 = true: jmp taken.  Two delay slots run (set
+        // s3 = 5 and s4 = 7), then jump lands past the skipped bundle.
+        .pre = &.{.{ .bank = .p, .index = 1, .value = 0 }},
+        .src =
+        \\jmp #2, #1, #4
+        \\ldi s3, #5
+        \\ldi s4, #7
+        \\ldi s3, #256
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 5 } },
+            .{ .s_reg = .{ .index = 4, .value = 7 } },
+        },
+    },
+    .{
         .name = "own-x15alu",
         // Pre s5 = 0x123, s3 = 0x18; code 0x0E add writes s5 and (mux 111) s3.
         .pre = &.{
