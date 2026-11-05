@@ -332,6 +332,16 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-pair",
+        // the probe list own-pair: e3 <- 0x70D via low5 0x10 S class 011.
+        // Expected bytes: 0x0020E1B0 0x60448018.
+        .src =
+        \\pair #0x70D, #3
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 3, .value = 0x70D } }},
+    },
+    .{
         .name = "own-ldi-k",
         // the probe list own-ldi-k: ldi with [29:26] = 0xC; those bits are
         // inert and our encoder emits them as 0, so this gate verifies

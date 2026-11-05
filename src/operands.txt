@@ -89,6 +89,12 @@ agu10r	x_e	e	25	28	s1
 agu10r	y_base	imm	27	28	head
 agu10r	fn_op	imm	1	4	s1
 
+# pair (2 syllables): low5 0x10 S class 011, loads e-reg with 16-bit imm.
+# Grammar: pair #<imm16>, #<e_half>
+# e_half is [4:3] of S1, values 0..3 pick e0..e3.
+pair	imm16	imm	5	20	head
+pair	e_half	imm	3	4	s1
+
 # ldi2 (2 syllables): low5 0x10 scalar immediate load.
 # Grammar: ldi2 <dest_s>, #<imm16>
 ldi2	dest_s	s	21	24	head
