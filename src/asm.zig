@@ -749,6 +749,17 @@ test "diag: y_addr overflow carries width" {
     try testing.expect(std.mem.indexOf(u8, d.msg(), "16 bits") != null);
 }
 
+test "round-trip gate: own-st3 reassembles byte-exact" {
+    // the probe list own-st3: three of OUR stores at r5l1..l3.
+    //   r5l1 = 0x2000200F  <- st.y Y:0x100
+    //   r5l2 = 0x2000400F  <- st.y Y:0x200
+    //   r5l3 = 0x2000600F  <- st.y Y:0x300
+    // Byte-exact: no inert bits (unlike own-ldi-y2's [29:26] = 0xC quirk).
+    try testing.expectEqual(@as(u32, 0x2000_200F), try okWord("st.y Y:0x100"));
+    try testing.expectEqual(@as(u32, 0x2000_400F), try okWord("st.y Y:0x200"));
+    try testing.expectEqual(@as(u32, 0x2000_600F), try okWord("st.y Y:0x300"));
+}
+
 test "comment to end of line is tolerated" {
     try testing.expectEqual(
         @as(u32, 0xC000_000B) | (16 << 21),
