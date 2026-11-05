@@ -148,6 +148,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x18 and bundle.len >= 4) {
         const w3_class: u32 = (bundle[3] >> 29) & 0x7;
         const w1_mode: u32 = (bundle[1] >> 12) & 0x7;
+        if (w3_class == 0b110 and ((bundle[3] >> 8) & 1) == 1) return execX18Br(gpa, state, bundle);
         if (w3_class == 0b110 and w1_mode == 5) return execX18Xrd(gpa, state, bundle);
         if (w3_class == 0b110 and bundle[2] != 0) return execX18Mpy(gpa, state, bundle);
         if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
@@ -809,6 +810,24 @@ fn execX18Eagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const v = try agu10Eval(fn_op, x_val, 0);
     if (dest_e != 0) state.e[dest_e] = v;
+}
+
+fn execX18Br(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 4) return RunError.UnknownForm;
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const pred_idx: u32 = (w2 >> 28) & 0xF;
+    const off11: u32 = (w1 >> 18) & 0x7FF;
+    const sx: i32 = if (off11 & 0x400 != 0)
+        @as(i32, @bitCast(off11 | 0xFFFFF800))
+    else
+        @as(i32, @intCast(off11));
+    // Offset is in 4-syllable bundles; convert to syllables.
+    const sylls = sx * 4;
+    if (pred_idx != 0 and state.p[pred_idx] == 1) {
+        state.pending_jmp_offset = sylls;
+    }
 }
 
 fn execX18Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

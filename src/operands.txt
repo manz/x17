@@ -347,6 +347,11 @@ x15.pt	dest_s	s	21	24	head
 x15.pt	p_idx	imm	3	6	s1
 x15.pt	lut	imm	8	10	s1
 
+# x18.br (4 syllables): predicate branch.
+# Grammar: x18.br #<pred>, #<off11>
+x18.br	pred	imm	28	31	s2
+x18.br	off11	imm	18	28	s1
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4

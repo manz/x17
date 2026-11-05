@@ -209,6 +209,10 @@ x16.hd     3   0x00000016   0x00000000   0x20000000
 # s<head[24:21]> <- LUT[S[10:8]](p<S[6:3]>).  LUT 1 = p, LUT 0 = !p.
 x15.pt     2   0x00000015   0x20000000
 
+# x18.br: 4-syllable low5 0x18 w3 class 110 with w3[8] = 1 (branch flag).
+# Branch if p<w2[31:28]> by sext(w1[28:18]) bundles (fact 178).
+x18.br     4   0x00000018   0x00000000   0x00006000   0xC0000100
+
 # x02.xrd: 6-syllable VLIW at low5 0x02 w4 mode 5.  X-memory read into s
 # (fact 155 / own-x02xrd):
 #   s<w4[6:3]> <- X:[A<w4[21:17]>]
