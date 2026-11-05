@@ -564,6 +564,22 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x18mpy",
+        // Pre s1 = 0x4001, s2 = 0x6003; P = 0x18012003: low = 0x2003, high = 0x18.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4001 },
+            .{ .bank = .s, .index = 2, .value = 0x6003 },
+        },
+        .src =
+        \\x18.mpy s3, s5, s1, s2
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x2003 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x18 } },
+        },
+    },
+    .{
         .name = "own-x19xrd",
         // Pre A11 = 0x345; X:0x345 = 0xDB7A; s1 lands with the read value.
         .pre = &.{.{ .bank = .a, .index = 11, .value = 0x345 }},

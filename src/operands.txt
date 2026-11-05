@@ -186,6 +186,13 @@ x18.q23	a_s	s	16	19	s2
 x18.q23	b_s	s	20	23	s2
 x18.q23	mode	imm	28	30	s2
 
+# x18.mpy (4 syllables): integer multiply with split low/high s destinations.
+# Grammar: x18.mpy <lo_dest>, <hi_dest>, <a_s>, <b_s>
+x18.mpy	lo_dest	s	24	27	s2
+x18.mpy	hi_dest	s	9	12	s2
+x18.mpy	a_s	s	1	4	s2
+x18.mpy	b_s	s	5	8	s2
+
 # x03.xrd (6 syllables): X-memory read at low5 0x03 w4 mode 5.
 # Grammar: x03.xrd <dest_s>, #<a_hi>, #<a_lo>
 # A address = (a_hi << 2) | a_lo.
