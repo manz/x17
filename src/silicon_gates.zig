@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-agu11",
+        // Pre e2 = 0x701; AGU half writes R3 = e4 = x+1 = 0x702.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x701 }},
+        .src =
+        \\alu11 s0, s0, s0, #0, R3, e4, e2, R0, #2, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .r_reg = .{ .index = 3, .value = 0x702 } },
+            .{ .e_reg = .{ .index = 4, .value = 0x702 } },
+        },
+    },
+    .{
         .name = "own-x12agu29",
         // Same inputs as x12.agu, with head[29] set (inert).
         .pre = &.{
