@@ -584,6 +584,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x110 } }},
     },
     .{
+        .name = "own-x04agu",
+        // Pre R2 = 0x100; fn 10 (y+imm): R1 <- R2 + 0x93 = 0x193.
+        .pre = &.{.{ .bank = .r, .index = 2, .value = 0x100 }},
+        .src =
+        \\x04.agu R1, R2, #10, #147
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x193 } }},
+    },
+    .{
         .name = "own-x16agu",
         // Pre e2 = 0x100, R3 = 0x20; fn 6 (x+y): s3 <- e2 + R3 = 0x120.
         .pre = &.{

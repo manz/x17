@@ -176,6 +176,10 @@ x03.xrd    6   0x00000003   0x00000000   0x0140E000   0x04002008   0x00046804   
 #   A<w3[14:10]> <- AGU[w2[26:22]](x = A<w3[4:0]>, i = {w5[0], w4[31:17]})
 x03.agu    6   0x00000003   0x00000002   0x0140E000   0x04002400   0x0000683C   0x00140102
 
+# x04.agu: 6-syllable low5 0x04 class 000 (fact 248 / own-x04agu).
+# R<w3[22:19]> <- AGU10B[w1[10:7]](y = R<head[30:27]>, i = head[26:11]).
+x04.agu    6   0x00000004   0x00000000   0x00004000   0x08000000   0x00008000   0x07000000
+
 # x02.xrd: 6-syllable VLIW at low5 0x02 w4 mode 5.  X-memory read into s
 # (fact 155 / own-x02xrd):
 #   s<w4[6:3]> <- X:[A<w4[21:17]>]

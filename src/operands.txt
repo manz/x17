@@ -293,6 +293,13 @@ x03.agu	src_A	A	0	4	s3
 x03.agu	i_hi	imm	17	31	s4
 x03.agu	i_lo	imm	0	0	s5
 
+# x04.agu (6 syllables): R-AGU10 write.
+# Grammar: x04.agu <dest_R>, <y_R>, #<fn>, #<imm>
+x04.agu	dest_R	R	19	22	s3
+x04.agu	y_R	R	27	30	head
+x04.agu	fn	imm	7	10	s1
+x04.agu	imm	imm	11	26	head
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4

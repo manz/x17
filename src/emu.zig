@@ -169,6 +169,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return execX03Agu(gpa, state, bundle);
         }
     }
+    if (low5 == 0x04 and bundle.len >= 6) {
+        const head_class: u32 = (head >> 29) & 0x7;
+        if (head_class == 0) return execX04Agu(gpa, state, bundle);
+    }
     if (low5 == 0x0E and bundle.len >= 2) {
         const hb: u32 = (head >> 30) & 0x3;
         if (hb == 0) return execPtest(gpa, state, bundle);
@@ -280,6 +284,25 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // Round: add 2^22, then shift.
     const v: u32 = @truncate(((prod + (1 << 22)) >> 23) & M24);
     if (dest_s != 0) state.s[dest_s] = v;
+}
+
+fn execX04Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 6) return RunError.UnknownForm;
+    const head = bundle[0];
+    const w1 = bundle[1];
+    const w3 = bundle[3];
+    const fn_op: u32 = (w1 >> 7) & 0xF;
+    const dest_r: u32 = (w3 >> 19) & 0xF;
+    const y_r: u32 = (head >> 27) & 0xF;
+    const imm: u32 = (head >> 11) & 0xFFFF;
+    if (dest_r == 0) return;
+    const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
+    const v: u32 = switch (fn_op) {
+        10 => (y_val +% imm) & 0xFFFF,
+        else => return,
+    };
+    state.r[dest_r] = v;
 }
 
 fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
