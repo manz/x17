@@ -752,6 +752,9 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 4) {
         return execX19Alu(gpa, state, bundle);
     }
+    if (w1_class == 0 and w2_class == 4 and w3_class == 4) {
+        return execX19Alu(gpa, state, bundle);
+    }
     if (w1_class == 2 and w2_class == 0 and w3_class == 0) {
         return execX19E(gpa, state, bundle);
     }

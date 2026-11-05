@@ -138,6 +138,13 @@ x19.aagu42	src_A	A	15	19	s3
 x19.aagu42	fn_op	imm	20	24	s3
 x19.aagu42	i_base	imm	0	14	s3
 
+# x19.alu44 (4 syllables): same shape as x19.alu, class (0,4,4).
+# Grammar: x19.alu44 <dest_s>, <a_s>, <b_s>, #<code>
+x19.alu44	dest_s	s	24	27	s1
+x19.alu44	a_s	s	18	21	s2
+x19.alu44	b_s	s	16	19	s1
+x19.alu44	code	imm	5	9	head
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

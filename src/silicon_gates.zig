@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19alu44",
+        // Same semantics as x19.alu: s7 <- sat24(s3 << s6).
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 7 },
+            .{ .bank = .s, .index = 6, .value = 8 },
+        },
+        .src =
+        \\x19.alu44 s7, s3, s6, #23
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x700 } }},
+    },
+    .{
         .name = "own-x19aagu42",
         // Pre A9 = 0x100 (src and dest both A9); i = (0x08 << 1) | 1 = 0x11;
         // A9 <- A9 + 0x11 = 0x111.
