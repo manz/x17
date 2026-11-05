@@ -845,6 +845,44 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
     },
     .{
+        .name = "own-alu-sub",
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x700 },
+            .{ .bank = .s, .index = 2, .value = 0x123 },
+        },
+        .src =
+        \\alu s3, s1, s2, #0x10
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x5DD } }},
+    },
+    .{
+        .name = "own-alu-hi",
+        // ALU add with [31:29] = 011 reads b from s<8+n>.
+        // For simplicity, add s1 + s2 using default encoding.
+        .pre = &.{
+            .{ .bank = .s, .index = 10, .value = 0x100 },
+            .{ .bank = .s, .index = 1, .value = 0x23 },
+        },
+        .src =
+        \\alu s1, s1, s10, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-alu-sel",
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xFFFFFE },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\alu s3, s1, s2, #0x26
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 1 } }},
+    },
+    .{
         .name = "own-x02hdhi",
         // head[31:27] bits are inert; imm 0x703 reaches s1.
         .src =
