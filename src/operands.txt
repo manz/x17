@@ -53,6 +53,11 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
+# Grammar: x02.xrd <dest_s>, <src_A>
+x02.xrd	dest_s	s	3	6	s4
+x02.xrd	src_A	A	17	21	s4
+
 # x02.imm (6 syllables): scalar immediate load at low5 0x02.
 # Grammar: x02.imm <dest_s>, #<imm>
 # dest_s lives in syllable 4 (0-indexed), bits [6:3]; imm at head[26:11].

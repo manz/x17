@@ -105,6 +105,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x02 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
         if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
+        if (w4_mode == 5) return execX02Xrd(gpa, state, bundle);
     }
     if (low5 == 0x0E and bundle.len >= 2) {
         const hb: u32 = (head >> 30) & 0x3;
@@ -189,6 +190,17 @@ fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const src_e: u32 = (s1 >> 21) & 0xF;
     if (dest_s != 0) state.s[dest_s] = imm;
     if (dest_r != 0) state.r[dest_r] = state.e[src_e];
+}
+
+fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 6) return RunError.UnknownForm;
+    const w4 = bundle[4];
+    const dest_s: u32 = (w4 >> 3) & 0xF;
+    const src_a: u32 = (w4 >> 17) & 0xF;
+    const addr: u32 = state.a[src_a];
+    const v: u32 = state.getX(addr) orelse 0;
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX02Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
