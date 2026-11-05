@@ -564,6 +564,15 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x18rimm",
+        // e2 <- imm 0x705 via op 0.
+        .src =
+        \\x18.rimm #0, #2, #0, #1797, R0
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x705 } }},
+    },
+    .{
         .name = "own-x18xrd",
         // Pre A19 = 0x345, X:0x345 = 0xDB7A; s3 <- the read value.
         .pre = &.{.{ .bank = .a, .index = 3, .value = 0x345 }},

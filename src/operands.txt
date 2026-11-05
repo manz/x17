@@ -166,6 +166,14 @@ x18.una	op	imm	15	17	s1
 x18.xrd	dest_s	s	21	24	head
 x18.xrd	src_a	imm	17	21	s2
 
+# x18.rimm (4 syllables): e <- op(i, R).
+# Grammar: x18.rimm #<e_hi>, #<e_lo>, #<op>, #<imm>, <r_src>
+x18.rimm	e_hi	imm	0	0	s2
+x18.rimm	e_lo	imm	29	31	s1
+x18.rimm	op	imm	25	27	s2
+x18.rimm	imm	imm	8	23	s2
+x18.rimm	r_src	R	11	14	s3
+
 # x03.xrd (6 syllables): X-memory read at low5 0x03 w4 mode 5.
 # Grammar: x03.xrd <dest_s>, #<a_hi>, #<a_lo>
 # A address = (a_hi << 2) | a_lo.
