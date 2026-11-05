@@ -86,6 +86,11 @@ x18.edec   4   0x00000018   0x00040180   0x89E00005   0x86000001
 # own-x18una).  s <- op(s).  Measured: op 3 = +1, op 7 = abs.
 x18.una    4   0x00000018   0x00000001   0x00004000   XXXXXXXX
 
+# x18.xrd: 4-syllable low5 0x18 w3 class 110, w1 mode 5 (fact 167 /
+# own-x18xrd).  X-memory read into s:
+#   s<head[24:21]> <- X:[A<w2[21:17]>]
+x18.xrd    4   0x00000018   0x00005000   0x00400000   0xC1400001
+
 # x03.xrd: 6-syllable VLIW at low5 0x03, w4 mode 5.  X-memory read with
 # A-index combining w1[2:0] (high 3 bits) and head[31:30] (low 2 bits):
 #   s<w4[6:3]> <- X:[A<{w1[2:0], head[31:30]}>]

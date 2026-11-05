@@ -564,6 +564,17 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x18xrd",
+        // Pre A19 = 0x345, X:0x345 = 0xDB7A; s3 <- the read value.
+        .pre = &.{.{ .bank = .a, .index = 3, .value = 0x345 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x345, .value = 0xDB7A }},
+        .src =
+        \\x18.xrd s3, #3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0xDB7A } }},
+    },
+    .{
         .name = "own-x18una-abs",
         // Pre s1 = 0x8001 (signed -0x7FFF); abs(s1) = 0x7FFF lands on s3.
         .pre = &.{.{ .bank = .s, .index = 1, .value = 0x8001 }},

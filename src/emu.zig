@@ -137,6 +137,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     }
     if (low5 == 0x18 and bundle.len >= 4) {
         const w3_class: u32 = (bundle[3] >> 29) & 0x7;
+        const w1_mode: u32 = (bundle[1] >> 12) & 0x7;
+        if (w3_class == 0b110 and w1_mode == 5) return execX18Xrd(gpa, state, bundle);
         if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
         if (w3_class == 0b000) return execX18Eagu(gpa, state, bundle);
         if (w3_class == 0b100) return execX18Edec(gpa, state, bundle);
@@ -441,6 +443,17 @@ fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
     const v = try agu10Eval(fn_op, x_val, y_val);
     if (dest_r != 0) state.r[dest_r] = v;
+}
+
+fn execX18Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const w2 = bundle[2];
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const src_a: u32 = (w2 >> 17) & 0x1F;
+    const a_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
+    const v: u32 = state.getX(a_val) orelse 0;
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX18Una(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

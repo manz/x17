@@ -161,6 +161,11 @@ x18.una	dest_s	s	8	11	s1
 x18.una	src_s	s	2	5	s2
 x18.una	op	imm	15	17	s1
 
+# x18.xrd (4 syllables): X-memory read.
+# Grammar: x18.xrd <dest_s>, #<src_a>
+x18.xrd	dest_s	s	21	24	head
+x18.xrd	src_a	imm	17	21	s2
+
 # x03.xrd (6 syllables): X-memory read at low5 0x03 w4 mode 5.
 # Grammar: x03.xrd <dest_s>, #<a_hi>, #<a_lo>
 # A address = (a_hi << 2) | a_lo.
