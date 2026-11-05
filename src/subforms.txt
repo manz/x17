@@ -20,6 +20,10 @@
 #   R<S[24:21]> <- V
 x12.agu    2   0x00000012   0x20000000
 
+# x12.agu29: same shape as x12.agu, head[29] set (inert).
+# fact 246 / own-x12agu29.
+x12.agu29  2   0x20000012   0x20000000
+
 # x15.alu: 2-syllable low5 0x15 S class 101.  Head is a full class-05 ALU
 # word (fact 123 / own-x15alu):
 #   s<head[18:15]> <- ALU05[head[10:5]](s<head[14:11]>, s<head[29:26]>, m=head[25:23])

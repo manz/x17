@@ -76,6 +76,15 @@ x12.agu	s_hi	imm	31	31	head
 x12.agu	s_low	imm	0	2	s1
 x12.agu	dest_R	R	21	24	s1
 
+# x12.agu29 (2 syllables): same as x12.agu with head[29] inert bit set.
+x12.agu29	dest_e	e	9	12	head
+x12.agu29	x_e	e	5	8	head
+x12.agu29	y_R	R	13	16	head
+x12.agu29	fn	imm	17	20	head
+x12.agu29	s_hi	imm	31	31	head
+x12.agu29	s_low	imm	0	2	s1
+x12.agu29	dest_R	R	21	24	s1
+
 # x15.alu (2 syllables): class-05 ALU word in head, mux=111 dual write.
 # Grammar: x15.alu <dest_s>, <a>, <b>, #<code>, #<m>, <dest_s2>
 # Only mux=111 modelled; base_S bakes it in.

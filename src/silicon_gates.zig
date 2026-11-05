@@ -564,6 +564,23 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x12agu29",
+        // Same inputs as x12.agu, with head[29] set (inert).
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x100 },
+            .{ .bank = .r, .index = 7, .value = 0x23 },
+        },
+        .src =
+        \\x12.agu29 e9, e3, R7, #6, #0, #1, R5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .e_reg = .{ .index = 9, .value = 0x123 } },
+            .{ .s_reg = .{ .index = 2, .value = 0x123 } },
+            .{ .r_reg = .{ .index = 5, .value = 0x123 } },
+        },
+    },
+    .{
         .name = "own-x19kmux2",
         // Pre e3 = 0x100, R6 = 0x23; mux 010 behaves like mux 001.
         .pre = &.{
