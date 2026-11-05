@@ -1,0 +1,39 @@
+name: 'Setup x17'
+description: 'Build and install the x17 assembler / emulator for sm1 DSP'
+author: 'manz'
+branding:
+  icon: 'cpu'
+  color: 'blue'
+
+inputs:
+  zig-version:
+    description: 'Zig toolchain version used to build x17'
+    required: false
+    default: '0.17.0'
+
+runs:
+  using: composite
+  steps:
+    - name: Install Zig
+      uses: mlugg/setup-zig@v2
+      with:
+        version: ${{ inputs.zig-version }}
+
+    - name: Cache x17 binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.action_path }}/zig-out/bin/x17
+        key: x17-${{ runner.os }}-${{ github.action_ref }}-${{ inputs.zig-version }}
+
+    - name: Build x17
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: zig build -Doptimize=ReleaseFast
+
+    - name: Add x17 to PATH
+      shell: bash
+      run: |
+        echo "${{ github.action_path }}/zig-out/bin" >> "$GITHUB_PATH"
+        echo "x17 installed at ${{ github.action_path }}/zig-out/bin/x17"

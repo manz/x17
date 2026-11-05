@@ -17,6 +17,19 @@ as the one source of truth:
 End users (codec authors on the RE tree side) write `.s` files, commit them,
 CI runs the harness.  Nobody but codec authors touches this repo.
 
+## Using in CI
+
+Downstream codec repos put `x17` on PATH with one composite action step:
+
+```yaml
+- uses: manz/x17@master
+  # Pin to a tag once releases are cut: manz/x17@v0.3.0
+```
+
+The action builds x17 from source with the matching Zig toolchain and
+caches the binary across runs (key: OS + action ref + Zig version).
+Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
+
 ## Layout
 
     build.zig / build.zig.zon
