@@ -1233,10 +1233,19 @@ fn execRop(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
 
-    // ROP07: minimal table seeded with the two measured ops.
-    const v: u32 = switch (fn_op) {
+    // ROP07 table from upstream/tools/sm1isa/emu.py:
+    //   x, y, 0, -x, -y, 1, x+y, x-y, 0, 0, y, y, y, -y, y+1, y-1
+    const v: u32 = switch (fn_op & 0xF) {
         0 => x_val & M24,
+        1, 10, 11, 12 => y_val & M24,
+        2, 8, 9 => 0,
+        3 => (0 -% x_val) & M24,
+        4, 13 => (0 -% y_val) & M24,
+        5 => 1,
         6 => (x_val +% y_val) & M24,
+        7 => (x_val -% y_val) & M24,
+        14 => (y_val +% 1) & M24,
+        15 => (y_val -% 1) & M24,
         else => return RunError.UnknownForm,
     };
 
