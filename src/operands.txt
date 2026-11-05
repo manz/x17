@@ -32,6 +32,12 @@ rli	imm16	imm	5	20
 ldi	dest	dest_ldi	21	25
 ldi	imm16	imm	5	20
 
+# st.y (1 syllable):
+# "[20:5] is a 16-bit immediate; [31:29]=001 selects it."  The stored value
+# is the LANE's data register (implicit; not an encoded operand); sel bits
+# 21-22 pick V13 pre-store side effects (OPEN in the v0 assembler).
+st.y	addr	y_addr	5	20
+
 # alu (1 syllable):
 # "dest s<[18:15]>, a s<[14:11]>, b s<[29:26]> ([29] = 1 is the 011 'class':
 #  s8..s15), op [10:5] (table in emu.ALU05); [25:19] = 0 only"

@@ -84,6 +84,7 @@ pub const OperandKind = enum {
     p, // predicate, form-specific width
     imm, // raw immediate, width = hi-lo+1
     dest_ldi, // ldi's 5-bit dest index (16..31 = s(k-16))
+    y_addr, // Y-space immediate: written `Y:<imm>` or `Y:#<imm>`
 };
 
 /// One operand's bit slice within the HEAD syllable of a bundle.  `lo` and
@@ -182,6 +183,7 @@ fn parseOperands(src: []const u8) OperandsParse {
             else if (std.mem.eql(u8, kind_s, "p")) .p
             else if (std.mem.eql(u8, kind_s, "imm")) .imm
             else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi
+            else if (std.mem.eql(u8, kind_s, "y_addr")) .y_addr
             else continue;
 
         items[len] = .{

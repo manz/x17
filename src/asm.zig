@@ -58,6 +58,8 @@ pub const ErrorCode = enum {
     e0013_imm_out_of_range,
     e0014_reg_index_out_of_range,
     e0015_ldi_dest_not_s_reg,
+    e0016_expected_y_prefix,
+    e0017_expected_colon,
 
     pub fn text(c: ErrorCode) []const u8 {
         return switch (c) {
@@ -76,6 +78,8 @@ pub const ErrorCode = enum {
             .e0013_imm_out_of_range => "E0013",
             .e0014_reg_index_out_of_range => "E0014",
             .e0015_ldi_dest_not_s_reg => "E0015",
+            .e0016_expected_y_prefix => "E0016",
+            .e0017_expected_colon => "E0017",
         };
     }
 };
@@ -403,6 +407,7 @@ fn matchOperand(op: isa.Operand, tok: Token, d: *Diagnostic) ?u32 {
             }
             return tok.value;
         },
+        .y_addr => unreachable, // handled inline in the operand loop
         .dest_ldi => {
             if (tok.kind != .s_reg) {
                 d.* = .{ .code = .e0015_ldi_dest_not_s_reg, .span = tokSpan(tok) };
@@ -526,6 +531,56 @@ pub fn assembleOneResult(src: []const u8) Result {
             d.setMsg(m);
             return .{ .err = d };
         }
+
+        // y_addr consumes three tokens: `Y` `:` `<number>` (optional `#`).
+        if (op.kind == .y_addr) {
+            if (tok.kind != .ident or !std.mem.eql(u8, tok.text, "Y")) {
+                var d = Diagnostic{ .code = .e0016_expected_y_prefix, .span = tokSpan(tok) };
+                setExpected(&d, "'Y'", tok);
+                d.setHint("Y-space addresses look like Y:1 or Y:#0x1234");
+                return .{ .err = d };
+            }
+            const cr = lex.next();
+            const colon = switch (cr) {
+                .tok => |t| t,
+                .err => |e| return fromLexErr(e),
+            };
+            if (colon.kind != .colon) {
+                var d = Diagnostic{ .code = .e0017_expected_colon, .span = tokSpan(colon) };
+                setExpected(&d, "':' after 'Y'", colon);
+                return .{ .err = d };
+            }
+            var nr = lex.next();
+            var ntok = switch (nr) {
+                .tok => |t| t,
+                .err => |e| return fromLexErr(e),
+            };
+            if (ntok.kind == .hash) {
+                nr = lex.next();
+                ntok = switch (nr) {
+                    .tok => |t| t,
+                    .err => |e| return fromLexErr(e),
+                };
+            }
+            if (ntok.kind != .number) {
+                var d = Diagnostic{ .code = .e0012_expected_immediate, .span = tokSpan(ntok) };
+                setExpected(&d, "Y-space address immediate", ntok);
+                d.setHint("Y:<N> or Y:#<N>; N is a 16-bit value");
+                return .{ .err = d };
+            }
+            const w = op.width();
+            const max: u32 = (@as(u32, 1) << @as(u5, @intCast(w))) - 1;
+            if (ntok.value > max) {
+                var d = Diagnostic{ .code = .e0013_imm_out_of_range, .span = tokSpan(ntok) };
+                var buf: [96]u8 = undefined;
+                const m = std.fmt.bufPrint(&buf, "Y-space address 0x{x} does not fit in {d} bits", .{ ntok.value, w }) catch buf[0..0];
+                d.setMsg(m);
+                return .{ .err = d };
+            }
+            word |= op.encode(ntok.value);
+            continue;
+        }
+
         if (tok.kind == .hash) {
             const nr = lex.next();
             tok = switch (nr) {
@@ -669,6 +724,29 @@ test "diag: renderDiag prints rust-style block" {
     try testing.expect(std.mem.indexOf(u8, out, "\n 1 | alu R3") != null);
     try testing.expect(std.mem.indexOf(u8, out, "^^") != null);
     try testing.expect(std.mem.indexOf(u8, out, "help: scalar registers") != null);
+}
+
+test "assemble st.y Y:1" {
+    // addr=1 << 5 = 0x20; base = 0x2000_000F; OR = 0x2000_002F
+    try testing.expectEqual(@as(u32, 0x2000_002F), try okWord("st.y Y:1"));
+}
+
+test "assemble st.y Y:#0x1234" {
+    // addr=0x1234 << 5 = 0x0002_4680; base = 0x2000_000F; OR = 0x2002_468F
+    try testing.expectEqual(@as(u32, 0x2002_468F), try okWord("st.y Y:#0x1234"));
+}
+
+test "diag: y_addr missing Y prefix" {
+    _ = try expectErr("st.y 1", .e0016_expected_y_prefix);
+}
+
+test "diag: y_addr missing colon" {
+    _ = try expectErr("st.y Y 1", .e0017_expected_colon);
+}
+
+test "diag: y_addr overflow carries width" {
+    const d = try expectErr("st.y Y:#0x10000", .e0013_imm_out_of_range);
+    try testing.expect(std.mem.indexOf(u8, d.msg(), "16 bits") != null);
 }
 
 test "comment to end of line is tolerated" {
