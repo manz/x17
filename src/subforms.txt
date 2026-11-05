@@ -12,6 +12,13 @@
 # strings in isa.toml plus the silicon-measured byte patterns in
 # the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
 
+# x13.agu: 2-syllable low5 0x13 S class 001.  Scalar e load + R AGU
+# (fact 225 / own-x13agu):
+#   e<S[12:9]> <- head[20:5]
+#   R<S[28:25]> <- AGU10[S[20:17]](x = e<S[24:21]>, y = R<S[16:13]>)
+# S[8] = 1 required (baked).
+x13.agu    2   0x00000013   0x20000100
+
 # x02.xrd: 6-syllable VLIW at low5 0x02 w4 mode 5.  X-memory read into s
 # (fact 155 / own-x02xrd):
 #   s<w4[6:3]> <- X:[A<w4[21:17]>]

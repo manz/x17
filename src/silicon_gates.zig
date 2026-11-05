@@ -482,6 +482,22 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x0BEE } }},
     },
     .{
+        .name = "own-x13agu",
+        // Pre e3 = 0x100, R7 = 0x23.  Expect e9 = 0x350, R5 = AGU10[6](e3, R7) = 0x123.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x100 },
+            .{ .bank = .r, .index = 7, .value = 0x23 },
+        },
+        .src =
+        \\x13.agu e9, #0x350, R5, e3, R7, #6
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .e_reg = .{ .index = 9, .value = 0x350 } },
+            .{ .r_reg = .{ .index = 5, .value = 0x123 } },
+        },
+    },
+    .{
         .name = "own-x02xrd",
         // s1 <- X:[A2] = 0xEF41 via the 6-syllable x02.xrd bundle.
         .pre = &.{.{ .bank = .a, .index = 2, .value = 0x234 }},

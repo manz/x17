@@ -53,6 +53,15 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x13.agu (2 syllables): e load + R AGU at low5 0x13 S class 001.
+# Grammar: x13.agu <dest_e>, #<imm>, <dest_R>, <x_e>, <y_R>, #<fn>
+x13.agu	dest_e	e	9	12	s1
+x13.agu	imm16	imm	5	20	head
+x13.agu	dest_R	R	25	28	s1
+x13.agu	x_e	e	21	24	s1
+x13.agu	y_R	R	13	16	s1
+x13.agu	fn	imm	17	20	s1
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4
