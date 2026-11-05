@@ -290,6 +290,16 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-ealu",
+        // Pre s5 = 0x701; expect e4 = s5 + 1 = 0x702.
+        .pre = &.{.{ .bank = .s, .index = 5, .value = 0x701 }},
+        .src =
+        \\ealu e4, s5, #1, #5
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 4, .value = 0x702 } }},
+    },
+    .{
         .name = "own-agu10r",
         // the probe list own-agu10r: pre e3 = 0x700.
         // Bundle: s5 <- 0x0BEE and R3 <- AGU10[2](e3) = e3 + 1 = 0x701.

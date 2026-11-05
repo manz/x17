@@ -116,6 +116,13 @@ rop	x_e	e	5	8	head
 rop	y_R	R	13	16	head
 rop	fn	imm	17	20	head
 
+# ealu (2 syllables): X16_ALU 1-arg op into e.
+# Grammar: ealu <dest_e>, <src_s>, #<op_bit>, #<op>
+ealu	dest_e	e	3	6	s1
+ealu	src_s	s	18	21	s1
+ealu	op_bit	imm	11	11	s1
+ealu	op	imm	12	14	s1
+
 # agu10r (2 syllables): scalar imm + AGU into R.
 # Grammar: agu10r <dest_s>, #<imm>, <dest_R>, <x_e>, #<y_base>, #<fn_op>
 # y_base is a 2-bit field: the actual y register is R<4*y_base>.

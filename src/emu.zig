@@ -90,6 +90,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return execPair(gpa, state, bundle);
         }
         if (s_class == 0b111) return execYld10(gpa, state, bundle);
+        if (s_class == 0b110) return execEalu(gpa, state, bundle);
     }
     if (low5 == 0x14 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
@@ -309,6 +310,25 @@ fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const v: u32 = state.getX(addr) orelse 0;
     if (dest_s_x != 0) state.s[dest_s_x] = v;
     if (dest_s2 != 0) state.s[dest_s2] = imm16;
+}
+
+fn execEalu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const s1 = bundle[1];
+    const dest_e: u32 = (s1 >> 3) & 0xF;
+    const src_s: u32 = (s1 >> 18) & 0xF;
+    const op_bit: u32 = (s1 >> 11) & 1;
+    const op: u32 = (s1 >> 12) & 0x7;
+    const a_val: u32 = state.s[src_s] & M24;
+    const v: u32 = switch (op_bit) {
+        1 => switch (op) {
+            5 => (a_val +% 1) & M24,
+            else => return RunError.UnknownForm,
+        },
+        else => return RunError.UnknownForm,
+    };
+    if (dest_e != 0) state.e[dest_e] = v;
 }
 
 fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
