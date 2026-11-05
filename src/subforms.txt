@@ -73,6 +73,11 @@ x02.mpy    6   0x00000002   0x0000A000   0x00020000   0x00000001   0x00042800   
 # own-x02ainc).
 x02.ainc   6   0x00000002   0x0000A000   0x00020442   0x00000002   0x00042800   0x00004200
 
+# x18.eagu: 4-syllable low5 0x18, w3 class 000 (fact 169 /
+# own-x18eagu).  Uses AGU10 to update e:
+#   e<w1[25:22]> <- AGU10[w1[29:26]](x = e<w3[28:25]>, y = 0)
+x18.eagu   4   0x00000018   0x00000004   0x0002AC00   0x00040000
+
 # x03.xrd: 6-syllable VLIW at low5 0x03, w4 mode 5.  X-memory read with
 # A-index combining w1[2:0] (high 3 bits) and head[31:30] (low 2 bits):
 #   s<w4[6:3]> <- X:[A<{w1[2:0], head[31:30]}>]

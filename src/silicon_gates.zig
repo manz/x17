@@ -564,6 +564,16 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x18eagu",
+        // Pre e2 = 0x703; AGU10[2] = x+1, e2 <- e2 + 1 = 0x704.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x703 }},
+        .src =
+        \\x18.eagu e2, e2, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x704 } }},
+    },
+    .{
         .name = "own-x02ainc",
         // Pre A3 = 0x100; A1 <- A3 + 1 = 0x101.
         .pre = &.{.{ .bank = .a, .index = 3, .value = 0x100 }},
