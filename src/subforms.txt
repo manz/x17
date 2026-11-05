@@ -68,6 +68,11 @@ x13.agu    2   0x00000013   0x20000100
 #   s<w2[12:9]> <- round(s<w2[4:1]> * s<w2[8:5]> / 2^23)
 x02.mpy    6   0x00000002   0x0000A000   0x00020000   0x00000001   0x00042800   0x00004200
 
+# x02.ainc: 6-syllable VLIW at low5 0x02 with the A-increment slot active
+# (w3[1] = 1).  A<w2[21:17]> <- A<w3[4:0]> + 1 (fact 157 /
+# own-x02ainc).
+x02.ainc   6   0x00000002   0x0000A000   0x00020442   0x00000002   0x00042800   0x00004200
+
 # x03.xrd: 6-syllable VLIW at low5 0x03, w4 mode 5.  X-memory read with
 # A-index combining w1[2:0] (high 3 bits) and head[31:30] (low 2 bits):
 #   s<w4[6:3]> <- X:[A<{w1[2:0], head[31:30]}>]

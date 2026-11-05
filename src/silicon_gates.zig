@@ -564,6 +564,16 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x02ainc",
+        // Pre A3 = 0x100; A1 <- A3 + 1 = 0x101.
+        .pre = &.{.{ .bank = .a, .index = 3, .value = 0x100 }},
+        .src =
+        \\x02.ainc #1, #3
+        \\x17.halt
+        ,
+        .post = &.{.{ .a_reg = .{ .index = 1, .value = 0x101 } }},
+    },
+    .{
         .name = "own-x02mpy",
         // Pre s1 = 0x4000, s2 = 0x6000; s2 <- round(s1*s2/2^23) = 0x30.
         .pre = &.{

@@ -143,11 +143,13 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
         if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
         if (w4_mode == 5) {
-            // Both the xrd (w4) and mpy (w2) slots can coexist; each writes
-            // its own dest.  Running both here keeps gates from stepping on
-            // each other when a program only exercises one side.
+            // Three x02 slots can coexist: xrd (w4), mpy (w2), A-inc (w3).
+            // Each writes its own dest; s0/A0 dests are nops.
             try execX02Xrd(gpa, state, bundle);
-            return execX02Mpy(gpa, state, bundle);
+            try execX02Mpy(gpa, state, bundle);
+            const w3_ainc: u32 = (bundle[3] >> 1) & 1;
+            if (w3_ainc == 1) try execX02Ainc(gpa, state, bundle);
+            return;
         }
     }
     if (low5 == 0x03 and bundle.len >= 6) {
@@ -237,6 +239,18 @@ fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const src_e: u32 = (s1 >> 21) & 0xF;
     if (dest_s != 0) state.s[dest_s] = imm;
     if (dest_r != 0) state.r[dest_r] = state.e[src_e];
+}
+
+fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const dest_a: u32 = (w2 >> 17) & 0x1F;
+    const src_a: u32 = w3 & 0x1F;
+    // 5-bit A index; A0 reads zero.
+    const src_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
+    const v: u32 = (src_val +% 1) & 0xFFFFFF;
+    if (dest_a != 0) state.a[dest_a & 0xF] = v;
 }
 
 fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
