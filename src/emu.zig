@@ -26,6 +26,14 @@ pub const State = struct {
     e: [16]u32 = @splat(0),
     /// R-file registers R0..R15.  R0 pinned to zero.
     r: [16]u32 = @splat(0),
+    /// Per-lane "V" data register: what `st.y` writes to memory.  sm1 runs
+    /// four lanes in parallel; our emu runs one lane at a time, picked by
+    /// `cur_lane`.  Default zero - tests seed the measured lane values.
+    v: [4]u32 = @splat(0),
+    /// Which lane the current bundle runs on (0..3).  The ref string calls
+    /// this out explicitly for st.y ("the LANE's data register"); other
+    /// forms may acquire lane dependence as they port.
+    cur_lane: u8 = 0,
     /// Y data memory, keyed by address.  Sparse: only addresses the program
     /// writes are present.  Caller inspects via `getY`.
     y_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
@@ -56,11 +64,20 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "ldi")) {
         return execLdi(gpa, state, head);
     }
+    if (std.mem.eql(u8, f.name, "st.y")) {
+        return execStY(gpa, state, head);
+    }
     if (std.mem.eql(u8, f.name, "x17")) {
         return execX17(gpa, state, bundle);
     }
 
     return RunError.UnknownForm;
+}
+
+fn execStY(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    const addr: u32 = (head >> 5) & 0xFFFF;
+    const value: u32 = state.v[state.cur_lane & 0x3];
+    state.y_mem.put(gpa, addr, value) catch return RunError.OutOfMemory;
 }
 
 /// Classify an x17 bundle by its (S1 class, S2 class) field pair.
@@ -269,10 +286,36 @@ test "x17.alu register 0 reads as zero (fact 70)" {
     try testing.expectEqual(@as(u32, 0x100), state.s[1]);
 }
 
-test "unknown form returns UnknownForm" {
+test "st.y writes the lane's V register to Y memory" {
     var state = State{};
     defer state.deinit(testing.allocator);
+    state.v[2] = 2; // silicon default for lane 2 per fact 21
+    state.cur_lane = 2;
 
-    const b = try asm_mod.assembleOne("st.y Y:1");
-    try testing.expectError(RunError.UnknownForm, executeBundle(testing.allocator, &state, b.slice()));
+    const b = try asm_mod.assembleOne("st.y Y:0x200");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 2), state.getY(0x200).?);
+}
+
+test "own-st3 reproduces silicon Y writes at lane 2" {
+    // the probe list own-st3: three stores at r5l1..l3 of OUR syllables;
+    // silicon-measured Y:0x100 = 0, Y:0x200 = 2, Y:0x300 = 0 (lanes 1, 2, 3).
+    // Our emu runs one lane at a time; replay each lane separately.
+    const lane_data = [_]struct { lane: u8, v: u32, addr: u16, expected: u32 }{
+        .{ .lane = 1, .v = 0, .addr = 0x100, .expected = 0 },
+        .{ .lane = 2, .v = 2, .addr = 0x200, .expected = 2 },
+        .{ .lane = 3, .v = 0, .addr = 0x300, .expected = 0 },
+    };
+    for (lane_data) |ld| {
+        var state = State{};
+        defer state.deinit(testing.allocator);
+        state.v[ld.lane] = ld.v;
+        state.cur_lane = ld.lane;
+
+        var buf: [32]u8 = undefined;
+        const src = try std.fmt.bufPrint(&buf, "st.y Y:0x{x}", .{ld.addr});
+        const b = try asm_mod.assembleOne(src);
+        try executeBundle(testing.allocator, &state, b.slice());
+        try testing.expectEqual(ld.expected, state.getY(ld.addr).?);
+    }
 }
