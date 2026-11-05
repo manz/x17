@@ -166,12 +166,18 @@ fn columnOf(source: []const u8, offset: usize) usize {
 /// Truncates silently if `out` is too small (returns `out.len`); call with
 /// a 2 KiB buffer to be safe.
 pub fn renderDiag(out: []u8, filename: []const u8, source: []const u8, d: Diagnostic) usize {
+    return renderDiagAt(out, filename, 1, source, d);
+}
+
+/// Like `renderDiag` but with a caller-supplied line number, for multi-line
+/// source files where this `source` is the single offending line.
+pub fn renderDiagAt(out: []u8, filename: []const u8, line_no: usize, source: []const u8, d: Diagnostic) usize {
     var cur: usize = 0;
     const col = columnOf(source, d.span.start);
     cur += (std.fmt.bufPrint(out[cur..], "error[{s}]: {s}\n", .{ d.code.text(), d.msg() }) catch return cur).len;
-    cur += (std.fmt.bufPrint(out[cur..], "  --> {s}:1:{d}\n", .{ filename, col }) catch return cur).len;
+    cur += (std.fmt.bufPrint(out[cur..], "  --> {s}:{d}:{d}\n", .{ filename, line_no, col }) catch return cur).len;
     cur += (std.fmt.bufPrint(out[cur..], "   |\n", .{}) catch return cur).len;
-    cur += (std.fmt.bufPrint(out[cur..], " 1 | {s}\n", .{source}) catch return cur).len;
+    cur += (std.fmt.bufPrint(out[cur..], " {d} | {s}\n", .{ line_no, source }) catch return cur).len;
     cur += (std.fmt.bufPrint(out[cur..], "   | ", .{}) catch return cur).len;
     var k: usize = 0;
     while (k < col - 1 and cur < out.len) : (k += 1) {
@@ -726,6 +732,42 @@ fn fromLexErr(e: LexError) Result {
     d.setMsg(e.msg);
     if (e.hint.len > 0) d.setHint(e.hint);
     return .{ .err = d };
+}
+
+/// Error returned by `assembleFile` carrying enough context for a stellar
+/// error print: which line failed, the line text (a slice into the input),
+/// and the diagnostic.
+pub const FileError = struct {
+    line: usize,
+    line_text: []const u8,
+    diag: Diagnostic,
+};
+
+/// Assemble a multi-line source file.  Blank lines and lines starting with
+/// `;` or `#` are skipped as comments.  On success, returns a newly
+/// allocated slice of syllables (caller frees).  On failure, returns a
+/// `FileError` attached to the offending line.
+pub fn assembleFile(
+    gpa: std.mem.Allocator,
+    source: []const u8,
+) !union(enum) { ok: []u32, err: FileError } {
+    var list: std.ArrayList(u32) = .empty;
+    errdefer list.deinit(gpa);
+
+    var line_no: usize = 0;
+    var it = std.mem.splitScalar(u8, source, '\n');
+    while (it.next()) |raw| {
+        line_no += 1;
+        const trimmed = std.mem.trim(u8, raw, " \t\r");
+        if (trimmed.len == 0) continue;
+        if (trimmed[0] == ';' or trimmed[0] == '#') continue;
+        switch (assembleOneResult(raw)) {
+            .ok => |b| try list.appendSlice(gpa, b.slice()),
+            .err => |d| return .{ .err = .{ .line = line_no, .line_text = raw, .diag = d } },
+        }
+    }
+    const owned = try list.toOwnedSlice(gpa);
+    return .{ .ok = owned };
 }
 
 /// Thin wrapper that drops diagnostics and returns the bundle.

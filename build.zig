@@ -4,6 +4,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const clap_dep = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const clap_mod = clap_dep.module("clap");
+
     const isa_mod = b.createModule(.{
         .root_source_file = b.path("src/isa.zig"),
         .target = target,
@@ -42,6 +48,18 @@ pub fn build(b: *std.Build) void {
     });
     emu_mod.addImport("isa", isa_mod);
     emu_mod.addImport("asm", asm_mod);
+
+    const dispatch_mod = b.createModule(.{
+        .root_source_file = b.path("src/dispatch.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    dispatch_mod.addImport("clap", clap_mod);
+    dispatch_mod.addImport("isa", isa_mod);
+    dispatch_mod.addImport("asm", asm_mod);
+    dispatch_mod.addImport("emu", emu_mod);
+    exe_mod.addImport("dispatch", dispatch_mod);
+    exe_mod.addImport("emu", emu_mod);
 
     const test_step = b.step("test", "Run unit tests");
     const isa_t = b.addTest(.{ .root_module = isa_mod });
