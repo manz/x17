@@ -89,6 +89,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "rli")) {
         return execRli(gpa, state, head);
     }
+    if (std.mem.eql(u8, f.name, "rop")) {
+        return execRop(gpa, state, head);
+    }
     if (std.mem.eql(u8, f.name, "st.y")) {
         return execStY(gpa, state, head);
     }
@@ -823,6 +826,28 @@ fn isHaltBundle(bundle: []const u32) bool {
     if (((bundle[2] >> 29) & 0x7) != 0b101) return false;
     const ctl: u32 = (bundle[1] >> 20) & 0x7;
     return ctl == 0b011;
+}
+
+fn execRop(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    _ = gpa;
+    const dest_s: u32 = (head >> 26) & 0x7;
+    const dest_r: u32 = (head >> 22) & 0xF;
+    const x_e: u32 = (head >> 5) & 0xF;
+    const y_r: u32 = (head >> 13) & 0xF;
+    const fn_op: u32 = (head >> 17) & 0xF;
+
+    const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
+    const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
+
+    // ROP07: minimal table seeded with the two measured ops.
+    const v: u32 = switch (fn_op) {
+        0 => x_val & M24,
+        6 => (x_val +% y_val) & M24,
+        else => return RunError.UnknownForm,
+    };
+
+    if (dest_s != 0) state.s[dest_s] = v;
+    if (dest_r != 0) state.r[dest_r] = v;
 }
 
 fn execRli(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

@@ -316,6 +316,22 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-rop",
+        // the probe list own-rop: pre e5 = 0x300.
+        // Bundle 1: R3 <- fn0(x=e5) = 0x300.
+        // Bundle 2: s1 <- fn6(x=e5, y=R3) = 0x300 + 0x300 = 0x600.
+        .pre = &.{.{ .bank = .e, .index = 5, .value = 0x300 }},
+        .src =
+        \\rop s0, R3, e5, R0, #0
+        \\rop s1, R0, e5, R3, #6
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .r_reg = .{ .index = 3, .value = 0x300 } },
+            .{ .s_reg = .{ .index = 1, .value = 0x600 } },
+        },
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },

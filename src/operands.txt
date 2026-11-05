@@ -65,6 +65,15 @@ x19.mul	op	imm	11	13	s1
 x19.mul	a_src	s	5	8	s2
 x19.mul	b_src	s	1	4	s2
 
+# rop (1 syllable): R-op into an s and/or R.
+# Grammar: rop <dest_s>, <dest_R>, <x_e>, <y_R>, #<fn>
+# dest_s = 0 or dest_R = 0 means "no write" for that half.
+rop	dest_s	s	26	28	head
+rop	dest_R	R	22	25	head
+rop	x_e	e	5	8	head
+rop	y_R	R	13	16	head
+rop	fn	imm	17	20	head
+
 # agu10r (2 syllables): scalar imm + AGU into R.
 # Grammar: agu10r <dest_s>, #<imm>, <dest_R>, <x_e>, #<y_base>, #<fn_op>
 # y_base is a 2-bit field: the actual y register is R<4*y_base>.
