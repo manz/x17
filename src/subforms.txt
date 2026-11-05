@@ -35,6 +35,11 @@ x19.mul    4   0x00000019   0x00028000   0x21000000   0xC0000000
 # 101 (bits 31, 29 set).  own-agu10r = scalar imm + AGU out of an element.
 agu10r     2   0x00000010   0xA0160000
 
+# ldi2: 2-syllable low5 0x10 bundle with S class 001.  Loads an s register
+# with a 16-bit imm (fact 74 / own-ldi2):
+#   s<head[25:21]> <- head[20:5]     (S[18] = 1 required; baked into base)
+ldi2       2   0x00000010   0x20040000
+
 # alu11: 2-syllable bundle.  Head is an ALU05 word, S (class 001) packs
 # an AGU10 op in parallel.  Semantics from fact 129 / own-alu11 +
 # own-agu11.  Setting an operand to zero disables that half.

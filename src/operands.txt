@@ -89,6 +89,11 @@ agu10r	x_e	e	25	28	s1
 agu10r	y_base	imm	27	28	head
 agu10r	fn_op	imm	1	4	s1
 
+# ldi2 (2 syllables): low5 0x10 scalar immediate load.
+# Grammar: ldi2 <dest_s>, #<imm16>
+ldi2	dest_s	s	21	24	head
+ldi2	imm16	imm	5	20	head
+
 # alu11 (2 syllables): ALU + AGU in parallel.
 # Grammar: alu11 <dest_s>, <a_s>, <b_s>, #<op>, <dest_R>, <dest_e>, <x_e>, <y_R>, #<fn_op>, #<tbl>
 alu11	dest_s	s	15	18	head

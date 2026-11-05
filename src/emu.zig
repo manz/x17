@@ -79,6 +79,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x10 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b101) return execAgu10r(gpa, state, bundle);
+        if (s_class == 0b001) return execLdi2(gpa, state, bundle);
     }
 
     const f = isa.classify(head) orelse return RunError.UnknownForm;
@@ -115,6 +116,16 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     }
 
     return RunError.UnknownForm;
+}
+
+fn execLdi2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const dest_s: u32 = (head >> 21) & 0x1F;
+    const imm: u32 = (head >> 5) & 0xFFFF;
+    if (dest_s == 0 or dest_s >= 16) return;
+    state.s[dest_s] = imm;
 }
 
 fn execAgu10r(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

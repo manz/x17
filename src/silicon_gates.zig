@@ -332,6 +332,16 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-ldi2",
+        // the probe list own-ldi2: s13 <- 0x123 via the 2-syllable low5 0x10
+        // S-class-001 form.  Expected bytes: 0x01A02470 0x20040000.
+        .src =
+        \\ldi2 s13, #0x123
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 13, .value = 0x123 } }},
+    },
+    .{
         .name = "own-lde",
         // the probe list own-entry first bundle: e13 <- 0x70D.
         .src =
