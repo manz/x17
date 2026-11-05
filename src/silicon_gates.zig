@@ -96,6 +96,21 @@ const GATES = [_]Gate{
         .post = &.{.{ .r_reg = .{ .index = 5, .value = 0x703 } }},
     },
     .{
+        .name = "own-x17e",
+        // the probe list own-x17e: pre e5 = 0x703.  The bundle writes
+        //   e5 <- 0x0704, s5 <- 0x0704, e9 <- old e5 - 1 = 0x0702.
+        .pre = &.{.{ .bank = .e, .index = 5, .value = 0x703 }},
+        .src =
+        \\x17.e  e5, s5, e9, e5, #0x0704
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .e_reg = .{ .index = 5, .value = 0x0704 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x0704 } },
+            .{ .e_reg = .{ .index = 9, .value = 0x0702 } },
+        },
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },

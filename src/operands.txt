@@ -53,6 +53,14 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x17.e (3 syllables): dual element write.
+# Grammar: x17.e <dest_e_a>, <dest_s>, <dest_e_b>, <src_e>, #<imm>
+x17.e	dest_e_a	e	8	11	s2
+x17.e	dest_s	s	21	24	head
+x17.e	dest_e_b	e	13	16	s1
+x17.e	src_e	e	16	19	s2
+x17.e	imm16	imm	5	20	head
+
 # x17.agu (3 syllables): address-generation op.
 # "dest R<S2[8:5]> <- AGU10[S1[27:24]](x = e<S1[8:5]>, y = R<S2[4:1]>)"
 # Grammar source order: dest, x, y, fn_op.

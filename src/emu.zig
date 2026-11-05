@@ -101,7 +101,34 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class == 0b011 and s2_class == 0b111) return execX17Imm(gpa, state, bundle);
     if (s2_class == 0b111) return execX17Alu(gpa, state, bundle);
     if (s1_class == 0b001 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
+    if (s1_class == 0b000 and s2_class == 0b100) return execX17E(gpa, state, bundle);
     return RunError.UnknownForm;
+}
+
+fn execX17E(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const imm: u32 = (head >> 5) & 0xFFFF;
+    const dest_e_a: u32 = (s2 >> 8) & 0xF;
+    const dest_e_b: u32 = (s1 >> 13) & 0xF;
+    const src_e: u32 = (s2 >> 16) & 0xF;
+    const en1: bool = ((s1 >> 18) & 1) == 1;
+    const en2: bool = ((s1 >> 17) & 1) == 1;
+
+    // Reads must happen BEFORE writes: "old e<S2[19:16]>" is the pre-state.
+    const src_val: u32 = if (src_e == 0) 0 else state.e[src_e];
+
+    if (en1) {
+        state.e[dest_e_a] = imm;
+        state.s[dest_s] = imm;
+    }
+    if (en2) {
+        state.e[dest_e_b] = (src_val -% 1) & 0xFF_FFFF;
+    }
 }
 
 fn execX17Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

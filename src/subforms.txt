@@ -22,6 +22,14 @@ x17.halt   3   0x00000017   0x31308000   0xA0000000
 # "enable" bit documented in isa.toml (needed, else wedge).
 x17.imm    3   0x00000017   0x60004000   0xE0000000
 
+# x17.e: dual element write in a continuing bundle.  S1 class 000 + S2
+# class 100.  Semantics from fact 135 / own-x17e:
+#   e<S2[11:8]>, s<head[24:21]> <- head[20:5]   (gated by S1[18])
+#   e<S1[16:13]> <- old e<S2[19:16]> - 1        (gated by S1[17])
+# Base S1 = 0x00060200 bakes both enables and S1[9]=1 measured on
+# own-x17e; base S2 = 0x80000000 (class 100 only).
+x17.e      3   0x00000017   0x00060200   0x80000000
+
 # x17.agu: address-generation op in a continuing bundle.  S1 class 001
 # (with S1[28] = 1) + S2 class 010.  Semantics from upstream emu.py:
 #   dest_R <- AGU10[fn_op](x = e<S1[8:5]>, y = R<S2[4:1]>)
