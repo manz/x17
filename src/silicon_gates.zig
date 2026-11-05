@@ -261,6 +261,34 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 3, .value = 0x702 } }},
     },
     .{
+        .name = "own-alu11",
+        // the probe list own-alu11: pre s1 = 0x100, s3 = 0x23.
+        // Head is an ALU05 add word; S side disabled (dest R0 / e0).
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x100 },
+            .{ .bank = .s, .index = 3, .value = 0x23 },
+        },
+        .src =
+        \\alu11 s5, s1, s3, #2, R0, e0, e0, R0, #0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-agu11",
+        // the probe list own-agu11: pre e2 = 0x701.
+        // Head ALU side disabled (dest s0); S writes AGU10[2] result to R3 + e4.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x701 }},
+        .src =
+        \\alu11 s0, s0, s0, #0, R3, e4, e2, R0, #2, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .r_reg = .{ .index = 3, .value = 0x702 } },
+            .{ .e_reg = .{ .index = 4, .value = 0x702 } },
+        },
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },

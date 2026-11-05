@@ -27,6 +27,17 @@ x19.imm    4   0x60000019   0x00060614   0x00002000   0x21F20000
 # w1[17] is "no doubling"; w1[15] and w2[24] are the measured enables.
 x19.mul    4   0x00000019   0x00028000   0x21000000   0xC0000000
 
+# alu11: 2-syllable bundle.  Head is an ALU05 word, S (class 001) packs
+# an AGU10 op in parallel.  Semantics from fact 129 / own-alu11 +
+# own-agu11.  Setting an operand to zero disables that half.
+#   Head side: s<head[18:15]> <- ALU05[head[10:5]](s<head[14:11]>,
+#                                                 s<head[29:26]>)
+#   S side (class 001): R<S[28:25]>, e<S[12:9]> <-
+#       (S[8] ? AGU10 : AGU10B)[S[20:17]](x = e<S[24:21]>,
+#                                         y = R<S[16:13]>)
+# S[29] = 1 required (else wedge); baked into base.
+alu11      2   0x00000011   0x20000000
+
 # x19.aagu: 4-syllable VLIW; updates one A register with a strided AGU op.
 # Class triple (w1[31:29], w2[31:29], w3[31:29]) = (000, 000, 010).
 # Semantics from fact 144 / own-x19aagu (fn_op = 2):

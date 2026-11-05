@@ -24,11 +24,23 @@ pub const DisasmError = error{
 pub fn disasmBundle(out: []u8, bundle: []const u32) DisasmError!usize {
     if (bundle.len == 0) return DisasmError.BundleTooShort;
 
-    // x17 and x19 bundles dispatch by sub-form class bits.
-    const low5: u8 = @intCast(bundle[0] & 0x1F);
-    if (low5 == 0x17 or low5 == 0x19) {
-        return disasmX17(out, bundle);
+    // Try a multi-syllable sub-form first: matchSubForm is strict enough
+    // that a mismatch is not a false negative (it compares ALL non-operand
+    // bits).  Fall through to the single-syllable form classifier only
+    // when no sub-form claims the bundle AND the low5 is known to carry a
+    // single-syllable form.
+    if (bundle.len >= 2) {
+        if (matchSubForm(bundle)) |sf| {
+            const ops = isa.operandsFor(sf.name);
+            return writeFormLine(out, sf.name, ops, bundle);
+        }
     }
+
+    // Any low5 we know is multi-syllable must have matched a sub-form above;
+    // if it did not, the bundle is unknown.  Keeps us from printing a 1-syll
+    // line for a partial x17/x19/alu11 bundle.
+    const low5: u8 = @intCast(bundle[0] & 0x1F);
+    if (low5 == 0x17 or low5 == 0x19 or low5 == 0x11) return DisasmError.UnknownForm;
 
     const f = isa.classify(bundle[0]) orelse return DisasmError.UnknownForm;
     const ops = isa.operandsFor(f.name);

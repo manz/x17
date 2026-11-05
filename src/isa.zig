@@ -169,7 +169,7 @@ pub const SubForm = struct {
     base: [MAX_BUNDLE_SYLLABLES]u32,
 };
 
-pub const MAX_SUBFORMS: usize = 16;
+pub const MAX_SUBFORMS: usize = 32;
 
 pub const subforms_txt = @embedFile("subforms.txt");
 
@@ -463,13 +463,14 @@ test "layout parses row_syllables and main_row" {
     try testing.expectEqual(@as(u16, 0x40), layout.main_row);
 }
 
-test "length table carries the six known head widths" {
-    try testing.expectEqual(@as(usize, 6), layout.length_table.len);
-    // From isa.toml: [[0x01, 7], [0x04, 6], [0x0D, 1], [0x15, 2], [0x17, 3], [0x19, 4]]
-    const expect: [6]LengthEntry = .{
+test "length table carries the seven known head widths" {
+    try testing.expectEqual(@as(usize, 7), layout.length_table.len);
+    // From isa.toml: [[0x01, 7], [0x04, 6], [0x0D, 1], [0x11, 2], [0x15, 2], [0x17, 3], [0x19, 4]]
+    const expect: [7]LengthEntry = .{
         .{ .low5 = 0x01, .syllables = 7 },
         .{ .low5 = 0x04, .syllables = 6 },
         .{ .low5 = 0x0D, .syllables = 1 },
+        .{ .low5 = 0x11, .syllables = 2 },
         .{ .low5 = 0x15, .syllables = 2 },
         .{ .low5 = 0x17, .syllables = 3 },
         .{ .low5 = 0x19, .syllables = 4 },
@@ -480,8 +481,8 @@ test "length table carries the six known head widths" {
     }
 }
 
-test "forms table has the 27 known entries" {
-    try testing.expectEqual(@as(usize, 27), forms.len);
+test "forms table has the 28 known entries" {
+    try testing.expectEqual(@as(usize, 28), forms.len);
 }
 
 test "first form is st.y" {

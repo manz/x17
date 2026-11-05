@@ -88,8 +88,44 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "x19")) {
         return execX19(gpa, state, bundle);
     }
+    if (std.mem.eql(u8, f.name, "alu11")) {
+        return execAlu11(gpa, state, bundle);
+    }
 
     return RunError.UnknownForm;
+}
+
+fn execAlu11(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s1 = bundle[1];
+
+    // ALU half.  Zero dest_s means "no write" per the measured programs.
+    const alu_dest: u32 = (head >> 15) & 0xF;
+    if (alu_dest != 0) {
+        const a_idx: u32 = (head >> 11) & 0xF;
+        const b_idx: u32 = (head >> 26) & 0xF;
+        const code: u32 = (head >> 5) & 0x3F;
+        const a_val: u32 = if (a_idx == 0) 0 else state.s[a_idx];
+        const b_val: u32 = if (b_idx == 0) 0 else state.s[b_idx];
+        const op = ALU05[code];
+        state.s[alu_dest] = alu05Eval(op, sx24(a_val), sx24(b_val));
+    }
+
+    // AGU half.  dest_R == 0 AND dest_e == 0 means noop.
+    const agu_dest_r: u32 = (s1 >> 25) & 0xF;
+    const agu_dest_e: u32 = (s1 >> 9) & 0xF;
+    if (agu_dest_r != 0 or agu_dest_e != 0) {
+        const fn_op: u32 = (s1 >> 17) & 0xF;
+        const x_idx: u32 = (s1 >> 21) & 0xF;
+        const y_idx: u32 = (s1 >> 13) & 0xF;
+        const x_val: u32 = if (x_idx == 0) 0 else state.e[x_idx];
+        const y_val: u32 = if (y_idx == 0) 0 else state.r[y_idx];
+        const v = try agu10Eval(fn_op, x_val, y_val);
+        if (agu_dest_r != 0) state.r[agu_dest_r] = v;
+        if (agu_dest_e != 0) state.e[agu_dest_e] = v;
+    }
 }
 
 /// 4-syllable VLIW.  Today only the (000, 000, 111) triple is modelled
