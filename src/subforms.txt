@@ -21,3 +21,11 @@ x17.halt   3   0x00000017   0x31308000   0xA0000000
 # S1 class 011 ([31:29]=011) + S2 class 111 ([31:29]=111); S1[14]=1 is the
 # "enable" bit documented in isa.toml (needed, else wedge).
 x17.imm    3   0x00000017   0x60004000   0xE0000000
+
+# x17.alu: ALU op in a continuing bundle.  S1 class 001 + S2 class 111:
+#   s<S1[27:24]> <- X17OP[head[10:7]](a = s<S2[28:25]>, b = s<S1[19:16]>, n = S1[23:20])
+# Base S1 = 0x30008000: class bits [31:29]=001 plus S1[28]=1, S1[15]=1 (the
+# enable marker).  Base S2 = 0xE0000000 (class 111 only; a goes into [28:25]).
+# Silicon-measured: own-x17alu-shl (op=0 shl, n=3) and own-x17alu-rsub
+# (op=4 b-a) both match this base.
+x17.alu    3   0x00000017   0x30008000   0xE0000000

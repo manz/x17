@@ -52,3 +52,12 @@ alu	op	imm	5	10	head
 # "s<S1[10:7]> <- head[26:11]" (fact 134, own-x17imm).
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
+
+# x17.alu (3 syllables): ALU op across syllables.
+# "s<S1[27:24]> <- X17OP[head[10:7]](s<S2[28:25]>, s<S1[19:16]>, n = S1[23:20])"
+# Operand order in source: dest, a, b, op, n (dest-first, like the ALU form).
+x17.alu	dest	s	24	27	s1
+x17.alu	a	s	25	28	s2
+x17.alu	b	s	16	19	s1
+x17.alu	op	imm	7	10	head
+x17.alu	n	imm	20	23	s1

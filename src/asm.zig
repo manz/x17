@@ -883,6 +883,27 @@ test "diag: unknown x17 sub-form" {
     try testing.expect(std.mem.indexOf(u8, d.msg(), "x17.wat") != null);
 }
 
+test "round-trip gate: own-x17alu-shl bundle" {
+    // the probe list own-x17alu-shl, mid-program x17 at r3l0/r2l1/r3l1:
+    //   head = 0x00000017  (op = head[10:7] = 0, add)
+    //   S1   = 0x31328000  (dest=s1 @27:24, n=3 @23:20, b=s2 @19:16)
+    //   S2   = 0xF0000000  (a=s8 @28:25, class 111)
+    const b = try okBundle("x17.alu s1, s8, s2, #0, #3");
+    try testing.expectEqual(@as(u8, 3), b.len);
+    try testing.expectEqual(@as(u32, 0x0000_0017), b.words[0]);
+    try testing.expectEqual(@as(u32, 0x3132_8000), b.words[1]);
+    try testing.expectEqual(@as(u32, 0xF000_0000), b.words[2]);
+}
+
+test "round-trip gate: own-x17alu-rsub bundle (op=4, a=s2, b=s4)" {
+    // the probe list own-x17alu-rsub, same base with head[10:7]=4 and b=s4;
+    // bytes: head 0x00000217, S1 0x31348000, S2 0xF0000000.
+    const b = try okBundle("x17.alu s1, s8, s4, #4, #3");
+    try testing.expectEqual(@as(u32, 0x0000_0217), b.words[0]);
+    try testing.expectEqual(@as(u32, 0x3134_8000), b.words[1]);
+    try testing.expectEqual(@as(u32, 0xF000_0000), b.words[2]);
+}
+
 test "x17.imm encodes dest into S1 and imm into head" {
     // own-x17imm (the probe list): [0x005F7017, 0x60004280, 0xE0000000].
     //   head: 0x005F7017 = base 0x00000017 | (imm 0x0BEE << 11 = 0x005F7000)
