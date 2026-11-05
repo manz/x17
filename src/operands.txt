@@ -53,6 +53,11 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x17.mve (3 syllables): move scalar + 1 into an element.
+# Grammar: x17.mve <dest_e>, <src_s>
+x17.mve	dest_e	e	16	19	s1
+x17.mve	src_s	s	25	28	s2
+
 # x17.alu05 (3 syllables): head carries an ALU05 word.
 # Grammar: x17.alu05 <dest>, <a>, <b>, #<op>
 x17.alu05	dest	s	15	18	head

@@ -22,6 +22,13 @@ x17.halt   3   0x00000017   0x31308000   0xA0000000
 # "enable" bit documented in isa.toml (needed, else wedge).
 x17.imm    3   0x00000017   0x60004000   0xE0000000
 
+# x17.mve: move scalar + 1 into an element, continuing bundle.  S1 class
+# 000 + S2 class 010.  Semantics from fact 142 / own-x17mve:
+#   e<S1[19:16]> <- s<S2[28:25]> + 1    (S1[9] enable)
+# Head bit 27 is the sub-form marker; head[10] clear.  S1 base bakes bits
+# 10, 9 (enable pair).  S2 base is the class-010 marker only.
+x17.mve    3   0x08000017   0x00000600   0x40000000
+
 # x17.alu05: head is an ALU05 word, continuing bundle.  S1 class 000 +
 # S2 class 110.  Semantics from fact 138 / own-x17alu05:
 #   s<head[18:15]> <- ALU05[head[10:5]](a = s<head[14:11]>, b = s<S2[28:25]>)

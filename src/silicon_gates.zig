@@ -145,6 +145,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x888 } }},
     },
     .{
+        .name = "own-x17mve",
+        // the probe list own-x17mve: pre s4 = 0x701.  Bundle: e5 <- s4 + 1 = 0x702.
+        .pre = &.{.{ .bank = .s, .index = 4, .value = 0x701 }},
+        .src =
+        \\x17.mve e5, s4
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 5, .value = 0x702 } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },
