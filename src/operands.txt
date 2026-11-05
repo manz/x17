@@ -149,6 +149,12 @@ x18.eagu	dest_e	e	22	25	s1
 x18.eagu	x_e	e	25	28	s3
 x18.eagu	fn	imm	26	29	s1
 
+# x18.edec (4 syllables): e +/- 1.
+# Grammar: x18.edec <dest_e>, <src_e>, #<is_minus>
+x18.edec	dest_e	e	8	11	s2
+x18.edec	src_e	e	4	7	s2
+x18.edec	is_minus	imm	20	20	s2
+
 # x03.xrd (6 syllables): X-memory read at low5 0x03 w4 mode 5.
 # Grammar: x03.xrd <dest_s>, #<a_hi>, #<a_lo>
 # A address = (a_hi << 2) | a_lo.
