@@ -584,6 +584,17 @@ const GATES = [_]Gate{
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x110 } }},
     },
     .{
+        .name = "own-x02yrd",
+        // Pre e3 = 0x490 with Y[0x490] seeded to 0x886F.
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
+        .src =
+        \\x02.yrd s1, e3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x886F } }},
+    },
+    .{
         .name = "own-x18q23c",
         // Pre s1 = 0x4000, s2 = 0x6000; mode 4, /2^23: s3 <- 0x30.
         .pre = &.{

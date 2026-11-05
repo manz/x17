@@ -384,11 +384,21 @@ fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     if (bundle.len < 6) return RunError.UnknownForm;
+    const w3 = bundle[3];
     const w4 = bundle[4];
+    const w5 = bundle[5];
     const dest_s: u32 = (w4 >> 3) & 0xF;
-    const src_a: u32 = (w4 >> 17) & 0xF;
-    const addr: u32 = state.a[src_a];
-    const v: u32 = state.getX(addr) orelse 0;
+    // Y-slot bit: w5[12] = 1 selects Y:[e<w3[30:27]>] instead of X:[A<w4[21:17]>].
+    const is_y: bool = ((w5 >> 12) & 1) == 1;
+    const v: u32 = if (is_y) blk: {
+        const src_e: u32 = (w3 >> 27) & 0xF;
+        const addr: u32 = state.e[src_e];
+        break :blk state.getY(addr) orelse 0;
+    } else blk: {
+        const src_a: u32 = (w4 >> 17) & 0xF;
+        const addr: u32 = state.a[src_a];
+        break :blk state.getX(addr) orelse 0;
+    };
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
