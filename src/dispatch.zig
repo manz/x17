@@ -7,6 +7,7 @@ const clap = @import("clap");
 const isa = @import("isa");
 const asm_mod = @import("asm");
 const emu = @import("emu");
+const disasm = @import("disasm");
 
 const Writer = std.Io.Writer;
 const Handler = *const fn (gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) anyerror!void;
@@ -25,6 +26,7 @@ pub const Verb = struct {
 pub const top = [_]Verb{
     .{ .name = "asm", .help = "assemble a .sm file; prints hex syllables", .run = &cmdAsm },
     .{ .name = "run", .help = "assemble + execute a .sm file; prints s/Y state", .run = &cmdRun },
+    .{ .name = "disasm", .help = "decode syllables (hex arg or .bin file) to .sm", .run = &cmdDisasm },
     .{ .name = "forms", .help = "list known forms", .run = &cmdForms },
 };
 
@@ -281,6 +283,96 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
             const v = state.y_mem.get(k).?;
             try out.print("  Y:0x{x:<4} = 0x{x:0>6}\n", .{ k, v });
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Verb: disasm
+// ---------------------------------------------------------------------------
+
+const disasm_params = clap.parseParamsComptime(
+    \\-h, --help               show help for `x17 disasm`
+    \\<str>...                 one or more hex syllables, OR a single .bin path
+    \\
+);
+
+fn parseHexU32(s: []const u8) ?u32 {
+    const t = if (std.mem.startsWith(u8, s, "0x") or std.mem.startsWith(u8, s, "0X")) s[2..] else s;
+    return std.fmt.parseInt(u32, t, 16) catch null;
+}
+
+fn cmdDisasm(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void {
+    var iter: SliceIter = .{};
+    var parsed = try parseVerb(&disasm_params, gpa, args, "disasm", out, &iter);
+    defer parsed.deinit();
+
+    if (parsed.args.help != 0) {
+        try out.writeAll(
+            \\usage:
+            \\  x17 disasm <hex> [<hex> ...]    one or more u32 syllables (hex)
+            \\  x17 disasm <file.bin>           little-endian u32 syllable stream
+            \\
+        );
+        return;
+    }
+    if (parsed.positionals[0].len == 0) {
+        try out.writeAll("disasm: need at least one <hex> syllable or <file.bin>\n");
+        return error.MissingFile;
+    }
+
+    // If exactly one arg and it parses as a path (exists on disk) and not
+    // as a plain hex u32, treat it as a .bin file.  Otherwise each arg is a
+    // hex syllable.
+    const rest = parsed.positionals[0];
+    var words: []u32 = undefined;
+    var words_owned = false;
+
+    if (rest.len == 1 and parseHexU32(rest[0]) == null) {
+        const buf = readSource(gpa, rest[0]) catch |e| {
+            try out.print("disasm: cannot read '{s}': {s}\n", .{ rest[0], @errorName(e) });
+            return e;
+        };
+        defer gpa.free(buf);
+        if (buf.len % 4 != 0) {
+            try out.print("disasm: '{s}' is not a multiple of 4 bytes ({d} bytes)\n", .{ rest[0], buf.len });
+            return error.BadFormat;
+        }
+        const n = buf.len / 4;
+        const w = try gpa.alloc(u32, n);
+        for (0..n) |i| w[i] = std.mem.readInt(u32, buf[i * 4 ..][0..4], .little);
+        words = w;
+        words_owned = true;
+    } else {
+        const w = try gpa.alloc(u32, rest.len);
+        for (rest, 0..) |arg, i| {
+            w[i] = parseHexU32(arg) orelse {
+                gpa.free(w);
+                try out.print("disasm: '{s}' is not a hex u32\n", .{arg});
+                return error.BadFormat;
+            };
+        }
+        words = w;
+        words_owned = true;
+    }
+    defer if (words_owned) gpa.free(words);
+
+    // Walk bundle by bundle using the same length rule the emu uses.
+    var i: usize = 0;
+    while (i < words.len) {
+        const head = words[i];
+        const len = emu.bundleLen(head) orelse 1;
+        const end = @min(i + len, words.len);
+        const slice = words[i..end];
+        var line_buf: [256]u8 = undefined;
+        const n = disasm.disasmBundle(&line_buf, slice) catch |e| {
+            try out.print("; disasm failed at syllable {d}: {s}\n", .{ i, @errorName(e) });
+            try out.print("0x{x:0>8}\n", .{head});
+            i += 1;
+            continue;
+        };
+        try out.writeAll(line_buf[0..n]);
+        try out.writeByte('\n');
+        i = end;
     }
 }
 
