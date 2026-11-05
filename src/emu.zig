@@ -108,7 +108,33 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 1 and w3_class == 6) {
         return execX19Mul(gpa, state, bundle);
     }
+    if (w1_class == 0 and w2_class == 0 and w3_class == 1) {
+        return execX19Imm(gpa, state, bundle);
+    }
     return RunError.UnknownForm;
+}
+
+fn execX19Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+
+    const head_31_29: u32 = (head >> 29) & 0x7;
+    const w1_0: u32 = w1 & 0x1;
+    const dest_e: u32 = ((w1_0 << 3) | head_31_29) & 0xF;
+    const x_src: u32 = (w3 >> 25) & 0xF;
+    const y_src: u32 = (head >> 25) & 0xF;
+    const fn_op: u32 = (w1 >> 1) & 0xF;
+    const imm: u32 = (w2 >> 15) & 0xFFFF;
+
+    // Only fn_op = 10 (y + i) modelled today.
+    if (fn_op != 10) return RunError.UnknownForm;
+
+    const y_val: u32 = if (y_src == 0) 0 else state.r[y_src];
+    _ = x_src; // unused for fn_op 10
+    state.e[dest_e] = (y_val +% imm) & 0xFFFF;
 }
 
 fn execX19Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

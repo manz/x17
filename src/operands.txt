@@ -53,6 +53,10 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x19.imm (4 syllables): AGU with 16-bit immediate.
+# Grammar: x19.imm #<imm>
+x19.imm	imm	imm	15	30	s2
+
 # x19.mul (4 syllables): scalar multiply with dual R/e write.
 # Grammar: x19.mul <dest_e>, <dest_R>, #<op>, <a_src>, <b_src>
 x19.mul	dest_e	e	3	6	s1

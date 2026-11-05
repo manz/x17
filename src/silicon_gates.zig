@@ -252,6 +252,15 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19imm",
+        // the probe list own-x19imm: dest e3 <- R0 + 0x702 = 0x702 (fn_op 10).
+        .src =
+        \\x19.imm #0x0702
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 3, .value = 0x702 } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },
