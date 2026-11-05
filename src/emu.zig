@@ -103,6 +103,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execX12Agu(gpa, state, bundle);
     }
+    if (low5 == 0x15 and bundle.len >= 2) {
+        const s_class: u32 = (bundle[1] >> 29) & 0x7;
+        if (s_class == 0b101) return execX15Alu(gpa, state, bundle);
+    }
     if (low5 == 0x16 and bundle.len >= 3) {
         const s2_class: u32 = (bundle[2] >> 29) & 0x7;
         const s2_mode: u32 = (bundle[2] >> 16) & 0x1F;
@@ -265,6 +269,29 @@ fn execX12Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_e != 0) state.e[dest_e] = v;
     if (s_dest != 0) state.s[s_dest] = v;
     if (dest_r != 0) state.r[dest_r] = v;
+}
+
+fn execX15Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const code: u32 = (head >> 5) & 0x3F;
+    const a_s: u32 = (head >> 11) & 0xF;
+    const dest_s: u32 = (head >> 15) & 0xF;
+    const b_s: u32 = (head >> 26) & 0xF;
+    const mux: u32 = (s1 >> 22) & 0x7;
+    const dest_s2: u32 = (s1 >> 7) & 0xF;
+    const a_val: u32 = state.s[a_s] & M24;
+    const b_val: u32 = state.s[b_s] & M24;
+    // ALU05 "add" family covers codes 0..0x0F (fact 33).
+    const v: u32 = switch (code) {
+        0, 1, 2, 3, 4, 5, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F => (a_val +% b_val) & M24,
+        0x09, 0x0A => (a_val +% b_val) & M24, // addi variants OPEN beyond add
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0) state.s[dest_s] = v;
+    if (mux == 0b111 and dest_s2 != 0) state.s[dest_s2] = v;
 }
 
 fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

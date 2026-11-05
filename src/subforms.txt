@@ -20,6 +20,13 @@
 #   R<S[24:21]> <- V
 x12.agu    2   0x00000012   0x20000000
 
+# x15.alu: 2-syllable low5 0x15 S class 101.  Head is a full class-05 ALU
+# word (fact 123 / own-x15alu):
+#   s<head[18:15]> <- ALU05[head[10:5]](s<head[14:11]>, s<head[29:26]>, m=head[25:23])
+# When S[24:22] = 111 the same result also lands on s<S[10:7]>.  Only
+# code 0x0E (add) is modelled; wider ops OPEN.
+x15.alu    2   0x00000015   0xA1E00000
+
 # x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)

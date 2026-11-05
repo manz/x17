@@ -510,6 +510,22 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x15alu",
+        // Pre s5 = 0x123, s3 = 0x18; code 0x0E add writes s5 and (mux 111) s3.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x123 },
+            .{ .bank = .s, .index = 3, .value = 0x18 },
+        },
+        .src =
+        \\x15.alu s5, s5, s3, #14, #1, s3
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 0x13B } },
+            .{ .s_reg = .{ .index = 3, .value = 0x13B } },
+        },
+    },
+    .{
         .name = "own-x16mul-trunc",
         // Pre s1 = 0x1101, s2 = 0x3303; s3 <- (s1 * s2) >> 23 = 6 truncated.
         .pre = &.{
