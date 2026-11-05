@@ -164,7 +164,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     }
     if (low5 == 0x03 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
-        if (w4_mode == 5) return execX03Xrd(gpa, state, bundle);
+        if (w4_mode == 5) {
+            try execX03Xrd(gpa, state, bundle);
+            return execX03Agu(gpa, state, bundle);
+        }
     }
     if (low5 == 0x0E and bundle.len >= 2) {
         const hb: u32 = (head >> 30) & 0x3;
@@ -277,6 +280,29 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // Round: add 2^22, then shift.
     const v: u32 = @truncate(((prod + (1 << 22)) >> 23) & M24);
     if (dest_s != 0) state.s[dest_s] = v;
+}
+
+fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 6) return RunError.UnknownForm;
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const w4 = bundle[4];
+    const w5 = bundle[5];
+    const fn_op: u32 = (w2 >> 22) & 0x1F;
+    const dest_a: u32 = (w3 >> 10) & 0x1F;
+    const src_a: u32 = w3 & 0x1F;
+    const i_hi: u32 = (w4 >> 17) & 0x7FFF;
+    const i_lo: u32 = w5 & 1;
+    const i_val: u32 = (i_lo << 15) | i_hi;
+    // AGU table "5" = x + i (fact 164).  dest_A=0 skips the write.
+    if (dest_a == 0) return;
+    const x_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
+    const v: u32 = switch (fn_op) {
+        5 => (x_val +% i_val) & 0xFFFFFF,
+        else => return,
+    };
+    state.a[dest_a & 0xF] = v;
 }
 
 fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
