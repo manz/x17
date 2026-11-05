@@ -61,6 +61,15 @@ pub fn build(b: *std.Build) void {
     exe_mod.addImport("dispatch", dispatch_mod);
     exe_mod.addImport("emu", emu_mod);
 
+    const disasm_mod = b.createModule(.{
+        .root_source_file = b.path("src/disasm.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    disasm_mod.addImport("isa", isa_mod);
+    disasm_mod.addImport("asm", asm_mod);
+    dispatch_mod.addImport("disasm", disasm_mod);
+
     const gates_mod = b.createModule(.{
         .root_source_file = b.path("src/silicon_gates.zig"),
         .target = target,
@@ -79,4 +88,6 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(emu_t).step);
     const gates_t = b.addTest(.{ .root_module = gates_mod });
     test_step.dependOn(&b.addRunArtifact(gates_t).step);
+    const disasm_t = b.addTest(.{ .root_module = disasm_mod });
+    test_step.dependOn(&b.addRunArtifact(disasm_t).step);
 }

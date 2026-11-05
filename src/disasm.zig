@@ -1,0 +1,167 @@
+//! x17 disassembler: bytes -> .sm source line(s).
+//!
+//! Given a bundle (1..7 syllables), walk the form and operand tables and
+//! write a human-readable mnemonic with operands.  Single-syllable forms
+//! dispatch via `isa.classify`; x17 bundles pick a sub-form by matching
+//! S1/S2 class bits against the entries in `isa.subforms`.
+//!
+//! This is the reverse of the assembler's data-driven encoding: every
+//! field read here comes from the same `Operand` table the assembler uses
+//! to pack bits, so round-trip (assemble -> disasm) is byte-exact for any
+//! form whose operand rows are complete.
+
+const std = @import("std");
+const isa = @import("isa");
+
+pub const DisasmError = error{
+    UnknownForm,
+    BundleTooShort,
+    BufferTooSmall,
+};
+
+/// Disassemble one bundle into `out`; returns bytes written.  The written
+/// text does NOT include a trailing newline so callers can decide.
+pub fn disasmBundle(out: []u8, bundle: []const u32) DisasmError!usize {
+    if (bundle.len == 0) return DisasmError.BundleTooShort;
+
+    // x17 bundles dispatch by sub-form class bits.
+    if ((bundle[0] & 0x1F) == 0x17) {
+        return disasmX17(out, bundle);
+    }
+
+    const f = isa.classify(bundle[0]) orelse return DisasmError.UnknownForm;
+    const ops = isa.operandsFor(f.name);
+    return writeFormLine(out, f.name, ops, bundle);
+}
+
+fn disasmX17(out: []u8, bundle: []const u32) DisasmError!usize {
+    if (bundle.len < 3) return DisasmError.BundleTooShort;
+    const sf = matchSubForm(bundle) orelse return DisasmError.UnknownForm;
+    const ops = isa.operandsFor(sf.name);
+    return writeFormLine(out, sf.name, ops, bundle);
+}
+
+/// Pick a sub-form whose base words' class bits ([31:29] of each syllable)
+/// match the bundle's.  Treats head low5 as a given (always 0x17 for x17).
+fn matchSubForm(bundle: []const u32) ?*const isa.SubForm {
+    for (isa.subforms) |*sf| {
+        if (sf.syllables > bundle.len) continue;
+        var ok = true;
+        var i: usize = 1; // skip head
+        while (i < sf.syllables) : (i += 1) {
+            const bundle_class = (bundle[i] >> 29) & 0x7;
+            const base_class = (sf.base[i] >> 29) & 0x7;
+            if (bundle_class != base_class) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok) return sf;
+    }
+    return null;
+}
+
+fn writeFormLine(
+    out: []u8,
+    name: []const u8,
+    ops: []const isa.Operand,
+    bundle: []const u32,
+) DisasmError!usize {
+    var cur: usize = 0;
+    cur += printTo(out[cur..], "{s}", .{name});
+    for (ops, 0..) |op, i| {
+        const sep: []const u8 = if (i == 0) " " else ", ";
+        cur += printTo(out[cur..], "{s}", .{sep});
+        if (op.syll >= bundle.len) return DisasmError.BundleTooShort;
+        const word = bundle[op.syll];
+        const field = (word >> @as(u5, @intCast(op.lo))) & ((@as(u32, 1) << @as(u5, @intCast(op.width()))) - 1);
+        cur += formatOperand(out[cur..], op, field);
+    }
+    return cur;
+}
+
+fn formatOperand(out: []u8, op: isa.Operand, field: u32) usize {
+    return switch (op.kind) {
+        .s => printTo(out, "s{d}", .{field}),
+        .e => printTo(out, "e{d}", .{field}),
+        .r_reg => printTo(out, "R{d}", .{field}),
+        .p => printTo(out, "p{d}", .{field}),
+        .imm => printTo(out, "#0x{x}", .{field}),
+        .dest_ldi => blk: {
+            if (field >= 16 and field <= 31) {
+                break :blk printTo(out, "s{d}", .{field - 16});
+            }
+            break :blk printTo(out, "#0x{x}", .{field}); // raw for OPEN slots
+        },
+        .y_addr => printTo(out, "Y:0x{x}", .{field}),
+    };
+}
+
+fn printTo(out: []u8, comptime fmt: []const u8, args: anytype) usize {
+    const w = std.fmt.bufPrint(out, fmt, args) catch return 0;
+    return w.len;
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+const asm_mod = @import("asm");
+
+fn roundTrip(src: []const u8) ![]const u8 {
+    const b = try asm_mod.assembleOne(src);
+    var buf: [128]u8 = undefined;
+    const n = try disasmBundle(&buf, b.slice());
+    // Persist into a static via dupeZ-like trick: leak ok for tests.
+    const out = try testing.allocator.dupe(u8, buf[0..n]);
+    return out;
+}
+
+test "disasm rli" {
+    const s = try roundTrip("rli R3, s5, #0x1234");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("rli R3, s5, #0x1234", s);
+}
+
+test "disasm ldi" {
+    const s = try roundTrip("ldi s0, #0x1234");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("ldi s0, #0x1234", s);
+}
+
+test "disasm st.y" {
+    const s = try roundTrip("st.y Y:0x200");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("st.y Y:0x200", s);
+}
+
+test "disasm alu" {
+    const s = try roundTrip("alu s7, s2, s9, #0x16");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("alu s7, s2, s9, #0x16", s);
+}
+
+test "disasm x17.halt" {
+    const s = try roundTrip("x17.halt");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.halt", s);
+}
+
+test "disasm x17.imm" {
+    const s = try roundTrip("x17.imm s5, #0xBEE");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.imm s5, #0xbee", s);
+}
+
+test "disasm x17.alu" {
+    const s = try roundTrip("x17.alu s1, s8, s2, #0, #3");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.alu s1, s8, s2, #0x0, #0x3", s);
+}
+
+test "disasm unknown bundle" {
+    const bytes = [_]u32{0x1234_5678}; // low5 = 0x18, not in any form
+    var buf: [64]u8 = undefined;
+    try testing.expectError(DisasmError.UnknownForm, disasmBundle(&buf, &bytes));
+}
