@@ -130,6 +130,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s2_class: u32 = (bundle[2] >> 29) & 0x7;
         const s2_mode: u32 = (bundle[2] >> 16) & 0x1F;
         if (s2_class == 0b110 and s2_mode == 1) return execX16Mul(gpa, state, bundle);
+        if (s2_class == 0b011) return execX16Agu(gpa, state, bundle);
     }
     if (low5 == 0x13 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
@@ -462,6 +463,28 @@ fn alu05Shift(a: u32, b: u32, kind: ShiftKind) u32 {
     const shift: u5 = @intCast(@min(n, 24));
     const shifted: i32 = vv >> shift;
     return @as(u32, @bitCast(shifted)) & M24;
+}
+
+fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    const fn_op: u32 = (s1 >> 7) & 0xF;
+    const dest_s: u32 = (s2 >> 3) & 0xF;
+    const x_e: u32 = (2 * (s2 & 0x7)) & 0xF;
+    const y_r: u32 = (head >> 27) & 0xF;
+    const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
+    const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
+    const v: u32 = switch (fn_op) {
+        6 => (x_val +% y_val) & 0xFFFF,
+        10 => blk: {
+            const imm: u32 = (head >> 11) & 0xFFFF;
+            break :blk (y_val +% imm) & 0xFFFF;
+        },
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

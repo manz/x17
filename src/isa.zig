@@ -169,7 +169,7 @@ pub const SubForm = struct {
     base: [MAX_BUNDLE_SYLLABLES]u32,
 };
 
-pub const MAX_SUBFORMS: usize = 64;
+pub const MAX_SUBFORMS: usize = 128;
 
 pub const subforms_txt = @embedFile("subforms.txt");
 

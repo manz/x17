@@ -574,6 +574,19 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 3, .value = 0xFFFEDD } }},
     },
     .{
+        .name = "own-x16agu",
+        // Pre e2 = 0x100, R3 = 0x20; fn 6 (x+y): s3 <- e2 + R3 = 0x120.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x100 },
+            .{ .bank = .r, .index = 3, .value = 0x20 },
+        },
+        .src =
+        \\x16.agu s3, R3, #1, #6, #4
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x120 } }},
+    },
+    .{
         .name = "own-x12agu29",
         // Same inputs as x12.agu, with head[29] set (inert).
         .pre = &.{

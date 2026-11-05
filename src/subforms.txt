@@ -29,6 +29,11 @@ x12.agu29  2   0x20000012   0x20000000
 # The X-store side (A<head[30:26]> <- s<S[28:25]>) is not modelled.
 x13.st     2   0x14000213   0xB2000000
 
+# x16.agu: 3-syllable low5 0x16, S2 class 011 (fact 117 / own-x16agu).
+# s<S2[6:3]> <- AGU10[S1[10:7]](x=e<2*S2[2:0]>, y=R<head[30:27]>).  fn 6
+# (x+y) and fn 10 (y+imm) measured.
+x16.agu    3   0x00000016   0x10004000   0x60002000
+
 # x15.alu: 2-syllable low5 0x15 S class 101.  Head is a full class-05 ALU
 # word (fact 123 / own-x15alu):
 #   s<head[18:15]> <- ALU05[head[10:5]](s<head[14:11]>, s<head[29:26]>, m=head[25:23])
