@@ -1,0 +1,392 @@
+# sm1 proto-ISA: what the disassembler may claim, each claim with its evidence.
+#
+# OURS.  Every entry cites the section of fact (or the the probe list entry) that measured
+# it.  `evidence` is MEASURED (a silicon run or an exact data match), INFERRED (reasoned on top), or
+# GUESS (a statistical lead, printed with a trailing '?').  Nothing here is a stock syllable: forms are
+# mask/value pairs over our own field split, and the table names are the AAC specification's.
+#
+# Field split (fact 14, from three store syllables):
+#   op   [31:26]   operation class        sel  [25:21]  operand / source select (meaning OPEN)
+#   addr [20:5]    16-bit data address    fmt  [4:0]    format; single flips trap or change the form
+
+[layout]
+row_syllables = 4        # one row = four 32-bit syllables (lane l of row r at 0x22020000 + l*0x4000 + r*4)
+main_row = 0x40          # pass-2 program lands at row 0x40 (fact 1)
+# The engine's order (fact 45, MEASURED): PC q = 8*(row/2) + 2*lane + row%2 - column-major over
+# row pairs.  Instruction length from the head syllable's low5 (fact 44, MEASURED at one head;
+# the only table that parses all six main programs end to end, fact 45).  [hi_low5, length].
+length = [[0x01, 7], [0x04, 6], [0x0D, 1], [0x15, 2], [0x17, 3], [0x19, 4]]
+# low5 0x1A-0x1F at a head: back to the previous head (bare words only; never a head in stock code)
+
+# Forms, first match wins.  `addr = true`: [20:5] is printed as a data address.
+[[form]]
+name = "st.y"
+mask = "0xE000001F"
+value = "0x2000000F"
+addr = true
+evidence = "MEASURED"
+ref = "fact 14: XXXXXXXX/2002120f move their store with [20:5]; [31:29]=001 selects it"
+# fact 21 (MEASURED, own syllables): the stored value is the LANE's data register (V2 for lane 2,
+# V13 shared by lanes 1 and 3); sel bit 21 sets V2 and bit 22 sets V13 to the previous store's address
+# before this store writes; sel 3 and bits [25:23] do nothing.
+sel = "lane"
+
+[[form]]
+name = "ldi"
+mask = "0xC000001F"
+value = "0xC000000B"
+imm = true
+dest = true
+evidence = "MEASURED"
+ref = "fact 27-28: [20:5] is a 16-bit immediate, [25:21] the register: 16..31 = source k-16 (32 of 32), 0 = address entry 0, 1 = source 1; 2..15 OPEN.  87: [29:26] inert (2, 5, C measured).  own-ldi-y2/-y4/-s5, own-ldi-k"
+
+[[form]]
+name = "wr"
+mask = "0xE001801F"
+value = "0x20018000"
+wr = true
+evidence = "MEASURED"
+ref = "fact 47 passes 69-70, 59 pass 85: as the store's operand syllable - [25:21] source (ldi numbering), [20:17] Y address entry e0..e15 read BEFORE the store updates e1, [16:15]=11 enables; measured with [14:0] = 0 only"
+
+[[form]]
+name = "st1"
+mask = "0xFC1FFE1F"
+value = "0x40000608"
+st1 = true
+evidence = "MEASURED"
+ref = "fact 61 pass 87, 101 pass 127: Y:[e<[8:5]>] <- s<[25:22]> ([21] ignored), op [10:5] = 0x30 + k for k = 0..15 (e0 = the previous instruction's [20:5]); no post-modify; op 0x11-0x1A write no Y (OPEN).  own-st1, own-stk"
+
+[[form]]
+name = "lde"
+mask = "0xC000001F"
+value = "0x40000006"
+lde = true
+evidence = "MEASURED"
+ref = "fact 51, 59 pass 85: [29:26] = k; k = 0 loads A[[25:21]] (the X store's file); k = 2, 3, 5..15 load Y entry e<k> <- [20:5] ([25:21] ignored); k = 1 loads e1, the st's a1 (61 pass 87; 59 missed it because e1 is rewritten between runs); k = 4 loads e4 too (62 pass 88: the dual load's read of e4 reverts it to 0x108E, which hid it).  own-entry"
+
+[[form]]
+name = "ld0e"
+mask = "0x8000001F"
+value = "0x8000000E"
+ld0e = true
+evidence = "MEASURED"
+ref = "fact 53 pass 79: head [31]=1, [25:21] dest s<sel> (ldi numbering, source OPEN - read 0 in every run, not X[[20:5]]); the second syllable with [18] set and [0] clear loads A[4n+1] <- head [20:5], n = op[3:1] (4 and 5 load two registers, 6-7 none readable); own-0e"
+
+[[form]]
+name = "alu"
+mask = "0xC3F8001F"
+value = "0x40000005"
+evidence = "MEASURED"
+ref = "fact 65 pass 91, 93 pass 119: dest s<[18:15]>, a s<[14:11]>, b s<[29:26]> ([29] = 1 is the 011 'class': s8..s15), op [10:5] (table in emu.ALU05); [25:19] = 0 only; own-alu-sub, own-alu-hi"
+
+[[form]]
+name = "rop"
+mask = "0xE000001F"
+value = "0x40000007"
+evidence = "MEASURED"
+ref = "fact 88 pass 114: s<[28:26]> and R<[25:22]> (0 = none) <- FN[20:17](x = e<[8:5]>, y = R<[16:13]>), FN in emu.ROP07; R is a 16-entry modifier file, R0 = 0, persistent; [21], [12:9] inert.  own-rop"
+
+[[form]]
+name = "ptst"
+mask = "0xE000001F"
+value = "0x4000000D"
+evidence = "MEASURED"
+ref = "fact 95 pass 121: p<[29:26]> <- cond[25:21](s<[14:11]>); with op [10:5] = 0x0B: c1 < 0, c0/c2 <= 0, c4/c6 >= 0, c7 true; c3/c5 and c8-31 OPEN; [18:15] inert for op 0x0B.  own-ptst, own-ptst-pos"
+
+[[form]]
+name = "plog"
+mask = "0xE008001F"
+value = "0x0008000B"
+evidence = "MEASURED"
+ref = "fact 96 pass 122: p<[14:11]> <- FN[18:15](a = p<[25:21]>, b = p<[28:26]>), FN b, a==b, a^b, a&b, a|b, !(a&b), !(a|b), !b, a, 0, then 1 for 10-15; op [10:5] 0E/0F/1F/2A/2B (the stock code uses 0E only; other ops write 1 in the measured context, OPEN); [19] = 0 is another form (wedges when b).  own-plog-and, own-plog-or"
+
+[[form]]
+name = "yagu"
+mask = "0xA000001F"
+value = "0x00000014"
+evidence = "MEASURED"
+ref = "fact 100 pass 126: with a class-100 second S, S[25] = 1: e<S[24:21]> <- FN[S[20:17]](x = e, y = R<S[16:13]>) and R<S[3:0]> (0 = none) <- the same; s<S[7:4]> (0 = none) <- Y:[old e] when head[30] = 1, the yd latch when 0; s<head[24:21]> <- by S[28:27]: 00 0, 01/10 the new e, 11 0x8A00 (103); FN in emu.AGU14 (3 ambiguous); S[12:8], S[28:26] and the other head bits inert.  own-yagu"
+
+# x16ld (0x16 has a form already; fact 115 pass 141, corrected by 122: S1 carries the x16alu ALU half (S1[11:9] "zeroes" were op 0 writes); S2[3] = 1 latches xi <- S2[8:4], 0 reuses xi; xi = 0 reads X:[0] (0x38A = its canary); head[31] with S1[3] = 0 writes A<2*S1[2:0]+1> <- head[20:5] after the load): with S1 and S2 both class 000 and S1[26:25] = 01/10 (00, 11 wedge): s<head[24:21]> <- by S1[14:12]: 101 X:[A<S2[8:4]>] (S2[8:4] also written to the X index latch xi, 116) (low 16 bits), 001 yd, 100 0xE400?, 111 0; S1[11:9] also zero s2/s4/s8; S2[2] adds an X write (OPEN).  own-x16ld
+
+# x17agu (no form of its own: it is an x17 [head, S1, S2]).  fact 112 pass 138: x17 [head, S1, S2] with S1[28] = 1 (any S1[31:29], 113) and S2 class 010 does not halt: R<S2[8:5]> <- AGU10[S1[27:24]](x = e<S1[8:5]>, y = R<S2[4:1]>); S1[28] = 0 gives 0, head[20] = 1 gives 1 (OPEN), no imm field found; the halt deadline of 98 applies.  own-x17agu
+
+# x17 halt rule.  fact 133 pass 159: with S2 class 101 the bundle halts iff S1[22:20] = 011, whatever the head, S1 class, S1[19:0] or S1[31:23]; 010 and 111 wedge (a stall?); 000, 001, 100, 101, 110 continue (100 leaves cross-run state: alternate run.py runs wedge, OPEN).  S2 classes other than 101 never halt (97).  own-x17ctl
+
+# ealu10 (low5 0x10, S class 110).  fact 132 pass 158: e<S[6:3]> <- X16_ALU[S[11]][S[14:12]](a = s<S[21:18]>, b = 0 in every run, its field OPEN); op 0-3 wedge; head[9] = 1 is a further modifier (-a, ~a; OPEN); S[10:7] write 0 to s1/s2/s4/s8 (OPEN); S[30] = 0 gives R1 <- 0.  own-ealu
+
+# agu10r (low5 0x10, S class 101 with S[18]).  fact 131 pass 157: s<head[24:21]> <- head[20:5]; R<S[24:21]> <- AGU10[S[4:1]](x = e<S[28:25]>, y = R<4*head[28:27]>) when S[20], 0 when S[20] = 0; S[18] = 0 and S[30] = 1 wedge.  own-agu10r
+
+# xld10 (low5 0x10, S class 011; ldp 60, ld10 80 and ldi2 74 are members).  fact 130 pass 156: s<S[10:7]> <- X:[A<4*S[2:0] + head[31:30]>]; s<head[24:21]> <- by S[24], S[22]: 11 the same X word, 01 head[20:5], 00 0, 10 a constant (0xc000 / 0xe900, OPEN); S[23] = 1 gives 0; S[14:11] write R1/R2/R4/R8 <- 0xa050 (OPEN); S[20] also writes X:[A] back (OPEN); S[3:6], S[15], S[16:17], S[19], S[21], S[25:28] inert.  own-xld10
+
+# alu11 (low5 0x11, S class 001).  fact 129 pass 155: the head is the 0x05 ALU word (s<[18:15]> <- ALU05[[10:5]](s<[14:11]>, s<[29:26]>) with the m/#shift modifiers; head[31:30] inert in the cases run); S: R<S[28:25]> and e<S[12:9]> <- (S[8] ? AGU10 : AGU10B)[S[20:17]](x = e<S[24:21]>, y = R<S[16:13]>); S[7:0] and S[30] inert, S[29] = 0 wedges.  own-agu11, own-alu11
+
+# mul13 (low5 0x13, S class 101).  fact 128 pass 154: s<S[14:11]> <- (s<S[6:3]> * s<2*S[2:0] + head[31]> + 2^22) >> 23, signed, when S[19]; head[18:15] zero s1/s2/s4/s8; S[18:17] add +-0x8A00/0x7600 (OPEN, as x16mul), S[23:22] OPEN, S[10:7] write a second value 0x4c46 to s<1<<b> (OPEN); head[30] inert; S[29] = 0 wedges.  own-mul13
+
+# st.x / rimm (low5 0x0F, S class 101).  fact 127 pass 153: with S[22] and S[20] both set, X:[A<4*S[2:0] + head[31:30]>] <- s<S[28:25]> for every head[31:30] (51 saw only head[31:30] = 01); otherwise rimm: R<S[14:11]> <- head[20:5] and s<head[24:21]> <- 0x5000 (source OPEN); S[29] = 0 wedges.  own-stx-a, own-rimm
+
+# psel (no [[form]]: low5 0x0E with head[31] = 0 is two words, and head[31] = 1 is ld0e).  fact 126 pass 152: c = LUT[S[23:21]](p<S[27:24]>) with LUT = (!p, p, 0, 1, 0, 0, 0, 0); ALU r = X16_ALU[S[15]][S[18:16]](a = s<S[31:28]>, b = s<S[7:4]>), op 0-3 wedge; with mux S[14:12] = 0, head[30:25] = 001110: s<head[24:21]> <- c and s<S[11:8]> <- r; head[30:25] = 100011: s<S[11:8]> <- c ? r : b and s<head[24:21]> <- 0.  Other head[30:25] values and muxes OPEN.  own-ptest, own-ptest-0, own-psel, own-psel-0
+
+[[form]]
+name = "rli"
+mask = "0x8200001F"
+value = "0x0200000C"
+evidence = "MEASURED"
+ref = "fact 125 pass 151: one word; R<head[30:27]> <- head[20:5] and s<head[24:21]> <- head[20:5] (0 = no write); head[25] = 0 or head[31] = 1 wedges.  own-rli"
+
+[[form]]
+name = "bcc"
+mask = "0x0000001F"
+value = "0x00000010"
+evidence = "MEASURED"
+ref = "fact 111 pass 137: with a class-000 second S: branch if p<S[18:15]> (p0 always) to q + 4 * sext(S[8:0]) after two delay slots counted in instructions (a two-word slot still leaves the next instruction in the second slot); S[8:0] = 1 falls through, 0 loops on itself; S[14] = 1 wedges; s<head[18:15]> and s<1 << b> for S[9 + b] are written with a value OPEN (head[22:19] reads as an immediate in one context).  own-bcc-back, own-bcc-fwd"
+
+[[form]]
+name = "ystm"
+mask = "0x0000001F"
+value = "0x00000010"
+evidence = "MEASURED"
+ref = "fact 109 pass 135: with a class-010 second S: Y:[e<head[8:5]>] <- s<S[15:12]> when S[17:16] = 11; e<head[12:9]> and R<S[28:25]> (0 = none) <- FN[head[20:17]](x = e<head[8:5]>, y = R<head[16:13]>, imm = S[11:0]<<4 | head[31:28]), FN in emu.AGU10; head[26] = 0 gives yd instead; S[18] = 0 wedges; any head class (110: [31:29] only feeds the imm nibble); other second classes OPEN.  own-ystm, own-ystm-yd"
+
+[[form]]
+name = "pc14"
+mask = "0x0000001F"
+value = "0x00000014"
+evidence = "MEASURED"
+ref = "fact 107 pass 133: with a class-010/011 second S, S[25] = 1: p<S[7:4]> <- bit S[11:8] of a row picked by head[28:25] (0-10 0xFFFF, 11-13 0xF8E3, 14-15 0xFD1B; what it reads OPEN); s<head[24:21]> <- by S[28:27]: class 010 00 0, 01/10 head imm; class 011 00 0x2800? (0x680 with S[24]), 01 yd, 10 head imm; 11 untested.  own-p010-true, own-p010-false"
+
+[[form]]
+name = "xst"
+mask = "0x0000001F"
+value = "0x00000014"
+evidence = "MEASURED"
+ref = "fact 106 pass 132: with a class-001 second S, S[25] = 1 (0 wedges): when S[3] = S[8] = 1, X:[A<4*S[2:0] + head[31:30]>] <- s<S[7:4]> sign-extended to 24 bits, the 0F store's A index (51), no post-modify; s<head[24:21]> <- by S[28:27]: 00 0x2800?, 01 yd, 10 head imm [20:5], 11 0; S[24:9] inert.  own-xst"
+
+[[form]]
+name = "ypair"
+mask = "0xA000001F"
+value = "0x00000014"
+evidence = "MEASURED"
+ref = "fact 105 pass 131: with a class-110/111 second S, S[25] = 1: s<2*S[2:0]> (S[2:0] = 0 none) <- by class and S[28:27]: 110: 00 0, 01/10 e<head[8:5]>, 11 0xB600?; 111: 00 0x5B00?, 01 yd (the last Y word read), 10 head imm [20:5], 11 0; the head's own s<head[24:21]> load suppressed.  own-ypair"
+
+[[form]]
+name = "yrm"
+mask = "0xA000001F"
+value = "0x00000014"
+evidence = "MEASURED"
+ref = "fact 103 pass 129: with a class-101 second S, S[25] = 1: R<S[3:0]> <- e<S[24:21]>; s<S[7:4]> <- yd; s<head[24:21]> <- by S[28:27]: 00 0xC500?, 01 0x38A?, 10 head imm [20:5], 11 0 (the 00/01 sources OPEN).  own-yrm"
+
+[[form]]
+name = "ytst"
+mask = "0xE000001F"
+value = "0x00000014"
+evidence = "MEASURED"
+ref = "fact 99 pass 125: with a second syllable of class 000 and S[25] = 1: p<S[14:11]> <- (Y:[e<S[24:21]>] & 1) == 0; head [31:5], S[10:0], S[20:15], S[28:26] inert; S[25] = 0 wedges; other second classes OPEN (001 with head [24:21] = 6 cleared s6).  own-ytst-even, own-ytst-odd"
+
+[[form]]
+name = "jmp"
+mask = "0xE000001F"
+value = "0x4000000B"
+evidence = "MEASURED"
+ref = "fact 94 pass 120: jump to own q + sext([20:5]) after two delay slots; mode [25:21]: 1 always, 2 if !p<[28:26]>, 3 if p<[28:26]>, 15 wedges when taken (OPEN), other modes at k = 0 measured but OPEN.  own-jmp"
+
+[[form]]
+name = "br"
+mask = "0xC00007FF"
+value = "0x00000008"
+evidence = "MEASURED"
+ref = "fact 83 pass 109, 85 pass 111: jump to own q + [25:11] after TWO delay slots (an instruction at +1/+2 runs, +3 is skipped) when predicate p<[29:26]> is set; the predicates are written by tst (low5 0x12, second 0x20080000 | slot<<25) and survive reset() and runs; [10:5] inert.  own-br, own-br-c1"
+
+[[form]]
+name = "mv"
+mask = "0xE0007FFF"
+value = "0x20000000"
+evidence = "GUESS"
+ref = "fact 22, 28: ONE member measured - [28:24] a 5-bit register number (16..31 = sources, MEASURED 16 of 16), [18:15] the address register; the class is untested"
+regs = true
+
+[[form]]
+name = "stop"
+mask = "0xE0000002"
+value = "XXXXXXXX"
+evidence = "MEASURED"
+ref = "fact 18, 32: bit sweep in own-all - only [31:29] = 101 and bit 1 matter (bit 1 clear: completes without the write before it); measured at one position"
+
+[[form]]
+name = "x17"
+mask = "0x0000001F"
+value = "0x00000017"
+evidence = "MEASURED"
+ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 0x17 matters, every other bit inert; function OPEN (without it the run parks at its own slot)"
+
+# fact 97: x17 is a 3-syllable bundle [head, S1, S2]; S2 [31:29] picks what it does: 101 halt
+# (the stop above), 000-011 continue (no visible effect with S1 = 0x31308000), 100 and 110 wedge, 111 an ALU
+# op that continues: s<S1[27:24]> <- X17OP[head[10:7]](s<S2[28:25]>, s<S1[19:16]>, n = S1[23:20]) (emu.X17OP).
+# S1[15] = 1 needed; S1[13:12] (0 a+b, 1 a, 2 a-1, 3 -a for op 0) and S1[7] (+0x8A00) OPEN as rules.
+# A continuing x17 makes the NEXT run wedge unless the engine is reset (the probe list reset_after).
+# own-x17alu-shl, own-x17alu-rsub.
+# x17 S1 class 011 + S2 class 111: s<S1[10:7]> <- head[26:11]; S1[24/26/27] zero s1/s4/s8, S1[28] -> 0;
+# enable S1[14] or S2[17], else wedge; R<S2[16:13]> written, value OPEN (fact 134, own-x17imm).
+# x17 S1 class 000 + S2 class 100: e<S2[11:8]>, s<head[24:21]> <- head[20:5] (S1[18], else 0);
+# e<S1[16:13]> <- old e<S2[19:16]> - 1 (S1[17], else 0); S1[20/22/23] wedge (fact 135, own-x17e).
+# x17 S1 class 001 + S2 class 000: v = AGU10[S1[10:7]](y = R<head[30:27]>, i = head[26:11]); s<S2[13:10]>, e<2*S1[2:0]> <- v;
+# S1[27] = 0 wedges; S2[8] and S2[5:2] OPEN (fact 136, own-x17agu).
+# x17 S1 class 000 + S2 class 011: s<S1[22:19]> <- OP[head[10:5]](s<S2[28:25]>, n = S1[26:23]) (op 3 = asr);
+# e<2*S1[2:0]+head[31]> <- Y:[e<S1[18:15]>] when S2[3] (fact 137, own-x17ld).
+# x17 S1 class 000 + S2 class 110: head = ALU05 word, s<h[18:15]> <- op(s<h[14:11]>, s<S2[28:25]>);
+# S1[13] required; S2[13:6] OPEN (fact 138, own-x17alu05).
+# x17 S1 class 100 + S2 class 110: s<S2[13:10]> <- X:[A<8*S2[1:0]+4>] (S1[17:15] = 101); A<S1[25:22]> <- x + A<S1[12:8]>,
+# x and the enable OPEN (fact 139, own-x17xpm).
+# The load index is 8*S2[1:0] + S1[31:29] for every S1 class (fact 141, own-x17xld-a10).
+# x17 S1 class 000 + S2 class 001: s<S1[22:19]> <- OP[S1[14:12]](s<S2[28:25]>, S1[11:8]) (101 = b - a);
+# p<S1[7:4]> <- K[head[24:21]], a constant LUT, source OPEN (fact 140, own-x17rsub).
+# x17 S1 class 000 + S2 class 010: e<S1[19:16]> <- s<S2[28:25]> (+1 when S1[9]) with head[27] set and head[10] clear,
+# else 0; S1[15:12] zero e1/e2/e4/e8, S1[23:20] zero s1/s2/s4/s8; S2[9]/[11]/[12] wedge (fact 142, own-x17mve).
+# low5 0x19 (4 words) is a VLIW like x17: the syllable classes pick the slots (fact 143).  x and y are e<w3[28:25]>
+# and R<w3[14:11]> in both measured forms.  Classes (0,0,0): R<w3[10:7]>, e<w1[23:20]> <- AGU10[w1[27:24]](x, y), w1[18]
+# required (own-x19agu).  Classes (0,0,7) with w3[1:0] = 3, w3[11:10] = 1: s<w2[13:10]> <- Y:[x];
+# e<2*w1[2:0]+head[31]> <- AGU10[w1[10:7]](x, y), w1[3] required (own-x19ld).
+# 0x19 A-register AGU (fact 144): A<dst> <- AGUA[w3[24:20]](x = A<w3[19:15]>, i = 2*w3[14:0]); classes (0,0,2):
+# dst = w1[7:3], w1[26] required (own-x19aagu).  The same slot writes s<head[24:21]> and A<head[29:25]> in (0,0,3), (7,0,3).
+# x19mac (fact 145): classes (0,1,6): R<w3[10:7]> (0 if w2[28]) and e<w1[6:3]> (0 unless w2[24]) <- by w1[13:11]:
+# 0 0, 1 x+X, 2 x-X, 3 X, 4 P, 5 P+X, 6 P-X, 7 X-P; P = low16(s<w2[8:5]> * s<w2[4:1]>), x = s<w2[8:5]>; w1[17] = 0 doubles P
+# and drops X from 1, 2, 5-7.  X = 0x8A00 here (OPEN, 118's constant).  own-x19mul
+# x19imm (fact 146): classes (0,0,1): e<{w1[0], head[31:29]}>, s<head[24:21]> <- AGU10[w1[4:1]](x = e<w3[28:25]>,
+# y = R<head[28:25]>, i = w2[30:15]); w1[18] required; R<w1[16:13]> <- a second slot (OPEN).  own-x19imm
+# x19alu (fact 147): classes (0,0,4): s<w1[27:24]> <- OP[head[9:5]](a = s<w2[21:18]>, b = s<w1[19:16]>): 0/a/a+1/a+2/b
+# by table, 23 = sat24(a << b) (b < 0: rounded a >> -b); measured in one w1 context, other w1 bits change the table.  own-x19alu
+# x19e (fact 148): classes (2,0,0): e<w1[23:20]> <- head[20:5]; s<head[24:21]>, R<w3[10:7]> <- by w1[14:12]: 010 e<w2[7:4]>,
+# 000 0, 011 0x5000?, 110 head[20:5]; an X store (OPEN).  144's (7,0,3) e <- I + (I & 0x7F) was the Y 0x2E80 map: it is I.  own-x19e
+# x19a3 (fact 149): classes (0,0,3)/(7,0,3): s<head[24:21]>, A<head[29:25]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w1[21:18]>,
+# i = 2*w3[14:0]); (0,0,3) R<w1[14:11]> <- AGU10[w1[10:7]](x = e<w3[28:25]>, y); its e<w1[6:3]> write is OPEN.  own-x19a3
+# Hidden sources (fact 150): x19e w1[14:12] 011/100/101 read H[15:0]/[16:1]/[23:8], H = H3 0x038A00 if w3[1], else H2
+# 0x920D00 if w2[26], else H1 0xA05000 (origin OPEN); they are the OPEN 0x8A00/0x38A/0xC500/0xA050/0x5000 of 97-149.
+# H1 is yd at [23:8] (150).  x19a43 (fact 151): (0,4,3): s<head[24:21]> <- by w1[17:15]: 001 AGU3(x = A<w3[19:15]>,
+# i = (w3[14:0] << 1) | w2[31]), 100 H3[16:1], 101 H3[23:8], 111 0; w2[4] yd.  own-x19a43
+# x19aagu covers (0,4,2) too (152): same slot, i = (w3[14:0] << 1) | w2[31].  own-x19aagu42
+# x19alu covers (0,4,4) too (153): w2[31] does not move the s write.  own-x19alu44
+# 154: H3 is not a register: mux 101 reads X:[x] (x19a43: A<w3[19:15]>); X:0 = 0x038A00 at harness start.  own-x19xrd
+# x02 (fact 155): 6 words; w4 slot s<w4[6:3]> <- mux w4[13:11] (101 X:[A<w4[21:17]>], 100 its 16:1, 111 0).  own-x02xrd
+# x02 w2 slot (156): s<w2[12:9]> <- mode w1[13:11] (0 0, 4 P, 5 P+X, 6 P-X) of P = rnd(s<w2[4:1]>*s<w2[8:5]> >> 23); w1[15]=0 trunc, w1[17] >>24.  own-x02mpy
+# x02 A slot (157): A<w2[21:17]> and A<w3[14:10]> <- w5[18] ? yd : A<w3[4:0]> + 1.  own-x02ainc
+# x02 (158): w5[31:29] inert in (0,0,0,0,0,6); w5[19] makes the w2 slot read X:[A<w4[21:17]>].  own-x02c6
+# x02 (159): inert class bits w1[31:29], w3[29], w5[31:30]; w4[31:29], w3[30], w5[29] are fields (OPEN).
+# x02 mux (160): 001 = I = head[26:11]; 011/100/101 = X:[x] [15:0]/[16:1]/[23:8]; 000/111 = 0.  own-x02imm
+# 161: X:0 = 0x038A00 is harness.CX's canary (not chip state).  X words are 16-bit (SRAM low half) at [23:8].
+# The x02 multiply's X = xd[15:0]: the last X word read before the bundle (persists across runs).  own-x02mac
+# x03 (fact 163): 6 words; w4 slot as x02 with x = A<{w1[2:0], head[31:30]}>.  own-x03xrd
+# x03 A slot (164): A<w3[14:10]> <- AGUA[w2[26:22]](x = A<w3[4:0]>, i = {w5[0], w4[31:17]}); AGUA fn 4 = i - x.  own-x03agu
+# x03 w2 slot (165): 0x02's multiply (156, 161), same fields.  own-x03mpy
+# x03 (166): inert class bits w3[29], w4[29], w5[31]; head[29], w2[31:29], w5[29] are fields (OPEN).
+# x18 (fact 167): 4 words.  X slot s<head[24:21]> <- mux w1[14:12] over X:[A<w2[21:17]>] if w2[23:22] = 01, else xd.  own-x18xrd
+# x18 multiply: P = s<w2[4:1]> * s<w2[8:5]> (w3[24] = 0: x2); lo -> s<w2[27:24]> by mode w3[20:18], hi = P >> 24 -> s<w2[12:9]>.  own-x18mpy
+# x18 unary (168): s<w1[11:8]> <- op w1[17:15] of s<w2[5:2]>: 0-2 pass, 3 +1, 4 -1, 5/6 neg, 7 abs; head[30] zeroes it (OPEN).  own-x18una
+# x18 class 000 (169): X:[A<w2[12:8]>], mux w1[17:15], dsts s<head[24:21]> and s<w1[21:18]>, w2[14:13] memory/latch; e<w1[25:22]> <- op w1[29:26] of e<w3[28:25]>: 0/6/7/13 x, 2 x+1, 4 x-1, 3 1, 1/8-12/14/15 0, 5 OPEN.  own-x18eagu
+# x18 class 010 (170): s<w2[15:12]> <- mode w2[30:28] of round(s<w2[19:16]> * s<w2[23:20]> / 2^23) (w3[2]: 2^24; w3[1]: s<b>+X); e<w1[23:20]> <- op w1[27:24] of e<w3[28:25]>.  own-x18q23
+# x18 class 101 (171): e<{w2[0], w1[31:29]}> <- op w2[27:25] (0 i, 1 0, 2 R+i, 3 R-i, 4-7 R) of i = w2[23:8], R = R<w3[14:11]>; w2[24] inert.  own-x18rimm
+# x18 class 100 (172): e<w2[11:8]> <- e<w2[7:4]> - 1 (w2[20] = 1; 0 OPEN); Y:[e<w3[28:25]>] <- s<w2[3:0]>.  own-x18edec, own-x18yst
+# x18 class 001 (173): class 010's multiply (same w2 fields, w3[2] /2^24 truncates?, w3[1] s<b>+X); e dst w2[3:0], unary dst w1[6:3] (values OPEN); no Y store.  own-x18q23c
+# x18 class 111 (174): X slot s<head[24:21]> (mux w1[14:12]); unary s<w1[11:8]> <- op w1[17:15] of s<w2[19:16]>; e<w1[23:20]> <- op w1[27:24] of e<w3[28:25]>; MAC s<w3[3:0]> <- 0x19 mode w3[6:4] of P = s<w2[27:24]>*s<w2[31:28]>, X = s<w1[31:28]> (0 = xd), w2[3] trunc, w3[10] /2^24.  own-x18mac
+# x18 (175): X-slot mux 001/010/110 = immediate head[20:5] (classes 110/011/111); head[5] is that immediate's LSB, inert elsewhere.  own-x18imm
+# x18 class 010 X slot (176): s<head[24:21]> <- w1[14:12]: 0/7 0, 1/2 e<w3[28:25]>, 3/4/5 yd [15:0]/[16:1]/[23:8], 6 #head[20:5]; no X memory read.  own-x18c2x
+# x18 class 000 second e slot (177): e<w2[5:2]> <- e<{w2[1:0], w1[31:30]}> - 1.  own-x18e2nd
+# x18 class 110/011, w3[0] = 0 (178): if p<w2[31:28]> jump q + sext(w1[28:18]) (110) / sext({w2[0], w1[31:18]}) (011), 2 delay slots; p<w2[16:13]> (110) / p<w2[17:14]> (011) <- condition OPEN, both w3[0] forms.  own-x18br, own-x18br-back
+# x18 class 011 p write (179): p<w2[17:14]> <- cond head[28:25] of the unary slot (operand, result) and s<w1[7:4]>; the same bundle's branch reads the old p.  own-x18pw-false, own-x18pw-true
+# x18 class 000 w2[17] = 0 (180): T ^= 1 per execution, persistent across runs; second e slot = (T ? e_src : 0) - 1.  own-x18e2nd-w17
+# x18 class 010 R slot (194): R<w3[10:7]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w3[14:11]>).  own-x18rag
+# x18 class 101 (195): the same R slot; X slot s<head[24:21]> <- w1[14:12] (001 R value, 011/101 yd).  own-x18rag101, own-x18rmux
+# x18 class 100 (196): R<{w3[2:0], w2[31]}> <- (w2[20] ? AGU10 : AGU10B)[w1[10:7]](x = e<w3[28:25]>, y = R<w2[26:23]>).  own-x18rcl100
+# x18 class 100 (197): s<w3[16:13]> <- 0x02's multiply of s<w3[20:17]>, s<w3[24:21]> (mode w1[13:11], w1[15]/[16]/[17]); s<w2[15:12]> low half; Y store only with w2[22:21] = 11.  own-x18mpy100
+# x18 class 100 (198): s<w1[27:24]> <- s<w2[19:16]> shifted by w1[23:20], head[27] 1 right (rounded) / 0 left; w3[9] negates; head[26] OPEN.  own-x18shr100, own-x18shl100
+# x18 class 001 (199): R<w3[10:7]> <- head[30] ? AGU3[w3[24:20]](A<w3[19:15]>, R<w3[14:11]>) : AGU10B[w1[31:28]](e<w3[28:25]>, R<w3[14:11]>); Y:[e<w3[28:25]>] <- s<head[25:22]> when w1[19] and w2[11].  own-x18rcl001, own-x18rag001
+# x18 class 011 (200): R<w3[10:7]> <- the unary slot result (168), alongside s<w1[11:8]>; w3[3] / head[30] zero it (OPEN); not in class 110.  own-x18runa
+# x18 class 101 (201): w2[30:29] = 00 -> branch if p<{w3[2:0], w2[31]}> (0 = always) by sext(w1[28:18]), 2 delay slots; 10 wedges (OPEN).  own-x18br101, own-x18br101-not, own-x18br101-e
+# x02 third slot (182): s<{w5[1:0], w4[31:30]}> <- (a op w5[8:6] b) << w5[5:2], a = s<w4[25:22]>, b = s<w4[29:26]>; ops a+b, b-a, b, b+1, b-1, a-b, -b, |b|; w5[16] X read.  own-x02x3
+# x02 s<w4[10:7]> (183): the w2 multiply's low half, (P << (w1[17] ? 0 : 1))[15:0]; mode 000 0; w5[20] X read.  own-x02plo
+# x02 (184): third slot and w2 slot on one register: the third slot's value stays.  own-x02coll
+# x02 multiply (185): >>24 form truncates; b = s<w2[8:5]> unsigned 24-bit if w1[15] = 0, a = s<w2[4:1]> unsigned if w1[15] = w1[16].  own-x02u24, own-x02uu24
+# x02 w4 slot memory (186): w5[14] = 1 X:[A<w4[21:17]>]; w5[14] = 0, w5[12] = 1 Y:[e<w3[30:27]>], same slices.  own-x02yrd
+# x02 mux 001/010 override (187): w5[29:28] 10 = e<w3[30:27]>, 01 per-run count (OPEN), 11 Y:0x40 (OPEN).  own-x02esrc
+# x02 (188): w3[31] inert; w3[30] only as e<w3[30:27]>'s top bit.  Two 0x02s need 3+ nops between them.  own-x02w3b31
+# x02 (189): head[31:27] inert (the immediate's sign fill).  own-x02hdhi
+# x03 (190): w5[1] X / Y; w5[21] Y:[e<w3[30:27]>]; w5[29:28] 10 e<w3[30:27]>, 01 AGU fn(A<w3[4:0]>, i = 0).  x02 01 = A<w3[4:0]> + 1.  own-x03yrd, own-x03esrc, own-x02asrc
+# x03 (191): 0x02's product low half s<w4[10:7]> and >>24 signedness.  own-x03plo, own-x03u24
+# x03 (192): w5[6] = 0x02's w5[19]: the w2 slot reads X:[x].  own-x03xw2
+# x03 (193): A<w2[21:17]> <- w5[5] ? yd : A<w3[4:0]>; yd beats the AGU on a shared A.  own-x03acp, own-x03ayd
+
+[[form]]
+name = "loop"
+mask = "0xFFFFFFF0"
+value = "0x60448000"
+evidence = "INFERRED"
+ref = "the probe list fill-unbounded/fill-stride2, fact 17, 21: bounds the stub's fill; [8:7] and [24:23] are 2-bit selectors into V2/V13 (3 = none)"
+
+[[form]]
+name = "zero"
+mask = "0xFFFFFFFF"
+value = "0x00000000"
+evidence = "MEASURED"
+ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole rows, section 18)"
+
+# Data regions per codec mode (fact 2, mode tables).  Anything not listed prints as a bare address.
+[[region]]
+modes = [0]
+space = "Y"
+lo = "0x2E80"
+hi = "0x2EFF"
+name = "win32"     # entry 11: the 32-bit scalar-state window
+
+[[region]]
+modes = [1]
+space = "Y"
+lo = "0x1780"
+hi = "0x187F"
+name = "win32"
+
+[[region]]
+modes = [0, 1, 3, 5, 2]
+space = "Y"
+lo = "0xFD80"
+hi = "0xFDFF"
+name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
+
+
+# Two-word low5 0x10 pairs with a head [31:29] = 000 (fact 89, MEASURED by bit flips; decoded in
+# disasm.decode, executed by emu.Engine.step - the head's meaning depends on the second's class):
+#   second 001.. [20:19]=11   head = ldi2 s<[24:21]> <- [20:5]; second = Y:[e<[28:25]>] <- s<[24:21]>   own-slot-st
+#   second 010.. [18:16]=111  Y:[e<head[8:5]>] <- s<[15:12]>; R<[28:25]> (0 = none) <- yd, the last Y read
+#   second 100.. [14]=1       s<head[18:15]> <- 0? and R<[24:21]> <- 0? (source OPEN: not yd)
+#   a second of 0 or a nop wedges
+
+# Three-word low5 0x16 bundle, one shape (fact 90, MEASURED; disasm.decode "b16"):
+#   head  [24:21] s dest, [20:5] imm -> xa (when head [31] and S1 [3]); [30:25] inert
+#   S1    [31:28] X store source s, [18] = 1, [13:12] load placement (01 plain, 00 none, 11 << 8),
+#         [11:8] s<n> <- 0 when != 0, [3] xa load enable
+#   S2    [31:29] = 111, [24:21] Y entry of the load, [18] = 1, [16] = 0, [14:13] = 11 and [11] = 0
+#         enable the X store
+#   X:[xa] <- s<S1[31:28]> uses xa as it was BEFORE the bundle; s<head[24:21]> <- Y:[e<S2[24:21]>]
+# Shifter 0x16 bundle (fact 91, MEASURED): head [26:25] = 11 and S2 [31:29] = 000 with S2 [12] = 1
+#   (clear wedges); head s<[24:21]> <- mux S1[14:12] (110 = head [20:5], 111 = 0, 010 = yd, 100 OPEN);
+#   S1 s<[11:8]> <- s<S2[28:25]> >> S1[23:20] (arithmetic; 0 = no write; [17] negates).
+#   The shift result lands late: a register write by the 3rd-5th instruction after the bundle is lost.
+# Address-unit 0x16 bundle (fact 92, MEASURED, one stock shape): S2 [31:29] = 100 (S2's other bits inert);
+#   s<head[24:21]> <- FN[S1 10:7](x = e<S1[18:15]>), table in disasm AGU16; R<S1[14:11]> <- head [20:5]
+#   when != 0; s<S1[28:25]> <- 0 when != 0; S1 [19], [21], [22] flipped wedge.  own-b16agu
+# x16alu (0x16 S1 class 000, S2 class 111; fact 116 pass 142): S2[13] = 1 latches xi <- S2[12:8] (xi persists; 0 with S2[13] reads 0x38A?);
+# s<S1[11:8]> <- OP[S1[18:16]](a = s<S2[28:25]>, b = s<S1[7:4]>): 4 a+b, 5 none, 6 a-1, 7 -a, 0-3 wedge;
+# s<head[24:21]> <- by S1[14:12]: 101 X:[A<xi>] if S2[19] else yd, 001 yd, 100 0x4A00?, 111 0x8808?.  own-x16alu
+# x16agu (0x16 S1 class 000, S2 class 011; fact 117 pass 143): s<S2[6:3]> <- AGU10[S1[10:7]](x = e<2*S2[2:0]> (e0 = 0), y = R<head[30:27]>, imm = head[26:11]) if S1[28] else 0;
+# S1[27:25] bit b zeroes s<2 << b>; S1[14] = 0 wedges; head[4:0] other than 0x16 wedges.  own-x16agu
+# x16mul (0x16 S1 class 000, S2 class 110; fact 118 pass 144): s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]> (signed 16) [+ 2^22 if S2[18]]) >> 23 when S2[16];
+# 0 when S2[16] = 0 (S2[20:16] < 8); S2[15:14] 01/10/11 give X + p, -X + p, X - p with X = 0x8A00 here (OPEN); S2[20:19] other modes OPEN;
+# head[24:22] and S1[11:9] bit b zero s<2 << b>; S1[18] = 0 wedges; S1[23:20] OPEN.  own-x16mul
+# x16alu, S2 class 010 (fact 119 pass 145): the 116 ALU alone, s<S1[11:8]> <- by S1[15], S1[18:16]: 0: 4 a+b 5 a 6 a-1 7 -a; 1: 4 a-b 5 a+1 6 a 7 a
+# (a = s<S2[28:25]>, b = s<S1[7:4]>; the same table holds under class-111 S2); head[24:21] bit b zeroes s<1 << b>, S2[16:13] bit b zeroes R<1 << b>.  own-x16alu2
+# x16agu, S2 class 101 (fact 120 pass 146): s<S1[12:9]> and R<1 << b> for S2[16:13] bit b <- by S1[17:15] (001 value, 000 0, 011 0x5000?, 101 yd):
+# value = (S2[8] ? AGU10 : AGU10B)[S1[29:26]](x = e<S2[24:21]>, y = R<S1[21:18]>, imm = 0); head[18:15] bit b zeroes s<1 << b>; S1[13] = 0 wedges.  own-x16agu2
+# x16mul2 (0x16, S2 class 001, S1[8:5] = 0001; fact 121 pass 147): s<4*S2[1:0] + S1[31:30]> <- (s<S1[4:1]> * s<S1[29:26]> [+ half if head[30]]) >> (S1[0] ? 24 : 23) when head[28], else 0;
+# head[27:26] 01/10 add +-X (X = 0x9400 here, OPEN); head[18:15] and S1[12:9] bit b zero s<1 << b>; S1[21:18] bit b writes s<1 << b> <- 0x2010? (OPEN); S1[8:5] != 1 and S1[14] wedge.  own-x16mul2
+# yld10 (0x10 with S class 111; fact 123 pass 149): s<head[24:21]> <- by S[23:22], S[17:16]: 01/10 Y:[e<S[28:25]>] (e0 reads 0), 00/10 0, 11/10 0x700?, S[17:16] != 10 yd;
+# S[6:3] bit b zeroes s<1 << b>; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the stock bundle is OPEN.  own-yld10
+# aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
+# no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12
