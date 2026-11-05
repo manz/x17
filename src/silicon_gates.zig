@@ -845,6 +845,19 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
     },
     .{
+        .name = "own-x16mul2",
+        // Pre s1 = 0x1101, s2 = 0x3303; rounded multiply gives s3 <- 7.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x1101 },
+            .{ .bank = .s, .index = 2, .value = 0x3303 },
+        },
+        .src =
+        \\x16.mul2 #3, #0, s1, s2, #0, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 7 } }},
+    },
+    .{
         .name = "own-s0-reads-zero",
         // s0 reads as 0 regardless of pre-state.
         .pre = &.{.{ .bank = .s, .index = 0, .value = 7 }},
