@@ -65,6 +65,16 @@ x19.mul	op	imm	11	13	s1
 x19.mul	a_src	s	5	8	s2
 x19.mul	b_src	s	1	4	s2
 
+# agu10r (2 syllables): scalar imm + AGU into R.
+# Grammar: agu10r <dest_s>, #<imm>, <dest_R>, <x_e>, #<y_base>, #<fn_op>
+# y_base is a 2-bit field: the actual y register is R<4*y_base>.
+agu10r	dest_s	s	21	24	head
+agu10r	imm	imm	5	20	head
+agu10r	dest_R	R	21	24	s1
+agu10r	x_e	e	25	28	s1
+agu10r	y_base	imm	27	28	head
+agu10r	fn_op	imm	1	4	s1
+
 # alu11 (2 syllables): ALU + AGU in parallel.
 # Grammar: alu11 <dest_s>, <a_s>, <b_s>, #<op>, <dest_R>, <dest_e>, <x_e>, <y_R>, #<fn_op>, #<tbl>
 alu11	dest_s	s	15	18	head

@@ -15,7 +15,7 @@ main_row = 0x40          # pass-2 program lands at row 0x40 (fact 1)
 # The engine's order (fact 45, MEASURED): PC q = 8*(row/2) + 2*lane + row%2 - column-major over
 # row pairs.  Instruction length from the head syllable's low5 (fact 44, MEASURED at one head;
 # the only table that parses all six main programs end to end, fact 45).  [hi_low5, length].
-length = [[0x01, 7], [0x04, 6], [0x0D, 1], [0x11, 2], [0x15, 2], [0x17, 3], [0x19, 4]]
+length = [[0x01, 7], [0x04, 6], [0x0D, 1], [0x10, 2], [0x11, 2], [0x15, 2], [0x17, 3], [0x19, 4]]
 # low5 0x1A-0x1F at a head: back to the previous head (bare words only; never a head in stock code)
 
 # Forms, first match wins.  `addr = true`: [20:5] is printed as a data address.
@@ -211,6 +211,13 @@ mask = "0xE0000002"
 value = "XXXXXXXX"
 evidence = "MEASURED"
 ref = "fact 18, 32: bit sweep in own-all - only [31:29] = 101 and bit 1 matter (bit 1 clear: completes without the write before it); measured at one position"
+
+[[form]]
+name = "agu10r"
+mask = "0x0000001F"
+value = "0x00000010"
+evidence = "MEASURED"
+ref = "fact 131: 2-syllable bundle with S class 101: s<head[24:21]> <- head[20:5] + R<S[24:21]> <- AGU10[S[4:1]](x = e<S[28:25]>, y = R<4*head[28:27]>) when S[20] = 1.  own-agu10r."
 
 [[form]]
 name = "alu11"

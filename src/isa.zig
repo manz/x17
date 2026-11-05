@@ -463,13 +463,13 @@ test "layout parses row_syllables and main_row" {
     try testing.expectEqual(@as(u16, 0x40), layout.main_row);
 }
 
-test "length table carries the seven known head widths" {
-    try testing.expectEqual(@as(usize, 7), layout.length_table.len);
-    // From isa.toml: [[0x01, 7], [0x04, 6], [0x0D, 1], [0x11, 2], [0x15, 2], [0x17, 3], [0x19, 4]]
-    const expect: [7]LengthEntry = .{
+test "length table carries the eight known head widths" {
+    try testing.expectEqual(@as(usize, 8), layout.length_table.len);
+    const expect: [8]LengthEntry = .{
         .{ .low5 = 0x01, .syllables = 7 },
         .{ .low5 = 0x04, .syllables = 6 },
         .{ .low5 = 0x0D, .syllables = 1 },
+        .{ .low5 = 0x10, .syllables = 2 },
         .{ .low5 = 0x11, .syllables = 2 },
         .{ .low5 = 0x15, .syllables = 2 },
         .{ .low5 = 0x17, .syllables = 3 },
@@ -481,8 +481,8 @@ test "length table carries the seven known head widths" {
     }
 }
 
-test "forms table has the 28 known entries" {
-    try testing.expectEqual(@as(usize, 28), forms.len);
+test "forms table has the 29 known entries" {
+    try testing.expectEqual(@as(usize, 29), forms.len);
 }
 
 test "first form is st.y" {

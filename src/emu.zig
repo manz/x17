@@ -71,6 +71,16 @@ pub const RunError = error{
 pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len == 0) return;
     const head = bundle[0];
+
+    // Low5 0x10 bundles share value/mask across bcc/ystm/agu10r; isa.classify
+    // returns the first match.  Discriminate by the S class before falling
+    // through to the generic classifier.
+    const low5: u32 = head & 0x1F;
+    if (low5 == 0x10 and bundle.len >= 2) {
+        const s_class: u32 = (bundle[1] >> 29) & 0x7;
+        if (s_class == 0b101) return execAgu10r(gpa, state, bundle);
+    }
+
     const f = isa.classify(head) orelse return RunError.UnknownForm;
 
     if (std.mem.eql(u8, f.name, "ldi")) {
@@ -91,8 +101,33 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "alu11")) {
         return execAlu11(gpa, state, bundle);
     }
+    if (std.mem.eql(u8, f.name, "agu10r")) {
+        return execAgu10r(gpa, state, bundle);
+    }
 
     return RunError.UnknownForm;
+}
+
+fn execAgu10r(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s1 = bundle[1];
+
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const imm: u32 = (head >> 5) & 0xFFFF;
+    const y_base: u32 = (head >> 27) & 0x3;
+    const dest_r: u32 = (s1 >> 21) & 0xF;
+    const x_idx: u32 = (s1 >> 25) & 0xF;
+    const fn_op: u32 = (s1 >> 1) & 0xF;
+
+    if (dest_s != 0) state.s[dest_s] = imm;
+
+    const x_val: u32 = if (x_idx == 0) 0 else state.e[x_idx];
+    const y_idx: u32 = (4 * y_base) & 0xF;
+    const y_val: u32 = if (y_idx == 0) 0 else state.r[y_idx];
+    const v = try agu10Eval(fn_op, x_val, y_val);
+    if (dest_r != 0) state.r[dest_r] = v;
 }
 
 fn execAlu11(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

@@ -27,6 +27,14 @@ x19.imm    4   0x60000019   0x00060614   0x00002000   0x21F20000
 # w1[17] is "no doubling"; w1[15] and w2[24] are the measured enables.
 x19.mul    4   0x00000019   0x00028000   0x21000000   0xC0000000
 
+# agu10r: 2-syllable bundle.  Scalar immediate load + AGU10 into an R reg.
+# Semantics from fact 131 / own-agu10r:
+#   s<head[24:21]> <- head[20:5]
+#   R<S[24:21]> <- AGU10[S[4:1]](x = e<S[28:25]>, y = R<4*head[28:27]>)
+# S[20] = 1 required (baked); S[18]/S[17] also measured enables.  S class
+# 101 (bits 31, 29 set).  own-agu10r = scalar imm + AGU out of an element.
+agu10r     2   0x00000010   0xA0160000
+
 # alu11: 2-syllable bundle.  Head is an ALU05 word, S (class 001) packs
 # an AGU10 op in parallel.  Semantics from fact 129 / own-alu11 +
 # own-agu11.  Setting an operand to zero disables that half.

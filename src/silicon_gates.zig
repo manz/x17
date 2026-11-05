@@ -289,6 +289,20 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-agu10r",
+        // the probe list own-agu10r: pre e3 = 0x700.
+        // Bundle: s5 <- 0x0BEE and R3 <- AGU10[2](e3) = e3 + 1 = 0x701.
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x700 }},
+        .src =
+        \\agu10r s5, #0x0BEE, R3, e3, #0, #2
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 0xBEE } },
+            .{ .r_reg = .{ .index = 3, .value = 0x701 } },
+        },
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },
