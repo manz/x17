@@ -39,6 +39,11 @@ jmp	mode	imm	21	25	head
 jmp	pred	imm	26	28	head
 jmp	offset	imm	5	20	head
 
+# br: 1-syllable branch when p<pred> set, offset is unsigned [25:11].
+# Grammar: br #<pred>, #<offset>
+br	pred	imm	26	29	head
+br	offset	imm	11	25	head
+
 # st.y (1 syllable):
 # "[20:5] is a 16-bit immediate; [31:29]=001 selects it."  The stored value
 # is the LANE's data register (implicit; not an encoded operand); sel bits

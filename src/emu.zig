@@ -118,6 +118,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const high3: u32 = (head >> 29) & 0x7;
         if (high3 == 0b010) return execJmp(gpa, state, head);
     }
+    if (low5 == 0x08) {
+        return execBr(gpa, state, head);
+    }
     if (low5 == 0x15 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b101) return execX15Alu(gpa, state, bundle);
@@ -284,6 +287,14 @@ fn execX12Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_e != 0) state.e[dest_e] = v;
     if (s_dest != 0) state.s[s_dest] = v;
     if (dest_r != 0) state.r[dest_r] = v;
+}
+
+fn execBr(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    _ = gpa;
+    // offset [25:11]: unsigned 15-bit in syllables; pred [29:26]: 4-bit.
+    const off: i32 = @intCast((head >> 11) & 0x7FFF);
+    const pred_idx: u32 = (head >> 26) & 0xF;
+    if (state.p[pred_idx] != 0) state.pending_jmp_offset = off;
 }
 
 fn execJmp(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
