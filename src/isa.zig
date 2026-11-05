@@ -463,15 +463,16 @@ test "layout parses row_syllables and main_row" {
     try testing.expectEqual(@as(u16, 0x40), layout.main_row);
 }
 
-test "length table carries the nine known head widths" {
-    try testing.expectEqual(@as(usize, 9), layout.length_table.len);
-    const expect: [9]LengthEntry = .{
+test "length table carries the ten known head widths" {
+    try testing.expectEqual(@as(usize, 10), layout.length_table.len);
+    const expect: [10]LengthEntry = .{
         .{ .low5 = 0x01, .syllables = 7 },
         .{ .low5 = 0x04, .syllables = 6 },
         .{ .low5 = 0x0D, .syllables = 1 },
         .{ .low5 = 0x0E, .syllables = 2 },
         .{ .low5 = 0x10, .syllables = 2 },
         .{ .low5 = 0x11, .syllables = 2 },
+        .{ .low5 = 0x14, .syllables = 2 },
         .{ .low5 = 0x15, .syllables = 2 },
         .{ .low5 = 0x17, .syllables = 3 },
         .{ .low5 = 0x19, .syllables = 4 },

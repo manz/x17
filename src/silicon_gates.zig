@@ -332,6 +332,20 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-xst",
+        // the probe list own-xst: X:[A11] <- s6 (sign-extended to 24 bits).
+        // Expected bytes: 0xC1000034 0x3200016A.
+        .pre = &.{
+            .{ .bank = .s, .index = 6, .value = 0x8BEE },
+            .{ .bank = .a, .index = 11, .value = 0x300 },
+        },
+        .src =
+        \\xst #3, s8, #1, #2, s6
+        \\x17.halt
+        ,
+        .post = &.{.{ .x_mem = .{ .addr = 0x300, .value = 0x8BEE } }},
+    },
+    .{
         .name = "own-ld0e",
         // the probe list own-0e: s5 <- 0, A13 <- 0x300, via low5 0x0E.
         // Expected bytes: 0x9CA0600E 0x00040006.

@@ -82,6 +82,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b001) return execLdi2(gpa, state, bundle);
         if (s_class == 0b011) return execPair(gpa, state, bundle);
     }
+    if (low5 == 0x14 and bundle.len >= 2) {
+        const s_class: u32 = (bundle[1] >> 29) & 0x7;
+        if (s_class == 0b001) return execXst(gpa, state, bundle);
+    }
 
     const f = isa.classify(head) orelse return RunError.UnknownForm;
 
@@ -120,6 +124,19 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     }
 
     return RunError.UnknownForm;
+}
+
+fn execXst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const a_half: u32 = (head >> 30) & 0x3;
+    const a_low: u32 = s1 & 0x7;
+    const src_s: u32 = (s1 >> 4) & 0xF;
+    const a_idx: u32 = (4 * a_low + a_half) & 0xF;
+    const addr: u32 = state.a[a_idx];
+    const value: u32 = state.s[src_s] & M24;
+    try state.x_mem.put(gpa, addr, value);
 }
 
 fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
