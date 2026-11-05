@@ -134,6 +134,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x13 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execX13Agu(gpa, state, bundle);
+        if (s_class == 0b101) return execX13St(gpa, state, bundle);
     }
     if (low5 == 0x18 and bundle.len >= 4) {
         const w3_class: u32 = (bundle[3] >> 29) & 0x7;
@@ -475,6 +476,20 @@ fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const prod: u64 = av * bv;
     const v: u32 = @truncate((prod >> 23) & M24);
     if (dest_s != 0) state.s[dest_s] = v;
+}
+
+fn execX13St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const dest_s: u32 = (head >> 15) & 0xF;
+    const a_s: u32 = (head >> 19) & 0xF;
+    // Only the sub (code 0x10) with m0 is modelled: s_dest <- 0 - s<a_s>.
+    const code: u32 = (head >> 5) & 0x3F;
+    if (code != 0x10) return RunError.UnknownForm;
+    const a_val: u32 = state.s[a_s] & M24;
+    const v: u32 = (0 -% a_val) & M24;
+    if (dest_s != 0) state.s[dest_s] = v;
+    // The X store side of this form is not modelled (needs address units).
 }
 
 fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

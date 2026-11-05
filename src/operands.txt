@@ -85,6 +85,12 @@ x12.agu29	s_hi	imm	31	31	head
 x12.agu29	s_low	imm	0	2	s1
 x12.agu29	dest_R	R	21	24	s1
 
+# x13.st (2 syllables): sub 0 - s and X store.  Only the sub side is
+# modelled.
+# Grammar: x13.st <dest_s>, <a_s>
+x13.st	dest_s	s	15	18	head
+x13.st	a_s	s	19	22	head
+
 # x15.alu (2 syllables): class-05 ALU word in head, mux=111 dual write.
 # Grammar: x15.alu <dest_s>, <a>, <b>, #<code>, #<m>, <dest_s2>
 # Only mux=111 modelled; base_S bakes it in.
