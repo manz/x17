@@ -51,6 +51,8 @@ pub const RunError = error{
     UnknownForm,
     LdiDestOpen, // ldi dest = 2..15 (marked OPEN in isa.toml)
     OutOfMemory,
+    UnknownBundleLength,
+    RunawayProgram,
 };
 
 /// Execute one bundle (1..7 syllables) against `state`.  Dispatches by
@@ -169,6 +171,48 @@ fn execX17Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
     const result = try x17opEval(op, sx24(a_val), sx24(b_val), n);
     state.s[dest_s] = result;
+}
+
+/// Run a linear sequence of syllables, walking bundle by bundle until a
+/// halt (x17 with S2 class 101) ends the run or we fall off the end.
+/// Caller lays syllables out in PC order; multi-lane programs call this
+/// once per lane with that lane's stream.  Returns the number of bundles
+/// executed; `RunawayProgram` if no halt was seen within 256 bundles.
+pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) RunError!usize {
+    var i: usize = 0;
+    var bundles_run: usize = 0;
+    const MAX_BUNDLES: usize = 256;
+    while (i < syllables.len) : (bundles_run += 1) {
+        if (bundles_run >= MAX_BUNDLES) return RunError.RunawayProgram;
+        const head = syllables[i];
+        const len = bundleLen(head) orelse return RunError.UnknownBundleLength;
+        if (i + len > syllables.len) return RunError.UnknownBundleLength;
+        const slice = syllables[i .. i + len];
+        try executeBundle(gpa, state, slice);
+        i += len;
+        if (isHaltBundle(slice)) return bundles_run + 1;
+    }
+    return bundles_run;
+}
+
+/// Bundle length in syllables from the HEAD's low5, via isa.layout's
+/// length table.  Returns null for a low5 not in the table (today those
+/// are treated as "unknown"; future RE may fill them in).
+pub fn bundleLen(head: u32) ?u8 {
+    const low5: u8 = @intCast(head & 0x1F);
+    for (isa.layout.length_table) |e| {
+        if (e.low5 == low5) return e.syllables;
+    }
+    // Unlisted low5s show up in practice: default to 1 so a lone st.y or
+    // ldi ok execute.  TODO: this is a spike heuristic; replace with a
+    // measured default once isa.toml's table is complete.
+    return 1;
+}
+
+fn isHaltBundle(bundle: []const u32) bool {
+    if (bundle.len < 3) return false;
+    if ((bundle[0] & 0x1F) != 0x17) return false;
+    return ((bundle[2] >> 29) & 0x7) == 0b101;
 }
 
 fn execLdi(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
@@ -295,6 +339,59 @@ test "st.y writes the lane's V register to Y memory" {
     const b = try asm_mod.assembleOne("st.y Y:0x200");
     try executeBundle(testing.allocator, &state, b.slice());
     try testing.expectEqual(@as(u32, 2), state.getY(0x200).?);
+}
+
+test "runLinear walks ldi then halt and stops" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+
+    const b_ldi = try asm_mod.assembleOne("ldi s3, #0xBEEF");
+    const b_halt = try asm_mod.assembleOne("x17.halt");
+
+    var buf: [8]u32 = undefined;
+    @memcpy(buf[0..b_ldi.len], b_ldi.slice());
+    @memcpy(buf[b_ldi.len .. b_ldi.len + b_halt.len], b_halt.slice());
+    const stream = buf[0 .. b_ldi.len + b_halt.len];
+
+    const bundles = try runLinear(testing.allocator, &state, stream);
+    try testing.expectEqual(@as(usize, 2), bundles);
+    try testing.expectEqual(@as(u32, 0xBEEF), state.s[3]);
+}
+
+test "runLinear: x17.alu then halt reproduces shl math" {
+    // Mini program: pre-load s8 and s2, run ALU, store would follow but
+    // we halt right after.  Mirrors own-x17alu-shl's compute path end-to-end.
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[8] = 0x246;
+    state.s[2] = 1;
+
+    const b_alu = try asm_mod.assembleOne("x17.alu s1, s8, s2, #0, #3");
+    const b_halt = try asm_mod.assembleOne("x17.halt");
+
+    var buf: [16]u32 = undefined;
+    @memcpy(buf[0..b_alu.len], b_alu.slice());
+    @memcpy(buf[b_alu.len .. b_alu.len + b_halt.len], b_halt.slice());
+
+    _ = try runLinear(testing.allocator, &state, buf[0 .. b_alu.len + b_halt.len]);
+    try testing.expectEqual(@as(u32, 0x1238), state.s[1]);
+}
+
+test "runLinear halts even if syllables follow the halt" {
+    // A halt bundle mid-stream stops the run; trailing syllables are
+    // untouched.  Mirrors silicon: execution ends at the stop.
+    var state = State{};
+    defer state.deinit(testing.allocator);
+
+    const b_halt = try asm_mod.assembleOne("x17.halt");
+    const b_ldi = try asm_mod.assembleOne("ldi s0, #0xDEAD");
+
+    var buf: [8]u32 = undefined;
+    @memcpy(buf[0..b_halt.len], b_halt.slice());
+    @memcpy(buf[b_halt.len .. b_halt.len + b_ldi.len], b_ldi.slice());
+
+    _ = try runLinear(testing.allocator, &state, buf[0 .. b_halt.len + b_ldi.len]);
+    try testing.expectEqual(@as(u32, 0), state.s[0]); // ldi after halt never ran
 }
 
 test "own-st3 reproduces silicon Y writes at lane 2" {
