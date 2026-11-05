@@ -412,8 +412,43 @@ fn alu05Base(code: u32, a: u32, b: u32) RunError!u32 {
         0x20, 0x21, 0x22, 0x28, 0x29, 0x2E, 0x2F, 0x39, 0x3B => 0, // clr
         0x23, 0x24, 0x27, 0x2B => am, // mova
         0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 => bm, // movb
+        // Shift ops: a is the shift count (signed 24-bit), b is the value.
+        // asr/asrrs treat b as signed; lsr unsigned.  Negative count shifts
+        // left.  fact 33, upstream/tools/sm1isa/emu.py `shift`.
+        0x06, 0x1A => alu05Shift(am, bm, .asr),
+        0x07 => alu05Shift(am, bm, .asrrs),
+        0x08, 0x1B, 0x3E => alu05Shift(am, bm, .lsr),
         else => return RunError.UnknownForm,
     };
+}
+
+const ShiftKind = enum { asr, asrrs, lsr };
+
+fn alu05Shift(a: u32, b: u32, kind: ShiftKind) u32 {
+    const n: i32 = if (a & 0x800000 != 0)
+        @as(i32, @bitCast(a | 0xFF000000))
+    else
+        @as(i32, @intCast(a));
+    const v_signed: i32 = if (kind == .lsr)
+        @as(i32, @bitCast(b & 0xFFFFFF))
+    else if (b & 0x800000 != 0)
+        @as(i32, @bitCast(b | 0xFF000000))
+    else
+        @as(i32, @intCast(b));
+    if (n < 0) {
+        const shift: u5 = @intCast(@min(-n, 24));
+        const shifted: i64 = @as(i64, v_signed) << shift;
+        if (kind == .asrrs) {
+            const sat: i64 = @max(-0x800000, @min(0x7FFFFF, shifted));
+            return @as(u32, @bitCast(@as(i32, @intCast(sat)))) & M24;
+        }
+        return @as(u32, @bitCast(@as(i32, @truncate(shifted)))) & M24;
+    }
+    var vv: i32 = v_signed;
+    if (kind == .asrrs and n > 0) vv += @as(i32, 1) << @as(u5, @intCast(n - 1));
+    const shift: u5 = @intCast(@min(n, 24));
+    const shifted: i32 = vv >> shift;
+    return @as(u32, @bitCast(shifted)) & M24;
 }
 
 fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

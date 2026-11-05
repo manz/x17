@@ -805,6 +805,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x15alu-asr",
+        // Pre s5 = 4 (shift count), s3 = 0x100; asr: s3 >> s5 = 0x10.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 4 },
+            .{ .bank = .s, .index = 3, .value = 0x100 },
+        },
+        .src =
+        \\x15.alu s4, s5, s3, #6, #0, s0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 4, .value = 0x10 } }},
+    },
+    .{
         .name = "own-x15alu-sub",
         // Exercise ALU05 code 0x10 (sub) via x15.alu: s4 <- s7 - s3.
         .pre = &.{
