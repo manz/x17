@@ -871,6 +871,20 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 3, .value = 7 } }},
     },
     .{
+        .name = "own-alu-asr",
+        // Pre s1 = -4 (0xFFFFFC = shift count), s2 = 0x123; asr b by a.
+        // Negative count shifts left: 0x123 << 4 = 0x1230.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xFFFFFC },
+            .{ .bank = .s, .index = 2, .value = 0x123 },
+        },
+        .src =
+        \\alu s3, s1, s2, #0x06
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x1230 } }},
+    },
+    .{
         .name = "own-s0-reads-zero",
         // s0 reads as 0 regardless of pre-state.
         .pre = &.{.{ .bank = .s, .index = 0, .value = 7 }},
