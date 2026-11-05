@@ -332,6 +332,21 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-xld10",
+        // the probe list own-xld10: s3 <- X:[A6], s5 <- 0xBEE.  Pre A6 = 0x330,
+        // X[0x330] = 0x777.  Expected bytes: 0x80A17DD0 0x60640181.
+        .pre = &.{.{ .bank = .a, .index = 6, .value = 0x330 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x330, .value = 0x777 }},
+        .src =
+        \\xld10 s5, #2, #0xBEE, s3, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x777 } },
+            .{ .s_reg = .{ .index = 5, .value = 0xBEE } },
+        },
+    },
+    .{
         .name = "own-yld10",
         // the probe list own-yld10: s5 <- Y:[e3].  Pre e3 = 0x780, Y[0x780] = 0x0BEE.
         // Expected bytes: 0x00A00010 0xE6420080.

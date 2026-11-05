@@ -80,7 +80,11 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b101) return execAgu10r(gpa, state, bundle);
         if (s_class == 0b001) return execLdi2(gpa, state, bundle);
-        if (s_class == 0b011) return execPair(gpa, state, bundle);
+        if (s_class == 0b011) {
+            const s7: u32 = (bundle[1] >> 7) & 1;
+            if (s7 == 1) return execXld10(gpa, state, bundle);
+            return execPair(gpa, state, bundle);
+        }
         if (s_class == 0b111) return execYld10(gpa, state, bundle);
     }
     if (low5 == 0x14 and bundle.len >= 2) {
@@ -138,6 +142,23 @@ fn execXst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const addr: u32 = state.a[a_idx];
     const value: u32 = state.s[src_s] & M24;
     try state.x_mem.put(gpa, addr, value);
+}
+
+fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const a_half: u32 = (head >> 30) & 0x3;
+    const dest_s2: u32 = (head >> 21) & 0xF;
+    const imm16: u32 = (head >> 5) & 0xFFFF;
+    const dest_s_x: u32 = (s1 >> 7) & 0xF;
+    const a_low: u32 = s1 & 0x7;
+    const a_idx: u32 = (4 * a_low + a_half) & 0xF;
+    const addr: u32 = state.a[a_idx];
+    const v: u32 = state.getX(addr) orelse 0;
+    if (dest_s_x != 0) state.s[dest_s_x] = v;
+    if (dest_s2 != 0) state.s[dest_s2] = imm16;
 }
 
 fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
