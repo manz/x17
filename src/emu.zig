@@ -34,16 +34,26 @@ pub const State = struct {
     /// this out explicitly for st.y ("the LANE's data register"); other
     /// forms may acquire lane dependence as they port.
     cur_lane: u8 = 0,
+    /// Address registers A0..A15: feed X/Y load+store addresses.  Default
+    /// zero; seeded via tests or set-up forms that write them.
+    a: [16]u32 = @splat(0),
     /// Y data memory, keyed by address.  Sparse: only addresses the program
     /// writes are present.  Caller inspects via `getY`.
     y_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
+    /// X data memory, keyed by address.  Separate bank from Y per facts.
+    x_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
 
     pub fn deinit(self: *State, gpa: std.mem.Allocator) void {
         self.y_mem.deinit(gpa);
+        self.x_mem.deinit(gpa);
     }
 
     pub fn getY(self: *const State, addr: u32) ?u32 {
         return self.y_mem.get(addr);
+    }
+
+    pub fn getX(self: *const State, addr: u32) ?u32 {
+        return self.x_mem.get(addr);
     }
 };
 
@@ -106,7 +116,21 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class == 0b000 and s2_class == 0b110) return execX17Alu05(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b010) return execX17Mve(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b001) return execX17Rsub(gpa, state, bundle);
+    if (s1_class == 0b100 and s2_class == 0b110) return execX17Xpm(gpa, state, bundle);
     return RunError.UnknownForm;
+}
+
+fn execX17Xpm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const s2 = bundle[2];
+
+    const dest_s: u32 = (s2 >> 10) & 0xF;
+    const a_half: u32 = s2 & 0x3;
+    const a_idx: u32 = (8 * a_half + 4) & 0xF;
+
+    const addr: u32 = state.a[a_idx];
+    const loaded: u32 = state.getX(addr) orelse 0;
+    state.s[dest_s] = loaded;
 }
 
 fn execX17Rsub(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

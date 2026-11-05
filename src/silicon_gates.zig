@@ -15,19 +15,22 @@ const std = @import("std");
 const asm_mod = @import("asm");
 const emu = @import("emu");
 
-const RegBank = enum { s, e, r, v };
+const RegBank = enum { s, e, r, v, a };
 const PreSet = struct { bank: RegBank, index: u8, value: u32 };
+const PreMem = struct { kind: enum { x, y }, addr: u32, value: u32 };
 
 const PostCheck = union(enum) {
     s_reg: struct { index: u8, value: u32 },
     e_reg: struct { index: u8, value: u32 },
     r_reg: struct { index: u8, value: u32 },
     y_mem: struct { addr: u32, value: u32 },
+    x_mem: struct { addr: u32, value: u32 },
 };
 
 const Gate = struct {
     name: []const u8,
     pre: []const PreSet = &.{},
+    pre_mem: []const PreMem = &.{},
     src: []const u8,
     post: []const PostCheck,
     lane: u8 = 0,
@@ -166,6 +169,19 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0xFFFCD7 } }},
     },
     .{
+        .name = "own-x17xpm",
+        // the probe list own-x17xpm: pre A12 = 0x100, X:[0x100] = 0x222.
+        // Bundle (S2[1:0] = 1 -> A12): s5 <- X:[A12] = 0x222.  The
+        // secondary A-reg write at S1[25:22] is OPEN today.
+        .pre = &.{.{ .bank = .a, .index = 12, .value = 0x100 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x100, .value = 0x222 }},
+        .src =
+        \\x17.xpm s5, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x222 } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },
@@ -187,6 +203,11 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
         .e => state.e[p.index] = p.value,
         .r => state.r[p.index] = p.value,
         .v => state.v[p.index & 3] = p.value,
+        .a => state.a[p.index] = p.value,
+    };
+    for (g.pre_mem) |m| switch (m.kind) {
+        .x => state.x_mem.put(gpa, m.addr, m.value) catch return error.OutOfMemory,
+        .y => state.y_mem.put(gpa, m.addr, m.value) catch return error.OutOfMemory,
     };
     state.cur_lane = g.lane;
 
@@ -228,6 +249,16 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
             };
             if (got != ym.value) {
                 std.debug.print("gate '{s}': Y:0x{x} = 0x{x}, expected 0x{x}\n", .{ g.name, ym.addr, got, ym.value });
+                return error.GateFailed;
+            }
+        },
+        .x_mem => |xm| {
+            const got = state.getX(xm.addr) orelse {
+                std.debug.print("gate '{s}': X:0x{x} not written, expected 0x{x}\n", .{ g.name, xm.addr, xm.value });
+                return error.GateFailed;
+            };
+            if (got != xm.value) {
+                std.debug.print("gate '{s}': X:0x{x} = 0x{x}, expected 0x{x}\n", .{ g.name, xm.addr, got, xm.value });
                 return error.GateFailed;
             }
         },

@@ -53,6 +53,12 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x17.xpm (3 syllables): X-memory load into scalar.
+# Grammar: x17.xpm <dest_s>, #<a_half>
+# a_half picks A-reg: a_idx = 8 * a_half + 4 (a_half in 0..3).
+x17.xpm	dest_s	s	10	13	s2
+x17.xpm	a_half	imm	0	1	s2
+
 # x17.rsub (3 syllables): b - a with immediate b.
 # Grammar: x17.rsub <dest_s>, <a_src>, #<imm_b>, #<op>, #<p>
 x17.rsub	dest_s	s	19	22	s1
