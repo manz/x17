@@ -510,6 +510,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x16mul-trunc",
+        // Pre s1 = 0x1101, s2 = 0x3303; s3 <- (s1 * s2) >> 23 = 6 truncated.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x1101 },
+            .{ .bank = .s, .index = 2, .value = 0x3303 },
+        },
+        .src =
+        \\x16.mul s3, s1, s2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 6 } }},
+    },
+    .{
         .name = "own-x13agu",
         // Pre e3 = 0x100, R7 = 0x23.  Expect e9 = 0x350, R5 = AGU10[6](e3, R7) = 0x123.
         .pre = &.{

@@ -20,6 +20,12 @@
 #   R<S[24:21]> <- V
 x12.agu    2   0x00000012   0x20000000
 
+# x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
+# Scalar multiply with shift (fact 118 / own-x16mul):
+#   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)
+# S2[20:16] = 5 variant (rounded) still OPEN.
+x16.mul    3   0x00000016   0x00040000   XXXXXXXX
+
 # x13.agu: 2-syllable low5 0x13 S class 001.  Scalar e load + R AGU
 # (fact 225 / own-x13agu):
 #   e<S[12:9]> <- head[20:5]

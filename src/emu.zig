@@ -103,6 +103,11 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execX12Agu(gpa, state, bundle);
     }
+    if (low5 == 0x16 and bundle.len >= 3) {
+        const s2_class: u32 = (bundle[2] >> 29) & 0x7;
+        const s2_mode: u32 = (bundle[2] >> 16) & 0x1F;
+        if (s2_class == 0b110 and s2_mode == 1) return execX16Mul(gpa, state, bundle);
+    }
     if (low5 == 0x13 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execX13Agu(gpa, state, bundle);
@@ -241,6 +246,20 @@ fn execX12Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_e != 0) state.e[dest_e] = v;
     if (s_dest != 0) state.s[s_dest] = v;
     if (dest_r != 0) state.r[dest_r] = v;
+}
+
+fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 3) return RunError.UnknownForm;
+    const s2 = bundle[2];
+    const dest_s: u32 = (s2 >> 10) & 0xF;
+    const a: u32 = (s2 >> 1) & 0xF;
+    const b: u32 = (s2 >> 5) & 0xF;
+    const av: u64 = state.s[a] & M24;
+    const bv: u64 = state.s[b] & M24;
+    const prod: u64 = av * bv;
+    const v: u32 = @truncate((prod >> 23) & M24);
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

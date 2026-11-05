@@ -64,6 +64,12 @@ x12.agu	s_hi	imm	31	31	head
 x12.agu	s_low	imm	0	2	s1
 x12.agu	dest_R	R	21	24	s1
 
+# x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
+# Grammar: x16.mul <dest_s>, <a>, <b>
+x16.mul	dest_s	s	10	13	s2
+x16.mul	a	s	1	4	s2
+x16.mul	b	s	5	8	s2
+
 # x13.agu (2 syllables): e load + R AGU at low5 0x13 S class 001.
 # Grammar: x13.agu <dest_e>, #<imm>, <dest_R>, <x_e>, <y_R>, #<fn>
 x13.agu	dest_e	e	9	12	s1
