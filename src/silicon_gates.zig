@@ -845,6 +845,26 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
     },
     .{
+        .name = "own-x18br",
+        // p3 = 1, branch offset +2 bundles.  Two delay-slot adds run, two
+        // adds are skipped, one add at the target runs: s1 = 3.
+        .pre = &.{
+            .{ .bank = .p, .index = 3, .value = 1 },
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\x18.br #3, #2
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 3 } }},
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},
