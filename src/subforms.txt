@@ -50,6 +50,10 @@ x19.alu    4   0x00000419   0x00005808   XXXXXXXX   0x81E18008
 #   e<w2[7:4]>.  Other mux encodings OPEN.
 x19.e      4   0x00000019   0x42040000   0x01C20000   0x00000000
 
+# x19.xrd: 4-syllable low5 0x19 class (0,4,3) (fact 154 / own-x19xrd).
+# X-memory read into s: s<head[24:21]> <- X:[A<w3[19:15]>].
+x19.xrd    4   0xC8000019   0x08028002   0x80003000   0x61500554
+
 # x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)

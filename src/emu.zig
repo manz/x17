@@ -732,7 +732,21 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 2 and w2_class == 0 and w3_class == 0) {
         return execX19E(gpa, state, bundle);
     }
+    if (w1_class == 0 and w2_class == 4 and w3_class == 3) {
+        return execX19Xrd(gpa, state, bundle);
+    }
     return RunError.UnknownForm;
+}
+
+fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const w3 = bundle[3];
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const src_a: u32 = (w3 >> 15) & 0x1F;
+    const a_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
+    const v: u32 = state.getX(a_val) orelse 0;
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

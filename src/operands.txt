@@ -117,6 +117,11 @@ x19.e	dest_s	s	21	24	head
 x19.e	e_src	e	4	7	s2
 x19.e	mux	imm	12	14	s1
 
+# x19.xrd (4 syllables): X-memory read into s.
+# Grammar: x19.xrd <dest_s>, #<src_a>
+x19.xrd	dest_s	s	21	24	head
+x19.xrd	src_a	imm	15	19	s3
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2
