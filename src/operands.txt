@@ -53,6 +53,17 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x12.agu (2 syllables): AGU fan-out to e, s, R at low5 0x12 S class 001.
+# Grammar: x12.agu <dest_e>, <x_e>, <y_R>, #<fn>, #<s_low>, #<s_hi>, <dest_R>
+# s_dest = 2*s_low + s_hi.
+x12.agu	dest_e	e	9	12	head
+x12.agu	x_e	e	5	8	head
+x12.agu	y_R	R	13	16	head
+x12.agu	fn	imm	17	20	head
+x12.agu	s_hi	imm	31	31	head
+x12.agu	s_low	imm	0	2	s1
+x12.agu	dest_R	R	21	24	s1
+
 # x13.agu (2 syllables): e load + R AGU at low5 0x13 S class 001.
 # Grammar: x13.agu <dest_e>, #<imm>, <dest_R>, <x_e>, <y_R>, #<fn>
 x13.agu	dest_e	e	9	12	s1

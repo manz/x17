@@ -12,6 +12,14 @@
 # strings in isa.toml plus the silicon-measured byte patterns in
 # the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
 
+# x12.agu: 2-syllable low5 0x12 S class 001.  AGU output fans out to e, s,
+# R simultaneously (fact 231 / own-x12agu):
+#   V = AGU10[head[20:17]](x = e<head[8:5]>, y = R<head[16:13]>)
+#   e<head[12:9]> <- V
+#   s<2*S[2:0] + head[31]> <- V
+#   R<S[24:21]> <- V
+x12.agu    2   0x00000012   0x20000000
+
 # x13.agu: 2-syllable low5 0x13 S class 001.  Scalar e load + R AGU
 # (fact 225 / own-x13agu):
 #   e<S[12:9]> <- head[20:5]

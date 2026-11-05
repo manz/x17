@@ -482,6 +482,24 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x0BEE } }},
     },
     .{
+        .name = "own-x12agu",
+        // Pre e3 = 0x100, R7 = 0x23.  AGU10[6](e3, R7) = 0x123 lands on
+        // e9, s2 (= 2*1+0), R5.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x100 },
+            .{ .bank = .r, .index = 7, .value = 0x23 },
+        },
+        .src =
+        \\x12.agu e9, e3, R7, #6, #0, #1, R5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .e_reg = .{ .index = 9, .value = 0x123 } },
+            .{ .s_reg = .{ .index = 2, .value = 0x123 } },
+            .{ .r_reg = .{ .index = 5, .value = 0x123 } },
+        },
+    },
+    .{
         .name = "own-x13agu",
         // Pre e3 = 0x100, R7 = 0x23.  Expect e9 = 0x350, R5 = AGU10[6](e3, R7) = 0x123.
         .pre = &.{

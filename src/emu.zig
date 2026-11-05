@@ -98,6 +98,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b101) return execYrm(gpa, state, bundle);
         if (s_class == 0b010) return execP010(gpa, state, bundle);
     }
+    if (low5 == 0x12 and bundle.len >= 2) {
+        const s_class: u32 = (bundle[1] >> 29) & 0x7;
+        if (s_class == 0b001) return execX12Agu(gpa, state, bundle);
+    }
     if (low5 == 0x13 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execX13Agu(gpa, state, bundle);
@@ -215,6 +219,27 @@ fn execX02Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (w4 >> 3) & 0xF;
     const imm: u32 = (head >> 11) & 0xFFFF;
     if (dest_s != 0) state.s[dest_s] = imm;
+}
+
+fn execX12Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const dest_e: u32 = (head >> 9) & 0xF;
+    const x_e: u32 = (head >> 5) & 0xF;
+    const y_r: u32 = (head >> 13) & 0xF;
+    const fn_op: u32 = (head >> 17) & 0xF;
+    const s_hi: u32 = (head >> 31) & 1;
+    const s_low: u32 = s1 & 0x7;
+    const dest_r: u32 = (s1 >> 21) & 0xF;
+    const s_dest: u32 = (2 * s_low + s_hi) & 0xF;
+    const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
+    const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
+    const v = try agu10Eval(fn_op, x_val, y_val);
+    if (dest_e != 0) state.e[dest_e] = v;
+    if (s_dest != 0) state.s[s_dest] = v;
+    if (dest_r != 0) state.r[dest_r] = v;
 }
 
 fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
