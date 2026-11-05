@@ -584,14 +584,17 @@ const GATES = [_]Gate{
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x110 } }},
     },
     .{
-        .name = "own-x02imm",
-        // s1 <- 0x703.
-        .pre = &.{},
+        .name = "own-x18q23c",
+        // Pre s1 = 0x4000, s2 = 0x6000; mode 4, /2^23: s3 <- 0x30.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+        },
         .src =
-        \\x02.imm s1, #1795
+        \\x18.q23c s3, s1, s2, #4, #0
         \\x17.halt
         ,
-        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x703 } }},
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x30 } }},
     },
     .{
         .name = "own-x03alu",

@@ -148,6 +148,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w3_class == 0b011) return execX18Una(gpa, state, bundle);
         if (w3_class == 0b101) return execX18Rimm(gpa, state, bundle);
         if (w3_class == 0b010) return execX18Q23(gpa, state, bundle);
+        if (w3_class == 0b001) return execX18Q23c(gpa, state, bundle);
     }
     if (low5 == 0x02 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
@@ -286,6 +287,27 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // Round: add 2^22, then shift.
     const v: u32 = @truncate(((prod + (1 << 22)) >> 23) & M24);
     if (dest_s != 0) state.s[dest_s] = v;
+}
+
+fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 4) return RunError.UnknownForm;
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const dest_s: u32 = (w2 >> 12) & 0xF;
+    const a_s: u32 = (w2 >> 16) & 0xF;
+    const b_s: u32 = (w2 >> 20) & 0xF;
+    const mode: u32 = (w2 >> 28) & 0x7;
+    if (dest_s == 0) return;
+    const av: u32 = if (a_s == 0) 0 else state.s[a_s] & 0xFFFF;
+    const bv: u32 = if (b_s == 0) 0 else state.s[b_s] & 0xFFFF;
+    const prod: u32 = av *% bv;
+    const shift: u5 = if ((w3 >> 2) & 1 == 1) 24 else 23;
+    const v: u32 = switch (mode) {
+        4 => (prod >> shift) & M24,
+        else => return,
+    };
+    state.s[dest_s] = v;
 }
 
 fn execX03Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

@@ -307,10 +307,13 @@ x03.alu	a_s	s	11	14	head
 x03.alu	b_s	s	26	29	head
 x03.alu	op	imm	5	10	head
 
-# x02.imm (6 syllables): head-immediate into s via the w4 slot.
-# Grammar: x02.imm <dest_s>, #<imm>
-x02.imm	dest_s	s	3	6	s4
-x02.imm	imm	imm	11	26	head
+# x18.q23c (4 syllables): class 001 multiply-round variant.
+# Grammar: x18.q23c <dest_s>, <a_s>, <b_s>, #<mode>, #<shift_bit>
+x18.q23c	dest_s	s	12	15	s2
+x18.q23c	a_s	s	16	19	s2
+x18.q23c	b_s	s	20	23	s2
+x18.q23c	mode	imm	28	30	s2
+x18.q23c	shift_bit	imm	2	2	s3
 
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
