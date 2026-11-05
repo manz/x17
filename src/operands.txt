@@ -89,6 +89,22 @@ agu10r	x_e	e	25	28	s1
 agu10r	y_base	imm	27	28	head
 agu10r	fn_op	imm	1	4	s1
 
+# ptst (1 syllable): predicate from scalar sign test.
+# Grammar: ptst <p_dest>, <a_s>, #<cond>, #<op>
+# p_dest uses p-reg syntax (we add `p` as an operand kind).
+ptst	p_dest	p	26	29	head
+ptst	a_s	s	11	14	head
+ptst	cond	imm	21	25	head
+ptst	op	imm	5	10	head
+
+# plog (1 syllable): predicate logic.
+# Grammar: plog <p_dest>, <p_a>, <p_b>, #<fn>, #<op>
+plog	p_dest	p	11	14	head
+plog	p_a	p	21	24	head
+plog	p_b	p	26	28	head
+plog	fn	imm	15	18	head
+plog	op	imm	5	10	head
+
 # ldy (1 syllable): Y-memory load into s (ldi numbering).
 # Grammar: ldy <dest_s>, <src_e>
 ldy	dest	dest_ldi	26	30	head

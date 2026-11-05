@@ -15,7 +15,7 @@ const std = @import("std");
 const asm_mod = @import("asm");
 const emu = @import("emu");
 
-const RegBank = enum { s, e, r, v, a };
+const RegBank = enum { s, e, r, v, a, p };
 const PreSet = struct { bank: RegBank, index: u8, value: u32 };
 const PreMem = struct { kind: enum { x, y }, addr: u32, value: u32 };
 
@@ -26,6 +26,7 @@ const PostCheck = union(enum) {
     a_reg: struct { index: u8, value: u32 },
     y_mem: struct { addr: u32, value: u32 },
     x_mem: struct { addr: u32, value: u32 },
+    p_reg: struct { index: u8, value: u8 },
 };
 
 const Gate = struct {
@@ -332,6 +333,54 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-ptst",
+        // the probe list own-ptst: p1 <- (s5 < 0) with s5 = 0xF000 (negative when
+        // interpreted as 24-bit signed via bit 23; here we use a 24-bit value
+        // with bit 23 set to trigger c1 true).  Expected byte: 0x4420296D.
+        .pre = &.{.{ .bank = .s, .index = 5, .value = 0x800000 }},
+        .src =
+        \\ptst p1, s5, #1, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-ptst-pos",
+        // s5 = 0x000F00 is positive (bit 23 clear), so p1 <- (s5 < 0) = 0.
+        .pre = &.{.{ .bank = .s, .index = 5, .value = 0x000F00 }},
+        .src =
+        \\ptst p1, s5, #1, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
+    },
+    .{
+        .name = "own-plog-and",
+        // Pre p1 = 1, p2 = 0; p4 <- p1 AND p2 = 0.
+        .pre = &.{
+            .{ .bank = .p, .index = 1, .value = 1 },
+            .{ .bank = .p, .index = 2, .value = 0 },
+        },
+        .src =
+        \\plog p4, p1, p2, #3, #0x0E
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 4, .value = 0 } }},
+    },
+    .{
+        .name = "own-plog-or",
+        // Pre p1 = 1, p2 = 0; p4 <- p1 OR p2 = 1.
+        .pre = &.{
+            .{ .bank = .p, .index = 1, .value = 1 },
+            .{ .bank = .p, .index = 2, .value = 0 },
+        },
+        .src =
+        \\plog p4, p1, p2, #4, #0x0E
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 4, .value = 1 } }},
+    },
+    .{
         .name = "own-ldy",
         // the probe list own-ldy: s14 <- Y:[e5].  Pre e5 = 0xA21, Y[0xA21] = 0x1357.
         // Expected byte: 0x780002AA.
@@ -474,6 +523,7 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
         .r => state.r[p.index] = p.value,
         .v => state.v[p.index & 3] = p.value,
         .a => state.a[p.index] = p.value,
+        .p => state.p[p.index] = @truncate(p.value),
     };
     for (g.pre_mem) |m| switch (m.kind) {
         .x => state.x_mem.put(gpa, m.addr, m.value) catch return error.OutOfMemory,
@@ -535,6 +585,12 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
             };
             if (got != xm.value) {
                 std.debug.print("gate '{s}': X:0x{x} = 0x{x}, expected 0x{x}\n", .{ g.name, xm.addr, got, xm.value });
+                return error.GateFailed;
+            }
+        },
+        .p_reg => |pr| {
+            if (state.p[pr.index] != pr.value) {
+                std.debug.print("gate '{s}': p{d} = {d}, expected {d}\n", .{ g.name, pr.index, state.p[pr.index], pr.value });
                 return error.GateFailed;
             }
         },

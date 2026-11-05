@@ -37,6 +37,10 @@ pub const State = struct {
     /// Address registers A0..A15: feed X/Y load+store addresses.  Default
     /// zero; seeded via tests or set-up forms that write them.
     a: [16]u32 = @splat(0),
+    /// Predicate bits p0..p15 (1-bit each; stored as u8 for ergonomics).
+    /// Written by ptst / plog; consumed by psel / jmp / bcc.  Survives
+    /// across bundles per fact.
+    p: [16]u8 = @splat(0),
     /// Y data memory, keyed by address.  Sparse: only addresses the program
     /// writes are present.  Caller inspects via `getY`.
     y_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
@@ -114,6 +118,12 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     }
     if (std.mem.eql(u8, f.name, "ldy")) {
         return execLdy(gpa, state, head);
+    }
+    if (std.mem.eql(u8, f.name, "ptst")) {
+        return execPtst(gpa, state, head);
+    }
+    if (std.mem.eql(u8, f.name, "plog")) {
+        return execPlog(gpa, state, head);
     }
     if (std.mem.eql(u8, f.name, "st.y")) {
         return execStY(gpa, state, head);
@@ -911,6 +921,51 @@ fn isHaltBundle(bundle: []const u32) bool {
     if (((bundle[2] >> 29) & 0x7) != 0b101) return false;
     const ctl: u32 = (bundle[1] >> 20) & 0x7;
     return ctl == 0b011;
+}
+
+fn execPtst(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    _ = gpa;
+    const p_dest: u32 = (head >> 26) & 0xF;
+    const cond: u32 = (head >> 21) & 0x1F;
+    const a_s: u32 = (head >> 11) & 0xF;
+    const a_val: u32 = state.s[a_s] & M24;
+    // 24-bit signed: sign bit is bit 23.
+    const signed: i32 = if (a_val & 0x800000 != 0)
+        @as(i32, @bitCast(a_val | 0xFF000000))
+    else
+        @as(i32, @bitCast(a_val));
+    const v: u8 = switch (cond) {
+        0, 2 => if (signed <= 0) 1 else 0, // c0 / c2: <= 0
+        1 => if (signed < 0) 1 else 0, // c1: < 0
+        4, 6 => if (signed >= 0) 1 else 0, // c4 / c6: >= 0
+        7 => 1, // c7: always true
+        else => return RunError.UnknownForm,
+    };
+    if (p_dest != 0) state.p[p_dest] = v;
+}
+
+fn execPlog(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    _ = gpa;
+    const dest: u32 = (head >> 11) & 0xF;
+    const a: u32 = (head >> 21) & 0xF;
+    const b: u32 = (head >> 26) & 0x7;
+    const fn_op: u32 = (head >> 15) & 0xF;
+    const av: u8 = state.p[a];
+    const bv: u8 = state.p[b];
+    const v: u8 = switch (fn_op) {
+        0 => bv,
+        1 => if (av == bv) 1 else 0,
+        2 => av ^ bv,
+        3 => av & bv,
+        4 => av | bv,
+        5 => (~(av & bv)) & 1,
+        6 => (~(av | bv)) & 1,
+        7 => (~bv) & 1,
+        8 => av,
+        9 => 0,
+        else => 1,
+    };
+    if (dest != 0) state.p[dest] = v;
 }
 
 fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
