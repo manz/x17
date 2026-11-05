@@ -12,6 +12,12 @@
 # strings in isa.toml plus the silicon-measured byte patterns in
 # the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
 
+# x19.mul: 4-syllable VLIW; scalar multiply with dual R/e write-back.
+# Class triple (000, 001, 110).  Semantics from fact 145 / own-x19mul
+# (op = 4): e<w1[6:3]>, R<w3[10:7]> <- low16(s<w2[8:5]> * s<w2[4:1]>).
+# w1[17] is "no doubling"; w1[15] and w2[24] are the measured enables.
+x19.mul    4   0x00000019   0x00028000   0x21000000   0xC0000000
+
 # x19.aagu: 4-syllable VLIW; updates one A register with a strided AGU op.
 # Class triple (w1[31:29], w2[31:29], w3[31:29]) = (000, 000, 010).
 # Semantics from fact 144 / own-x19aagu (fn_op = 2):

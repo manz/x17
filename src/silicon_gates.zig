@@ -235,6 +235,23 @@ const GATES = [_]Gate{
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x110 } }},
     },
     .{
+        .name = "own-x19mul",
+        // the probe list own-x19mul: pre s2 = 2, s4 = 0x381.
+        // Bundle (op = 4): e7, R5 <- low16(s2 * s4) = 0x702.
+        .pre = &.{
+            .{ .bank = .s, .index = 2, .value = 2 },
+            .{ .bank = .s, .index = 4, .value = 0x381 },
+        },
+        .src =
+        \\x19.mul e7, R5, #4, s2, s4
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .e_reg = .{ .index = 7, .value = 0x702 } },
+            .{ .r_reg = .{ .index = 5, .value = 0x702 } },
+        },
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },
