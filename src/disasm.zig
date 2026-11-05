@@ -160,6 +160,48 @@ test "disasm x17.alu" {
     try testing.expectEqualStrings("x17.alu s1, s8, s2, #0x0, #0x3", s);
 }
 
+test "disasm x17.agu" {
+    const s = try roundTrip("x17.agu R5, e3, R2, #2");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.agu R5, e3, R2, #0x2", s);
+}
+
+test "disasm x17.e" {
+    const s = try roundTrip("x17.e e5, s5, e9, e5, #0x0704");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.e e5, s5, e9, e5, #0x704", s);
+}
+
+test "disasm x17.ld" {
+    const s = try roundTrip("x17.ld s5, s4, #2, e8, #1");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.ld s5, s4, #0x2, e8, #0x1", s);
+}
+
+test "disasm x17.alu05" {
+    const s = try roundTrip("x17.alu05 s5, s3, s5, #0");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.alu05 s5, s3, s5, #0x0", s);
+}
+
+test "disasm x17.mve" {
+    const s = try roundTrip("x17.mve e5, s4");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.mve e5, s4", s);
+}
+
+test "disasm x17.rsub" {
+    const s = try roundTrip("x17.rsub s5, s3, #0xA, #5, #0");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.rsub s5, s3, #0xa, #0x5, #0x0", s);
+}
+
+test "disasm x17.xpm" {
+    const s = try roundTrip("x17.xpm s5, #1");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("x17.xpm s5, #0x1", s);
+}
+
 test "disasm unknown bundle" {
     const bytes = [_]u32{0x1234_5678}; // low5 = 0x18, not in any form
     var buf: [64]u8 = undefined;
