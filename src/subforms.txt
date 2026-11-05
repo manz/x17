@@ -22,6 +22,14 @@ x17.halt   3   0x00000017   0x31308000   0xA0000000
 # "enable" bit documented in isa.toml (needed, else wedge).
 x17.imm    3   0x00000017   0x60004000   0xE0000000
 
+# x17.xld_a10: X-memory load with A-reg offset from S1 class bits.  S1
+# class 010 + S2 class 110, head[27] clear.  Semantics from fact
+# 141 / own-x17xld-a10:
+#   s<S2[13:10]> <- X:[A<8*S2[1:0] + S1[31:29]>]      (S1[17:15] = 101)
+# This sub-form pins S1 class = 010 (A-offset = 2); other offsets await
+# their own measurement.  S1 is baked whole into the base.
+x17.xld_a10 3   0x00000017   0x4346A500   0xC0204000
+
 # x17.xpm: X-memory load into a scalar, continuing bundle.  S1 class 100
 # + S2 class 110.  Semantics from fact 139 / own-x17xpm:
 #   s<S2[13:10]> <- X:[A<8*S2[1:0] + 4>]              (S1[17:15] = 101)

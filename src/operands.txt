@@ -53,6 +53,11 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x17.xld_a10 (3 syllables): X-memory load, A-offset = 2 pinned.
+# Grammar: x17.xld_a10 <dest_s>, #<a_half>
+x17.xld_a10	dest_s	s	10	13	s2
+x17.xld_a10	a_half	imm	0	1	s2
+
 # x17.xpm (3 syllables): X-memory load into scalar.
 # Grammar: x17.xpm <dest_s>, #<a_half>
 # a_half picks A-reg: a_idx = 8 * a_half + 4 (a_half in 0..3).

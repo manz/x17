@@ -117,7 +117,22 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class == 0b000 and s2_class == 0b010) return execX17Mve(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b001) return execX17Rsub(gpa, state, bundle);
     if (s1_class == 0b100 and s2_class == 0b110) return execX17Xpm(gpa, state, bundle);
+    if (s1_class == 0b010 and s2_class == 0b110 and ((bundle[0] >> 27) & 1) == 0) return execX17XldA10(gpa, state, bundle);
     return RunError.UnknownForm;
+}
+
+fn execX17XldA10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const s2 = bundle[2];
+
+    const dest_s: u32 = (s2 >> 10) & 0xF;
+    const a_half: u32 = s2 & 0x3;
+    // A-offset pinned at 2 (S1 class = 010): a_idx = 8*a_half + 2.
+    const a_idx: u32 = (8 * a_half + 2) & 0xF;
+
+    const addr: u32 = state.a[a_idx];
+    const loaded: u32 = state.getX(addr) orelse 0;
+    state.s[dest_s] = loaded;
 }
 
 fn execX17Xpm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

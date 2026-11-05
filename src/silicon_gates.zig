@@ -182,6 +182,18 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x222 } }},
     },
     .{
+        .name = "own-x17xld-a10",
+        // the probe list own-x17xld-a10: pre A10 = 0x100, X:[0x100] = 0x222.
+        // Bundle (S2[1:0] = 1, offset = 2 -> A10): s5 <- X:[A10] = 0x222.
+        .pre = &.{.{ .bank = .a, .index = 10, .value = 0x100 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x100, .value = 0x222 }},
+        .src =
+        \\x17.xld_a10 s5, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x222 } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },
