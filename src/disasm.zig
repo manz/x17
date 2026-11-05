@@ -24,8 +24,9 @@ pub const DisasmError = error{
 pub fn disasmBundle(out: []u8, bundle: []const u32) DisasmError!usize {
     if (bundle.len == 0) return DisasmError.BundleTooShort;
 
-    // x17 bundles dispatch by sub-form class bits.
-    if ((bundle[0] & 0x1F) == 0x17) {
+    // x17 and x19 bundles dispatch by sub-form class bits.
+    const low5: u8 = @intCast(bundle[0] & 0x1F);
+    if (low5 == 0x17 or low5 == 0x19) {
         return disasmX17(out, bundle);
     }
 

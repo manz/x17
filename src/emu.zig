@@ -85,8 +85,51 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "x17")) {
         return execX17(gpa, state, bundle);
     }
+    if (std.mem.eql(u8, f.name, "x19")) {
+        return execX19(gpa, state, bundle);
+    }
 
     return RunError.UnknownForm;
+}
+
+/// 4-syllable VLIW.  Today only the (000, 000, 111) triple is modelled
+/// (x19.ld); more sub-forms land as more silicon gates arrive.
+fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    if (bundle.len < 4) return RunError.UnknownForm;
+    const w1_class: u32 = (bundle[1] >> 29) & 0x7;
+    const w2_class: u32 = (bundle[2] >> 29) & 0x7;
+    const w3_class: u32 = (bundle[3] >> 29) & 0x7;
+    if (w1_class == 0 and w2_class == 0 and w3_class == 7) {
+        return execX19Ld(gpa, state, bundle);
+    }
+    return RunError.UnknownForm;
+}
+
+fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const head = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+
+    const dest_s: u32 = (w2 >> 10) & 0xF;
+    const dest_e_half: u32 = w1 & 0x7;
+    const head31: u32 = (head >> 31) & 0x1;
+    const dest_e: u32 = (2 * dest_e_half + head31) & 0xF;
+    const y_src_e: u32 = (w3 >> 25) & 0xF;
+    const fn_op: u32 = (w1 >> 7) & 0xF;
+
+    // 1) Load from Y memory using the pre-state element register.
+    const src_e_val: u32 = if (y_src_e == 0) 0 else state.e[y_src_e];
+    const loaded: u32 = state.getY(src_e_val) orelse 0;
+    state.s[dest_s] = loaded;
+
+    // 2) AGU update: feed the same source register as x and y, then write back.
+    const new_e = try agu10Eval(fn_op, src_e_val, src_e_val);
+    state.e[dest_e] = new_e;
+
+    // 3) Store this lane's V to Y:[new_e].
+    const v = state.v[state.cur_lane & 0x3];
+    state.y_mem.put(gpa, new_e, v) catch return RunError.OutOfMemory;
 }
 
 fn execStY(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

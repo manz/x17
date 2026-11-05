@@ -499,8 +499,10 @@ pub fn assembleOneResult(src: []const u8) Result {
         return .{ .err = d };
     }
 
-    // x17.<sub> namespace: multi-syllable bundles, dispatched out of band.
-    if (std.mem.startsWith(u8, head.text, "x17.")) {
+    // x17.<sub> / x19.<sub> namespace: multi-syllable bundles, dispatched
+    // out of band.  Both route through the same data-driven packer; which
+    // sub-form is picked by name alone, not by the x17 vs x19 prefix.
+    if (std.mem.startsWith(u8, head.text, "x17.") or std.mem.startsWith(u8, head.text, "x19.")) {
         return assembleX17(head, &lex, src);
     }
 

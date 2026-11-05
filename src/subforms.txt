@@ -12,6 +12,16 @@
 # strings in isa.toml plus the silicon-measured byte patterns in
 # the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
 
+# x19.ld: 4-syllable VLIW doing load + AGU + store together.  Class triple
+# (w1[31:29], w2[31:29], w3[31:29]) = (000, 000, 111).  Semantics from
+# fact 143 / own-x19ld:
+#   s<w2[13:10]> <- Y:[e<w3[28:25]>]
+#   e<2*w1[2:0] + head[31]> <- AGU10[w1[10:7]](x = e<src>, y = e<src>)
+#   st.y Y:[e<new>] <- v[cur_lane]
+# w1[3] = 1 is the measured enable; w3 bakes class 111 + the low 12 bits
+# measured on the gate.
+x19.ld     4   0x00000019   0x00000008   0x00000000   0xE0000403
+
 # x17.cont: control bundle that lets execution fall through.  S2 class 101
 # + S1[22:20] = 000.  Semantics from fact 133 / own-x17ctl:
 #   (no state change; the PC advances to the next bundle)

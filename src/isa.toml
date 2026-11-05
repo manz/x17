@@ -213,6 +213,13 @@ evidence = "MEASURED"
 ref = "fact 18, 32: bit sweep in own-all - only [31:29] = 101 and bit 1 matter (bit 1 clear: completes without the write before it); measured at one position"
 
 [[form]]
+name = "x19"
+mask = "0x0000001F"
+value = "0x00000019"
+evidence = "MEASURED"
+ref = "fact 143+: 4-syllable VLIW; class triple (w1[31:29], w2[31:29], w3[31:29]) picks sub-form.  own-x19ld."
+
+[[form]]
 name = "x17"
 mask = "0x0000001F"
 value = "0x00000017"

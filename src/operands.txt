@@ -53,6 +53,13 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x19.ld (4 syllables): load + AGU + store VLIW.
+# Grammar: x19.ld <dest_s>, #<dest_e_half>, <y_src_e>, #<fn_op>
+x19.ld	dest_s	s	10	13	s2
+x19.ld	dest_e_half	imm	0	2	s1
+x19.ld	y_src_e	e	25	28	s3
+x19.ld	fn_op	imm	7	10	s1
+
 # x17.xld_a10 (3 syllables): X-memory load, A-offset = 2 pinned.
 # Grammar: x17.xld_a10 <dest_s>, #<a_half>
 x17.xld_a10	dest_s	s	10	13	s2
