@@ -192,6 +192,10 @@ x18.q23c   4   0x00000018   0x04001000   0x40000000   0x21B03001
 # s<w4[6:3]> <- Y:[e<w3[30:27]>] (fact 186 / own-x02yrd).
 x02.yrd    6   0x00000002   0x0000A000   0x00020442   0x00000001   0x00042800   0x00001000
 
+# x02.hdhi: same as x02.imm but head[31:27] are set (inert bits).
+# fact 189 / own-x02hdhi.
+x02.hdhi   6   0xF8000002   0x0000A000   0x00020442   0x00000001   0x00040800   0x00004200
+
 # x02.xrd: 6-syllable VLIW at low5 0x02 w4 mode 5.  X-memory read into s
 # (fact 155 / own-x02xrd):
 #   s<w4[6:3]> <- X:[A<w4[21:17]>]

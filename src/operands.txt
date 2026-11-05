@@ -320,6 +320,11 @@ x18.q23c	shift_bit	imm	2	2	s3
 x02.yrd	dest_s	s	3	6	s4
 x02.yrd	src_e	e	27	30	s3
 
+# x02.hdhi (6 syllables): x02.imm with head[31:27] (inert) set.
+# Grammar: x02.hdhi <dest_s>, #<imm>
+x02.hdhi	dest_s	s	3	6	s4
+x02.hdhi	imm	imm	11	26	head
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4
