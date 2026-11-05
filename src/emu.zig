@@ -56,8 +56,38 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "ldi")) {
         return execLdi(gpa, state, head);
     }
+    if (std.mem.eql(u8, f.name, "x17")) {
+        return execX17(gpa, state, bundle);
+    }
 
     return RunError.UnknownForm;
+}
+
+/// Classify an x17 bundle by its (S1 class, S2 class) field pair.
+///   S2 class 101                      -> halt (no state change)
+///   S1 class 011 + S2 class 111       -> imm load
+///   S1 class 001 + S2 class 111       -> alu
+/// Everything else is UnknownForm for now.
+fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    if (bundle.len < 3) return RunError.UnknownForm;
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    const s1_class: u32 = (s1 >> 29) & 0x7;
+    const s2_class: u32 = (s2 >> 29) & 0x7;
+
+    if (s2_class == 0b101) return; // halt: no state change
+    if (s1_class == 0b011 and s2_class == 0b111) return execX17Imm(gpa, state, bundle);
+    if (s1_class == 0b001 and s2_class == 0b111) return; // alu: executor pending
+    return RunError.UnknownForm;
+}
+
+fn execX17Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const dest_s: u32 = (s1 >> 7) & 0xF;
+    const imm: u32 = (head >> 11) & 0xFFFF;
+    state.s[dest_s] = imm;
 }
 
 fn execLdi(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
@@ -113,6 +143,38 @@ test "two ldi in sequence land in distinct regs" {
 
     try testing.expectEqual(@as(u32, 0x0012), state.s[2]);
     try testing.expectEqual(@as(u32, 0x0099), state.s[9]);
+}
+
+test "x17.imm loads the scalar via sub-form dispatch" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+
+    const b = try asm_mod.assembleOne("x17.imm s5, #0x0BEE");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 0x0BEE), state.s[5]);
+}
+
+test "x17.halt executes as a noop" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[3] = 0x1234;
+
+    const b = try asm_mod.assembleOne("x17.halt");
+    try executeBundle(testing.allocator, &state, b.slice());
+    // halt must not scramble state.
+    try testing.expectEqual(@as(u32, 0x1234), state.s[3]);
+}
+
+test "unmapped x17 sub-form flagged (x17.alu, no exec yet - treated as noop)" {
+    // x17.alu dispatches but has no state effect in this spike; the test
+    // pins the noop semantics so a future executor change is noticed.
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[1] = 0xAAAA;
+
+    const b = try asm_mod.assembleOne("x17.alu s1, s8, s2, #0, #3");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 0xAAAA), state.s[1]); // unchanged
 }
 
 test "unknown form returns UnknownForm" {
