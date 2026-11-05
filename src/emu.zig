@@ -86,6 +86,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "ldi")) {
         return execLdi(gpa, state, head);
     }
+    if (std.mem.eql(u8, f.name, "rli")) {
+        return execRli(gpa, state, head);
+    }
     if (std.mem.eql(u8, f.name, "st.y")) {
         return execStY(gpa, state, head);
     }
@@ -820,6 +823,15 @@ fn isHaltBundle(bundle: []const u32) bool {
     if (((bundle[2] >> 29) & 0x7) != 0b101) return false;
     const ctl: u32 = (bundle[1] >> 20) & 0x7;
     return ctl == 0b011;
+}
+
+fn execRli(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    _ = gpa;
+    const dest_r: u32 = (head >> 27) & 0xF;
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const imm: u32 = (head >> 5) & 0xFFFF;
+    if (dest_r != 0) state.r[dest_r] = imm;
+    if (dest_s != 0) state.s[dest_s] = imm;
 }
 
 fn execLdi(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

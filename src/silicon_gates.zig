@@ -303,6 +303,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-rli",
+        // Two rli bundles land R3 = 0x1234 and s5 = 0x0BEE respectively.
+        .src =
+        \\rli R3, s0, #0x1234
+        \\rli R0, s5, #0x0BEE
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .r_reg = .{ .index = 3, .value = 0x1234 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x0BEE } },
+        },
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },
