@@ -15,11 +15,13 @@ const std = @import("std");
 const asm_mod = @import("asm");
 const emu = @import("emu");
 
-const RegBank = enum { s, v };
+const RegBank = enum { s, e, r, v };
 const PreSet = struct { bank: RegBank, index: u8, value: u32 };
 
 const PostCheck = union(enum) {
     s_reg: struct { index: u8, value: u32 },
+    e_reg: struct { index: u8, value: u32 },
+    r_reg: struct { index: u8, value: u32 },
     y_mem: struct { addr: u32, value: u32 },
 };
 
@@ -80,6 +82,20 @@ const GATES = [_]Gate{
         .lane = 2,
     },
     .{
+        .name = "own-x17agu",
+        // the probe list own-x17agu: e3 = 0x702, mid-program x17 agu writes
+        // R5 <- AGU10[2] = x + 1 = 0x703.  (Silicon also stored Y:0x700 =
+        // 0x703 via a rop + st tail we don't model yet; this gate stops at
+        // the R-file write.)
+        // y = R2 (unused by FN 2 = x + 1, but silicon-measured S2 encodes it).
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x702 }},
+        .src =
+        \\x17.agu  R5, e3, R2, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 5, .value = 0x703 } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },
@@ -98,6 +114,8 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
     defer state.deinit(gpa);
     for (g.pre) |p| switch (p.bank) {
         .s => state.s[p.index] = p.value,
+        .e => state.e[p.index] = p.value,
+        .r => state.r[p.index] = p.value,
         .v => state.v[p.index & 3] = p.value,
     };
     state.cur_lane = g.lane;
@@ -118,6 +136,18 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
         .s_reg => |sr| {
             if (state.s[sr.index] != sr.value) {
                 std.debug.print("gate '{s}': s{d} = 0x{x}, expected 0x{x}\n", .{ g.name, sr.index, state.s[sr.index], sr.value });
+                return error.GateFailed;
+            }
+        },
+        .e_reg => |er| {
+            if (state.e[er.index] != er.value) {
+                std.debug.print("gate '{s}': e{d} = 0x{x}, expected 0x{x}\n", .{ g.name, er.index, state.e[er.index], er.value });
+                return error.GateFailed;
+            }
+        },
+        .r_reg => |rr| {
+            if (state.r[rr.index] != rr.value) {
+                std.debug.print("gate '{s}': R{d} = 0x{x}, expected 0x{x}\n", .{ g.name, rr.index, state.r[rr.index], rr.value });
                 return error.GateFailed;
             }
         },

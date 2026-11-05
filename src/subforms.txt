@@ -22,6 +22,13 @@ x17.halt   3   0x00000017   0x31308000   0xA0000000
 # "enable" bit documented in isa.toml (needed, else wedge).
 x17.imm    3   0x00000017   0x60004000   0xE0000000
 
+# x17.agu: address-generation op in a continuing bundle.  S1 class 001
+# (with S1[28] = 1) + S2 class 010.  Semantics from upstream emu.py:
+#   dest_R <- AGU10[fn_op](x = e<S1[8:5]>, y = R<S2[4:1]>)
+# Base S1 = 0x30000000 (class 001 + S1[28]=1); base S2 = 0x40000000
+# (class 010 only; S2[4:1] is the y operand, S2[8:5] is dest).
+x17.agu    3   0x00000017   0x30000000   0x40000000
+
 # x17.alu: ALU op in a continuing bundle.  S1 class 001 + S2 class 111:
 #   s<S1[27:24]> <- X17OP[head[10:7]](a = s<S2[28:25]>, b = s<S1[19:16]>, n = S1[23:20])
 # Base S1 = 0x30008000: class bits [31:29]=001 plus S1[28]=1, S1[15]=1 (the

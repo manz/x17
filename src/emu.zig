@@ -100,6 +100,7 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s2_class == 0b101) return; // halt: no state change
     if (s1_class == 0b011 and s2_class == 0b111) return execX17Imm(gpa, state, bundle);
     if (s2_class == 0b111) return execX17Alu(gpa, state, bundle);
+    if (s1_class == 0b001 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
     return RunError.UnknownForm;
 }
 
@@ -334,6 +335,50 @@ fn execAlu(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const op = ALU05[code];
     const result = alu05Eval(op, sx24(a_val), sx24(b_val));
     state.s[dest] = result;
+}
+
+// ---------------------------------------------------------------------------
+// AGU10: address-generation ops indexed by a 4-bit FN field.  Ported from
+// upstream emu.py (fact 109).  Values compute over (x, y) and wrap at
+// 16 bits (the AGU is a 16-bit address unit, not a 24-bit ALU).
+// ---------------------------------------------------------------------------
+
+fn agu10Eval(fn_op: u32, x: u32, y: u32) RunError!u32 {
+    const xw: u32 = x & 0xFFFF;
+    const yw: u32 = y & 0xFFFF;
+    const r: u32 = switch (fn_op & 0xF) {
+        0 => xw,
+        1 => yw,
+        2 => (xw +% 1) & 0xFFFF,
+        3 => (yw +% 1) & 0xFFFF,
+        4 => (xw -% 1) & 0xFFFF,
+        5 => (yw -% 1) & 0xFFFF,
+        6 => (xw +% yw) & 0xFFFF,
+        7 => (xw -% yw) & 0xFFFF,
+        // 8 = "i" (uses an immediate not in this bundle): OPEN here.
+        9 => 0,
+        // 10 = "y+i", 11 = "y-i": also need the imm form; OPEN here.
+        12, 14, 15 => yw,
+        13 => (xw +% yw) & 0xFFFF,
+        else => return RunError.UnknownForm,
+    };
+    return r;
+}
+
+fn execX17Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    const fn_op: u32 = (s1 >> 24) & 0xF;
+    const x_idx: u32 = (s1 >> 5) & 0xF;
+    const y_idx: u32 = (s2 >> 1) & 0xF;
+    const dest: u32 = (s2 >> 5) & 0xF;
+
+    // fact 70: index 0 reads zero.
+    const x_val: u32 = if (x_idx == 0) 0 else state.e[x_idx];
+    const y_val: u32 = if (y_idx == 0) 0 else state.r[y_idx];
+    const v = try agu10Eval(fn_op, x_val, y_val);
+    if (dest != 0) state.r[dest] = v;
 }
 
 /// sm1 ALU is 24-bit wrapping arithmetic.  Upstream's Python emu calls this

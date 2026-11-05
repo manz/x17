@@ -53,6 +53,14 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x17.agu (3 syllables): address-generation op.
+# "dest R<S2[8:5]> <- AGU10[S1[27:24]](x = e<S1[8:5]>, y = R<S2[4:1]>)"
+# Grammar source order: dest, x, y, fn_op.
+x17.agu	dest	R	5	8	s2
+x17.agu	x	e	5	8	s1
+x17.agu	y	R	1	4	s2
+x17.agu	fn_op	imm	24	27	s1
+
 # x17.alu (3 syllables): ALU op across syllables.
 # "s<S1[27:24]> <- X17OP[head[10:7]](s<S2[28:25]>, s<S1[19:16]>, n = S1[23:20])"
 # Operand order in source: dest, a, b, op, n (dest-first, like the ALU form).
