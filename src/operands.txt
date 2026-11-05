@@ -1,0 +1,33 @@
+# x17 operand bit positions, per form.
+#
+# One line per operand.  Columns are tab-separated:
+#   form    name    kind    lo    hi    [notes]
+#
+# `lo`/`hi` are inclusive bit positions in the HEAD syllable (single-syllable
+# forms) unless the form is a multi-syllable bundle, in which case a future
+# `syll` column will name head|s1|s2 (not needed today - every form seeded
+# here is 1 syllable).
+#
+# `kind`:
+#   s    scalar register, 4 bits               (s0..s15)
+#   e    element register, 4 bits              (e0..e15)
+#   R    R-file register, 4 bits               (R0..R15, R0 pinned to 0)
+#   p    predicate, N bits                     (form-specific width)
+#   imm  immediate, bit field                  (width = hi-lo+1)
+#   dest_ldi  ldi-style destination index     (5 bits, 16..31 = s(k-16))
+#
+# Sources: each `[lo:hi]` reference here is quoted from `src/isa.toml`'s ref
+# string for the form.  When the assembler's needs grow this table gets more
+# forms; when every form is covered we migrate the rows back into isa.toml
+# as structured operands and retire this file.
+
+# rli (1 syllable):
+# "R<head[30:27]> <- head[20:5] and s<head[24:21]> <- head[20:5]"
+rli	dest_R	R	27	30
+rli	dest_s	s	21	24
+rli	imm16	imm	5	20
+
+# ldi (1 syllable):
+# "[20:5] is a 16-bit immediate, [25:21] the register"
+ldi	dest	dest_ldi	21	25
+ldi	imm16	imm	5	20

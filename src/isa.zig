@@ -71,6 +71,132 @@ pub fn classify(word: u32) ?*const Form {
     return null;
 }
 
+// ---------------------------------------------------------------------------
+// Operands
+// ---------------------------------------------------------------------------
+
+/// Kind of value an operand slot carries.  Drives how the assembler parses
+/// the source token and how it folds the field into the syllable.
+pub const OperandKind = enum {
+    s, // scalar reg, 4 bits
+    e, // element reg, 4 bits
+    r_reg, // R-file reg, 4 bits (R0 pinned to 0)
+    p, // predicate, form-specific width
+    imm, // raw immediate, width = hi-lo+1
+    dest_ldi, // ldi's 5-bit dest index (16..31 = s(k-16))
+};
+
+/// One operand's bit slice within the HEAD syllable of a bundle.  `lo` and
+/// `hi` are inclusive bit positions; `width = hi - lo + 1`.
+pub const Operand = struct {
+    form: []const u8,
+    name: []const u8,
+    kind: OperandKind,
+    lo: u8,
+    hi: u8,
+
+    pub fn width(self: Operand) u8 {
+        return self.hi - self.lo + 1;
+    }
+
+    /// Mask of the operand's bit range, aligned to the syllable.
+    pub fn fieldMask(self: Operand) u32 {
+        const w: u5 = @intCast(self.width());
+        const base: u32 = (@as(u32, 1) << w) - 1;
+        return base << @as(u5, @intCast(self.lo));
+    }
+
+    /// Place `value` into the operand's bit range, returning the masked
+    /// contribution to OR into the syllable.  Caller guarantees value fits.
+    pub fn encode(self: Operand, value: u32) u32 {
+        const w: u5 = @intCast(self.width());
+        const mask: u32 = (@as(u32, 1) << w) - 1;
+        return (value & mask) << @as(u5, @intCast(self.lo));
+    }
+};
+
+pub const MAX_OPERANDS: usize = 128;
+
+pub const operands_txt = @embedFile("operands.txt");
+
+const operands_parsed = parseOperands(operands_txt);
+
+/// Every operand row seeded in `src/operands.txt`.  The assembler walks this
+/// in order when encoding a form.
+pub const operands: []const Operand = operands_parsed.items[0..operands_parsed.len];
+
+/// Return the (contiguous) operand slice for a form name, or an empty slice
+/// if the form has no rows yet.  Operand order follows file order, which
+/// matches the assembler's expected source order (dest first, then sources,
+/// then immediates - same convention ASSEMBLY.md documents).
+pub fn operandsFor(form_name: []const u8) []const Operand {
+    var start: ?usize = null;
+    var end: usize = 0;
+    for (operands, 0..) |op, i| {
+        if (std.mem.eql(u8, op.form, form_name)) {
+            if (start == null) start = i;
+            end = i + 1;
+        } else if (start != null) {
+            break;
+        }
+    }
+    if (start) |s| return operands[s..end];
+    return operands[0..0];
+}
+
+const OperandsParse = struct {
+    items: [MAX_OPERANDS]Operand,
+    len: usize,
+};
+
+fn parseOperands(src: []const u8) OperandsParse {
+    @setEvalBranchQuota(400_000);
+    comptime var items: [MAX_OPERANDS]Operand = undefined;
+    comptime var len: usize = 0;
+
+    var it = std.mem.splitScalar(u8, src, '\n');
+    while (it.next()) |raw| {
+        const line = stripComment(raw);
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0) continue;
+
+        // Expect tab-separated: form <TAB> name <TAB> kind <TAB> lo <TAB> hi
+        const f1 = std.mem.indexOfScalar(u8, trimmed, '\t') orelse continue;
+        const rest1 = trimmed[f1 + 1 ..];
+        const f2 = std.mem.indexOfScalar(u8, rest1, '\t') orelse continue;
+        const rest2 = rest1[f2 + 1 ..];
+        const f3 = std.mem.indexOfScalar(u8, rest2, '\t') orelse continue;
+        const rest3 = rest2[f3 + 1 ..];
+        const f4 = std.mem.indexOfScalar(u8, rest3, '\t') orelse continue;
+
+        const form = std.mem.trim(u8, trimmed[0..f1], " \t\r");
+        const name = std.mem.trim(u8, rest1[0..f2], " \t\r");
+        const kind_s = std.mem.trim(u8, rest2[0..f3], " \t\r");
+        const lo_s = std.mem.trim(u8, rest3[0..f4], " \t\r");
+        const hi_s = std.mem.trim(u8, rest3[f4 + 1 ..], " \t\r");
+
+        const kind: OperandKind =
+            if (std.mem.eql(u8, kind_s, "s")) .s
+            else if (std.mem.eql(u8, kind_s, "e")) .e
+            else if (std.mem.eql(u8, kind_s, "R")) .r_reg
+            else if (std.mem.eql(u8, kind_s, "p")) .p
+            else if (std.mem.eql(u8, kind_s, "imm")) .imm
+            else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi
+            else continue;
+
+        items[len] = .{
+            .form = form,
+            .name = name,
+            .kind = kind,
+            .lo = parseU8(lo_s),
+            .hi = parseU8(hi_s),
+        };
+        len += 1;
+        if (len >= MAX_OPERANDS) break;
+    }
+    return .{ .items = items, .len = len };
+}
+
 const FormsParse = struct {
     items: [MAX_FORMS]Form,
     len: usize,
@@ -310,6 +436,63 @@ test "classify returns null on a syllable no form matches" {
     // low5s - an all-zero word matches none that depend on low5 bits.  We do
     // not assert null here because the table may contain a catch-all; we
     // just want to prove classify() does not crash.
+}
+
+test "operands table seeds rli and ldi" {
+    try testing.expect(operands.len >= 5);
+}
+
+test "rli has three operands in declared order" {
+    const ops = operandsFor("rli");
+    try testing.expectEqual(@as(usize, 3), ops.len);
+    try testing.expectEqualStrings("dest_R", ops[0].name);
+    try testing.expectEqual(OperandKind.r_reg, ops[0].kind);
+    try testing.expectEqual(@as(u8, 27), ops[0].lo);
+    try testing.expectEqual(@as(u8, 30), ops[0].hi);
+    try testing.expectEqualStrings("dest_s", ops[1].name);
+    try testing.expectEqualStrings("imm16", ops[2].name);
+}
+
+test "operand width is inclusive" {
+    const ops = operandsFor("rli");
+    try testing.expectEqual(@as(u8, 4), ops[0].width()); // 27..30 inclusive
+    try testing.expectEqual(@as(u8, 16), ops[2].width()); // 5..20 inclusive
+}
+
+test "fieldMask lines up with the bit range" {
+    const ops = operandsFor("rli");
+    // dest_R at [30:27] -> 0x78000000
+    try testing.expectEqual(@as(u32, 0x7800_0000), ops[0].fieldMask());
+    // dest_s at [24:21] -> 0x01E00000
+    try testing.expectEqual(@as(u32, 0x01E0_0000), ops[1].fieldMask());
+    // imm16 at [20:5] -> 0x001FFFE0
+    try testing.expectEqual(@as(u32, 0x001F_FFE0), ops[2].fieldMask());
+}
+
+test "encode packs rli operands into the head syllable" {
+    const ops = operandsFor("rli");
+    // rli R3, s5, #0x1234  -> dest_R=3, dest_s=5, imm16=0x1234
+    const r3 = ops[0].encode(3);
+    const s5 = ops[1].encode(5);
+    const imm = ops[2].encode(0x1234);
+    const word: u32 = r3 | s5 | imm;
+    try testing.expectEqual(@as(u32, 0x18A2_4680), word);
+    // Operand masks are disjoint so no overlap.
+    try testing.expect((ops[0].fieldMask() & ops[1].fieldMask()) == 0);
+    try testing.expect((ops[1].fieldMask() & ops[2].fieldMask()) == 0);
+}
+
+test "ldi dest is a 5-bit field at [25:21]" {
+    const ops = operandsFor("ldi");
+    try testing.expectEqual(@as(usize, 2), ops.len);
+    try testing.expectEqualStrings("dest", ops[0].name);
+    try testing.expectEqual(OperandKind.dest_ldi, ops[0].kind);
+    try testing.expectEqual(@as(u8, 5), ops[0].width());
+    try testing.expectEqual(@as(u32, 0x03E0_0000), ops[0].fieldMask());
+}
+
+test "operandsFor an unknown form returns an empty slice" {
+    try testing.expectEqual(@as(usize, 0), operandsFor("not_a_form").len);
 }
 
 test "x17 is a 3-syllable bundle" {

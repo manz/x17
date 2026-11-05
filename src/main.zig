@@ -22,4 +22,10 @@ pub fn main() !void {
     for (isa.forms) |f| {
         p("    {s: <7}  mask=0x{x:0>8}  value=0x{x:0>8}\n", .{ f.name, f.mask, f.value });
     }
+    p("  operands ({d} rows):\n", .{isa.operands.len});
+    for (isa.operands) |op| {
+        p("    {s: <6} {s: <8} {s}  [{d}:{d}]  w={d}\n", .{
+            op.form, op.name, @tagName(op.kind), op.hi, op.lo, op.width(),
+        });
+    }
 }
