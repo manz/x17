@@ -102,6 +102,13 @@ x19.agu	x_e	e	25	28	s3
 x19.agu	y_R	R	11	14	s3
 x19.agu	fn	imm	24	27	s1
 
+# x19.alu (4 syllables): shift-based ALU op into s.
+# Grammar: x19.alu <dest_s>, <a_s>, <b_s>, #<code>
+x19.alu	dest_s	s	24	27	s1
+x19.alu	a_s	s	18	21	s2
+x19.alu	b_s	s	16	19	s1
+x19.alu	code	imm	5	9	head
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

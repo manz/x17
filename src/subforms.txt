@@ -39,6 +39,11 @@ x17.agu2   3   0x00000017   0x28001800   0x00000000
 #   R<w3[10:7]> <- v, e<w1[23:20]> <- v
 x19.agu    4   0x00000019   0x10040000   0x02C40000   0x00000000
 
+# x19.alu: 4-syllable low5 0x19 class (0,0,4) (fact 147 / own-x19alu):
+#   s<w1[27:24]> <- OP[head[9:5]](a = s<w2[21:18]>, b = s<w1[19:16]>)
+# Only code 23 (sat24(a << b)) is measured.
+x19.alu    4   0x00000419   0x00005808   XXXXXXXX   0x81E18008
+
 # x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)

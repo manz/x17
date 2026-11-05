@@ -583,7 +583,35 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 0) {
         return execX19Agu(gpa, state, bundle);
     }
+    if (w1_class == 0 and w2_class == 0 and w3_class == 4) {
+        return execX19Alu(gpa, state, bundle);
+    }
     return RunError.UnknownForm;
+}
+
+fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    // head[9:5] = 23 (shift op), a = s<w2[21:18]>, b = s<w1[19:16]>
+    // dest = s<w1[27:24]>.  Only the sat24-shift op is measured; others OPEN.
+    const code: u32 = (head >> 5) & 0x1F;
+    const dest_s: u32 = (w1 >> 24) & 0xF;
+    const a_s: u32 = (w2 >> 18) & 0xF;
+    const b_s: u32 = (w1 >> 16) & 0xF;
+    const a_val: u32 = state.s[a_s] & M24;
+    const b_val: u32 = state.s[b_s] & M24;
+    const v: u32 = switch (code) {
+        23 => blk: {
+            // sat24(a << b): shift and saturate to 24-bit signed range.
+            const shifted: u64 = @as(u64, a_val) << @as(u6, @intCast(b_val & 0x3F));
+            const clamped: u64 = if (shifted > 0x7FFFFF) 0x7FFFFF else shifted;
+            break :blk @as(u32, @intCast(clamped)) & M24;
+        },
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX19Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
