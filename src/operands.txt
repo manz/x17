@@ -65,6 +65,11 @@ x19.mul	op	imm	11	13	s1
 x19.mul	a_src	s	5	8	s2
 x19.mul	b_src	s	1	4	s2
 
+# lde (1 syllable): load element.  For now only the e-dest encoding
+# (k in 1..15 picks e<k>); k=0 maps to an A-reg write, still OPEN.
+lde	dest_e	e	26	29	head
+lde	imm16	imm	5	20	head
+
 # rop (1 syllable): R-op into an s and/or R.
 # Grammar: rop <dest_s>, <dest_R>, <x_e>, <y_R>, #<fn>
 # dest_s = 0 or dest_R = 0 means "no write" for that half.

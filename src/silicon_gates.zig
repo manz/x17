@@ -332,6 +332,15 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-lde",
+        // the probe list own-entry first bundle: e13 <- 0x70D.
+        .src =
+        \\lde e13, #0x70D
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 13, .value = 0x70D } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },

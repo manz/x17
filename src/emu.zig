@@ -92,6 +92,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "rop")) {
         return execRop(gpa, state, head);
     }
+    if (std.mem.eql(u8, f.name, "lde")) {
+        return execLde(gpa, state, head);
+    }
     if (std.mem.eql(u8, f.name, "st.y")) {
         return execStY(gpa, state, head);
     }
@@ -826,6 +829,15 @@ fn isHaltBundle(bundle: []const u32) bool {
     if (((bundle[2] >> 29) & 0x7) != 0b101) return false;
     const ctl: u32 = (bundle[1] >> 20) & 0x7;
     return ctl == 0b011;
+}
+
+fn execLde(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    _ = gpa;
+    const k: u32 = (head >> 26) & 0xF;
+    const imm: u32 = (head >> 5) & 0xFFFF;
+    // k = 0 maps to an A-register store (still OPEN).  Don't guess.
+    if (k == 0) return;
+    state.e[k] = imm;
 }
 
 fn execRop(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
