@@ -332,6 +332,18 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-yld10",
+        // the probe list own-yld10: s5 <- Y:[e3].  Pre e3 = 0x780, Y[0x780] = 0x0BEE.
+        // Expected bytes: 0x00A00010 0xE6420080.
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x780 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x780, .value = 0x0BEE }},
+        .src =
+        \\yld10 s5, e3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x0BEE } }},
+    },
+    .{
         .name = "own-xst",
         // the probe list own-xst: X:[A11] <- s6 (sign-extended to 24 bits).
         // Expected bytes: 0xC1000034 0x3200016A.

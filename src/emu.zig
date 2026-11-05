@@ -81,6 +81,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b101) return execAgu10r(gpa, state, bundle);
         if (s_class == 0b001) return execLdi2(gpa, state, bundle);
         if (s_class == 0b011) return execPair(gpa, state, bundle);
+        if (s_class == 0b111) return execYld10(gpa, state, bundle);
     }
     if (low5 == 0x14 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
@@ -137,6 +138,18 @@ fn execXst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const addr: u32 = state.a[a_idx];
     const value: u32 = state.s[src_s] & M24;
     try state.x_mem.put(gpa, addr, value);
+}
+
+fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const src_e: u32 = (s1 >> 25) & 0xF;
+    const addr: u32 = state.e[src_e];
+    const v = state.getY(addr) orelse 0;
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

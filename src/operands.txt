@@ -89,6 +89,11 @@ agu10r	x_e	e	25	28	s1
 agu10r	y_base	imm	27	28	head
 agu10r	fn_op	imm	1	4	s1
 
+# yld10 (2 syllables): Y-memory load.
+# Grammar: yld10 <dest_s>, <src_e>
+yld10	dest_s	s	21	24	head
+yld10	src_e	e	25	28	s1
+
 # xst (2 syllables): X-memory store from an s register.
 # Grammar: xst #<a_half>, <src_s>, #<a_low>, <s_dest_inert>, #<imm16>
 # a_half picks head[31:30] (0..3), a_low picks S[2:0] (0..7).  The A

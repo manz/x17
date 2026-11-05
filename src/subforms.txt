@@ -35,6 +35,12 @@ x19.mul    4   0x00000019   0x00028000   0x21000000   0xC0000000
 # 101 (bits 31, 29 set).  own-agu10r = scalar imm + AGU out of an element.
 agu10r     2   0x00000010   0xA0160000
 
+# yld10: 2-syllable low5 0x10 S class 111, Y-memory load.
+# Semantics from fact 123 / own-yld10:
+#   s<head[24:21]> <- Y:[e<S[28:25]>]      (S[23:22] = 01, S[17:16] = 10)
+# S enables baked: bit 22, bit 17 (S[17:16]=10), bit 7.
+yld10      2   0x00000010   0xE0420080
+
 # xst: 2-syllable low5 0x14 S class 001, X-memory store from an s register.
 # Semantics from fact 106 / own-xst:
 #   X:[A<4*S[2:0] + head[31:30]>] <- s<S[7:4]>  (24-bit sign-extended)
