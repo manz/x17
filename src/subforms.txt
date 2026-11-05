@@ -12,6 +12,12 @@
 # strings in isa.toml plus the silicon-measured byte patterns in
 # the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
 
+# x02.imm: 6-syllable VLIW at low5 0x02 whose w4 slot selects "I" mode
+# (w4[13:11] = 001).  Scalar immediate load (fact 160 / own-x02imm):
+#   s<w4[6:3]> <- head[26:11]
+# All other measured enables baked into the per-syllable base values.
+x02.imm    6   0x00000002   0x0000A000   0x00020442   0x00000001   0x00040800   0x00004200
+
 # x18.imm: 4-syllable VLIW at low5 0x18, w3 class 110.  Scalar immediate
 # load (fact 175 / own-x18imm):
 #   s<head[24:21]> <- head[20:5]

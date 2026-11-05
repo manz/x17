@@ -482,6 +482,15 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x0BEE } }},
     },
     .{
+        .name = "own-x02imm",
+        // s1 <- 0x703 via the 6-syllable x02.imm bundle.
+        .src =
+        \\x02.imm s1, #0x703
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x703 } }},
+    },
+    .{
         .name = "own-x18imm",
         // s3 <- 0x1234 via the 4-syllable x18.imm bundle.
         // Expected bytes: 0x00624698 0x00006000 0x00000000 0xC1500001.

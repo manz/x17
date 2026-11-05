@@ -15,7 +15,7 @@ main_row = 0x40          # pass-2 program lands at row 0x40 (fact 1)
 # The engine's order (fact 45, MEASURED): PC q = 8*(row/2) + 2*lane + row%2 - column-major over
 # row pairs.  Instruction length from the head syllable's low5 (fact 44, MEASURED at one head;
 # the only table that parses all six main programs end to end, fact 45).  [hi_low5, length].
-length = [[0x01, 7], [0x04, 6], [0x0D, 1], [0x0E, 2], [0x10, 2], [0x11, 2], [0x14, 2], [0x15, 2], [0x17, 3], [0x18, 4], [0x19, 4]]
+length = [[0x01, 7], [0x02, 6], [0x04, 6], [0x0D, 1], [0x0E, 2], [0x10, 2], [0x11, 2], [0x14, 2], [0x15, 2], [0x17, 3], [0x18, 4], [0x19, 4]]
 # low5 0x1A-0x1F at a head: back to the previous head (bare words only; never a head in stock code)
 
 # Forms, first match wins.  `addr = true`: [20:5] is printed as a data address.
