@@ -53,6 +53,15 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x17.ld (3 syllables): scalar asr + Y-memory load.
+# Grammar: x17.ld <dest_s>, <src_s>, <dest_e_half>, <src_e_mem>, #<shift>
+# dest_e_half is 3 bits: the loaded Y value lands in e(2 * dest_e_half).
+x17.ld	dest_s	s	19	22	s1
+x17.ld	src_s	s	25	28	s2
+x17.ld	dest_e_half	imm	0	2	s1
+x17.ld	src_e_mem	e	15	18	s1
+x17.ld	shift	imm	23	26	s1
+
 # x17.e (3 syllables): dual element write.
 # Grammar: x17.e <dest_e_a>, <dest_s>, <dest_e_b>, <src_e>, #<imm>
 x17.e	dest_e_a	e	8	11	s2

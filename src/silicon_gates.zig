@@ -111,6 +111,26 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x17ld",
+        // the probe list own-x17ld: pre s4 = 0x0E08, e8 = 0x705, Y:0x705 = 0x222.
+        // Bundle: s<S1[22:19]> = s5 <- s<S2[28:25]> = s4 asr 1 = 0x0704,
+        //         e<2*S1[2:0]> = e4 <- Y:[e8] = 0x222.
+        .pre = &.{
+            .{ .bank = .s, .index = 4, .value = 0x0E08 },
+            .{ .bank = .e, .index = 8, .value = 0x705 },
+            .{ .bank = .v, .index = 0, .value = 0x0222 },
+        },
+        .src =
+        \\st.y Y:0x705
+        \\x17.ld s5, s4, #2, e8, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 0x0704 } },
+            .{ .e_reg = .{ .index = 4, .value = 0x0222 } },
+        },
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },

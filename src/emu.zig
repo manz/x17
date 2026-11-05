@@ -102,7 +102,30 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s2_class == 0b111) return execX17Alu(gpa, state, bundle);
     if (s1_class == 0b001 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b100) return execX17E(gpa, state, bundle);
+    if (s1_class == 0b000 and s2_class == 0b011) return execX17Ld(gpa, state, bundle);
     return RunError.UnknownForm;
+}
+
+fn execX17Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+
+    const dest_s: u32 = (s1 >> 19) & 0xF;
+    const src_s: u32 = (s2 >> 25) & 0xF;
+    const shift: u32 = (s1 >> 23) & 0xF;
+    const src_e_mem: u32 = (s1 >> 15) & 0xF;
+    const dest_e_half: u32 = s1 & 0x7;
+
+    // Scalar asr first (reads pre-state s<src_s>, writes s<dest_s>).
+    const a_val: u32 = if (src_s == 0) 0 else state.s[src_s];
+    const shifted: u32 = @as(u32, @bitCast(sx24(a_val) >> @as(u5, @intCast(shift & 0x1F)))) & M24;
+    state.s[dest_s] = shifted;
+
+    // Y-memory load: fetch Y:[e<src_e_mem>] and land it in e<2*dest_e_half>.
+    const y_addr: u32 = if (src_e_mem == 0) 0 else state.e[src_e_mem];
+    const loaded: u32 = state.getY(y_addr) orelse 0;
+    state.e[2 * dest_e_half] = loaded;
 }
 
 fn execX17E(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

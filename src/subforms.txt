@@ -22,6 +22,14 @@ x17.halt   3   0x00000017   0x31308000   0xA0000000
 # "enable" bit documented in isa.toml (needed, else wedge).
 x17.imm    3   0x00000017   0x60004000   0xE0000000
 
+# x17.ld: scalar asr + Y-memory load into element, continuing bundle.
+# S1 class 000 + S2 class 011.  Semantics from fact 137 / own-x17ld:
+#   s<S1[22:19]> <- s<S2[28:25]> asr S1[26:23]
+#   e<2*S1[2:0]> <- Y:[e<S1[18:15]>]
+# Head bits [6:5]=11 (op=3) baked into base = 0x77; S1 base = 0x08000000
+# (bit 27 enable); S2 base = 0x60001208 (class 011 + measured enables).
+x17.ld     3   0x00000077   0x08000000   0x60001208
+
 # x17.e: dual element write in a continuing bundle.  S1 class 000 + S2
 # class 100.  Semantics from fact 135 / own-x17e:
 #   e<S2[11:8]>, s<head[24:21]> <- head[20:5]   (gated by S1[18])
