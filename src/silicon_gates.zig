@@ -564,6 +564,16 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x18una-abs",
+        // Pre s1 = 0x8001 (signed -0x7FFF); abs(s1) = 0x7FFF lands on s3.
+        .pre = &.{.{ .bank = .s, .index = 1, .value = 0x8001 }},
+        .src =
+        \\x18.una s3, s1, #7
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x7FFF } }},
+    },
+    .{
         .name = "own-x18edec",
         // Pre e2 = 0x703; e2 <- e2 - 1 = 0x702.
         .pre = &.{.{ .bank = .e, .index = 2, .value = 0x703 }},

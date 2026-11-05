@@ -155,6 +155,12 @@ x18.edec	dest_e	e	8	11	s2
 x18.edec	src_e	e	4	7	s2
 x18.edec	is_minus	imm	20	20	s2
 
+# x18.una (4 syllables): unary s op.
+# Grammar: x18.una <dest_s>, <src_s>, #<op>
+x18.una	dest_s	s	8	11	s1
+x18.una	src_s	s	2	5	s2
+x18.una	op	imm	15	17	s1
+
 # x03.xrd (6 syllables): X-memory read at low5 0x03 w4 mode 5.
 # Grammar: x03.xrd <dest_s>, #<a_hi>, #<a_lo>
 # A address = (a_hi << 2) | a_lo.

@@ -140,6 +140,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
         if (w3_class == 0b000) return execX18Eagu(gpa, state, bundle);
         if (w3_class == 0b100) return execX18Edec(gpa, state, bundle);
+        if (w3_class == 0b011) return execX18Una(gpa, state, bundle);
     }
     if (low5 == 0x02 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
@@ -440,6 +441,32 @@ fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
     const v = try agu10Eval(fn_op, x_val, y_val);
     if (dest_r != 0) state.r[dest_r] = v;
+}
+
+fn execX18Una(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const op: u32 = (w1 >> 15) & 0x7;
+    const dest_s: u32 = (w1 >> 8) & 0xF;
+    const src_s: u32 = (w2 >> 2) & 0xF;
+    const src_val: u32 = state.s[src_s] & M24;
+    const v: u32 = switch (op) {
+        3 => (src_val +% 1) & M24, // +1
+        7 => blk: {
+            // abs: sm1 treats these s values as 16-bit signed for the
+            // unary slot (fact 168: 0x8001 -> 0x7FFF).
+            const low16: u32 = src_val & 0xFFFF;
+            const signed: i32 = if (low16 & 0x8000 != 0)
+                @bitCast(low16 | 0xFFFF0000)
+            else
+                @intCast(low16);
+            const abs_val: u32 = if (signed < 0) @intCast(-signed) else @intCast(signed);
+            break :blk abs_val & M24;
+        },
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX18Edec(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
