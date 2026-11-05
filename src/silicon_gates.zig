@@ -332,6 +332,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-ld0e",
+        // the probe list own-0e: s5 <- 0, A13 <- 0x300, via low5 0x0E.
+        // Expected bytes: 0x9CA0600E 0x00040006.
+        .src =
+        \\ld0e s5, #0x300, #3
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 0 } },
+            .{ .a_reg = .{ .index = 13, .value = 0x300 } },
+        },
+    },
+    .{
         .name = "own-pair",
         // the probe list own-pair: e3 <- 0x70D via low5 0x10 S class 011.
         // Expected bytes: 0x0020E1B0 0x60448018.
