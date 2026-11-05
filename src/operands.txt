@@ -145,6 +145,12 @@ x19.alu44	a_s	s	18	21	s2
 x19.alu44	b_s	s	16	19	s1
 x19.alu44	code	imm	5	9	head
 
+# x19.a43 (4 syllables): s <- AGU3[fn]((w3[14:0]<<1) | w2[31]).
+# Grammar: x19.a43 <dest_s>, #<agu3_fn>, #<i_base>
+x19.a43	dest_s	s	21	24	head
+x19.a43	agu3_fn	imm	20	24	s3
+x19.a43	i_base	imm	0	14	s3
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

@@ -759,7 +759,9 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         return execX19E(gpa, state, bundle);
     }
     if (w1_class == 0 and w2_class == 4 and w3_class == 3) {
-        return execX19Xrd(gpa, state, bundle);
+        const src_sel: u32 = (bundle[1] >> 15) & 0x7;
+        if (src_sel == 5) return execX19Xrd(gpa, state, bundle);
+        if (src_sel == 1) return execX19A43(gpa, state, bundle);
     }
     if (w1_class == 0 and w2_class == 0 and w3_class == 3) {
         return execX19A3(gpa, state, bundle);
@@ -789,6 +791,22 @@ fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const r_val = try agu10Eval(agu10_fn, x_val, 0);
     if (dest_r != 0) state.r[dest_r] = r_val;
+}
+
+fn execX19A43(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const agu3_fn: u32 = (w3 >> 20) & 0x1F;
+    const i_base: u32 = w3 & 0x7FFF;
+    const w2_hi: u32 = (w2 >> 31) & 1;
+    const v: u32 = switch (agu3_fn) {
+        25 => ((i_base << 1) | w2_hi) & 0xFFFF,
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

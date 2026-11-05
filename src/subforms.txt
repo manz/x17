@@ -68,6 +68,10 @@ x19.aagu42 4   0x00000019   0x06000000   0x80000000   0x40000000
 # own-x19alu44).  Same op as x19.alu with w2[31] set.
 x19.alu44  4   0x00000419   0x00005808   0x80008101   0x81E18008
 
+# x19.a43: 4-syllable low5 0x19 class (0,4,3), w1[17:15]=1 (AGU3 source).
+# s <- AGU3[25]((w3[14:0] << 1) | w2[31]).  fact 151 / own-x19a43.
+x19.a43    4   0x00000019   0x08008002   0x80000000   0x60058000
+
 # x16.mul: 3-syllable low5 0x16 S2 class 110, S2[20:16] = 1 (truncate).
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)
