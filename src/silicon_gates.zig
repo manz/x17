@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x15alu-sub",
+        // Exercise ALU05 code 0x10 (sub) via x15.alu: s4 <- s7 - s3.
+        .pre = &.{
+            .{ .bank = .s, .index = 7, .value = 0x200 },
+            .{ .bank = .s, .index = 3, .value = 0x50 },
+        },
+        .src =
+        \\x15.alu s4, s7, s3, #16, #0, s0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 4, .value = 0x1B0 } }},
+    },
+    .{
         .name = "own-x15alu",
         // Pre s5 = 0x123, s3 = 0x18; code 0x0E add writes s5 and (mux 111) s3.
         .pre = &.{

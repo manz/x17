@@ -346,14 +346,30 @@ fn execX15Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s2: u32 = (s1 >> 7) & 0xF;
     const a_val: u32 = state.s[a_s] & M24;
     const b_val: u32 = state.s[b_s] & M24;
-    // ALU05 "add" family covers codes 0..0x0F (fact 33).
-    const v: u32 = switch (code) {
-        0, 1, 2, 3, 4, 5, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F => (a_val +% b_val) & M24,
-        0x09, 0x0A => (a_val +% b_val) & M24, // addi variants OPEN beyond add
-        else => return RunError.UnknownForm,
-    };
+    const v = try alu05Base(code, a_val, b_val);
     if (dest_s != 0) state.s[dest_s] = v;
     if (mux == 0b111 and dest_s2 != 0) state.s[dest_s2] = v;
+}
+
+/// ALU05 operation table, m = 0, s = 0 slice (fact 33 /
+/// upstream/tools/sm1isa/emu.py).  Codes outside the measured set yield
+/// UnknownForm so the gate harness flags them visibly.
+fn alu05Base(code: u32, a: u32, b: u32) RunError!u32 {
+    const am: u32 = a & M24;
+    const bm: u32 = b & M24;
+    return switch (code & 0x3F) {
+        // add family
+        0, 1, 2, 3, 4, 5, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x3C, 0x3D, 0x3F => (am +% bm) & M24,
+        0x10, 0x11 => (am -% bm) & M24, // sub
+        0x12, 0x13 => (bm -% am) & M24, // rsub
+        0x14, 0x15 => (0 -% am -% bm -% 2) & M24, // nadd
+        0x16, 0x17, 0x18, 0x19, 0x1D, 0x1E, 0x1F, 0x25 => (am ^ bm) & M24,
+        0x1C => bm & M24, // xori (b is the immediate; m=0 passes through)
+        0x20, 0x21, 0x22, 0x28, 0x29, 0x2E, 0x2F, 0x39, 0x3B => 0, // clr
+        0x23, 0x24, 0x27, 0x2B => am, // mova
+        0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 => bm, // movb
+        else => return RunError.UnknownForm,
+    };
 }
 
 fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
