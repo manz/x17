@@ -564,6 +564,17 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19aagu42",
+        // Pre A9 = 0x100 (src and dest both A9); i = (0x08 << 1) | 1 = 0x11;
+        // A9 <- A9 + 0x11 = 0x111.
+        .pre = &.{.{ .bank = .a, .index = 9, .value = 0x100 }},
+        .src =
+        \\x19.aagu42 A9, A9, #2, #8
+        \\x17.halt
+        ,
+        .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x111 } }},
+    },
+    .{
         .name = "own-x19a3",
         // Pre e1 = 0x700; s4 <- 2*0x381 = 0x702, R7 <- AGU10[2](e1) = 0x701.
         .pre = &.{.{ .bank = .e, .index = 1, .value = 0x700 }},

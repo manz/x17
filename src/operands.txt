@@ -131,6 +131,13 @@ x19.a3	agu3_fn	imm	20	24	s3
 x19.a3	agu10_fn	imm	7	10	s1
 x19.a3	i	imm	0	14	s3
 
+# x19.aagu42 (4 syllables): A update with widened i via w2[31].
+# Grammar: x19.aagu42 <dest_A>, <src_A>, #<fn_op>, #<i_base>
+x19.aagu42	dest_A	A	3	7	s1
+x19.aagu42	src_A	A	15	19	s3
+x19.aagu42	fn_op	imm	20	24	s3
+x19.aagu42	i_base	imm	0	14	s3
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

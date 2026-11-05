@@ -737,6 +737,9 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 2) {
         return execX19Aagu(gpa, state, bundle);
     }
+    if (w1_class == 0 and w2_class == 4 and w3_class == 2) {
+        return execX19Aagu(gpa, state, bundle);
+    }
     if (w1_class == 0 and w2_class == 1 and w3_class == 6) {
         return execX19Mul(gpa, state, bundle);
     }
@@ -909,16 +912,25 @@ fn execX19Aagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const w1 = bundle[1];
     const w3 = bundle[3];
 
+    const w2 = bundle[2];
     const dest_a: u32 = (w1 >> 3) & 0x1F;
     const src_a: u32 = (w3 >> 15) & 0x1F;
     const fn_op: u32 = (w3 >> 20) & 0x1F;
-    const imm: u32 = w3 & 0x7FFF;
+    // When w2 class is 100 (bit [31] set), i gains an extra high bit:
+    //   i = (w3[14:0] << 1) | w2[31]
+    const w2_bit31: u32 = (w2 >> 31) & 1;
+    const imm_base: u32 = w3 & 0x7FFF;
+    const imm_scaled: u32 = (imm_base << 1) | w2_bit31;
 
-    // AGUA table today models the one measured op: fn_op = 2 -> x + 2i.
     const x_val: u32 = state.a[src_a & 0xF];
     const new_val: u32 = switch (fn_op) {
         0 => x_val,
-        2 => (x_val +% (2 * imm)) & 0xFFFF,
+        2 => blk: {
+            // class (0,0,2): fn 2 -> x + 2*i.  class (0,4,2) adds w2[31].
+            if (w2_bit31 == 0 and (w2 >> 29) & 7 == 0)
+                break :blk (x_val +% (2 * imm_base)) & 0xFFFF;
+            break :blk (x_val +% imm_scaled) & 0xFFFF;
+        },
         else => return RunError.UnknownForm,
     };
     state.a[dest_a & 0xF] = new_val;
