@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19a3",
+        // Pre e1 = 0x700; s4 <- 2*0x381 = 0x702, R7 <- AGU10[2](e1) = 0x701.
+        .pre = &.{.{ .bank = .e, .index = 1, .value = 0x700 }},
+        .src =
+        \\x19.a3 s4, R7, e1, #25, #2, #897
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 4, .value = 0x702 } },
+            .{ .r_reg = .{ .index = 7, .value = 0x701 } },
+        },
+    },
+    .{
         .name = "own-x18mpy",
         // Pre s1 = 0x4001, s2 = 0x6003; P = 0x18012003: low = 0x2003, high = 0x18.
         .pre = &.{

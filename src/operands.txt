@@ -122,6 +122,15 @@ x19.e	mux	imm	12	14	s1
 x19.xrd	dest_s	s	21	24	head
 x19.xrd	src_a	imm	15	19	s3
 
+# x19.a3 (4 syllables): s and R loaded in parallel.
+# Grammar: x19.a3 <dest_s>, <dest_R>, <x_e>, #<agu3_fn>, #<agu10_fn>, #<i>
+x19.a3	dest_s	s	21	24	head
+x19.a3	dest_R	R	11	14	s1
+x19.a3	x_e	e	25	28	s3
+x19.a3	agu3_fn	imm	20	24	s3
+x19.a3	agu10_fn	imm	7	10	s1
+x19.a3	i	imm	0	14	s3
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2
