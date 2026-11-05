@@ -95,6 +95,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execXst(gpa, state, bundle);
         if (s_class == 0b000) return execYtst(gpa, state, bundle);
+        if (s_class == 0b101) return execYrm(gpa, state, bundle);
     }
     if (low5 == 0x0E and bundle.len >= 2) {
         const hb: u32 = (head >> 30) & 0x3;
@@ -152,6 +153,19 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     }
 
     return RunError.UnknownForm;
+}
+
+fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s1 = bundle[1];
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const imm: u32 = (head >> 5) & 0xFFFF;
+    const dest_r: u32 = s1 & 0xF;
+    const src_e: u32 = (s1 >> 21) & 0xF;
+    if (dest_s != 0) state.s[dest_s] = imm;
+    if (dest_r != 0) state.r[dest_r] = state.e[src_e];
 }
 
 fn execYtst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

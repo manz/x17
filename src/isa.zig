@@ -119,7 +119,7 @@ pub const Operand = struct {
     }
 };
 
-pub const MAX_OPERANDS: usize = 128;
+pub const MAX_OPERANDS: usize = 256;
 
 pub const operands_txt = @embedFile("operands.txt");
 

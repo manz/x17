@@ -482,6 +482,20 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x0BEE } }},
     },
     .{
+        .name = "own-yrm",
+        // the probe list own-yrm: pre e11 = 0x456; s6 <- 0x123, R5 <- e11.
+        // Expected bytes: 0x00C02474 0xB3600D05.
+        .pre = &.{.{ .bank = .e, .index = 11, .value = 0x456 }},
+        .src =
+        \\yrm s6, #0x123, R5, e11
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 6, .value = 0x123 } },
+            .{ .r_reg = .{ .index = 5, .value = 0x456 } },
+        },
+    },
+    .{
         .name = "own-ytst-even",
         // Pre e5 = 0x702, Y[0x702] = 0x10 (even); p3 <- true.
         .pre = &.{.{ .bank = .e, .index = 5, .value = 0x702 }},

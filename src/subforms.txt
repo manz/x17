@@ -49,6 +49,13 @@ xld10      2   0x00000010   0x60640000
 # S enables baked: bit 22, bit 17 (S[17:16]=10), bit 7.
 yld10      2   0x00000010   0xE0420080
 
+# yrm: 2-syllable low5 0x14 S class 101.  Scalar immediate load plus a
+# move from e to R (fact 103 / own-yrm):
+#   s<head[24:21]> <- head[20:5]
+#   R<S[3:0]> <- e<S[24:21]>
+# S class 101 + S[28:27] = 10 (baked); S[24:9] non-operand bits also baked.
+yrm        2   0x00000014   0xB2000D00
+
 # ytst: 2-syllable low5 0x14 S class 000.  Writes a predicate from the
 # parity of a Y-memory read (fact 99 / own-ytst-even, own-ytst-odd):
 #   p<S[14:11]> <- (Y:[e<S[24:21]>] & 1) == 0
