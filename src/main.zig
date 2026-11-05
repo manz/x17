@@ -18,4 +18,8 @@ pub fn main() !void {
             if (e.low5 == 0x17) "  (x17: main compute bundle)" else "",
         });
     }
+    p("  forms ({d}):\n", .{isa.forms.len});
+    for (isa.forms) |f| {
+        p("    {s: <7}  mask=0x{x:0>8}  value=0x{x:0>8}\n", .{ f.name, f.mask, f.value });
+    }
 }
