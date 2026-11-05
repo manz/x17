@@ -332,6 +332,17 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-ldi-k",
+        // the probe list own-ldi-k: ldi with [29:26] = 0xC; those bits are
+        // inert and our encoder emits them as 0, so this gate verifies
+        // s1 state, not an exact byte match.
+        .src =
+        \\ldi s1, #0x77
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x77 } }},
+    },
+    .{
         .name = "own-ldi2",
         // the probe list own-ldi2: s13 <- 0x123 via the 2-syllable low5 0x10
         // S-class-001 form.  Expected bytes: 0x01A02470 0x20040000.
