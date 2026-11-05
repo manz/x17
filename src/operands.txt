@@ -167,6 +167,17 @@ x19.kalu	dest	s	8	11	s1
 x19.kalu	a	s	4	7	s1
 x19.kalu	b	s	3	6	s3
 
+# x19.kabs (4 syllables): |b| into dest.
+# Grammar: x19.kabs <dest_s>, <dest>, <b>
+x19.kabs	dest_s	s	21	24	head
+x19.kabs	dest	s	8	11	s1
+x19.kabs	b	s	3	6	s3
+
+# x19.kimm (4 syllables): head-imm into dest.
+# Grammar: x19.kimm <dest_s>, #<imm>
+x19.kimm	dest_s	s	21	24	head
+x19.kimm	imm	imm	5	20	head
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

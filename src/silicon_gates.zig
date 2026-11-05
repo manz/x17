@@ -564,6 +564,25 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19kabs",
+        // Pre s3 = 0xFFFD (-3 as 16-bit signed); s4 <- |s3| = 3.
+        .pre = &.{.{ .bank = .s, .index = 3, .value = 0xFFFD }},
+        .src =
+        \\x19.kabs s9, s4, s3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 4, .value = 3 } }},
+    },
+    .{
+        .name = "own-x19kimm",
+        // s9 <- head[20:5] = 0x1234.
+        .src =
+        \\x19.kimm s9, #4660
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 9, .value = 0x1234 } }},
+    },
+    .{
         .name = "own-x19kalu",
         // Pre s5 = 0x50, s3 = 3; ALU m=5 (a-b): s4 <- s5 - s3 = 0x4D.
         .pre = &.{
