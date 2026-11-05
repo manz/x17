@@ -31,3 +31,13 @@ rli	imm16	imm	5	20
 # "[20:5] is a 16-bit immediate, [25:21] the register"
 ldi	dest	dest_ldi	21	25
 ldi	imm16	imm	5	20
+
+# alu (1 syllable):
+# "dest s<[18:15]>, a s<[14:11]>, b s<[29:26]> ([29] = 1 is the 011 'class':
+#  s8..s15), op [10:5] (table in emu.ALU05); [25:19] = 0 only"
+# b_s is a plain 4-bit scalar index: s0..s7 keep bit 29 = 0, s8..s15 set
+# it; the assembler just passes the 4-bit value through.
+alu	dest	s	15	18
+alu	a	s	11	14
+alu	b	s	26	29
+alu	op	imm	5	10

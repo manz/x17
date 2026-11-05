@@ -4,9 +4,22 @@
 
 const std = @import("std");
 const isa = @import("isa");
+const asm_mod = @import("asm");
 
 pub fn main() !void {
     const p = std.debug.print;
+
+    // Sample stellar error.
+    const bad = "alu R3, s2, s9, #5";
+    switch (asm_mod.assembleOneResult(bad)) {
+        .ok => {},
+        .err => |d| {
+            var buf: [1024]u8 = undefined;
+            const n = asm_mod.renderDiag(&buf, "<sample>", bad, d);
+            p("sample diagnostic:\n{s}\n", .{buf[0..n]});
+        },
+    }
+
     p("x17 dev rig - ISA layout (from src/isa.toml at comptime)\n", .{});
     p("  row_syllables: {d}\n", .{isa.layout.row_syllables});
     p("  main_row:      0x{x}\n", .{isa.layout.main_row});

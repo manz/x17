@@ -17,6 +17,14 @@ pub fn build(b: *std.Build) void {
     });
     exe_mod.addImport("isa", isa_mod);
 
+    const asm_mod = b.createModule(.{
+        .root_source_file = b.path("src/asm.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    asm_mod.addImport("isa", isa_mod);
+    exe_mod.addImport("asm", asm_mod);
+
     const exe = b.addExecutable(.{
         .name = "x17",
         .root_module = exe_mod,
@@ -26,13 +34,6 @@ pub fn build(b: *std.Build) void {
     const run = b.addRunArtifact(exe);
     run.step.dependOn(b.getInstallStep());
     b.step("run", "Run x17").dependOn(&run.step);
-
-    const asm_mod = b.createModule(.{
-        .root_source_file = b.path("src/asm.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    asm_mod.addImport("isa", isa_mod);
 
     const test_step = b.step("test", "Run unit tests");
     const isa_t = b.addTest(.{ .root_module = isa_mod });

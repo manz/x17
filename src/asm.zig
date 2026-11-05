@@ -1,18 +1,20 @@
 //! x17 assembler, v0: one line, one bundle, one syllable out.
 //!
 //! Scope of this spike:
-//!   * Lex a single line into tokens.
+//!   * Lex a single line into tokens carrying source-byte spans.
 //!   * Parse `mnemonic op (, op)*`.
 //!   * Match operands by file order against `isa.operandsFor(form)`.
 //!   * Emit the head syllable by OR'ing the form's `value` with each
 //!     encoded operand.
+//!   * On error, build a `Diagnostic` carrying an error code, span, and
+//!     "expected/found" message, printable with a rust-style caret block.
 //!
 //! What waits:
 //!   * Multi-line source, labels, directives, const-expression folding.
-//!   * Multi-syllable bundles (x17's head+S1+S2).
-//!   * Error locations beyond "something was wrong at offset N".
+//!   * Multi-syllable bundles (x17's head+S1+S2, bcc's S word).
 //!   * ldi's dest decoding beyond s<N> (0 = address entry 0, 1 = source 1,
 //!     2..15 marked OPEN in isa.toml - the assembler refuses them today).
+//!   * `Y:<imm>` operand kind for st.y.
 //!
 //! The round-trip gate (reassemble a disassembled stock bundle byte-exact)
 //! bolts onto this file as a test once labels land.
@@ -21,26 +23,163 @@ const std = @import("std");
 const isa = @import("isa");
 
 pub const AsmError = error{
-    EmptyInput,
-    UnknownMnemonic,
-    UnknownOperand,
-    WrongOperandCount,
-    OperandOutOfRange,
-    BadToken,
-    Overflow,
+    AssemblyFailed,
 };
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+
+/// Byte range into the original source.  Inclusive `start`, exclusive `end`.
+/// A zero-length span (`end == start`) anchors a caret under a single
+/// column, which we use for "unexpected end-of-input" cases.
+pub const Span = struct {
+    start: usize,
+    end: usize,
+
+    pub fn len(self: Span) usize {
+        return self.end - self.start;
+    }
+};
+
+pub const ErrorCode = enum {
+    e0001_unknown_mnemonic,
+    e0002_empty_input,
+    e0003_bad_token,
+    e0004_number_overflow,
+    e0005_missing_operand,
+    e0006_missing_comma,
+    e0007_extra_tokens,
+    e0008_expected_scalar_reg,
+    e0009_expected_element_reg,
+    e0010_expected_r_reg,
+    e0011_expected_predicate,
+    e0012_expected_immediate,
+    e0013_imm_out_of_range,
+    e0014_reg_index_out_of_range,
+    e0015_ldi_dest_not_s_reg,
+
+    pub fn text(c: ErrorCode) []const u8 {
+        return switch (c) {
+            .e0001_unknown_mnemonic => "E0001",
+            .e0002_empty_input => "E0002",
+            .e0003_bad_token => "E0003",
+            .e0004_number_overflow => "E0004",
+            .e0005_missing_operand => "E0005",
+            .e0006_missing_comma => "E0006",
+            .e0007_extra_tokens => "E0007",
+            .e0008_expected_scalar_reg => "E0008",
+            .e0009_expected_element_reg => "E0009",
+            .e0010_expected_r_reg => "E0010",
+            .e0011_expected_predicate => "E0011",
+            .e0012_expected_immediate => "E0012",
+            .e0013_imm_out_of_range => "E0013",
+            .e0014_reg_index_out_of_range => "E0014",
+            .e0015_ldi_dest_not_s_reg => "E0015",
+        };
+    }
+};
+
+/// A single error with enough context to print a rust-style block:
+///   error[E0008]: expected scalar register, found R register
+///     --> input:1:5
+///      |
+///    1 | rli s3, s5, #0x1234
+///      |     ^^ help: scalar registers are written s0..s15
+pub const Diagnostic = struct {
+    code: ErrorCode,
+    span: Span,
+    /// Short message after the code, e.g. "expected scalar register, found R register".
+    msg_buf: [128]u8 = undefined,
+    msg_len: u8 = 0,
+    /// Optional caret-line hint, e.g. "scalar registers are written s0..s15".
+    hint_buf: [96]u8 = undefined,
+    hint_len: u8 = 0,
+
+    pub fn msg(self: *const Diagnostic) []const u8 {
+        return self.msg_buf[0..self.msg_len];
+    }
+
+    pub fn hint(self: *const Diagnostic) []const u8 {
+        return self.hint_buf[0..self.hint_len];
+    }
+
+    fn setMsg(self: *Diagnostic, bytes: []const u8) void {
+        const n = @min(bytes.len, self.msg_buf.len);
+        @memcpy(self.msg_buf[0..n], bytes[0..n]);
+        self.msg_len = @intCast(n);
+    }
+
+    fn setHint(self: *Diagnostic, bytes: []const u8) void {
+        const n = @min(bytes.len, self.hint_buf.len);
+        @memcpy(self.hint_buf[0..n], bytes[0..n]);
+        self.hint_len = @intCast(n);
+    }
+};
+
+pub const Result = union(enum) {
+    ok: u32,
+    err: Diagnostic,
+};
+
+/// Column index (1-based) of `offset` within its line.  Lines are single
+/// here (we only assemble one line), so this is `offset + 1`; the helper
+/// exists so the multi-line parser gets the same shape later.
+fn columnOf(source: []const u8, offset: usize) usize {
+    _ = source;
+    return offset + 1;
+}
+
+/// Render a Diagnostic into `out`, returning the number of bytes written.
+/// Writes a rust-style block:
+///
+///   error[E0008]: expected scalar register, found R register
+///     --> <filename>:1:5
+///      |
+///    1 | rli s3, s5, #0x1234
+///      |     ^^ help: scalar registers are s0..s15
+///
+/// Truncates silently if `out` is too small (returns `out.len`); call with
+/// a 2 KiB buffer to be safe.
+pub fn renderDiag(out: []u8, filename: []const u8, source: []const u8, d: Diagnostic) usize {
+    var cur: usize = 0;
+    const col = columnOf(source, d.span.start);
+    cur += (std.fmt.bufPrint(out[cur..], "error[{s}]: {s}\n", .{ d.code.text(), d.msg() }) catch return cur).len;
+    cur += (std.fmt.bufPrint(out[cur..], "  --> {s}:1:{d}\n", .{ filename, col }) catch return cur).len;
+    cur += (std.fmt.bufPrint(out[cur..], "   |\n", .{}) catch return cur).len;
+    cur += (std.fmt.bufPrint(out[cur..], " 1 | {s}\n", .{source}) catch return cur).len;
+    cur += (std.fmt.bufPrint(out[cur..], "   | ", .{}) catch return cur).len;
+    var k: usize = 0;
+    while (k < col - 1 and cur < out.len) : (k += 1) {
+        out[cur] = ' ';
+        cur += 1;
+    }
+    const caret_count = @max(@as(usize, 1), d.span.len());
+    var j: usize = 0;
+    while (j < caret_count and cur < out.len) : (j += 1) {
+        out[cur] = '^';
+        cur += 1;
+    }
+    if (d.hint_len > 0) {
+        cur += (std.fmt.bufPrint(out[cur..], " help: {s}\n", .{d.hint()}) catch return cur).len;
+    } else if (cur < out.len) {
+        out[cur] = '\n';
+        cur += 1;
+    }
+    return cur;
+}
 
 // ---------------------------------------------------------------------------
 // Lexer
 // ---------------------------------------------------------------------------
 
 pub const TokenKind = enum {
-    ident, // mnemonics, reg prefixes before the digit, bare labels
-    s_reg, // sN
-    e_reg, // eN
-    r_reg, // RN  (upper R)
-    p_reg, // pN
-    number, // decimal or 0x-hex
+    ident,
+    s_reg,
+    e_reg,
+    r_reg,
+    p_reg,
+    number,
     comma,
     hash,
     colon,
@@ -49,35 +188,33 @@ pub const TokenKind = enum {
 
 pub const Token = struct {
     kind: TokenKind,
-    text: []const u8, // slice into source
-    value: u32 = 0, // for number / register index
+    text: []const u8,
+    value: u32 = 0,
+    start: usize, // byte offset into source
+};
+
+const LexError = struct {
+    code: ErrorCode,
+    span: Span,
+    msg: []const u8,
+    hint: []const u8 = "",
+};
+
+const LexResult = union(enum) {
+    tok: Token,
+    err: LexError,
 };
 
 const Lexer = struct {
     src: []const u8,
     i: usize = 0,
 
-    fn peek(self: *Lexer) u8 {
-        if (self.i >= self.src.len) return 0;
-        return self.src[self.i];
-    }
-
-    fn bump(self: *Lexer) u8 {
-        const c = self.peek();
-        self.i += 1;
-        return c;
-    }
-
     fn skipWs(self: *Lexer) void {
         while (self.i < self.src.len) {
             const c = self.src[self.i];
-            if (c == ' ' or c == '\t' or c == '\r') {
+            if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
                 self.i += 1;
-            } else if (c == '#' and self.i + 1 < self.src.len and (self.src[self.i + 1] == ' ' or isDigit(self.src[self.i + 1]) or self.src[self.i + 1] == '0')) {
-                // `#` here is the immediate marker, not whitespace.
-                return;
             } else if (c == ';') {
-                // line comment to end of line
                 while (self.i < self.src.len and self.src[self.i] != '\n') : (self.i += 1) {}
             } else {
                 return;
@@ -85,58 +222,78 @@ const Lexer = struct {
         }
     }
 
-    fn next(self: *Lexer) !Token {
+    fn next(self: *Lexer) LexResult {
         self.skipWs();
-        if (self.i >= self.src.len) return .{ .kind = .end, .text = self.src[self.i..self.i] };
+        if (self.i >= self.src.len) {
+            return .{ .tok = .{ .kind = .end, .text = self.src[self.src.len..self.src.len], .start = self.src.len } };
+        }
 
         const start = self.i;
-        const c = self.peek();
+        const c = self.src[start];
 
         if (c == ',') {
             self.i += 1;
-            return .{ .kind = .comma, .text = self.src[start..self.i] };
+            return .{ .tok = .{ .kind = .comma, .text = self.src[start..self.i], .start = start } };
         }
         if (c == ':') {
             self.i += 1;
-            return .{ .kind = .colon, .text = self.src[start..self.i] };
+            return .{ .tok = .{ .kind = .colon, .text = self.src[start..self.i], .start = start } };
         }
         if (c == '#') {
             self.i += 1;
-            return .{ .kind = .hash, .text = self.src[start..self.i] };
+            return .{ .tok = .{ .kind = .hash, .text = self.src[start..self.i], .start = start } };
         }
-        if (isDigit(c)) return try self.number();
+        if (isDigit(c)) return self.number(start);
+        if (isAlpha(c)) return self.wordOrReg(start);
 
-        if (isAlpha(c)) return try self.wordOrReg();
-
-        return AsmError.BadToken;
+        self.i += 1;
+        return .{ .err = .{
+            .code = .e0003_bad_token,
+            .span = .{ .start = start, .end = self.i },
+            .msg = "unexpected character",
+            .hint = "x17 source accepts identifiers, numbers, ',' ':' '#'",
+        } };
     }
 
-    fn number(self: *Lexer) !Token {
-        const start = self.i;
+    fn number(self: *Lexer, start: usize) LexResult {
         var value: u32 = 0;
         if (self.i + 1 < self.src.len and self.src[self.i] == '0' and (self.src[self.i + 1] == 'x' or self.src[self.i + 1] == 'X')) {
             self.i += 2;
             const digit_start = self.i;
             while (self.i < self.src.len and isHexDigit(self.src[self.i])) : (self.i += 1) {}
-            if (self.i == digit_start) return AsmError.BadToken;
-            value = std.fmt.parseInt(u32, self.src[digit_start..self.i], 16) catch return AsmError.Overflow;
+            if (self.i == digit_start) {
+                return .{ .err = .{
+                    .code = .e0003_bad_token,
+                    .span = .{ .start = start, .end = self.i },
+                    .msg = "hex literal has no digits after 0x",
+                } };
+            }
+            value = std.fmt.parseInt(u32, self.src[digit_start..self.i], 16) catch {
+                return .{ .err = .{
+                    .code = .e0004_number_overflow,
+                    .span = .{ .start = start, .end = self.i },
+                    .msg = "hex literal does not fit in 32 bits",
+                } };
+            };
         } else {
             while (self.i < self.src.len and isDigit(self.src[self.i])) : (self.i += 1) {}
-            value = std.fmt.parseInt(u32, self.src[start..self.i], 10) catch return AsmError.Overflow;
+            value = std.fmt.parseInt(u32, self.src[start..self.i], 10) catch {
+                return .{ .err = .{
+                    .code = .e0004_number_overflow,
+                    .span = .{ .start = start, .end = self.i },
+                    .msg = "decimal literal does not fit in 32 bits",
+                } };
+            };
         }
-        return .{ .kind = .number, .text = self.src[start..self.i], .value = value };
+        return .{ .tok = .{ .kind = .number, .text = self.src[start..self.i], .value = value, .start = start } };
     }
 
-    fn wordOrReg(self: *Lexer) !Token {
-        const start = self.i;
+    fn wordOrReg(self: *Lexer, start: usize) LexResult {
         while (self.i < self.src.len and (isAlpha(self.src[self.i]) or isDigit(self.src[self.i]) or self.src[self.i] == '.' or self.src[self.i] == '_')) : (self.i += 1) {}
         const text = self.src[start..self.i];
 
-        // Register? Single prefix letter + run of digits, no other letters.
         if (text.len >= 2 and isDigit(text[1])) {
             const prefix = text[0];
-            // Reject if any later char isn't a digit - treats `s0.foo` as
-            // ident, `s0` as reg.
             var all_digits = true;
             for (text[1..]) |ch| {
                 if (!isDigit(ch)) {
@@ -145,17 +302,17 @@ const Lexer = struct {
                 }
             }
             if (all_digits) {
-                const idx = std.fmt.parseInt(u32, text[1..], 10) catch return AsmError.BadToken;
+                const idx = std.fmt.parseInt(u32, text[1..], 10) catch 0;
                 switch (prefix) {
-                    's' => return .{ .kind = .s_reg, .text = text, .value = idx },
-                    'e' => return .{ .kind = .e_reg, .text = text, .value = idx },
-                    'R' => return .{ .kind = .r_reg, .text = text, .value = idx },
-                    'p' => return .{ .kind = .p_reg, .text = text, .value = idx },
+                    's' => return .{ .tok = .{ .kind = .s_reg, .text = text, .value = idx, .start = start } },
+                    'e' => return .{ .tok = .{ .kind = .e_reg, .text = text, .value = idx, .start = start } },
+                    'R' => return .{ .tok = .{ .kind = .r_reg, .text = text, .value = idx, .start = start } },
+                    'p' => return .{ .tok = .{ .kind = .p_reg, .text = text, .value = idx, .start = start } },
                     else => {},
                 }
             }
         }
-        return .{ .kind = .ident, .text = text };
+        return .{ .tok = .{ .kind = .ident, .text = text, .start = start } };
     }
 };
 
@@ -173,58 +330,144 @@ fn isAlpha(c: u8) bool {
 // Operand match + encode
 // ---------------------------------------------------------------------------
 
-fn matchOperand(op: isa.Operand, tok: Token) !u32 {
+/// If `tok` fits `op`, return the 4..16-bit field value; otherwise set `d`
+/// and return null.
+fn matchOperand(op: isa.Operand, tok: Token, d: *Diagnostic) ?u32 {
     switch (op.kind) {
         .s => {
-            if (tok.kind != .s_reg) return AsmError.UnknownOperand;
-            if (tok.value > 15) return AsmError.OperandOutOfRange;
+            if (tok.kind != .s_reg) {
+                d.* = .{ .code = .e0008_expected_scalar_reg, .span = tokSpan(tok) };
+                setExpected(d, "scalar register", tok);
+                d.setHint("scalar registers are written s0..s15");
+                return null;
+            }
+            if (tok.value > 15) {
+                d.* = .{ .code = .e0014_reg_index_out_of_range, .span = tokSpan(tok) };
+                d.setMsg("scalar register index must be 0..15");
+                return null;
+            }
             return tok.value;
         },
         .e => {
-            if (tok.kind != .e_reg) return AsmError.UnknownOperand;
-            if (tok.value > 15) return AsmError.OperandOutOfRange;
+            if (tok.kind != .e_reg) {
+                d.* = .{ .code = .e0009_expected_element_reg, .span = tokSpan(tok) };
+                setExpected(d, "element register", tok);
+                d.setHint("element registers are written e0..e15");
+                return null;
+            }
+            if (tok.value > 15) {
+                d.* = .{ .code = .e0014_reg_index_out_of_range, .span = tokSpan(tok) };
+                d.setMsg("element register index must be 0..15");
+                return null;
+            }
             return tok.value;
         },
         .r_reg => {
-            if (tok.kind != .r_reg) return AsmError.UnknownOperand;
-            if (tok.value > 15) return AsmError.OperandOutOfRange;
+            if (tok.kind != .r_reg) {
+                d.* = .{ .code = .e0010_expected_r_reg, .span = tokSpan(tok) };
+                setExpected(d, "R register", tok);
+                d.setHint("R-file registers are written R0..R15 (capital R)");
+                return null;
+            }
+            if (tok.value > 15) {
+                d.* = .{ .code = .e0014_reg_index_out_of_range, .span = tokSpan(tok) };
+                d.setMsg("R register index must be 0..15");
+                return null;
+            }
             return tok.value;
         },
         .p => {
-            if (tok.kind != .p_reg) return AsmError.UnknownOperand;
+            if (tok.kind != .p_reg) {
+                d.* = .{ .code = .e0011_expected_predicate, .span = tokSpan(tok) };
+                setExpected(d, "predicate", tok);
+                d.setHint("predicates are written p0..p15 (p0 is always true)");
+                return null;
+            }
             return tok.value;
         },
         .imm => {
-            if (tok.kind != .number) return AsmError.UnknownOperand;
-            const max: u32 = if (op.width() == 32) 0xFFFF_FFFF else (@as(u32, 1) << @as(u5, @intCast(op.width()))) - 1;
-            if (tok.value > max) return AsmError.OperandOutOfRange;
+            if (tok.kind != .number) {
+                d.* = .{ .code = .e0012_expected_immediate, .span = tokSpan(tok) };
+                setExpected(d, "immediate", tok);
+                d.setHint("prefix immediates with '#', e.g. #0x1234 or #42");
+                return null;
+            }
+            const w = op.width();
+            const max: u32 = if (w == 32) 0xFFFF_FFFF else (@as(u32, 1) << @as(u5, @intCast(w))) - 1;
+            if (tok.value > max) {
+                d.* = .{ .code = .e0013_imm_out_of_range, .span = tokSpan(tok) };
+                var buf: [96]u8 = undefined;
+                const m = std.fmt.bufPrint(&buf, "immediate 0x{x} does not fit in {d} bits", .{ tok.value, w }) catch buf[0..0];
+                d.setMsg(m);
+                return null;
+            }
             return tok.value;
         },
         .dest_ldi => {
-            // v0 accepts only s<N>; maps to k = N + 16 per isa.toml.
-            if (tok.kind != .s_reg) return AsmError.UnknownOperand;
-            if (tok.value > 15) return AsmError.OperandOutOfRange;
+            if (tok.kind != .s_reg) {
+                d.* = .{ .code = .e0015_ldi_dest_not_s_reg, .span = tokSpan(tok) };
+                d.setMsg("ldi destination must be a scalar register");
+                d.setHint("sN maps to source index k = N + 16 in isa.toml");
+                return null;
+            }
+            if (tok.value > 15) {
+                d.* = .{ .code = .e0014_reg_index_out_of_range, .span = tokSpan(tok) };
+                d.setMsg("scalar register index must be 0..15");
+                return null;
+            }
             return tok.value + 16;
         },
     }
+}
+
+fn tokSpan(t: Token) Span {
+    return .{ .start = t.start, .end = t.start + t.text.len };
+}
+
+fn kindName(k: TokenKind) []const u8 {
+    return switch (k) {
+        .ident => "identifier",
+        .s_reg => "scalar register",
+        .e_reg => "element register",
+        .r_reg => "R register",
+        .p_reg => "predicate",
+        .number => "number",
+        .comma => "','",
+        .hash => "'#'",
+        .colon => "':'",
+        .end => "end of input",
+    };
+}
+
+fn setExpected(d: *Diagnostic, want: []const u8, tok: Token) void {
+    var buf: [128]u8 = undefined;
+    const m = std.fmt.bufPrint(&buf, "expected {s}, found {s}", .{ want, kindName(tok.kind) }) catch buf[0..0];
+    d.setMsg(m);
 }
 
 // ---------------------------------------------------------------------------
 // Assemble one line
 // ---------------------------------------------------------------------------
 
-/// Assemble one source line into the head syllable of a bundle.
-///
-/// `src` is one logical line; `#` introduces an immediate, `;` or `#` after
-/// whitespace a comment (the lexer already draws that line).  Returns the
-/// 32-bit syllable to write at the bundle's head slot.
-pub fn assembleOne(src: []const u8) !u32 {
+/// Assemble one source line.  Carries diagnostics.
+pub fn assembleOneResult(src: []const u8) Result {
     var lex = Lexer{ .src = src };
-    const head = try lex.next();
-    if (head.kind == .end) return AsmError.EmptyInput;
-    if (head.kind != .ident) return AsmError.UnknownMnemonic;
+    const head_r = lex.next();
+    const head = switch (head_r) {
+        .tok => |t| t,
+        .err => |e| return fromLexErr(e),
+    };
+    if (head.kind == .end) {
+        var d = Diagnostic{ .code = .e0002_empty_input, .span = .{ .start = 0, .end = 0 } };
+        d.setMsg("no instruction on this line");
+        return .{ .err = d };
+    }
+    if (head.kind != .ident) {
+        var d = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(head) };
+        d.setMsg("expected a mnemonic at the start of the line");
+        return .{ .err = d };
+    }
 
-    // Find the form.
     var form: ?*const isa.Form = null;
     for (isa.forms) |*f| {
         if (std.mem.eql(u8, f.name, head.text)) {
@@ -232,27 +475,102 @@ pub fn assembleOne(src: []const u8) !u32 {
             break;
         }
     }
-    const f = form orelse return AsmError.UnknownMnemonic;
+    const f = form orelse {
+        var d = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(head) };
+        var buf: [96]u8 = undefined;
+        const m = std.fmt.bufPrint(&buf, "unknown mnemonic '{s}'", .{head.text}) catch buf[0..0];
+        d.setMsg(m);
+        return .{ .err = d };
+    };
     const ops = isa.operandsFor(f.name);
-    if (ops.len == 0) return AsmError.UnknownMnemonic; // no operand table yet
+    if (ops.len == 0) {
+        var d = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(head) };
+        var buf: [96]u8 = undefined;
+        const m = std.fmt.bufPrint(&buf, "mnemonic '{s}' has no operand table yet", .{head.text}) catch buf[0..0];
+        d.setMsg(m);
+        return .{ .err = d };
+    }
 
-    // Walk operands in file order, skipping one comma between each and an
-    // optional `#` in front of each immediate.
     var word: u32 = f.value;
     for (ops, 0..) |op, i| {
         if (i > 0) {
-            const comma = try lex.next();
-            if (comma.kind != .comma) return AsmError.WrongOperandCount;
+            const cr = lex.next();
+            const ct = switch (cr) {
+                .tok => |t| t,
+                .err => |e| return fromLexErr(e),
+            };
+            if (ct.kind == .end) {
+                var d = Diagnostic{ .code = .e0005_missing_operand, .span = .{ .start = src.len, .end = src.len } };
+                var buf: [96]u8 = undefined;
+                const m = std.fmt.bufPrint(&buf, "missing operand {d}/{d} ({s})", .{ i + 1, ops.len, op.name }) catch buf[0..0];
+                d.setMsg(m);
+                return .{ .err = d };
+            }
+            if (ct.kind != .comma) {
+                var d = Diagnostic{ .code = .e0006_missing_comma, .span = tokSpan(ct) };
+                var buf: [96]u8 = undefined;
+                const m = std.fmt.bufPrint(&buf, "expected ',' between operands, found '{s}'", .{ct.text}) catch buf[0..0];
+                d.setMsg(m);
+                return .{ .err = d };
+            }
         }
-        var tok = try lex.next();
-        if (tok.kind == .hash) tok = try lex.next();
-        const field = try matchOperand(op, tok);
+        const tr = lex.next();
+        var tok = switch (tr) {
+            .tok => |t| t,
+            .err => |e| return fromLexErr(e),
+        };
+        if (tok.kind == .end) {
+            var d = Diagnostic{ .code = .e0005_missing_operand, .span = .{ .start = src.len, .end = src.len } };
+            var buf: [96]u8 = undefined;
+            const m = std.fmt.bufPrint(&buf, "missing operand {d}/{d} ({s})", .{ i + 1, ops.len, op.name }) catch buf[0..0];
+            d.setMsg(m);
+            return .{ .err = d };
+        }
+        if (tok.kind == .hash) {
+            const nr = lex.next();
+            tok = switch (nr) {
+                .tok => |t| t,
+                .err => |e| return fromLexErr(e),
+            };
+            if (tok.kind == .end) {
+                var d = Diagnostic{ .code = .e0005_missing_operand, .span = .{ .start = src.len, .end = src.len } };
+                d.setMsg("'#' is not followed by a number");
+                return .{ .err = d };
+            }
+        }
+        var d: Diagnostic = undefined;
+        const field = matchOperand(op, tok, &d) orelse return .{ .err = d };
         word |= op.encode(field);
     }
 
-    const tail = try lex.next();
-    if (tail.kind != .end) return AsmError.WrongOperandCount;
-    return word;
+    const tail_r = lex.next();
+    const tail = switch (tail_r) {
+        .tok => |t| t,
+        .err => |e| return fromLexErr(e),
+    };
+    if (tail.kind != .end) {
+        var d = Diagnostic{ .code = .e0007_extra_tokens, .span = tokSpan(tail) };
+        var buf: [96]u8 = undefined;
+        const m = std.fmt.bufPrint(&buf, "unexpected token '{s}' after operands", .{tail.text}) catch buf[0..0];
+        d.setMsg(m);
+        return .{ .err = d };
+    }
+    return .{ .ok = word };
+}
+
+fn fromLexErr(e: LexError) Result {
+    var d = Diagnostic{ .code = e.code, .span = e.span };
+    d.setMsg(e.msg);
+    if (e.hint.len > 0) d.setHint(e.hint);
+    return .{ .err = d };
+}
+
+/// Thin wrapper that drops diagnostics and returns a single error.
+pub fn assembleOne(src: []const u8) AsmError!u32 {
+    return switch (assembleOneResult(src)) {
+        .ok => |w| w,
+        .err => AsmError.AssemblyFailed,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -261,61 +579,101 @@ pub fn assembleOne(src: []const u8) !u32 {
 
 const testing = std.testing;
 
+fn okWord(src: []const u8) !u32 {
+    return switch (assembleOneResult(src)) {
+        .ok => |w| w,
+        .err => |d| {
+            std.debug.print("unexpected error[{s}]: {s}\n", .{ d.code.text(), d.msg() });
+            return error.TestExpectedOk;
+        },
+    };
+}
+
+fn expectErr(src: []const u8, code: ErrorCode) !Diagnostic {
+    switch (assembleOneResult(src)) {
+        .ok => |w| {
+            std.debug.print("expected error, got ok=0x{x}\n", .{w});
+            return error.TestExpectedErr;
+        },
+        .err => |d| {
+            if (d.code != code) {
+                std.debug.print("expected {s}, got {s}: {s}\n", .{ code.text(), d.code.text(), d.msg() });
+                return error.TestWrongErrorCode;
+            }
+            return d;
+        },
+    }
+}
+
 test "assemble rli R3, s5, #0x1234" {
-    const word = try assembleOne("rli R3, s5, #0x1234");
-    // dest_R=3 << 27 = XXXXXXXX
-    // dest_s=5 << 21 = XXXXXXXX
-    // imm 0x1234 << 5 = 0x00024680
-    // base value for rli = 0x0200000C
-    // OR: 0x1AA2468C
-    try testing.expectEqual(@as(u32, 0x1AA2_468C), word);
+    try testing.expectEqual(@as(u32, 0x1AA2_468C), try okWord("rli R3, s5, #0x1234"));
 }
 
 test "assemble ldi s0, #0x1234 maps dest to k=16" {
-    const word = try assembleOne("ldi s0, #0x1234");
-    // dest = 16 (s0 -> k=16) at bits [25:21] = 0x02000000
-    // imm 0x1234 at [20:5] = 0x00024680
-    // base value for ldi = 0xC000000B
-    // OR: 0xC202468B
-    try testing.expectEqual(@as(u32, 0xC202_468B), word);
+    try testing.expectEqual(@as(u32, 0xC202_468B), try okWord("ldi s0, #0x1234"));
 }
 
-test "assemble ldi s15 maps dest to k=31" {
-    const word = try assembleOne("ldi s15, #0");
-    // dest = 31 at [25:21] = 31 << 21 = 0x03E00000
-    try testing.expectEqual(@as(u32, 0xC000_000B) | (31 << 21), word);
+test "assemble alu s7, s2, s9, #5" {
+    // dest_s=7 <<15 = 0x00038000
+    // a_s   =2 <<11 = 0x00001000
+    // b_s   =9 <<26 = 0x24000000
+    // op    =5 <<5  = 0x000000A0
+    // base          = 0x40000005
+    // OR            = 0x640390A5
+    try testing.expectEqual(@as(u32, 0x6403_90A5), try okWord("alu s7, s2, s9, #5"));
 }
 
-test "unknown mnemonic errors" {
-    try testing.expectError(AsmError.UnknownMnemonic, assembleOne("nope s0, #0"));
+test "assemble alu with b in high class (s12)" {
+    // b_s=12 <<26 = 0x30000000; bit 29 = 1 picks class 011.
+    const w = try okWord("alu s0, s0, s12, #0");
+    try testing.expectEqual(@as(u32, 0x4000_0005) | (12 << 26), w);
 }
 
-test "wrong operand kind errors" {
-    try testing.expectError(AsmError.UnknownOperand, assembleOne("rli s3, s5, #0x1234"));
+test "diag: unknown mnemonic points at mnemonic" {
+    const d = try expectErr("nope s0, #0", .e0001_unknown_mnemonic);
+    try testing.expectEqual(@as(usize, 0), d.span.start);
+    try testing.expectEqual(@as(usize, 4), d.span.end);
 }
 
-test "imm overflow errors" {
-    // rli's imm16 is 16 bits; 0x1_0000 overflows.
-    try testing.expectError(AsmError.OperandOutOfRange, assembleOne("rli R0, s0, #0x10000"));
+test "diag: expected scalar reg, caret at R3" {
+    const d = try expectErr("alu R3, s2, s9, #5", .e0008_expected_scalar_reg);
+    try testing.expectEqual(@as(usize, 4), d.span.start);
+    try testing.expectEqual(@as(usize, 6), d.span.end);
+    try testing.expectEqualStrings("scalar registers are written s0..s15", d.hint());
 }
 
-test "s-reg index out of range errors" {
-    try testing.expectError(AsmError.OperandOutOfRange, assembleOne("rli R0, s16, #0"));
+test "diag: imm out of range names the width" {
+    const d = try expectErr("rli R0, s0, #0x10000", .e0013_imm_out_of_range);
+    try testing.expect(std.mem.indexOf(u8, d.msg(), "16 bits") != null);
+}
+
+test "diag: missing operand anchors at end of input" {
+    const src = "rli R0, s0";
+    const d = try expectErr(src, .e0005_missing_operand);
+    try testing.expectEqual(src.len, d.span.start);
+    try testing.expectEqual(src.len, d.span.end);
+}
+
+test "diag: extra trailing token flagged" {
+    _ = try expectErr("ldi s0, #0 extra", .e0007_extra_tokens);
+}
+
+test "diag: renderDiag prints rust-style block" {
+    const src = "alu R3, s2, s9, #5";
+    const d = try expectErr(src, .e0008_expected_scalar_reg);
+    var buf: [1024]u8 = undefined;
+    const n = renderDiag(&buf, "input", src, d);
+    const out = buf[0..n];
+    try testing.expect(std.mem.indexOf(u8, out, "error[E0008]:") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "--> input:1:5") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "\n 1 | alu R3") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "^^") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "help: scalar registers") != null);
 }
 
 test "comment to end of line is tolerated" {
-    const word = try assembleOne("ldi s0, #0 ; load zero into source k=16");
-    try testing.expectEqual(@as(u32, 0xC000_000B) | (16 << 21), word);
-}
-
-test "empty input errors" {
-    try testing.expectError(AsmError.EmptyInput, assembleOne("   "));
-}
-
-test "missing operand errors" {
-    try testing.expectError(AsmError.WrongOperandCount, assembleOne("rli R0, s0"));
-}
-
-test "extra trailing token errors" {
-    try testing.expectError(AsmError.WrongOperandCount, assembleOne("ldi s0, #0 extra"));
+    try testing.expectEqual(
+        @as(u32, 0xC000_000B) | (16 << 21),
+        try okWord("ldi s0, #0 ; load zero into source k=16"),
+    );
 }
