@@ -845,6 +845,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
     },
     .{
+        .name = "own-s0-reads-zero",
+        // s0 reads as 0 regardless of pre-state.
+        .pre = &.{.{ .bank = .s, .index = 0, .value = 7 }},
+        .src =
+        \\alu s3, s0, s0, #0x23
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0 } }},
+    },
+    .{
         .name = "own-alu-sub",
         .pre = &.{
             .{ .bank = .s, .index = 1, .value = 0x700 },
