@@ -109,6 +109,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "ld0e")) {
         return execLd0e(gpa, state, bundle);
     }
+    if (std.mem.eql(u8, f.name, "stx")) {
+        return execStx(gpa, state, head);
+    }
     if (std.mem.eql(u8, f.name, "st.y")) {
         return execStY(gpa, state, head);
     }
@@ -905,6 +908,14 @@ fn isHaltBundle(bundle: []const u32) bool {
     if (((bundle[2] >> 29) & 0x7) != 0b101) return false;
     const ctl: u32 = (bundle[1] >> 20) & 0x7;
     return ctl == 0b011;
+}
+
+fn execStx(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    const a_idx: u32 = (head >> 11) & 0xF;
+    const src_s: u32 = (head >> 16) & 0xF;
+    const addr: u32 = state.a[a_idx];
+    const v: u32 = state.s[src_s] & M24;
+    try state.x_mem.put(gpa, addr, v);
 }
 
 fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

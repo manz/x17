@@ -343,6 +343,13 @@ evidence = "INFERRED"
 ref = "the probe list fill-unbounded/fill-stride2, fact 17, 21: bounds the stub's fill; [8:7] and [24:23] are 2-bit selectors into V2/V13 (3 = none)"
 
 [[form]]
+name = "stx"
+mask = "0xFFF007FF"
+value = "0x4030000A"
+evidence = "MEASURED"
+ref = "fact 69 pass 95: X:[A<[15:11]>] <- s<[19:16]> sign-extended to 24 bits.  own-stx."
+
+[[form]]
 name = "zero"
 mask = "0xFFFFFFFF"
 value = "0x00000000"

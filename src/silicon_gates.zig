@@ -332,6 +332,20 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-stx",
+        // the probe list own-stx: X:[A6] <- s7 via low5 0x0A single syllable.
+        // Expected byte: 0x4037300A.  Pre s7 = 0xF77, A6 = 0x3A0.
+        .pre = &.{
+            .{ .bank = .s, .index = 7, .value = 0xF77 },
+            .{ .bank = .a, .index = 6, .value = 0x3A0 },
+        },
+        .src =
+        \\stx A6, s7
+        \\x17.halt
+        ,
+        .post = &.{.{ .x_mem = .{ .addr = 0x3A0, .value = 0xF77 } }},
+    },
+    .{
         .name = "own-xld10",
         // the probe list own-xld10: s3 <- X:[A6], s5 <- 0xBEE.  Pre A6 = 0x330,
         // X[0x330] = 0x777.  Expected bytes: 0x80A17DD0 0x60640181.
