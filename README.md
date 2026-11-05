@@ -46,6 +46,28 @@ and length lookup table.  `zig build run` prints them.  Opcode form tables
 (x17 bundles, head + S1 + S2 classes), the assembler's parser, the emulator
 and the test harness are all to come.
 
+## Mnemonics
+
+Every opcode and sub-form name in this repo is **reverse-engineered**,
+not vendored.  Samsung ships no datasheet for sm1; we coined the names
+while bit-sweeping silicon with the harness at
+`RE tree/upstream/tools/sm1isa/`.
+
+Two patterns:
+
+- **Behavior-derived**: `ldi` (load immediate), `rli` (register-load
+  imm: writes both R and s), `st.y` (store to Y memory), `alu` (ALU op),
+  `rop` (R-file op), `yagu` (Y address-gen unit), `plog`/`ptst`
+  (predicate log / test), and for sub-forms: `.imm`, `.ld`, `.alu05`,
+  `.mve`, `.rsub`, `.mul`, `.aagu`, `.xpm`, `.xld_a10`, `.halt`,
+  `.cont`.
+- **Opcode-derived**: `x17` and `x19` from their low5 values (0x17,
+  0x19), because each one is a family of VLIWs rather than one op.
+
+Every form row in `data/isa.toml` cites the `fact` pass it was
+recovered in.  If a Samsung datasheet ever surfaces, mnemonics are
+fair game to rename.
+
 ## Origin
 
 sm1 is reverse-engineered in the RE tree project; see
