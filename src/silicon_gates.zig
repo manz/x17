@@ -155,6 +155,17 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 5, .value = 0x702 } }},
     },
     .{
+        .name = "own-x17rsub",
+        // the probe list own-x17rsub: pre s3 = 0x333.
+        // Bundle: s5 <- 0xA - s3 = 0xA - 0x333 wrapped to 24 bits = 0xFFFCD7.
+        .pre = &.{.{ .bank = .s, .index = 3, .value = 0x333 }},
+        .src =
+        \\x17.rsub s5, s3, #0xA, #5, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0xFFFCD7 } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },

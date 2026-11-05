@@ -53,6 +53,14 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x17.rsub (3 syllables): b - a with immediate b.
+# Grammar: x17.rsub <dest_s>, <a_src>, #<imm_b>, #<op>, #<p>
+x17.rsub	dest_s	s	19	22	s1
+x17.rsub	a_src	s	25	28	s2
+x17.rsub	imm_b	imm	8	11	s1
+x17.rsub	op	imm	12	14	s1
+x17.rsub	p	imm	4	7	s1
+
 # x17.mve (3 syllables): move scalar + 1 into an element.
 # Grammar: x17.mve <dest_e>, <src_s>
 x17.mve	dest_e	e	16	19	s1
