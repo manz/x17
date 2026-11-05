@@ -1,12 +1,12 @@
 # x17 operand bit positions, per form.
 #
 # One line per operand.  Columns are tab-separated:
-#   form    name    kind    lo    hi    [notes]
+#   form    name    kind    lo    hi    syll
 #
-# `lo`/`hi` are inclusive bit positions in the HEAD syllable (single-syllable
-# forms) unless the form is a multi-syllable bundle, in which case a future
-# `syll` column will name head|s1|s2 (not needed today - every form seeded
-# here is 1 syllable).
+# `lo`/`hi` are inclusive bit positions within the named syllable.  `syll`
+# is `head`, `s1`, `s2`, `s3`, ... - single-syllable forms always use
+# `head`.  Multi-syllable bundles have their syllable base values in
+# `subforms.txt`; operand rows here add on top.
 #
 # `kind`:
 #   s    scalar register, 4 bits               (s0..s15)
@@ -23,27 +23,32 @@
 
 # rli (1 syllable):
 # "R<head[30:27]> <- head[20:5] and s<head[24:21]> <- head[20:5]"
-rli	dest_R	R	27	30
-rli	dest_s	s	21	24
-rli	imm16	imm	5	20
+rli	dest_R	R	27	30	head
+rli	dest_s	s	21	24	head
+rli	imm16	imm	5	20	head
 
 # ldi (1 syllable):
 # "[20:5] is a 16-bit immediate, [25:21] the register"
-ldi	dest	dest_ldi	21	25
-ldi	imm16	imm	5	20
+ldi	dest	dest_ldi	21	25	head
+ldi	imm16	imm	5	20	head
 
 # st.y (1 syllable):
 # "[20:5] is a 16-bit immediate; [31:29]=001 selects it."  The stored value
 # is the LANE's data register (implicit; not an encoded operand); sel bits
 # 21-22 pick V13 pre-store side effects (OPEN in the v0 assembler).
-st.y	addr	y_addr	5	20
+st.y	addr	y_addr	5	20	head
 
 # alu (1 syllable):
 # "dest s<[18:15]>, a s<[14:11]>, b s<[29:26]> ([29] = 1 is the 011 'class':
 #  s8..s15), op [10:5] (table in emu.ALU05); [25:19] = 0 only"
 # b_s is a plain 4-bit scalar index: s0..s7 keep bit 29 = 0, s8..s15 set
 # it; the assembler just passes the 4-bit value through.
-alu	dest	s	15	18
-alu	a	s	11	14
-alu	b	s	26	29
-alu	op	imm	5	10
+alu	dest	s	15	18	head
+alu	a	s	11	14	head
+alu	b	s	26	29	head
+alu	op	imm	5	10	head
+
+# x17.imm (3 syllables): scalar immediate load.
+# "s<S1[10:7]> <- head[26:11]" (fact 134, own-x17imm).
+x17.imm	dest_s	s	7	10	s1
+x17.imm	imm16	imm	11	26	head

@@ -121,7 +121,7 @@ pub const Diagnostic = struct {
     }
 };
 
-pub const MAX_BUNDLE_SYLLABLES: usize = 7;
+pub const MAX_BUNDLE_SYLLABLES: usize = isa.MAX_BUNDLE_SYLLABLES;
 
 /// A bundle: 1-7 syllables of 32 bits each, written to consecutive slots
 /// starting at the bundle's head position.  `len` says how many of `words`
@@ -639,38 +639,86 @@ pub fn assembleOneResult(src: []const u8) Result {
 }
 
 /// Assemble an x17.* bundle.  Head's text is `x17.<sub>`; the lexer is
-/// positioned just after it.  Currently handles only `x17.halt`, which
-/// emits the three-syllable `[0x00000017, 0x31308000, 0xA0000000]` bundle
-/// that stops a program.  Other sub-forms land as the spike grows.
+/// positioned just after it.  Looks up the sub-form in `isa.subforms`,
+/// seeds each syllable with the sub-form's base, then walks the operand
+/// rows (which name their syllable via `syll`) and OR's the encoded
+/// fields into the matching word.
 fn assembleX17(head: Token, lex: *Lexer, src: []const u8) Result {
-    const sub = head.text[4..]; // drop `x17.`
-    if (std.mem.eql(u8, sub, "halt")) {
-        // No operands.  The canonical halt bundle, silicon-measured in
-        // many the probe list entries (own-x17alu-shl, own-x17imm, ...).
-        const tail = switch (lex.next()) {
+    const sf = isa.subFormByName(head.text) orelse {
+        var d = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(head) };
+        var buf: [96]u8 = undefined;
+        const m = std.fmt.bufPrint(&buf, "unknown sub-form '{s}'", .{head.text}) catch buf[0..0];
+        d.setMsg(m);
+        d.setHint("see subforms.txt for the sub-forms this assembler knows");
+        return .{ .err = d };
+    };
+
+    var b: Bundle = .{ .words = undefined, .len = sf.syllables };
+    var si: usize = 0;
+    while (si < sf.syllables) : (si += 1) b.words[si] = sf.base[si];
+
+    const ops = isa.operandsFor(sf.name);
+    for (ops, 0..) |op, i| {
+        if (i > 0) {
+            const cr = lex.next();
+            const ct = switch (cr) {
+                .tok => |t| t,
+                .err => |e| return fromLexErr(e),
+            };
+            if (ct.kind == .end) {
+                var d = Diagnostic{ .code = .e0005_missing_operand, .span = .{ .start = src.len, .end = src.len } };
+                var buf: [96]u8 = undefined;
+                const m = std.fmt.bufPrint(&buf, "missing operand {d}/{d} ({s})", .{ i + 1, ops.len, op.name }) catch buf[0..0];
+                d.setMsg(m);
+                return .{ .err = d };
+            }
+            if (ct.kind != .comma) {
+                var d = Diagnostic{ .code = .e0006_missing_comma, .span = tokSpan(ct) };
+                var buf: [96]u8 = undefined;
+                const m = std.fmt.bufPrint(&buf, "expected ',' between operands, found '{s}'", .{ct.text}) catch buf[0..0];
+                d.setMsg(m);
+                return .{ .err = d };
+            }
+        }
+        var tok = switch (lex.next()) {
             .tok => |t| t,
             .err => |e| return fromLexErr(e),
         };
-        if (tail.kind != .end) {
-            var d = Diagnostic{ .code = .e0007_extra_tokens, .span = tokSpan(tail) };
+        if (tok.kind == .end) {
+            var d = Diagnostic{ .code = .e0005_missing_operand, .span = .{ .start = src.len, .end = src.len } };
             var buf: [96]u8 = undefined;
-            const m = std.fmt.bufPrint(&buf, "x17.halt takes no operands, found '{s}'", .{tail.text}) catch buf[0..0];
+            const m = std.fmt.bufPrint(&buf, "missing operand {d}/{d} ({s})", .{ i + 1, ops.len, op.name }) catch buf[0..0];
             d.setMsg(m);
             return .{ .err = d };
         }
-        var b: Bundle = .{ .words = undefined, .len = 3 };
-        b.words[0] = 0x0000_0017;
-        b.words[1] = 0x3130_8000;
-        b.words[2] = 0xA000_0000;
-        return .{ .ok = b };
+        if (tok.kind == .hash) {
+            tok = switch (lex.next()) {
+                .tok => |t| t,
+                .err => |e| return fromLexErr(e),
+            };
+        }
+        var d: Diagnostic = undefined;
+        const field = matchOperand(op, tok, &d) orelse return .{ .err = d };
+        if (op.syll >= sf.syllables) {
+            var dx = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(tok) };
+            dx.setMsg("operand table names a syllable past the bundle length");
+            return .{ .err = dx };
+        }
+        b.words[op.syll] |= op.encode(field);
     }
-    _ = src;
-    var d = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(head) };
-    var buf: [96]u8 = undefined;
-    const m = std.fmt.bufPrint(&buf, "x17.{s} is not implemented yet", .{sub}) catch buf[0..0];
-    d.setMsg(m);
-    d.setHint("x17 sub-forms: halt (implemented); alu, imm, agu, e, ld, alu05, xpm (pending)");
-    return .{ .err = d };
+
+    const tail = switch (lex.next()) {
+        .tok => |t| t,
+        .err => |e| return fromLexErr(e),
+    };
+    if (tail.kind != .end) {
+        var d = Diagnostic{ .code = .e0007_extra_tokens, .span = tokSpan(tail) };
+        var buf: [96]u8 = undefined;
+        const m = std.fmt.bufPrint(&buf, "unexpected token '{s}' after operands", .{tail.text}) catch buf[0..0];
+        d.setMsg(m);
+        return .{ .err = d };
+    }
+    return .{ .ok = b };
 }
 
 fn fromLexErr(e: LexError) Result {
@@ -833,6 +881,18 @@ test "diag: x17.halt takes no operands" {
 test "diag: unknown x17 sub-form" {
     const d = try expectErr("x17.wat", .e0001_unknown_mnemonic);
     try testing.expect(std.mem.indexOf(u8, d.msg(), "x17.wat") != null);
+}
+
+test "x17.imm encodes dest into S1 and imm into head" {
+    // own-x17imm (the probe list): [0x005F7017, 0x60004280, 0xE0000000].
+    //   head: 0x005F7017 = base 0x00000017 | (imm 0x0BEE << 11 = 0x005F7000)
+    //   S1:   0x60004280 = base 0x60004000 | (dest_s=5 << 7 = 0x280)
+    //   S2:   0xE0000000 = base 0xE0000000 (no operand fields)
+    const b = try okBundle("x17.imm s5, #0x0BEE");
+    try testing.expectEqual(@as(u8, 3), b.len);
+    try testing.expectEqual(@as(u32, 0x005F_7017), b.words[0]);
+    try testing.expectEqual(@as(u32, 0x6000_4280), b.words[1]);
+    try testing.expectEqual(@as(u32, 0xE000_0000), b.words[2]);
 }
 
 test "round-trip gate: own-x17ctl tail bundle (x17.halt)" {

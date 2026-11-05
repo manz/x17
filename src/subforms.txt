@@ -1,0 +1,23 @@
+# x17 sub-form table: multi-syllable bundles with a fixed base per syllable.
+#
+# One line per sub-form.  Whitespace-separated columns:
+#   name   syllables   base_head   base_s1   base_s2 [base_s3 ...]
+#
+# Each `base_*` is the all-operands-zero value of that syllable.  The
+# assembler OR's operand field contributions (listed in operands.txt with
+# a `syll` column) on top of the base.
+#
+# All x17.* sub-forms are 3 syllables (head + S1 + S2); the `.halt` case
+# has no operand fields, the others have at least one.  Sources: the ref
+# strings in isa.toml plus the silicon-measured byte patterns in
+# the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
+
+# x17.halt: canonical stop bundle.  Head carries only the x17 opcode;
+# S1 = 0x31308000 is the standard "halt S1" (S1 class 001, S1[15]=1, ...);
+# S2 class 101 (bits [31:29] = 101).
+x17.halt   3   0x00000017   0x31308000   0xA0000000
+
+# x17.imm: scalar immediate load into s<S1[10:7]> from head[26:11].
+# S1 class 011 ([31:29]=011) + S2 class 111 ([31:29]=111); S1[14]=1 is the
+# "enable" bit documented in isa.toml (needed, else wedge).
+x17.imm    3   0x00000017   0x60004000   0xE0000000

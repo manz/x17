@@ -95,6 +95,8 @@ pub const Operand = struct {
     kind: OperandKind,
     lo: u8,
     hi: u8,
+    /// 0 = head, 1 = s1, 2 = s2, ...  Single-syllable forms always use 0.
+    syll: u8 = 0,
 
     pub fn width(self: Operand) u8 {
         return self.hi - self.lo + 1;
@@ -150,6 +152,72 @@ const OperandsParse = struct {
     len: usize,
 };
 
+// ---------------------------------------------------------------------------
+// Sub-forms (multi-syllable bundle templates)
+// ---------------------------------------------------------------------------
+
+pub const MAX_BUNDLE_SYLLABLES: usize = 7;
+
+/// One multi-syllable bundle template.  `base` carries the all-operands-zero
+/// value of each of `syllables` consecutive 32-bit words; the assembler
+/// walks `operandsFor(name)` and OR's each field contribution into the
+/// syllable named by its `syll` index.
+pub const SubForm = struct {
+    name: []const u8,
+    syllables: u8,
+    base: [MAX_BUNDLE_SYLLABLES]u32,
+};
+
+pub const MAX_SUBFORMS: usize = 16;
+
+pub const subforms_txt = @embedFile("subforms.txt");
+
+const subforms_parsed = parseSubForms(subforms_txt);
+
+pub const subforms: []const SubForm = subforms_parsed.items[0..subforms_parsed.len];
+
+pub fn subFormByName(name: []const u8) ?*const SubForm {
+    for (subforms) |*sf| {
+        if (std.mem.eql(u8, sf.name, name)) return sf;
+    }
+    return null;
+}
+
+const SubFormsParse = struct {
+    items: [MAX_SUBFORMS]SubForm,
+    len: usize,
+};
+
+fn parseSubForms(src: []const u8) SubFormsParse {
+    @setEvalBranchQuota(200_000);
+    comptime var items: [MAX_SUBFORMS]SubForm = undefined;
+    comptime var len: usize = 0;
+
+    var it = std.mem.splitScalar(u8, src, '\n');
+    while (it.next()) |raw| {
+        const line = stripComment(raw);
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0) continue;
+
+        var tok_it = std.mem.tokenizeAny(u8, trimmed, " \t");
+        const name = tok_it.next() orelse continue;
+        const syl_s = tok_it.next() orelse continue;
+        const syllables = parseU8(syl_s);
+
+        var base: [MAX_BUNDLE_SYLLABLES]u32 = @splat(0);
+        var k: usize = 0;
+        while (tok_it.next()) |word_s| : (k += 1) {
+            if (k >= MAX_BUNDLE_SYLLABLES) break;
+            base[k] = parseU32(word_s);
+        }
+
+        items[len] = .{ .name = name, .syllables = syllables, .base = base };
+        len += 1;
+        if (len >= MAX_SUBFORMS) break;
+    }
+    return .{ .items = items, .len = len };
+}
+
 fn parseOperands(src: []const u8) OperandsParse {
     @setEvalBranchQuota(400_000);
     comptime var items: [MAX_OPERANDS]Operand = undefined;
@@ -161,7 +229,7 @@ fn parseOperands(src: []const u8) OperandsParse {
         const trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len == 0) continue;
 
-        // Expect tab-separated: form <TAB> name <TAB> kind <TAB> lo <TAB> hi
+        // Expect tab-separated: form <TAB> name <TAB> kind <TAB> lo <TAB> hi <TAB> syll
         const f1 = std.mem.indexOfScalar(u8, trimmed, '\t') orelse continue;
         const rest1 = trimmed[f1 + 1 ..];
         const f2 = std.mem.indexOfScalar(u8, rest1, '\t') orelse continue;
@@ -169,12 +237,21 @@ fn parseOperands(src: []const u8) OperandsParse {
         const f3 = std.mem.indexOfScalar(u8, rest2, '\t') orelse continue;
         const rest3 = rest2[f3 + 1 ..];
         const f4 = std.mem.indexOfScalar(u8, rest3, '\t') orelse continue;
+        const rest4 = rest3[f4 + 1 ..];
+        // syll column is optional; absent means `head` (back-compat).
+        var hi_s: []const u8 = undefined;
+        var syll_s: []const u8 = "head";
+        if (std.mem.indexOfScalar(u8, rest4, '\t')) |f5| {
+            hi_s = std.mem.trim(u8, rest4[0..f5], " \t\r");
+            syll_s = std.mem.trim(u8, rest4[f5 + 1 ..], " \t\r");
+        } else {
+            hi_s = std.mem.trim(u8, rest4, " \t\r");
+        }
 
         const form = std.mem.trim(u8, trimmed[0..f1], " \t\r");
         const name = std.mem.trim(u8, rest1[0..f2], " \t\r");
         const kind_s = std.mem.trim(u8, rest2[0..f3], " \t\r");
         const lo_s = std.mem.trim(u8, rest3[0..f4], " \t\r");
-        const hi_s = std.mem.trim(u8, rest3[f4 + 1 ..], " \t\r");
 
         const kind: OperandKind =
             if (std.mem.eql(u8, kind_s, "s")) .s
@@ -186,12 +263,21 @@ fn parseOperands(src: []const u8) OperandsParse {
             else if (std.mem.eql(u8, kind_s, "y_addr")) .y_addr
             else continue;
 
+        const syll: u8 = blk: {
+            if (std.mem.eql(u8, syll_s, "head")) break :blk 0;
+            if (syll_s.len == 2 and syll_s[0] == 's' and syll_s[1] >= '1' and syll_s[1] <= '9') {
+                break :blk syll_s[1] - '0';
+            }
+            break :blk 0;
+        };
+
         items[len] = .{
             .form = form,
             .name = name,
             .kind = kind,
             .lo = parseU8(lo_s),
             .hi = parseU8(hi_s),
+            .syll = syll,
         };
         len += 1;
         if (len >= MAX_OPERANDS) break;
