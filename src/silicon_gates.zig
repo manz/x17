@@ -482,6 +482,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x0BEE } }},
     },
     .{
+        .name = "own-x18imm",
+        // s3 <- 0x1234 via the 4-syllable x18.imm bundle.
+        // Expected bytes: 0x00624698 0x00006000 0x00000000 0xC1500001.
+        .src =
+        \\x18.imm s3, #0x1234, #6
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x1234 } }},
+    },
+    .{
         .name = "own-p010-true",
         // the probe list own-p010-true: p3 <- cond 9 (constant true).
         // Expected bytes: 0x00000014 0x42000930.

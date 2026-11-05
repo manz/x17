@@ -12,6 +12,13 @@
 # strings in isa.toml plus the silicon-measured byte patterns in
 # the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
 
+# x18.imm: 4-syllable VLIW at low5 0x18, w3 class 110.  Scalar immediate
+# load (fact 175 / own-x18imm):
+#   s<head[24:21]> <- head[20:5]
+# A mux (w1[14:12]) picks the source; both measured cases (110, 001) land
+# on the head immediate.  w3 baked = 0xC1500001.
+x18.imm    4   0x00000018   0x00000000   0x00000000   0xC1500001
+
 # x19.imm: 4-syllable VLIW; AGU with a 16-bit immediate.  Class triple
 # (000, 000, 001).  Semantics from fact 146 / own-x19imm:
 #   e<{w1[0], head[31:29]}> <- AGU10[w1[4:1]](x = e<w3[28:25]>,

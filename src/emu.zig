@@ -98,6 +98,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b101) return execYrm(gpa, state, bundle);
         if (s_class == 0b010) return execP010(gpa, state, bundle);
     }
+    if (low5 == 0x18 and bundle.len >= 4) {
+        const w3_class: u32 = (bundle[3] >> 29) & 0x7;
+        if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
+    }
     if (low5 == 0x0E and bundle.len >= 2) {
         const hb: u32 = (head >> 30) & 0x3;
         if (hb == 0) return execPtest(gpa, state, bundle);
@@ -146,6 +150,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "x19")) {
         return execX19(gpa, state, bundle);
     }
+    // Low5 0x18 isn't a classify-registered top-level form; handle by low5.
     if (std.mem.eql(u8, f.name, "alu11")) {
         return execAlu11(gpa, state, bundle);
     }
@@ -180,6 +185,15 @@ fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const src_e: u32 = (s1 >> 21) & 0xF;
     if (dest_s != 0) state.s[dest_s] = imm;
     if (dest_r != 0) state.r[dest_r] = state.e[src_e];
+}
+
+fn execX18Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 4) return RunError.UnknownForm;
+    const head = bundle[0];
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const imm: u32 = (head >> 5) & 0xFFFF;
+    if (dest_s != 0) state.s[dest_s] = imm;
 }
 
 fn execYtst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

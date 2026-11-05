@@ -53,6 +53,12 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x18.imm (4 syllables): scalar immediate load at low5 0x18.
+# Grammar: x18.imm <dest_s>, #<imm16>, #<mux>
+x18.imm	dest_s	s	21	24	head
+x18.imm	imm16	imm	5	20	head
+x18.imm	mux	imm	12	14	s1
+
 # x19.imm (4 syllables): AGU with 16-bit immediate.
 # Grammar: x19.imm #<imm>
 x19.imm	imm	imm	15	30	s2
