@@ -211,6 +211,114 @@ fn aluShift(op: AluOp, a_s: i32, b_s: i32) u32 {
     return @as(u32, @bitCast(@as(i32, @truncate(result)))) & M24;
 }
 
+// ADDER_M table rewrites the (x, y, c) tuple fed into x + y + c, per upstream
+// emu.py.  7 entries; [25:23] of the ALU word picks one.  Returned fields
+// are 24-bit signed ints (as i64 because ~x can grow by a bit).
+const AdderTuple = struct { x: i64, y: i64, c: i64 };
+
+fn adderM(m: u8, x: i64, y: i64, c: i64) AdderTuple {
+    return switch (m & 7) {
+        0 => .{ .x = x, .y = y, .c = c },
+        1 => .{ .x = ~x, .y = y, .c = 1 },
+        2 => .{ .x = 0, .y = y, .c = c },
+        3 => .{ .x = 0, .y = y, .c = 1 },
+        4 => .{ .x = -1, .y = y, .c = c },
+        5 => .{ .x = x, .y = ~y, .c = 1 },
+        6 => .{ .x = 0, .y = ~y, .c = 1 },
+        7 => .{ .x = 0, .y = y, .c = c },
+        else => unreachable,
+    };
+}
+
+/// XOR_M: for xor at code 0x16 with s = 0, [25:23] = m picks the combiner.
+/// Entry 5 is OPEN in upstream.  Returns null for OPEN.
+fn xorM(m: u8, a: u32, b: u32) ?u32 {
+    return switch (m & 7) {
+        0 => (a ^ b) & M24,
+        1 => (~(a ^ b)) & M24,
+        2 => (a | b) & M24,
+        3 => (a & b) & M24,
+        4 => (~a) & M24,
+        5 => null,
+        6 => a & M24,
+        7 => a & M24,
+        else => unreachable,
+    };
+}
+
+/// Upstream emu.py's `alu_word`: one class-05 word with its [25:19]
+/// modifiers resolved.  Returns null for cases upstream marks OPEN (clr with
+/// modifiers), and `RunError.UnknownForm` for a (code, m, s) triple no rule
+/// in upstream covers either.
+pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
+    const code: u8 = @intCast((h >> 5) & 0x3F);
+    const m: u8 = @intCast((h >> 23) & 0x7);
+    const s_mod: u8 = @intCast((h >> 19) & 0xF);
+    const op = ALU05[code];
+    const a24: u32 = @as(u32, @bitCast(a_s)) & M24;
+    const b24: u32 = @as(u32, @bitCast(b_s)) & M24;
+
+    // m == 0 and s == 0: fall through to the base ALU05 eval.
+    if (m == 0 and s_mod == 0) {
+        return alu05Eval(op, a_s, b_s);
+    }
+    // clr with modifiers: upstream marks the source OPEN.
+    if (op == .clr) return null;
+    // mova/asr/asrrs/lsr with s == 0: modifier m is ignored.
+    if ((op == .mova or op == .asr or op == .asrrs or op == .lsr) and s_mod == 0) {
+        return alu05Eval(op, a_s, b_s);
+    }
+    // adder family: add / addi / sub-with-s=0.
+    if (op == .add or op == .addi or (op == .sub and s_mod == 0)) {
+        var x0: i64 = undefined;
+        var y0: i64 = undefined;
+        var c0: i64 = undefined;
+        switch (op) {
+            .add => {
+                x0 = a_s;
+                y0 = b_s;
+                c0 = 0;
+            },
+            .addi => {
+                x0 = @as(i32, s_mod);
+                y0 = b_s;
+                c0 = 0;
+            },
+            .sub => {
+                x0 = a_s;
+                // Python: sx24(y & M24) if y >= 0 else y. Here we feed ~b.
+                y0 = ~@as(i64, b_s);
+                c0 = 1;
+            },
+            else => unreachable,
+        }
+        const t = adderM(m, x0, y0, c0);
+        var r: i64 = t.x + t.y + t.c;
+        if (op == .add and code <= 2) {
+            r = r << @as(u6, @intCast(s_mod & 0x3F));
+        } else if (op == .add and code <= 5) {
+            const lo: u32 = @as(u32, @bitCast(@as(i32, @truncate(r)))) & M24;
+            var lo_s: i64 = sx24FromU32(lo);
+            if (code == 4 and s_mod != 0) lo_s += @as(i64, 1) << @as(u6, @intCast(s_mod - 1));
+            r = lo_s >> @as(u6, @intCast(s_mod & 0x3F));
+        }
+        return @as(u32, @bitCast(@as(i32, @truncate(r)))) & M24;
+    }
+    if (m == 0 and op == .xori) return (b24 ^ s_mod) & M24;
+    if (m == 0 and op == .shli) return (b24 << @as(u5, @intCast(s_mod & 0x1F))) & M24;
+    if (m == 0 and code == 0x30) return b24;
+    // xor at code 0x16 or 0x1F with the right m/s.
+    if ((s_mod == 0 and code == 0x16) or (code == 0x1F and m == 2 and s_mod == 0)) {
+        return xorM(m, a24, b24);
+    }
+    return RunError.UnknownForm;
+}
+
+fn sx24FromU32(v: u32) i64 {
+    if ((v & 0x0080_0000) != 0) return @as(i64, v) - 0x100_0000;
+    return @as(i64, v);
+}
+
 fn execAlu(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     _ = gpa;
     // dest s[18:15], a s[14:11], b s[29:26], op [10:5]; [25:19] = 0 reserved.
@@ -537,6 +645,51 @@ test "alu nadd: -a - b - 2 (code 0x14) wraps to 24 bits" {
     try executeBundle(testing.allocator, &state, b.slice());
     // -0x100 - 0x200 - 2 = -0x302; wrapped to 24 bits = 0xFFFCFE.
     try testing.expectEqual(@as(u32, 0xFFFCFE), state.s[7]);
+}
+
+test "aluWord parity: m=0 s=0 matches alu05Eval" {
+    // add with no modifiers: word h encodes code=0 at [10:5], m/s both 0.
+    // a=0x100, b=0x200 -> 0x300.
+    const h: u32 = 0 << 5;
+    const r = (try aluWord(h, 0x100, 0x200)).?;
+    try testing.expectEqual(@as(u32, 0x300), r);
+}
+
+test "aluWord: add with m=2 (x=0) yields y + c = b" {
+    // code=0 (add), m=2, s=0: adderM(2) -> (0, b, 0); result = b.
+    // h fields: m at [25:23]. m=2 -> bits [25:23]=010, byte = (2 << 23).
+    const h: u32 = (2 << 23); // code=0, s=0
+    const r = (try aluWord(h, 0x100, 0x200)).?;
+    try testing.expectEqual(@as(u32, 0x200), r);
+}
+
+test "aluWord: add with s=3 code<=2 shifts left" {
+    // code=0 (add), m=0, s=3: result = (a + b) << 3.
+    // s at [22:19], s=3 -> bits [22:19]=0011, byte = (3 << 19).
+    const h: u32 = (3 << 19); // code=0, m=0
+    const r = (try aluWord(h, 0x100, 0x200)).?;
+    try testing.expectEqual(@as(u32, 0x1800), r);
+}
+
+test "aluWord: clr with modifiers is OPEN (null)" {
+    // code 0x20 is clr; m=1 -> OPEN per upstream.
+    const h: u32 = (0x20 << 5) | (1 << 23);
+    const r = try aluWord(h, 0x100, 0x200);
+    try testing.expect(r == null);
+}
+
+test "aluWord: xori at m=0, s=5 xors immediate" {
+    // code 0x1C = xori; m=0, s=5 -> result = b ^ 5.
+    const h: u32 = (0x1C << 5) | (5 << 19);
+    const r = (try aluWord(h, 0, 0x00F)).?;
+    try testing.expectEqual(@as(u32, 0x0A), r);
+}
+
+test "aluWord: shli at m=0, s=4 shifts immediate" {
+    // code 0x3A = shli; result = b << s.
+    const h: u32 = (0x3A << 5) | (4 << 19);
+    const r = (try aluWord(h, 0, 0x3)).?;
+    try testing.expectEqual(@as(u32, 0x30), r);
 }
 
 test "alu register 0 reads as zero (fact 70)" {
