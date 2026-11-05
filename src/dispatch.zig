@@ -23,8 +23,8 @@ pub const Verb = struct {
 // ---------------------------------------------------------------------------
 
 pub const top = [_]Verb{
-    .{ .name = "asm", .help = "assemble a .s file; prints hex syllables", .run = &cmdAsm },
-    .{ .name = "run", .help = "assemble + execute a .s file; prints s/Y state", .run = &cmdRun },
+    .{ .name = "asm", .help = "assemble a .sm file; prints hex syllables", .run = &cmdAsm },
+    .{ .name = "run", .help = "assemble + execute a .sm file; prints s/Y state", .run = &cmdRun },
     .{ .name = "forms", .help = "list known forms", .run = &cmdForms },
 };
 
@@ -142,7 +142,7 @@ fn renderFileError(fe: asm_mod.FileError, path: []const u8, out: *Writer) !void 
 const asm_params = clap.parseParamsComptime(
     \\-h, --help               show help for `x17 asm`
     \\-f, --format <str>       output format: hex (default), c, bin
-    \\<str>                    source file path (.s)
+    \\<str>                    source file path (.sm)
     \\
 );
 
@@ -152,11 +152,11 @@ fn cmdAsm(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     defer parsed.deinit();
 
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 asm [--format hex|c|bin] <file.s>\n");
+        try out.writeAll("usage: x17 asm [--format hex|c|bin] <file.sm>\n");
         return;
     }
     if (parsed.positionals[0] == null) {
-        try out.writeAll("asm: missing <file.s>\n");
+        try out.writeAll("asm: missing <file.sm>\n");
         return error.MissingFile;
     }
     const path = parsed.positionals[0].?;
@@ -204,7 +204,7 @@ const run_params = clap.parseParamsComptime(
     \\-h, --help               show help for `x17 run`
     \\-l, --lane <usize>       which lane to run (0..3), default 0
     \\    --v <usize>          initial value for this lane's V register
-    \\<str>                    source file path (.s)
+    \\<str>                    source file path (.sm)
     \\
 );
 
@@ -214,11 +214,11 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     defer parsed.deinit();
 
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 run [--lane N] [--v K] <file.s>\n");
+        try out.writeAll("usage: x17 run [--lane N] [--v K] <file.sm>\n");
         return;
     }
     if (parsed.positionals[0] == null) {
-        try out.writeAll("run: missing <file.s>\n");
+        try out.writeAll("run: missing <file.sm>\n");
         return error.MissingFile;
     }
     const path = parsed.positionals[0].?;
