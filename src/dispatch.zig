@@ -251,38 +251,50 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
         bundles, lane, lane, v_init,
     });
 
-    // Non-zero scalar regs.
-    var any_s = false;
-    for (state.s, 0..) |val, idx| {
-        if (val != 0) {
-            if (!any_s) {
-                try out.writeAll("s regs:\n");
-                any_s = true;
-            }
-            try out.print("  s{d:<2} = 0x{x:0>6}\n", .{ idx, val });
-        }
-    }
-    if (!any_s) try out.writeAll("s regs: all zero\n");
+    try printBank(out, "s regs", "s", &state.s);
+    try printBank(out, "e regs", "e", &state.e);
+    try printBank(out, "R regs", "R", &state.r);
+    try printBank(out, "A regs", "A", &state.a);
+    try printMemory(out, "Y mem", "Y", &state.y_mem);
+    try printMemory(out, "X mem", "X", &state.x_mem);
+}
 
-    // Y memory.
-    if (state.y_mem.count() == 0) {
-        try out.writeAll("Y mem: no writes\n");
-    } else {
-        try out.print("Y mem ({d} writes):\n", .{state.y_mem.count()});
-        var kit = state.y_mem.keyIterator();
-        // Collect + sort for stable output.
-        var keys: [128]u32 = undefined;
-        var n: usize = 0;
-        while (kit.next()) |k| {
-            if (n >= keys.len) break;
-            keys[n] = k.*;
-            n += 1;
+fn printBank(out: *Writer, label: []const u8, prefix: []const u8, regs: []const u32) !void {
+    var any = false;
+    for (regs, 0..) |val, idx| {
+        if (val == 0) continue;
+        if (!any) {
+            try out.print("{s}:\n", .{label});
+            any = true;
         }
-        std.mem.sort(u32, keys[0..n], {}, std.sort.asc(u32));
-        for (keys[0..n]) |k| {
-            const v = state.y_mem.get(k).?;
-            try out.print("  Y:0x{x:<4} = 0x{x:0>6}\n", .{ k, v });
-        }
+        try out.print("  {s}{d:<2} = 0x{x:0>6}\n", .{ prefix, idx, val });
+    }
+    if (!any) try out.print("{s}: all zero\n", .{label});
+}
+
+fn printMemory(
+    out: *Writer,
+    label: []const u8,
+    prefix: []const u8,
+    mem: *const std.AutoHashMapUnmanaged(u32, u32),
+) !void {
+    if (mem.count() == 0) {
+        try out.print("{s}: no writes\n", .{label});
+        return;
+    }
+    try out.print("{s} ({d} writes):\n", .{ label, mem.count() });
+    var keys: [128]u32 = undefined;
+    var n: usize = 0;
+    var kit = mem.keyIterator();
+    while (kit.next()) |k| {
+        if (n >= keys.len) break;
+        keys[n] = k.*;
+        n += 1;
+    }
+    std.mem.sort(u32, keys[0..n], {}, std.sort.asc(u32));
+    for (keys[0..n]) |k| {
+        const v = mem.get(k).?;
+        try out.print("  {s}:0x{x:<4} = 0x{x:0>6}\n", .{ prefix, k, v });
     }
 }
 

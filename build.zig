@@ -20,6 +20,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
     exe_mod.addImport("isa", isa_mod);
 
@@ -53,6 +54,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/dispatch.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
     dispatch_mod.addImport("clap", clap_mod);
     dispatch_mod.addImport("isa", isa_mod);
