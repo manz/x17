@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x18q23",
+        // Pre s1 = 0x4000, s2 = 0x6000; s3 <- round(s1*s2/2^23) = 0x30.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+        },
+        .src =
+        \\x18.q23 s3, s1, s2, #4
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x30 } }},
+    },
+    .{
         .name = "own-x18rimm",
         // e2 <- imm 0x705 via op 0.
         .src =

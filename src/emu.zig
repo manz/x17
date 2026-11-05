@@ -144,6 +144,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w3_class == 0b100) return execX18Edec(gpa, state, bundle);
         if (w3_class == 0b011) return execX18Una(gpa, state, bundle);
         if (w3_class == 0b101) return execX18Rimm(gpa, state, bundle);
+        if (w3_class == 0b010) return execX18Q23(gpa, state, bundle);
     }
     if (low5 == 0x02 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
@@ -444,6 +445,23 @@ fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
     const v = try agu10Eval(fn_op, x_val, y_val);
     if (dest_r != 0) state.r[dest_r] = v;
+}
+
+fn execX18Q23(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const w2 = bundle[2];
+    const mode: u32 = (w2 >> 28) & 0x7;
+    const dest_s: u32 = (w2 >> 12) & 0xF;
+    const a_s: u32 = (w2 >> 16) & 0xF;
+    const b_s: u32 = (w2 >> 20) & 0xF;
+    const av: u64 = state.s[a_s] & M24;
+    const bv: u64 = state.s[b_s] & M24;
+    const prod: u64 = av * bv;
+    const v: u32 = switch (mode) {
+        4 => @truncate(((prod + (1 << 22)) >> 23) & M24), // P: rounded
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX18Rimm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

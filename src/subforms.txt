@@ -96,6 +96,12 @@ x18.xrd    4   0x00000018   0x00005000   0x00400000   0xC1400001
 #   e<{w2[0], w1[31:29]}> <- op[w2[27:25]](i = w2[23:8], R<w3[14:11]>)
 x18.rimm   4   0x00000018   0x00000000   0x30000008   0xA053C200
 
+# x18.q23: 4-syllable low5 0x18 w3 class 010 (fact 170 / own-x18q23).
+# Scalar multiply with mode in w2[30:28]:
+#   s<w2[15:12]> <- mode(round(s<w2[19:16]> * s<w2[23:20]> / 2^23))
+# Only mode 4 (P, rounded) measured.
+x18.q23    4   0x00000018   0x20A40001   0x00000000   0x54510001
+
 # x03.xrd: 6-syllable VLIW at low5 0x03, w4 mode 5.  X-memory read with
 # A-index combining w1[2:0] (high 3 bits) and head[31:30] (low 2 bits):
 #   s<w4[6:3]> <- X:[A<{w1[2:0], head[31:30]}>]
