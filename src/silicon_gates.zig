@@ -845,6 +845,26 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
     },
     .{
+        .name = "own-x15pt",
+        // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
+        .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},
+        .src =
+        \\x15.pt s3, #13, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 1 } }},
+    },
+    .{
+        .name = "own-x15pt-n",
+        // Pre p13 = 1; LUT 0 (!p): s3 <- !p13 = 0.
+        .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},
+        .src =
+        \\x15.pt s3, #13, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0 } }},
+    },
+    .{
         .name = "own-x16hd",
         // Pre s2 = 0x1234, s5 = 0x2345; s1 <- s5 + s2 = 0x3579.
         .pre = &.{

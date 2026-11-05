@@ -125,6 +125,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x15 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b101) return execX15Alu(gpa, state, bundle);
+        if (s_class == 0b001) return execX15Pt(gpa, state, bundle);
     }
     if (low5 == 0x16 and bundle.len >= 3) {
         const s2_class: u32 = (bundle[2] >> 29) & 0x7;
@@ -481,6 +482,24 @@ fn execJmp(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         else => return RunError.UnknownForm,
     };
     if (taken) state.pending_jmp_offset = off_signed;
+}
+
+fn execX15Pt(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s = bundle[1];
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const lut: u32 = (s >> 8) & 0x7;
+    const p_idx: u32 = (s >> 3) & 0xF;
+    if (dest_s == 0) return;
+    const p_val: u8 = if (p_idx == 0) 0 else state.p[p_idx];
+    const v: u32 = switch (lut) {
+        1 => p_val, // identity
+        0 => @as(u32, 1) ^ p_val, // not
+        else => return,
+    };
+    state.s[dest_s] = v;
 }
 
 fn execX15Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

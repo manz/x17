@@ -341,6 +341,12 @@ x16.hd	a_s	s	11	14	head
 x16.hd	b_s	s	25	28	s2
 x16.hd	op	imm	5	10	head
 
+# x15.pt (2 syllables): LUT-driven p-to-s copy.
+# Grammar: x15.pt <dest_s>, <p_idx>, #<lut>
+x15.pt	dest_s	s	21	24	head
+x15.pt	p_idx	imm	3	6	s1
+x15.pt	lut	imm	8	10	s1
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4
