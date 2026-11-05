@@ -109,6 +109,14 @@ x19.alu	a_s	s	18	21	s2
 x19.alu	b_s	s	16	19	s1
 x19.alu	code	imm	5	9	head
 
+# x19.e (4 syllables): e-imm write + muxed s source.
+# Grammar: x19.e <dest_e>, #<imm>, <dest_s>, <e_src>, #<mux>
+x19.e	dest_e	e	20	23	s1
+x19.e	imm	imm	5	20	head
+x19.e	dest_s	s	21	24	head
+x19.e	e_src	e	4	7	s2
+x19.e	mux	imm	12	14	s1
+
 # x16.mul (3 syllables): truncated scalar multiply with 23-bit shift.
 # Grammar: x16.mul <dest_s>, <a>, <b>
 x16.mul	dest_s	s	10	13	s2

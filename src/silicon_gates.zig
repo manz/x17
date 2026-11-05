@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19e",
+        // Pre e2 = 0x777; e3 lands with head-imm 0x702, s6 gets e2.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x777 }},
+        .src =
+        \\x19.e e3, #1794, s6, e2, #2
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .e_reg = .{ .index = 3, .value = 0x702 } },
+            .{ .s_reg = .{ .index = 6, .value = 0x777 } },
+        },
+    },
+    .{
         .name = "own-x19alu",
         // Pre s3 = 7, s6 = 8; sat24(s3 << s6) = 0x700 lands on s7.
         .pre = &.{

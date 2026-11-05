@@ -586,6 +586,9 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 4) {
         return execX19Alu(gpa, state, bundle);
     }
+    if (w1_class == 2 and w2_class == 0 and w3_class == 0) {
+        return execX19E(gpa, state, bundle);
+    }
     return RunError.UnknownForm;
 }
 
@@ -608,6 +611,27 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             const shifted: u64 = @as(u64, a_val) << @as(u6, @intCast(b_val & 0x3F));
             const clamped: u64 = if (shifted > 0x7FFFFF) 0x7FFFFF else shifted;
             break :blk @as(u32, @intCast(clamped)) & M24;
+        },
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0) state.s[dest_s] = v;
+}
+
+fn execX19E(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const head = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    // e<w1[23:20]> <- head[20:5]; s<head[24:21]> <- source picked by w1[14:12].
+    const e_imm: u32 = (head >> 5) & 0xFFFF;
+    const dest_e: u32 = (w1 >> 20) & 0xF;
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const mux: u32 = (w1 >> 12) & 0x7;
+    if (dest_e != 0) state.e[dest_e] = e_imm;
+    const v: u32 = switch (mux) {
+        2 => blk: {
+            const e_src: u32 = (w2 >> 4) & 0xF;
+            break :blk state.e[e_src];
         },
         else => return RunError.UnknownForm,
     };
