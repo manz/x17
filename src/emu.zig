@@ -142,7 +142,13 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x02 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
         if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
-        if (w4_mode == 5) return execX02Xrd(gpa, state, bundle);
+        if (w4_mode == 5) {
+            // Both the xrd (w4) and mpy (w2) slots can coexist; each writes
+            // its own dest.  Running both here keeps gates from stepping on
+            // each other when a program only exercises one side.
+            try execX02Xrd(gpa, state, bundle);
+            return execX02Mpy(gpa, state, bundle);
+        }
     }
     if (low5 == 0x03 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
@@ -231,6 +237,22 @@ fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const src_e: u32 = (s1 >> 21) & 0xF;
     if (dest_s != 0) state.s[dest_s] = imm;
     if (dest_r != 0) state.r[dest_r] = state.e[src_e];
+}
+
+fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 6) return RunError.UnknownForm;
+    const w2 = bundle[2];
+    // mode w1[13:11] = 4 (P): round(s<w2[4:1]> * s<w2[8:5]> / 2^23)
+    const a_s: u32 = (w2 >> 1) & 0xF;
+    const b_s: u32 = (w2 >> 5) & 0xF;
+    const dest_s: u32 = (w2 >> 9) & 0xF;
+    const av: u64 = state.s[a_s] & M24;
+    const bv: u64 = state.s[b_s] & M24;
+    const prod: u64 = av * bv;
+    // Round: add 2^22, then shift.
+    const v: u32 = @truncate(((prod + (1 << 22)) >> 23) & M24);
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 
 fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

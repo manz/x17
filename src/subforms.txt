@@ -63,6 +63,11 @@ x16.mul    3   0x00000016   0x00040000   XXXXXXXX
 # S[8] = 1 required (baked).
 x13.agu    2   0x00000013   0x20000100
 
+# x02.mpy: 6-syllable VLIW at low5 0x02, w1 mode 4 (P) rounded multiply
+# (fact 156 / own-x02mpy):
+#   s<w2[12:9]> <- round(s<w2[4:1]> * s<w2[8:5]> / 2^23)
+x02.mpy    6   0x00000002   0x0000A000   0x00020000   0x00000001   0x00042800   0x00004200
+
 # x03.xrd: 6-syllable VLIW at low5 0x03, w4 mode 5.  X-memory read with
 # A-index combining w1[2:0] (high 3 bits) and head[31:30] (low 2 bits):
 #   s<w4[6:3]> <- X:[A<{w1[2:0], head[31:30]}>]

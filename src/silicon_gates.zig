@@ -564,6 +564,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x02mpy",
+        // Pre s1 = 0x4000, s2 = 0x6000; s2 <- round(s1*s2/2^23) = 0x30.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+        },
+        .src =
+        \\x02.mpy s2, s1, s2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x30 } }},
+    },
+    .{
         .name = "own-x19e",
         // Pre e2 = 0x777; e3 lands with head-imm 0x702, s6 gets e2.
         .pre = &.{.{ .bank = .e, .index = 2, .value = 0x777 }},
