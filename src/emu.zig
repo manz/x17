@@ -69,6 +69,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "st.y")) {
         return execStY(gpa, state, head);
     }
+    if (std.mem.eql(u8, f.name, "alu")) {
+        return execAlu(gpa, state, head);
+    }
     if (std.mem.eql(u8, f.name, "x17")) {
         return execX17(gpa, state, bundle);
     }
@@ -107,6 +110,122 @@ fn execX17Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (s1 >> 7) & 0xF;
     const imm: u32 = (head >> 11) & 0xFFFF;
     state.s[dest_s] = imm;
+}
+
+// ---------------------------------------------------------------------------
+// ALU05: the 64-entry class-05 ALU table shared across many sm1 forms.
+// Ported from upstream/tools/sm1isa/emu.py (RE tree e55e26d21, fact 66+).
+// ---------------------------------------------------------------------------
+
+/// Op name for each of the 64 class-05 codes, as decoded in emu.py's ALU05.
+pub const AluOp = enum {
+    add,
+    addi,
+    sub,
+    rsub,
+    nadd,
+    xor_op,
+    xori,
+    clr,
+    mova,
+    movb,
+    shli,
+    asr,
+    asrrs,
+    lsr,
+    sel,
+};
+
+const ALU05: [64]AluOp = blk: {
+    var t: [64]AluOp = @splat(AluOp.add); // default; overwritten below
+    // "add" codes
+    for ([_]u8{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x3c, 0x3d, 0x3f }) |c| t[c] = .add;
+    t[0x09] = .addi;
+    t[0x0a] = .addi;
+    t[0x10] = .sub;
+    t[0x11] = .sub;
+    t[0x12] = .rsub;
+    t[0x13] = .rsub;
+    t[0x14] = .nadd;
+    t[0x15] = .nadd;
+    // xor family
+    for ([_]u8{ 0x16, 0x17, 0x18, 0x19, 0x1d, 0x1e, 0x1f, 0x25 }) |c| t[c] = .xor_op;
+    t[0x1c] = .xori;
+    // clr
+    for ([_]u8{ 0x20, 0x21, 0x22, 0x28, 0x29, 0x2e, 0x2f, 0x39, 0x3b }) |c| t[c] = .clr;
+    // mova
+    for ([_]u8{ 0x23, 0x24, 0x27, 0x2b }) |c| t[c] = .mova;
+    // movb
+    for ([_]u8{ 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 }) |c| t[c] = .movb;
+    t[0x3a] = .shli;
+    t[0x06] = .asr;
+    t[0x1a] = .asr;
+    t[0x07] = .asrrs;
+    t[0x08] = .lsr;
+    t[0x1b] = .lsr;
+    t[0x3e] = .lsr;
+    // sel
+    for ([_]u8{ 0x26, 0x2a, 0x2c, 0x2d }) |c| t[c] = .sel;
+    break :blk t;
+};
+
+/// Evaluate an ALU05 op with no m/s modifiers (adder-m == 0, shift-s == 0).
+/// Mirrors upstream emu.py's `alu05()` with the shift ops dispatched through
+/// `aluShift`.  Returns the 24-bit wrapped result.
+pub fn alu05Eval(op: AluOp, a_s: i32, b_s: i32) u32 {
+    const a24: u32 = @as(u32, @bitCast(a_s)) & M24;
+    const b24: u32 = @as(u32, @bitCast(b_s)) & M24;
+    return switch (op) {
+        .add => @as(u32, @bitCast(@as(i32, @truncate(@as(i64, a_s) + @as(i64, b_s))))) & M24,
+        .addi => b24, // immediate forms handled by callers that know `s`; raw base is b
+        .sub => @as(u32, @bitCast(@as(i32, @truncate(@as(i64, a_s) - @as(i64, b_s))))) & M24,
+        .rsub => @as(u32, @bitCast(@as(i32, @truncate(@as(i64, b_s) - @as(i64, a_s))))) & M24,
+        .nadd => @as(u32, @bitCast(@as(i32, @truncate(-@as(i64, a_s) - @as(i64, b_s) - 2)))) & M24,
+        .xor_op => (a24 ^ b24) & M24,
+        .xori, .shli => b24, // immediate: result is the imm field; wraps through callers w/ `s`
+        .mova => a24,
+        .movb => b24,
+        .clr => 0,
+        .sel => if (@as(i64, a_s) + @as(i64, b_s) >= 0) a24 else b24,
+        .asr, .asrrs, .lsr => aluShift(op, a_s, b_s),
+    };
+}
+
+fn aluShift(op: AluOp, a_s: i32, b_s: i32) u32 {
+    // upstream shift(): n = sx24(a); v = (b & M24) if lsr else sx24(b).
+    const n: i32 = a_s;
+    const v: i64 = if (op == .lsr) @as(i64, @as(u32, @bitCast(b_s)) & M24) else @as(i64, b_s);
+    if (n < 0) {
+        const amount: u6 = @intCast(@min(@as(i32, -n), 48));
+        const shifted: i64 = v << amount;
+        if (op == .asrrs) {
+            const sat: i64 = @max(@as(i64, -0x800000), @min(@as(i64, 0x7FFFFF), shifted));
+            return @as(u32, @bitCast(@as(i32, @truncate(sat)))) & M24;
+        }
+        return @as(u32, @bitCast(@as(i32, @truncate(shifted)))) & M24;
+    }
+    var vv: i64 = v;
+    if (op == .asrrs and n != 0) vv += @as(i64, 1) << @as(u6, @intCast(n - 1));
+    const amount: u6 = @intCast(@min(n, 48));
+    const result: i64 = vv >> amount;
+    return @as(u32, @bitCast(@as(i32, @truncate(result)))) & M24;
+}
+
+fn execAlu(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    _ = gpa;
+    // dest s[18:15], a s[14:11], b s[29:26], op [10:5]; [25:19] = 0 reserved.
+    const dest: u32 = (head >> 15) & 0xF;
+    const a_f: u32 = (head >> 11) & 0xF;
+    const b_f: u32 = (head >> 26) & 0xF;
+    const code: u32 = (head >> 5) & 0x3F;
+
+    // fact 70: source 0 reads zero.
+    const a_val: u32 = if (a_f == 0) 0 else state.s[a_f];
+    const b_val: u32 = if (b_f == 0) 0 else state.s[b_f];
+
+    const op = ALU05[code];
+    const result = alu05Eval(op, sx24(a_val), sx24(b_val));
+    state.s[dest] = result;
 }
 
 /// sm1 ALU is 24-bit wrapping arithmetic.  Upstream's Python emu calls this
@@ -339,6 +458,97 @@ test "st.y writes the lane's V register to Y memory" {
     const b = try asm_mod.assembleOne("st.y Y:0x200");
     try executeBundle(testing.allocator, &state, b.slice());
     try testing.expectEqual(@as(u32, 2), state.getY(0x200).?);
+}
+
+test "alu add: s7 = s2 + s9" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[2] = 0x100;
+    state.s[9] = 0x200;
+
+    const b = try asm_mod.assembleOne("alu s7, s2, s9, #0x00");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 0x300), state.s[7]);
+}
+
+test "alu sub: 0x300 - 0x100 = 0x200 (code 0x10)" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[2] = 0x300;
+    state.s[9] = 0x100;
+
+    const b = try asm_mod.assembleOne("alu s7, s2, s9, #0x10");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 0x200), state.s[7]);
+}
+
+test "alu rsub: s9 - s2 = 0x100 (code 0x12)" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[2] = 0x200;
+    state.s[9] = 0x300;
+
+    const b = try asm_mod.assembleOne("alu s7, s2, s9, #0x12");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 0x100), state.s[7]);
+}
+
+test "alu xor: 0xAAAA ^ 0x5555 = 0xFFFF (code 0x16)" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[2] = 0xAAAA;
+    state.s[9] = 0x5555;
+
+    const b = try asm_mod.assembleOne("alu s7, s2, s9, #0x16");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 0xFFFF), state.s[7]);
+}
+
+test "alu clr: s7 = 0 (code 0x20)" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[2] = 0xDEAD;
+    state.s[9] = 0xBEEF;
+    state.s[7] = 0x1234;
+
+    const b = try asm_mod.assembleOne("alu s7, s2, s9, #0x20");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 0), state.s[7]);
+}
+
+test "alu movb: s7 = s9 (code 0x30)" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[2] = 0xDEAD;
+    state.s[9] = 0x6789;
+
+    const b = try asm_mod.assembleOne("alu s7, s2, s9, #0x30");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 0x6789), state.s[7]);
+}
+
+test "alu nadd: -a - b - 2 (code 0x14) wraps to 24 bits" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[2] = 0x100;
+    state.s[9] = 0x200;
+
+    const b = try asm_mod.assembleOne("alu s7, s2, s9, #0x14");
+    try executeBundle(testing.allocator, &state, b.slice());
+    // -0x100 - 0x200 - 2 = -0x302; wrapped to 24 bits = 0xFFFCFE.
+    try testing.expectEqual(@as(u32, 0xFFFCFE), state.s[7]);
+}
+
+test "alu register 0 reads as zero (fact 70)" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[0] = 0xDEAD; // ignored for both a and b slots
+    state.s[9] = 0x100;
+
+    // add: a (s0 -> 0) + b (s9) = 0x100.
+    const b = try asm_mod.assembleOne("alu s7, s0, s9, #0x00");
+    try executeBundle(testing.allocator, &state, b.slice());
+    try testing.expectEqual(@as(u32, 0x100), state.s[7]);
 }
 
 test "runLinear walks ldi then halt and stops" {
