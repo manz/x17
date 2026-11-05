@@ -102,7 +102,30 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 7) {
         return execX19Ld(gpa, state, bundle);
     }
+    if (w1_class == 0 and w2_class == 0 and w3_class == 2) {
+        return execX19Aagu(gpa, state, bundle);
+    }
     return RunError.UnknownForm;
+}
+
+fn execX19Aagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const w1 = bundle[1];
+    const w3 = bundle[3];
+
+    const dest_a: u32 = (w1 >> 3) & 0x1F;
+    const src_a: u32 = (w3 >> 15) & 0x1F;
+    const fn_op: u32 = (w3 >> 20) & 0x1F;
+    const imm: u32 = w3 & 0x7FFF;
+
+    // AGUA table today models the one measured op: fn_op = 2 -> x + 2i.
+    const x_val: u32 = state.a[src_a & 0xF];
+    const new_val: u32 = switch (fn_op) {
+        0 => x_val,
+        2 => (x_val +% (2 * imm)) & 0xFFFF,
+        else => return RunError.UnknownForm,
+    };
+    state.a[dest_a & 0xF] = new_val;
 }
 
 fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

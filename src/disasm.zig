@@ -103,6 +103,7 @@ fn formatOperand(out: []u8, op: isa.Operand, field: u32) usize {
         .s => printTo(out, "s{d}", .{field}),
         .e => printTo(out, "e{d}", .{field}),
         .r_reg => printTo(out, "R{d}", .{field}),
+        .a_reg => printTo(out, "A{d}", .{field}),
         .p => printTo(out, "p{d}", .{field}),
         .imm => printTo(out, "#0x{x}", .{field}),
         .dest_ldi => blk: {

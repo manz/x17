@@ -81,6 +81,7 @@ pub const OperandKind = enum {
     s, // scalar reg, 4 bits
     e, // element reg, 4 bits
     r_reg, // R-file reg, 4 bits (R0 pinned to 0)
+    a_reg, // Address reg A0..A15, 4 or 5 bits
     p, // predicate, form-specific width
     imm, // raw immediate, width = hi-lo+1
     dest_ldi, // ldi's 5-bit dest index (16..31 = s(k-16))
@@ -257,6 +258,7 @@ fn parseOperands(src: []const u8) OperandsParse {
             if (std.mem.eql(u8, kind_s, "s")) .s
             else if (std.mem.eql(u8, kind_s, "e")) .e
             else if (std.mem.eql(u8, kind_s, "R")) .r_reg
+            else if (std.mem.eql(u8, kind_s, "A")) .a_reg
             else if (std.mem.eql(u8, kind_s, "p")) .p
             else if (std.mem.eql(u8, kind_s, "imm")) .imm
             else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi

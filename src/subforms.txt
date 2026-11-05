@@ -12,6 +12,13 @@
 # strings in isa.toml plus the silicon-measured byte patterns in
 # the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
 
+# x19.aagu: 4-syllable VLIW; updates one A register with a strided AGU op.
+# Class triple (w1[31:29], w2[31:29], w3[31:29]) = (000, 000, 010).
+# Semantics from fact 144 / own-x19aagu (fn_op = 2):
+#   A<w1[7:3]> <- AGUA[w3[24:20]](x = A<w3[19:15]>, i = w3[14:0])
+# For fn_op 2 the formula is x + 2*i.  w1[26] is the measured enable.
+x19.aagu   4   0x00000019   0x06000000   0x00000000   0x40000000
+
 # x19.ld: 4-syllable VLIW doing load + AGU + store together.  Class triple
 # (w1[31:29], w2[31:29], w3[31:29]) = (000, 000, 111).  Semantics from
 # fact 143 / own-x19ld:

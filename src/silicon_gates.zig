@@ -23,6 +23,7 @@ const PostCheck = union(enum) {
     s_reg: struct { index: u8, value: u32 },
     e_reg: struct { index: u8, value: u32 },
     r_reg: struct { index: u8, value: u32 },
+    a_reg: struct { index: u8, value: u32 },
     y_mem: struct { addr: u32, value: u32 },
     x_mem: struct { addr: u32, value: u32 },
 };
@@ -223,6 +224,17 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19aagu",
+        // the probe list own-x19aagu: pre A9 = 0x100.
+        // Bundle (fn_op = 2, imm = 8): A9 <- A9 + 2*8 = 0x110.
+        .pre = &.{.{ .bank = .a, .index = 9, .value = 0x100 }},
+        .src =
+        \\x19.aagu A9, A9, #2, #8
+        \\x17.halt
+        ,
+        .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x110 } }},
+    },
+    .{
         .name = "alu-add-roundtrip",
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 0x100 },
@@ -280,6 +292,12 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
         .r_reg => |rr| {
             if (state.r[rr.index] != rr.value) {
                 std.debug.print("gate '{s}': R{d} = 0x{x}, expected 0x{x}\n", .{ g.name, rr.index, state.r[rr.index], rr.value });
+                return error.GateFailed;
+            }
+        },
+        .a_reg => |ar| {
+            if (state.a[ar.index] != ar.value) {
+                std.debug.print("gate '{s}': A{d} = 0x{x}, expected 0x{x}\n", .{ g.name, ar.index, state.a[ar.index], ar.value });
                 return error.GateFailed;
             }
         },

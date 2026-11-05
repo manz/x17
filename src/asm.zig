@@ -208,6 +208,7 @@ pub const TokenKind = enum {
     s_reg,
     e_reg,
     r_reg,
+    a_reg,
     p_reg,
     number,
     comma,
@@ -337,6 +338,7 @@ const Lexer = struct {
                     's' => return .{ .tok = .{ .kind = .s_reg, .text = text, .value = idx, .start = start } },
                     'e' => return .{ .tok = .{ .kind = .e_reg, .text = text, .value = idx, .start = start } },
                     'R' => return .{ .tok = .{ .kind = .r_reg, .text = text, .value = idx, .start = start } },
+                    'A' => return .{ .tok = .{ .kind = .a_reg, .text = text, .value = idx, .start = start } },
                     'p' => return .{ .tok = .{ .kind = .p_reg, .text = text, .value = idx, .start = start } },
                     else => {},
                 }
@@ -406,6 +408,20 @@ fn matchOperand(op: isa.Operand, tok: Token, d: *Diagnostic) ?u32 {
             }
             return tok.value;
         },
+        .a_reg => {
+            if (tok.kind != .a_reg) {
+                d.* = .{ .code = .e0010_expected_r_reg, .span = tokSpan(tok) };
+                setExpected(d, "A register", tok);
+                d.setHint("address registers are written A0..A15 (capital A)");
+                return null;
+            }
+            if (tok.value > 15) {
+                d.* = .{ .code = .e0014_reg_index_out_of_range, .span = tokSpan(tok) };
+                d.setMsg("A register index must be 0..15");
+                return null;
+            }
+            return tok.value;
+        },
         .p => {
             if (tok.kind != .p_reg) {
                 d.* = .{ .code = .e0011_expected_predicate, .span = tokSpan(tok) };
@@ -461,6 +477,7 @@ fn kindName(k: TokenKind) []const u8 {
         .s_reg => "scalar register",
         .e_reg => "element register",
         .r_reg => "R register",
+        .a_reg => "A register",
         .p_reg => "predicate",
         .number => "number",
         .comma => "','",

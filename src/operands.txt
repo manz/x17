@@ -53,6 +53,13 @@ alu	op	imm	5	10	head
 x17.imm	dest_s	s	7	10	s1
 x17.imm	imm16	imm	11	26	head
 
+# x19.aagu (4 syllables): A-register AGU update.
+# Grammar: x19.aagu <dest_A>, <src_A>, #<fn_op>, #<imm>
+x19.aagu	dest_A	A	3	7	s1
+x19.aagu	src_A	A	15	19	s3
+x19.aagu	fn_op	imm	20	24	s3
+x19.aagu	imm	imm	0	14	s3
+
 # x19.ld (4 syllables): load + AGU + store VLIW.
 # Grammar: x19.ld <dest_s>, #<dest_e_half>, <y_src_e>, #<fn_op>
 x19.ld	dest_s	s	10	13	s2
