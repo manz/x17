@@ -143,6 +143,11 @@ xld10	a_low	imm	0	2	s1
 yld10	dest_s	s	21	24	head
 yld10	src_e	e	25	28	s1
 
+# p010 (2 syllables): predicate from a condition code.
+# Grammar: p010 <p_dest>, #<cond>
+condset	p_dest	p	4	7	s1
+condset	cond	imm	8	11	s1
+
 # yrm (2 syllables): scalar imm + e-to-R move.
 # Grammar: yrm <dest_s>, #<imm16>, <dest_R>, <src_e>
 yrm	dest_s	s	21	24	head

@@ -482,6 +482,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x0BEE } }},
     },
     .{
+        .name = "own-p010-true",
+        // the probe list own-p010-true: p3 <- cond 9 (constant true).
+        // Expected bytes: 0x00000014 0x42000930.
+        .src =
+        \\condset p3, #9
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 3, .value = 1 } }},
+    },
+    .{
         .name = "own-yrm",
         // the probe list own-yrm: pre e11 = 0x456; s6 <- 0x123, R5 <- e11.
         // Expected bytes: 0x00C02474 0xB3600D05.

@@ -49,6 +49,13 @@ xld10      2   0x00000010   0x60640000
 # S enables baked: bit 22, bit 17 (S[17:16]=10), bit 7.
 yld10      2   0x00000010   0xE0420080
 
+# p010: 2-syllable low5 0x14 S class 010.  Writes a predicate from a
+# condition code (fact 107 / own-p010-true):
+#   p<S[7:4]> <- cond<S[11:8]>(implicit input)
+# Cond 9 is a constant true in the measured context; others OPEN.
+# S[25] = 1 required (baked).
+condset    2   0x00000014   0x42000000
+
 # yrm: 2-syllable low5 0x14 S class 101.  Scalar immediate load plus a
 # move from e to R (fact 103 / own-yrm):
 #   s<head[24:21]> <- head[20:5]
