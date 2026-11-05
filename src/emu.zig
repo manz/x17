@@ -161,6 +161,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             if (w3_ainc == 1) try execX02Ainc(gpa, state, bundle);
             return;
         }
+        if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
     }
     if (low5 == 0x03 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;

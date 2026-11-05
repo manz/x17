@@ -584,6 +584,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x110 } }},
     },
     .{
+        .name = "own-x02imm",
+        // s1 <- 0x703.
+        .pre = &.{},
+        .src =
+        \\x02.imm s1, #1795
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x703 } }},
+    },
+    .{
         .name = "own-x03alu",
         // Pre s3 = 0x100, s4 = 0x23; add: s9 <- s3 + s4 = 0x123.
         .pre = &.{

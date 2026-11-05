@@ -307,6 +307,11 @@ x03.alu	a_s	s	11	14	head
 x03.alu	b_s	s	26	29	head
 x03.alu	op	imm	5	10	head
 
+# x02.imm (6 syllables): head-immediate into s via the w4 slot.
+# Grammar: x02.imm <dest_s>, #<imm>
+x02.imm	dest_s	s	3	6	s4
+x02.imm	imm	imm	11	26	head
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4
