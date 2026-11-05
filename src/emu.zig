@@ -102,6 +102,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         }
         if (s_class == 0b111) return execYld10(gpa, state, bundle);
         if (s_class == 0b110) return execEalu(gpa, state, bundle);
+        if (s_class == 0b000) return execBcc(gpa, state, bundle);
     }
     if (low5 == 0x14 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
@@ -287,6 +288,21 @@ fn execX12Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_e != 0) state.e[dest_e] = v;
     if (s_dest != 0) state.s[s_dest] = v;
     if (dest_r != 0) state.r[dest_r] = v;
+}
+
+fn execBcc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const s1 = bundle[1];
+    // S[8:0] signed 9-bit, scaled by 4; pred S[18:15]; S[14] = 1 wedges.
+    const off9: u32 = s1 & 0x1FF;
+    const off_signed: i32 = if (off9 & 0x100 != 0)
+        @as(i32, @bitCast(off9 | 0xFFFFFE00))
+    else
+        @as(i32, @intCast(off9));
+    if (((s1 >> 14) & 1) != 0) return RunError.UnknownForm;
+    const pred_idx: u32 = (s1 >> 15) & 0xF;
+    if (state.p[pred_idx] != 0) state.pending_jmp_offset = off_signed * 4;
 }
 
 fn execBr(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

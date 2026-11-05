@@ -151,6 +151,12 @@ rop	x_e	e	5	8	head
 rop	y_R	R	13	16	head
 rop	fn	imm	17	20	head
 
+# bcc (2 syllables): Branch if p<pred> set.
+# Grammar: bcc #<pred>, #<quarter_offset>
+# quarter_offset in bundles of 4 syllables; signed 9-bit [8:0] of S1.
+bcc	pred	imm	15	18	s1
+bcc	quarter_offset	imm	0	8	s1
+
 # ealu (2 syllables): X16_ALU 1-arg op into e.
 # Grammar: ealu <dest_e>, <src_s>, #<op_bit>, #<op>
 ealu	dest_e	e	3	6	s1

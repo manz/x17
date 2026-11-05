@@ -510,6 +510,27 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-bcc",
+        // bcc is 2 syllables; target = pc + 4*q_off.  Delay slots at pc+2
+        // and pc+3 run; the 4 ldi fillers between pc+4 and pc+7 are the
+        // "skipped over" bundles; halt starts at syllable 8.
+        .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},
+        .src =
+        \\bcc #2, #2
+        \\ldi s3, #5
+        \\ldi s4, #7
+        \\ldi s3, #256
+        \\ldi s3, #256
+        \\ldi s3, #256
+        \\ldi s3, #256
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 5 } },
+            .{ .s_reg = .{ .index = 4, .value = 7 } },
+        },
+    },
+    .{
         .name = "own-br",
         // Pre p2 = 1: branch taken past the skipped bundle.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},
