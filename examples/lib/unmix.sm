@@ -66,7 +66,10 @@ apos:   alu s2, s8, s0, #OP_ADD
         jmp #3, #1, big
         nop()
         nop()
-        shlw(s4, s11)           ; s <= 15: hi << (15 - s) + floor(lo / 2^s)
+        ldi s13, #9             ; s <= 15: hi << (15 - s) + floor(lo / 2^s), hi
+        alu s13, s13, s3, #OP_ADD ; wrapped to 9 + s bits first so the shift stays in 24
+        sxr(s4, s13)
+        x19.alu s4, s4, s11, #SHIFT
         floorn(s12, s5, s3)
         alu s4, s4, s12, #OP_ADD
         jmp #IF_NOT, #2, done
@@ -78,20 +81,27 @@ big:    alu s11, s0, s11, #OP_SUB ; s > 15: floor(hi / 2^(s - 15))
 done:
 }
 
-; One output word from x: low bytes on, sign-extended from depth, stored. Uses s3, s6, s12, s13.
+; One output word from x: low bytes on, sign-extended from depth, stored. Uses s3, s6, s12,
+; s13. With low bytes, x is sign-extended from depth - shifted first, so x << shifted fits
+; in depth bits (no saturation) and adding the low byte cannot carry out of them.
 .macro emit(x) {
         ldy s3, e4
         alu s6, s3, s14, #OP_SUB
         ptst p1, s6, #NEG, #PTST ; shifted == 0
         jmp #3, #1, plain
+        ldy s13, e7             ; (delay slot) depth
         nop()
-        nop()
-        shlw(x, s3)
+        alu s13, s13, s3, #OP_SUB
+        sxr(x, s13)
+        x19.alu x, x, s3, #SHIFT
         x19.xrd s3, #4
         x02.ainc #4, #4
         alu x, x, s3, #OP_ADD
-plain:  sxe(x, e7)
-        stx A7, x
+        jmp #IF_NOT, #2, store
+        nop()
+        nop()
+plain:  sxr(x, s13)
+store:  stx A7, x
         x02.ainc #7, #7
 }
 

@@ -20,7 +20,8 @@
 ; Keeps the bit reader (e5, s9, s10) and s14, s15. Uses every other s register; unpredict
 ; parks s9 and s10 at X:[A10 + 32], +33 (past the 31 coefficients; Y is 16 bits, the cache
 ; is not) to hold the tap loop's constants there, through A5.
-; Shifts by a runtime count wrap by doubling (alu add wraps; the 0x19 shift saturates).
+; Left shifts by a runtime count that must wrap go through sxr first, so the 0x19 shift
+; (which saturates) never overflows.
 
 .macro pred_slots(base) {
         ldi s5, #base - 1
@@ -35,33 +36,23 @@
         x17.mve e15, s5
 }
 
-; x <<= cnt, wrapping at 24 bits; cnt (>= 0) is consumed. Uses s6.
-.macro shlw(x, cnt) {
-again:  alu s6, cnt, s14, #OP_SUB
-        ptst p1, s6, #NEG, #PTST ; p1 = cnt == 0
-        jmp #3, #1, done
-        nop()
-        nop()
-        alu x, x, x, #OP_ADD
-        alu cnt, cnt, s14, #OP_SUB
-        jmp #IF_NOT, #2, again
-        nop()
-        nop()
-done:
+; x = x sign-extended from its low k bits, k (8..24) in register `k` (left at k - 1).
+; Uses s12. q = rshr(x, k) = round(x / 2^k), half up; x - q * 2^k is then in
+; [-2^(k-1), 2^(k-1)) and congruent to x. q * 2^k goes in two halves of at most 2^22 each,
+; so the 0x19 shift never saturates (q reaches 2^(23-k)). k = 24 gives q = 0.
+.macro sxr(x, k) {
+        alu s12, s0, k, #OP_SUB ; -k
+        x19.alu s12, x, s12, #SHIFT ; q
+        alu k, k, s14, #OP_SUB  ; k - 1
+        x19.alu s12, s12, k, #SHIFT ; q * 2^(k-1)
+        alu x, x, s12, #OP_SUB
+        alu x, x, s12, #OP_SUB
 }
 
-; x = x sign-extended from its low k bits, k (8..24) in the Y slot `slot`. Uses s12, s13.
-; q = rshr(x, k) = round(x / 2^k), half up; x - q * 2^k is then in [-2^(k-1), 2^(k-1)) and
-; congruent to x. q * 2^k goes in two halves of at most 2^22 each, so the 0x19 shift never
-; saturates (q reaches 2^(23-k)). k = 24 gives q = 0.
+; sxr with k from the Y slot `slot`. Uses s12, s13.
 .macro sxe(x, slot) {
         ldy s13, slot
-        alu s12, s0, s13, #OP_SUB ; -k
-        x19.alu s12, x, s12, #SHIFT ; q
-        alu s13, s13, s14, #OP_SUB ; k - 1
-        x19.alu s12, s12, s13, #SHIFT ; q * 2^(k-1)
-        alu x, x, s12, #OP_SUB
-        alu x, x, s12, #OP_SUB
+        sxr(x, s13)
 }
 
 ; sxe from chan_bits.
@@ -247,8 +238,11 @@ sum:    floorshr(s3, s5, 15)
         alu s5, s5, s3, #OP_SUB
         ; pred = hi << (15 - ds) (wrapping) + rshr(lo, ds)
         ldy s8, e13
-        alu s3, s12, s8, #OP_SUB
-        shlw(s4, s3)
+        alu s3, s12, s8, #OP_SUB ; 15 - ds
+        ldi s13, #9
+        alu s13, s13, s8, #OP_ADD ; hi wrapped to 9 + ds bits: the shift stays in 24
+        sxr(s4, s13)
+        x19.alu s4, s4, s3, #SHIFT
         alu s3, s0, s8, #OP_SUB
         x19.alu s5, s5, s3, #SHIFT
         alu s4, s4, s5, #OP_ADD ; pred
