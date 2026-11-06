@@ -119,7 +119,7 @@ pub const Operand = struct {
     }
 };
 
-pub const MAX_OPERANDS: usize = 512;
+pub const MAX_OPERANDS: usize = 1024;
 
 pub const operands_txt = @embedFile("operands.txt");
 
@@ -169,7 +169,7 @@ pub const SubForm = struct {
     base: [MAX_BUNDLE_SYLLABLES]u32,
 };
 
-pub const MAX_SUBFORMS: usize = 128;
+pub const MAX_SUBFORMS: usize = 256;
 
 pub const subforms_txt = @embedFile("subforms.txt");
 
@@ -212,9 +212,9 @@ fn parseSubForms(src: []const u8) SubFormsParse {
             base[k] = parseU32(word_s);
         }
 
+        if (len >= MAX_SUBFORMS) @compileError("subforms.txt has more rows than MAX_SUBFORMS");
         items[len] = .{ .name = name, .syllables = syllables, .base = base };
         len += 1;
-        if (len >= MAX_SUBFORMS) break;
     }
     return .{ .items = items, .len = len };
 }
@@ -273,6 +273,7 @@ fn parseOperands(src: []const u8) OperandsParse {
             break :blk 0;
         };
 
+        if (len >= MAX_OPERANDS) @compileError("operands.txt has more rows than MAX_OPERANDS");
         items[len] = .{
             .form = form,
             .name = name,
@@ -282,7 +283,6 @@ fn parseOperands(src: []const u8) OperandsParse {
             .syll = syll,
         };
         len += 1;
-        if (len >= MAX_OPERANDS) break;
     }
     return .{ .items = items, .len = len };
 }
