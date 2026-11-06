@@ -986,6 +986,19 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x19mac-a0",
+        // Upstream 2026-11-06: A0 reads 0 even after a write; x19mac A5 <- A0 + 1 = 1.
+        .pre = &.{
+            .{ .bank = .a, .index = 0, .value = 0x55 },
+            .{ .bank = .a, .index = 5, .value = 0x150 },
+        },
+        .src =
+        \\x19.mac s0, s0, s0, #0, #1, #0x14, e0, s0, s0, s0, #0, A5, R0, #0, A0, R0
+        \\x17.halt
+        ,
+        .post = &.{.{ .a_reg = .{ .index = 5, .value = 1 } }},
+    },
+    .{
         .name = "own-pcond",
         // fact 378: 802A7EAC, p1 <- R5 >= A7 (c29), R5 = 0x123, A7 = 0x123.
         .pre = &.{

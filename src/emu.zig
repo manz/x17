@@ -113,6 +113,10 @@ pub const RunError = error{
 /// not-yet-modelled forms return `UnknownForm` so the caller can tell.
 pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len == 0) return;
+    // A0 reads 0 and writes to it have no visible effect, like R0 (Upstream probe
+    // 2026-11-06: lda A0 then a readback gives 0; an x19mac A0 source reads 0).
+    state.a[0] = 0;
+    defer state.a[0] = 0;
     const head = bundle[0];
     state.xd_pre = state.xd;
 
@@ -2326,8 +2330,8 @@ fn execX19RAgua(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunE
 ///   (24-bit signed): P = low16(xy), doubled when w1[17] = 0; e<w1[6:3]> <- P (0 unless
 ///   w2[24]), R<w3[10:7]> <- P (0 if w2[28]); s<w2[12:9]> <- floor(xy / 2^24) (w1[17] = 1)
 ///   or floor(xy / 2^23 + 1/2) (w1[17] = 0, w1[15] = 1)
-///   A slot: A<w2[20:17]> <- agu_xr(w3[24:20], A<w3[19:15]>, R<w3[14:11]>); A0 not
-///   written (OPEN whether it is a register here).  The X store (w2[23:22] = 3) is OPEN.
+///   A slot: A<w2[20:17]> <- agu_xr(w3[24:20], A<w3[19:15]>, R<w3[14:11]>); dest 0 is no
+///   write and A0 reads 0.  The X store (w2[23:22] = 3) is OPEN.
 fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const w1 = bundle[1];
     const w2 = bundle[2];
