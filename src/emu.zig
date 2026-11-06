@@ -1141,7 +1141,6 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 }
 
 fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
     const head = bundle[0];
     const w1 = bundle[1];
     const w3 = bundle[3];
@@ -1184,6 +1183,20 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     };
     if ((mux == 1 or mux == 2) and (w1_mod == 5 or w1_mod == 7)) return;
     if (dest_s != 0) state.s[dest_s] = v;
+    // own-x19kst: the X store side.  Enabled by w2[23:22] = 11 (fact 239).
+    // X:[A<w2[21:17]>] <- sx24 s<w1[31:28]>.
+    const w2 = bundle[2];
+    const store_en: u32 = (w2 >> 22) & 0x3;
+    if (store_en == 0b11) {
+        const a_idx: u32 = (w2 >> 17) & 0x1F;
+        const src_s: u32 = (w1 >> 28) & 0xF;
+        if (a_idx != 0 and src_s != 0) {
+            const addr = state.a[a_idx & 0xF];
+            const val: u32 = state.s[src_s] & M24;
+            // sx24: already 24-bit.
+            state.x_mem.put(gpa, addr, val) catch {};
+        }
+    }
 }
 
 fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
