@@ -857,3 +857,18 @@ x18.agu000	src_hi	imm	0	2	s3
 x18.e2nd	dest_e	e	2	5	s2
 x18.e2nd	y_lo	imm	30	31	s1
 x18.e2nd	y_hi	imm	0	1	s2
+
+# x18.alu <dest_s>, <a_s>, <b_s>, #<code>, #<m>, #<sh>
+x18.alu	dest_s	s	8	11	s1
+x18.alu	a_s	s	4	7	s1
+x18.alu	b_s	s	3	6	s3
+x18.alu	code	imm	25	30	head
+x18.alu	m	imm	15	17	s1
+x18.alu	sh	imm	4	7	s2
+
+# x18.br101 #<p_lo>, #<p_hi>, #<off>, #<cc>, #<e_lo>
+x18.br101	p_lo	imm	31	31	s2
+x18.br101	p_hi	imm	0	2	s3
+x18.br101	off	imm	18	28	s1
+x18.br101	cc	imm	29	30	s2
+x18.br101	e_lo	imm	29	31	s1

@@ -589,3 +589,10 @@ x18.agu000 4   0x1C029618   0x00010A42   0x40020000   0x00000000
 
 # x18.e2nd: class 000 second e slot, e<w2[5:2]> <- y - 1 (fact 177).
 x18.e2nd   4   0x00000018   0x00030040   0x00028040   0x00000000
+
+# x18.alu: class 101 ALU word slot (fact 237 / own-x18alu).
+x18.alu    4   0x00000018   0x00006000   0x20000000   0xA0244C80
+
+# x18.br101: class 101 branch, w2[30:29] = 00 jumps when p<{w3[2:0], w2[31]}>
+# (fact 201 / own-x18br101*).
+x18.br101  4   0x00000018   0x00000000   0x00000000   0xA0000000

@@ -1261,17 +1261,37 @@ fn execX18C2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 
 /// Class 101 (fact 195): the rimm e slot, class 010's R slot, and an
 /// X slot s<head[24:21]> whose mux 001 is the R slot's value.
+///
+/// Also the ALU word slot (fact 237): s<w1[11:8]> <- ALU05 code
+/// head[30:25], m w1[17:15], # w2[7:4] over a = s<w1[7:4]>, b = s<w3[6:3]>;
+/// and the branch (201): w2[30:29] = 00 jumps sext(w1[28:18]) words when
+/// p<{w3[2:0], w2[31]}> is set.  Other w2[30:29] values are measured only
+/// as not branching.
 fn execX18C5(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const w1 = bundle[1];
+    const w2 = bundle[2];
     const w3 = bundle[3];
     const r_val: u32 = x18RSlot(state, w3);
     const dest_s: u32 = (h >> 21) & 0xF;
     if (dest_s != 0 and ((w1 >> 12) & 7) != 1) return RunError.UnknownForm;
+    const alu_dest: u32 = (w1 >> 8) & 0xF;
+    const alu_val: ?u32 = if (alu_dest == 0) null else blk: {
+        const word: u32 = (((h >> 25) & 0x3F) << 5) | (((w1 >> 15) & 7) << 23) | (((w2 >> 4) & 0xF) << 19);
+        break :blk try aluWord(word, sx24(state.s[(w1 >> 4) & 0xF]), sx24(state.s[(w3 >> 3) & 0xF]));
+    };
     try execX18Rimm(gpa, state, bundle);
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_r != 0) state.r[dest_r] = r_val;
     if (dest_s != 0) state.s[dest_s] = r_val;
+    if (alu_dest != 0) state.s[alu_dest] = alu_val orelse return RunError.UnknownForm;
+    if ((w2 >> 29) & 3 == 0 and state.p[(((w3 & 7) << 1) | (w2 >> 31)) & 0xF] == 1) {
+        const off11: u32 = (w1 >> 18) & 0x7FF;
+        state.pending_jmp_offset = if (off11 & 0x400 != 0)
+            @as(i32, @bitCast(off11 | 0xFFFFF800))
+        else
+            @as(i32, @intCast(off11));
+    }
 }
 
 /// Class 000 (fact 177, 205, 266): e AGU over x = e<w3[28:25]>,
@@ -1336,10 +1356,10 @@ fn execX18Br(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         @as(i32, @bitCast(off11 | 0xFFFFF800))
     else
         @as(i32, @intCast(off11));
-    // Offset is in 4-syllable bundles; convert to syllables.
-    const sylls = sx * 4;
+    // sext(w1[28:18]) is in words (syllables) from the branch bundle
+    // (fact 178: 00200000 = +8 words).
     if (pred_idx != 0 and state.p[pred_idx] == 1) {
-        state.pending_jmp_offset = sylls;
+        state.pending_jmp_offset = sx;
     }
 }
 

@@ -1275,7 +1275,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 1 },
         },
         .src =
-        \\x18.br #1, #2
+        \\x18.br #1, #8
         \\alu s1, s1, s2, #0
         \\alu s1, s1, s2, #0
         \\alu s1, s1, s2, #0
@@ -1287,15 +1287,16 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x18br",
-        // p3 = 1, branch offset +2 bundles.  Two delay-slot adds run, two
-        // adds are skipped, one add at the target runs: s1 = 3.
+        // p3 = 1, +8 words.  Two delay-slot adds run, two are skipped, two
+        // run: s1 = 4.
         .pre = &.{
             .{ .bank = .p, .index = 3, .value = 1 },
             .{ .bank = .s, .index = 1, .value = 0 },
             .{ .bank = .s, .index = 2, .value = 1 },
         },
         .src =
-        \\x18.br #3, #2
+        \\x18.br #3, #8
+        \\alu s1, s1, s2, #0
         \\alu s1, s1, s2, #0
         \\alu s1, s1, s2, #0
         \\alu s1, s1, s2, #0
@@ -1303,7 +1304,80 @@ const GATES = [_]Gate{
         \\alu s1, s1, s2, #0
         \\x17.halt
         ,
-        .post = &.{.{ .s_reg = .{ .index = 1, .value = 3 } }},
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 4 } }},
+    },
+    .{
+        .name = "own-x18br101",
+        // w2[30:29] = 00, p3 = 1, +8 words: s1 = 4.
+        .pre = &.{
+            .{ .bank = .p, .index = 3, .value = 1 },
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\x18.br101 #1, #1, #8, #0, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 4 } }},
+    },
+    .{
+        .name = "own-x18br101-not",
+        // w2[29] = 1: no branch, all six adds run.
+        .pre = &.{
+            .{ .bank = .p, .index = 3, .value = 1 },
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\x18.br101 #1, #1, #8, #1, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 6 } }},
+    },
+    .{
+        .name = "own-x18br101-e",
+        // w1[29] = 1 is the e slot index, still +8 words: s1 = 4.
+        .pre = &.{
+            .{ .bank = .p, .index = 3, .value = 1 },
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\x18.br101 #1, #1, #8, #0, #1
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 4 } }},
+    },
+    .{
+        .name = "own-x18alu",
+        // code 0 (add, shift left) by # = 4: s4 <- (0x12 + 3) << 4 = 0x150.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x12 },
+            .{ .bank = .s, .index = 3, .value = 3 },
+        },
+        .src =
+        \\x18.alu s4, s5, s3, #0, #0, #4
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 4, .value = 0x150 } }},
     },
     .{
         .name = "own-x15pt",
