@@ -144,7 +144,13 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x13 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execX13Agu(gpa, state, bundle);
-        if (s_class == 0b101) return execX13St(gpa, state, bundle);
+        if (s_class == 0b101) {
+            const h13 = bundle[0];
+            const code13: u32 = (h13 >> 5) & 0x3F;
+            if (code13 != 0) return execX13St(gpa, state, bundle);
+            // mul13 dest field location still open; not yet modelled.
+            return RunError.UnknownForm;
+        }
     }
     if (low5 == 0x18 and bundle.len >= 4) {
         const w3_class: u32 = (bundle[3] >> 29) & 0x7;
