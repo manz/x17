@@ -174,6 +174,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w3_class == 0b000) return execX18C0(gpa, state, bundle);
         if (w3_class == 0b100) return execX18Edec(gpa, state, bundle);
         if (w3_class == 0b011) return execX18C3(gpa, state, bundle);
+        if (w3_class == 0b111) return execX18C7(gpa, state, bundle);
         if (w3_class == 0b101) return execX18C5(gpa, state, bundle);
         if (w3_class == 0b010) return execX18C2(gpa, state, bundle);
         if (w3_class == 0b001) return execX18Q23c(gpa, state, bundle);
@@ -1222,6 +1223,56 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (dest_s != 0) state.s[dest_s] = v;
     if (dest_r != 0) state.r[dest_r] = v & 0xFFFF;
     if (((h >> 25) & 0xF) == 11) state.p[(w2 >> 14) & 0xF] = if (sx16(v) < 0) 1 else 0;
+}
+
+/// Class 111 (fact 174, 202, 203, 206).  40-bit MAC: P =
+/// s<w2[27:24]> * s<w2[31:28]> << 1 (16-bit signed), X = s<w1[31:28]> in
+/// bits 39:24 plus sx16 s<w2[3:0]> as bits 23:0; mode w3[6:4] combines them,
+/// hi acc[39:24] -> s<w3[3:0]>, lo acc[15:0] -> s<w2[15:12]>.  ALU slot:
+/// s<w1[11:8]> <- op w1[17:15] of a = s<w2[19:16]>, b = s<w1[7:4]>, then
+/// shifted by w3[14:11] (head[27] = 1: right, rounding; 0: left).  Y store
+/// (w2[22:21] = 11) of s<w2[3:0]> at Y:[e<w3[28:25]>].  Inputs latch first.
+fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const hi_dest: u32 = w3 & 0xF;
+    const lo_dest: u32 = (w2 >> 12) & 0xF;
+    const alu_dest: u32 = (w1 >> 8) & 0xF;
+    const x_lo_raw: u32 = state.s[w2 & 0xF] & 0xFFFF;
+    const st_val: u32 = x_lo_raw;
+    var acc: i64 = 0;
+    if (hi_dest != 0 or lo_dest != 0) {
+        const p: i64 = sx16(state.s[(w2 >> 24) & 0xF]) * sx16(state.s[(w2 >> 28) & 0xF]) * 2;
+        const x_lo: i64 = @as(i64, if (x_lo_raw & 0x8000 != 0) x_lo_raw | 0xFF0000 else x_lo_raw);
+        const x: i64 = (@as(i64, state.s[(w1 >> 28) & 0xF] & 0xFFFF) << 24) + x_lo;
+        acc = switch ((w3 >> 4) & 7) {
+            3 => x,
+            4 => p,
+            5 => x + p,
+            6 => p - x,
+            7 => x - p,
+            else => return RunError.UnknownForm,
+        };
+    }
+    var alu_v: u32 = 0;
+    if (alu_dest != 0) {
+        const r = try x18SlotAlu((w1 >> 15) & 7, state.s[(w2 >> 16) & 0xF], state.s[(w1 >> 4) & 0xF]);
+        const n: u5 = @intCast((w3 >> 11) & 0xF);
+        alu_v = if ((h >> 27) & 1 == 1) blk: {
+            const sr: i64 = sx24(r);
+            const bias: i64 = if (n == 0) 0 else @as(i64, 1) << (n - 1);
+            break :blk @truncate(@as(u64, @bitCast((sr + bias) >> n)) & 0xFFFF);
+        } else (r << n) & 0xFFFF;
+    }
+    if ((w2 >> 21) & 3 == 3) {
+        state.y_mem.put(gpa, state.e[(w3 >> 25) & 0xF], st_val) catch return RunError.OutOfMemory;
+    }
+    const acc_u: u64 = @bitCast(acc);
+    if (hi_dest != 0) state.s[hi_dest] = @truncate((acc_u >> 24) & 0xFFFF);
+    if (lo_dest != 0) state.s[lo_dest] = @truncate(acc_u & 0xFFFF);
+    if (alu_dest != 0) state.s[alu_dest] = alu_v;
 }
 
 /// The class 010/101 R slot (fact 194, 195):

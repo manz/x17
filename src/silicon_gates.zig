@@ -1380,6 +1380,124 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 4, .value = 0x150 } }},
     },
     .{
+        .name = "own-x18mac",
+        // mode 6: s3 <- P - X = 0x30 - 0x100 = 0xFF30; mode 7: s5 <- 0xD0.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .s, .index = 4, .value = 0x100 },
+        },
+        .src =
+        \\x18.mac s3, #6, s1, s2, s4, s5, s0
+        \\x18.mac s5, #7, s1, s2, s4, s5, s0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0xFF30 } },
+            .{ .s_reg = .{ .index = 5, .value = 0xD0 } },
+        },
+    },
+    .{
+        .name = "own-x18acc111",
+        // X + P on 40 bits, X_lo = sx(0x8000): hi s3 = 0x131, lo s5 = 0.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6001 },
+            .{ .bank = .s, .index = 4, .value = 0x100 },
+            .{ .bank = .s, .index = 6, .value = 0x8000 },
+        },
+        .src =
+        \\x18.mac s3, #5, s1, s2, s4, s6, s5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x131 } },
+            .{ .s_reg = .{ .index = 5, .value = 0 } },
+        },
+    },
+    .{
+        .name = "own-x18acc111p",
+        // X_lo = s4 = 0x100: hi s3 = 0x130, lo s5 = 0x8100.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6001 },
+            .{ .bank = .s, .index = 4, .value = 0x100 },
+            .{ .bank = .s, .index = 6, .value = 0x8000 },
+        },
+        .src =
+        \\x18.mac s3, #5, s1, s2, s4, s4, s5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x130 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x8100 } },
+        },
+    },
+    .{
+        .name = "own-x18shr111",
+        // pass of s4 >> 4 (rounding): s5 = 0x10; the MAC still writes s3.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .s, .index = 4, .value = 0x100 },
+        },
+        .src =
+        \\x18.sh111 s5, #2, s4, s0, #4, #1, #1, e3
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 0x10 } },
+            .{ .s_reg = .{ .index = 3, .value = 0xFF30 } },
+        },
+    },
+    .{
+        .name = "own-x18shl111",
+        // head[27] = 0: s5 <- s4 << 4 = 0x1000.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .s, .index = 4, .value = 0x100 },
+        },
+        .src =
+        \\x18.sh111 s5, #2, s4, s0, #4, #0, #1, e3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x1000 } }},
+    },
+    .{
+        .name = "own-x18alu111",
+        // op 5 (b - a), then the shift: s5 <- (s1 - s4) >> 4 = 0x3F0.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .s, .index = 4, .value = 0x100 },
+        },
+        .src =
+        \\x18.sh111 s5, #5, s4, s1, #4, #1, #1, e3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0x3F0 } }},
+    },
+    .{
+        .name = "own-x18st111",
+        // Y:[e2] <- s5 = 0x555, read before the slot's own s5 write.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .s, .index = 4, .value = 0x100 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+            .{ .bank = .e, .index = 2, .value = 0x703 },
+        },
+        .src =
+        \\x18.sh111 s5, #2, s4, s0, #4, #1, #3, e2
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .y_mem = .{ .addr = 0x703, .value = 0x555 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x10 } },
+        },
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},

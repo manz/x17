@@ -872,3 +872,22 @@ x18.br101	p_hi	imm	0	2	s3
 x18.br101	off	imm	18	28	s1
 x18.br101	cc	imm	29	30	s2
 x18.br101	e_lo	imm	29	31	s1
+
+# x18.mac <hi_dest>, #<mode>, <a_s>, <b_s>, <x_hi>, <x_lo>, <lo_dest>
+x18.mac	hi_dest	s	0	3	s3
+x18.mac	mode	imm	4	6	s3
+x18.mac	a_s	s	24	27	s2
+x18.mac	b_s	s	28	31	s2
+x18.mac	x_hi	s	28	31	s1
+x18.mac	x_lo	s	0	3	s2
+x18.mac	lo_dest	s	12	15	s2
+
+# x18.sh111 <dest_s>, #<op>, <a_s>, <b_s>, #<sh>, #<right>, #<st>, <y_e>
+x18.sh111	dest_s	s	8	11	s1
+x18.sh111	op	imm	15	17	s1
+x18.sh111	a_s	s	16	19	s2
+x18.sh111	b_s	s	4	7	s1
+x18.sh111	sh	imm	11	14	s3
+x18.sh111	right	imm	27	27	head
+x18.sh111	st	imm	21	22	s2
+x18.sh111	y_e	e	25	28	s3
