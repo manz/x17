@@ -2206,6 +2206,18 @@ fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
+/// 0x19 ALU op 23 (fact 147): b >= 0 gives sat24(a << b); b < 0 gives the rounded
+/// a >> -b, (a + 2^(-b-1)) >> -b.  MEASURED only for a = 7, b = 8 (own-x19alu); negative a,
+/// negative b and saturation follow isa.toml's text and wait on PROBES.md's x19-shift set.
+pub fn shift23(a: i64, b: i64) i64 {
+    if (b >= 0) {
+        const s: u6 = @intCast(@min(b, 40));
+        return std.math.clamp(a << s, -0x800000, 0x7FFFFF);
+    }
+    const n: u6 = @intCast(@min(-b, 40));
+    return (a + (@as(i64, 1) << (n - 1))) >> n;
+}
+
 fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     const head = bundle[0];
@@ -2217,15 +2229,10 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (w1 >> 24) & 0xF;
     const a_s: u32 = (w2 >> 18) & 0xF;
     const b_s: u32 = (w1 >> 16) & 0xF;
-    const a_val: u32 = state.s[a_s] & M24;
-    const b_val: u32 = state.s[b_s] & M24;
+    const a_val: i64 = sx24(state.s[a_s]);
+    const b_val: i64 = sx24(state.s[b_s]);
     const v: u32 = switch (code) {
-        23 => blk: {
-            // sat24(a << b): shift and saturate to 24-bit signed range.
-            const shifted: u64 = @as(u64, a_val) << @as(u6, @intCast(b_val & 0x3F));
-            const clamped: u64 = if (shifted > 0x7FFFFF) 0x7FFFFF else shifted;
-            break :blk @as(u32, @intCast(clamped)) & M24;
-        },
+        23 => @truncate(@as(u64, @bitCast(shift23(a_val, b_val))) & M24),
         else => return RunError.UnknownForm,
     };
     if (dest_s != 0) state.s[dest_s] = v;
@@ -3777,4 +3784,27 @@ test "a file with labels and constants runs: bcc over four adds gives s1 = 4" {
     _ = try runLinear(gpa, &st, words);
     try testing.expect(st.halted);
     try testing.expectEqual(@as(u32, 4), st.s[1]);
+}
+
+test "0x19 op 23: a negative count is a rounded right shift; left shifts saturate both ways" {
+    try testing.expectEqual(@as(i64, 0x700), shift23(7, 8)); // own-x19alu
+    try testing.expectEqual(@as(i64, 0x71), shift23(0x708, -4));
+    try testing.expectEqual(@as(i64, -0x70), shift23(-0x708, -4));
+    try testing.expectEqual(@as(i64, 0x7FFFFF), shift23(0x400000, 2));
+    try testing.expectEqual(@as(i64, -0x800000), shift23(-0x400000, 2));
+    try testing.expectEqual(@as(i64, -16), shift23(-1, 4));
+}
+
+test "x19.alu #23 with a negative count register shifts right, rounded" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    state.s[3] = 0x708;
+    state.s[6] = 0xFFFFFC; // -4
+    const b_alu = try asm_mod.assembleOne("x19.alu s7, s3, s6, #23");
+    const b_halt = try asm_mod.assembleOne("x17.halt");
+    var buf: [16]u32 = undefined;
+    @memcpy(buf[0..b_alu.len], b_alu.slice());
+    @memcpy(buf[b_alu.len .. b_alu.len + b_halt.len], b_halt.slice());
+    _ = try runLinear(testing.allocator, &state, buf[0 .. b_alu.len + b_halt.len]);
+    try testing.expectEqual(@as(u32, 0x71), state.s[7]);
 }
