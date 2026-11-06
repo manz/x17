@@ -265,6 +265,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w4_mode == 2) return execX02Xrd(gpa, state, bundle); // esrc path
     }
     if (low5 == 0x03 and bundle.len >= 6) {
+        try x03CondJump(state, bundle);
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
         if (w4_mode == 5) {
             try execX03Xrd(gpa, state, bundle);
@@ -504,6 +505,21 @@ fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         else => return,
     };
     state.s[dest_s] = v;
+}
+
+/// x03 w2[28] = 1 (fact 394): jr to q + sext(w1[28:18]), two delay slots, on
+/// p<w5[17:14]>: sense w2[31:29] 101 jumps if set, 000 / 100 if clear, 001 OPEN.
+fn x03CondJump(state: *State, bundle: []const u32) RunError!void {
+    if ((bundle[2] >> 28) & 1 == 0) return;
+    const p_set = state.p[(bundle[5] >> 14) & 0xF] != 0;
+    const taken = switch (bundle[2] >> 29) {
+        5 => p_set,
+        0, 4 => !p_set,
+        else => return RunError.UnknownForm,
+    };
+    const off11: u32 = (bundle[1] >> 18) & 0x7FF;
+    const off: i32 = @as(i32, @bitCast(off11 << 21)) >> 21;
+    if (taken) state.pending_jmp_offset = off;
 }
 
 fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

@@ -1259,3 +1259,8 @@ pcond	p_dest	p	21	24	head
 pcond	r_R	R	17	20	head
 pcond	x_A	A	12	16	head
 pcond	cond	imm	7	11	head
+
+# x03.jrc #<sense>, <pred>, <target>
+x03.jrc	sense	imm	29	31	s2
+x03.jrc	pred	p	14	17	s5
+x03.jrc	offset	rel	18	28	s1

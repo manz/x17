@@ -766,3 +766,7 @@ x19.mac    4   0x00000019   0x00000000   0x20000000   0xC0000000
 
 # pcond: the 0x0C [31] = 1 form with R dest 0 (fact 378): p <- test of R vs A.
 pcond      1   0x8000002C
+
+# x03.jrc: x03 w2[28] = 1, a conditional jr inside the bundle (fact 394): taken to
+# q + sext(w1[28:18]) on p<w5[17:14]>, sense w2[31:29] (101 set; 000/100 clear; 001 OPEN).
+x03.jrc    6   0x00000003   0x00000000   0x10000000   0x00000000   0x00000000   0x00000000

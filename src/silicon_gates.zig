@@ -999,6 +999,44 @@ const GATES = [_]Gate{
         .post = &.{.{ .a_reg = .{ .index = 5, .value = 1 } }},
     },
     .{
+        .name = "own-x03jrc",
+        // fact 394: 00000003 00240000 10000000 00000000 00000000 00004000 = jr +9 if !p1;
+        // p1 = 0: the first add skipped (Y = 1).
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+            .{ .bank = .p, .index = 1, .value = 0 },
+        },
+        .src =
+        \\x03.jrc #0, p1, #9
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-x03jrc-p1",
+        // fact 394: 00000003 00240000 10000000 00000000 00000000 00004000 = jr +9 if !p1;
+        // p1 = 1: both adds run (Y = 2).
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+            .{ .bank = .p, .index = 1, .value = 1 },
+        },
+        .src =
+        \\x03.jrc #0, p1, #9
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 2 } }},
+    },
+    .{
         .name = "own-pcond",
         // fact 378: 802A7EAC, p1 <- R5 >= A7 (c29), R5 = 0x123, A7 = 0x123.
         .pre = &.{
