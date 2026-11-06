@@ -50,15 +50,18 @@ again:  alu s6, cnt, s14, #OP_SUB
 done:
 }
 
-; x = x sign-extended from its low k bits, k (8..24) in the Y slot `slot`. Uses s6, s12, s13.
-; (x << s) is a multiple of 2^s, so the rounded right shift by s is exact.
+; x = x sign-extended from its low k bits, k (8..24) in the Y slot `slot`. Uses s12, s13.
+; q = rshr(x, k) = round(x / 2^k), half up; x - q * 2^k is then in [-2^(k-1), 2^(k-1)) and
+; congruent to x. q * 2^k goes in two halves of at most 2^22 each, so the 0x19 shift never
+; saturates (q reaches 2^(23-k)). k = 24 gives q = 0.
 .macro sxe(x, slot) {
         ldy s13, slot
-        ldi s12, #24
-        alu s13, s12, s13, #OP_SUB ; s = 24 - k
-        alu s12, s0, s13, #OP_SUB ; -s
-        shlw(x, s13)
-        x19.alu x, x, s12, #SHIFT
+        alu s12, s0, s13, #OP_SUB ; -k
+        x19.alu s12, x, s12, #SHIFT ; q
+        alu s13, s13, s14, #OP_SUB ; k - 1
+        x19.alu s12, s12, s13, #SHIFT ; q * 2^(k-1)
+        alu x, x, s12, #OP_SUB
+        alu x, x, s12, #OP_SUB
 }
 
 ; sxe from chan_bits.

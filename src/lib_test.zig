@@ -576,3 +576,37 @@ test "integrate matches the reference: running sum wrapped to chan_bits" {
         for (buf[0..n], 0..) |w, i| try testing.expectEqual(@as(u32, @bitCast(w)) & 0xFFFFFF, state.x_mem.get(0x1000 + @as(u32, @intCast(i))).?);
     }
 }
+
+test "sxe sign-extends any 24-bit word from k bits, the edges included" {
+    const gpa = testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x5E8E);
+    const rnd = prng.random();
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/rice.sm"
+        \\.include "lib/predictor.sm"
+        \\        bits_init(0x4000)
+        \\        pred_slots(0x3100)
+        \\        x19.xrd s3, #2
+        \\        sxcb(s3)
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    const edges = [_]u32{ 0, 1, 0x7FFFFF, 0x800000, 0x800001, 0xFFFFFF, 0x7FFF80, 0x7FFF7F, 0x400000, 0xC00000 };
+    for (8..25) |k| {
+        for (0..60) |t| {
+            const x: u32 = if (t < edges.len) edges[t] else rnd.int(u24);
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            try state.x_mem.put(gpa, 0x1000, x);
+            try state.y_mem.put(gpa, 0x3103, @intCast(k));
+            state.a[2] = 0x1000;
+            _ = try emu.runFrom(gpa, &state, prog, 0, 1000);
+            const sh: u5 = @intCast(32 - k);
+            const want: u32 = @as(u32, @bitCast(@as(i32, @bitCast(x << sh)) >> sh)) & 0xFFFFFF;
+            if (want != state.s[3]) std.debug.print("k={d} x={x}\n", .{ k, x });
+            try testing.expectEqual(want, state.s[3]);
+        }
+    }
+}
