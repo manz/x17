@@ -1,0 +1,146 @@
+; ALAC's stereo unmix and shifted low bytes: the x17 twin of the output loop in sosumi's
+; ref/dsp/alac/decoder.zig. Needs lib/bits.sm, lib/rice.sm and lib/predictor.sm first.
+;
+; Arrays (24-bit X words, walked upward):
+;   A2   lane 0 (u)              A3   lane 1 (v), pairs only
+;   A4   low bytes, lane-interleaved, when shifted != 0
+;   A7   output, lane-interleaved; `gap` words are skipped after each frame (nch > lanes)
+;
+; Y slots (unmix_slots(base), which remaps e1..e4 and e7..e10; call each stage's slots
+; macro before that stage):
+;   e1  Y:base+0  n
+;   e2  Y:base+1  mix_bits (0..31)
+;   e3  Y:base+2  mix_res as its 8 bits (0..255; read back signed)
+;   e4  Y:base+3  shifted: 0, 8 or 16
+;   e7  Y:base+4  depth (8..24)
+;   e8  Y:base+5  lanes: 1 or 2
+;   e9  Y:base+6  scratch: samples left
+;   e10 Y:base+7  gap
+;
+; For a pair with mix_res != 0: l = u + v - floor(mix_res * v / 2^mix_bits), r = l - v,
+; the product exact (mulWide). Then x = (x << shifted) + low, sign-extended from depth.
+
+.macro unmix_slots(base) {
+        ldi s5, #base - 1
+        x17.mve e1, s5
+        ldi s5, #base
+        x17.mve e2, s5
+        ldi s5, #base + 1
+        x17.mve e3, s5
+        ldi s5, #base + 2
+        x17.mve e4, s5
+        ldi s5, #base + 3
+        x17.mve e7, s5
+        ldi s5, #base + 4
+        x17.mve e8, s5
+        ldi s5, #base + 5
+        x17.mve e9, s5
+        ldi s5, #base + 6
+        x17.mve e10, s5
+}
+
+; s4 = floor(a * v / 2^s) modulo 2^24, a = mix_res (signed 8), v in s8, s = mix_bits.
+; Uses s1, s2, s3, s5, s6, s11, s12.
+.macro mulshr() {
+        ldy s1, e3
+        ldi s3, #128
+        alu s3, s1, s3, #OP_SUB
+        ptst p1, s3, #NEG, #PTST ; below 128: positive
+        jmp #3, #1, apos
+        ldi s3, #256            ; (delay slot)
+        nop()
+        alu s1, s1, s3, #OP_SUB ; a -= 256
+apos:   alu s2, s8, s0, #OP_ADD
+        x02.x3 #0, #0, s0, s0, #5, #0, s0, #1, s5 ; s5 = (2av)[15:0]
+        ldi s3, #8
+        x19.alu s3, s1, s3, #SHIFT
+        x02.mpy s4, s3, s2      ; round((a << 8) * v / 2^23)
+        alu s3, s0, s14, #OP_SUB
+        x19.alu s5, s5, s3, #SHIFT ; lo
+        floorshr(s3, s5, 14)
+        alu s4, s4, s3, #OP_SUB ; hi
+        ldy s3, e2
+        ldi s11, #15
+        alu s11, s11, s3, #OP_SUB ; 15 - s
+        ptst p1, s11, #NEG, #PTST
+        jmp #3, #1, big
+        nop()
+        nop()
+        shlw(s4, s11)           ; s <= 15: hi << (15 - s) + floor(lo / 2^s)
+        floorn(s12, s5, s3)
+        alu s4, s4, s12, #OP_ADD
+        jmp #IF_NOT, #2, done
+        nop()
+        nop()
+big:    alu s11, s0, s11, #OP_SUB ; s > 15: floor(hi / 2^(s - 15))
+        floorn(s12, s4, s11)
+        alu s4, s12, s0, #OP_ADD
+done:
+}
+
+; One output word from x: low bytes on, sign-extended from depth, stored. Uses s3, s6, s12, s13.
+.macro emit(x) {
+        ldy s3, e4
+        alu s6, s3, s14, #OP_SUB
+        ptst p1, s6, #NEG, #PTST ; shifted == 0
+        jmp #3, #1, plain
+        nop()
+        nop()
+        shlw(x, s3)
+        x19.xrd s3, #4
+        x02.ainc #4, #4
+        alu x, x, s3, #OP_ADD
+plain:  sxe(x, e7)
+        stx A7, x
+        x02.ainc #7, #7
+}
+
+.macro unmix() {
+        ldy s3, e1
+        x17.sty e9, #3, #0      ; left = n
+frame:  ldy s3, e9
+        alu s6, s3, s14, #OP_SUB
+        ptst p1, s6, #NEG, #PTST
+        jmp #3, #1, finish
+        alu s3, s3, s14, #OP_SUB ; (delay slot)
+        x17.sty e9, #3, #0      ; (delay slot) left -= 1
+        x19.xrd s7, #2          ; u
+        x02.ainc #2, #2
+        ldy s3, e8
+        alu s6, s3, s14, #OP_SUB
+        alu s6, s6, s14, #OP_SUB
+        ptst p1, s6, #NEG, #PTST ; one lane
+        jmp #3, #1, mono
+        nop()
+        nop()
+        x19.xrd s8, #3          ; v
+        x02.ainc #3, #3
+        ldy s3, e3
+        alu s6, s3, s14, #OP_SUB
+        ptst p1, s6, #NEG, #PTST ; mix_res == 0
+        jmp #3, #1, lanes
+        nop()
+        nop()
+        mulshr()
+        alu s7, s7, s8, #OP_ADD
+        alu s7, s7, s4, #OP_SUB ; l = u + v - floor(a * v / 2^s)
+        alu s8, s7, s8, #OP_SUB ; r = l - v
+lanes:  emit(s7)
+        emit(s8)
+        jmp #IF_NOT, #2, gap
+        nop()
+        nop()
+mono:   emit(s7)
+gap:    ldy s3, e10
+skip:   alu s6, s3, s14, #OP_SUB
+        ptst p1, s6, #NEG, #PTST
+        jmp #3, #1, frame
+        nop()
+        nop()
+        x02.ainc #7, #7
+        alu s3, s3, s14, #OP_SUB
+        jmp #IF_NOT, #2, skip
+        nop()
+        nop()
+finish:
+}

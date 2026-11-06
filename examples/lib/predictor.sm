@@ -48,15 +48,20 @@ again:  alu s6, cnt, s14, #OP_SUB
 done:
 }
 
-; x = x sign-extended from its low chan_bits bits. Uses s6, s12, s13.
+; x = x sign-extended from its low k bits, k (8..24) in the Y slot `slot`. Uses s6, s12, s13.
 ; (x << s) is a multiple of 2^s, so the rounded right shift by s is exact.
-.macro sxcb(x) {
-        ldy s13, e14
+.macro sxe(x, slot) {
+        ldy s13, slot
         ldi s12, #24
-        alu s13, s12, s13, #OP_SUB ; s = 24 - chan_bits
+        alu s13, s12, s13, #OP_SUB ; s = 24 - k
         alu s12, s0, s13, #OP_SUB ; -s
         shlw(x, s13)
         x19.alu x, x, s12, #SHIFT
+}
+
+; sxe from chan_bits.
+.macro sxcb(x) {
+        sxe(x, e14)
 }
 
 ; dst = floor(v / 2^n), n (0..15) in a register: rshr(v - h, n), h = rshr(2^n - 1, 1).

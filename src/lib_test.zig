@@ -9,6 +9,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/bits.sm", .text = @embedFile("bits.sm") },
     .{ .path = "lib/rice.sm", .text = @embedFile("rice.sm") },
     .{ .path = "lib/predictor.sm", .text = @embedFile("predictor.sm") },
+    .{ .path = "lib/unmix.sm", .text = @embedFile("unmix.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -378,6 +379,94 @@ test "unpredict matches the reference: samples and adapted coefficients" {
         for (0..order) |i| {
             const got = state.x_mem.get(c_base + @as(u32, @intCast(i))).?;
             try testing.expectEqual(@as(u32, @bitCast(@as(i32, coefs[order - 1 - i]))) & 0xFFFFFF, got);
+        }
+    }
+}
+
+test "unmix matches the reference: matrixing, low bytes, depth wrap, gaps" {
+    const gpa = testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x0A1C);
+    const rnd = prng.random();
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/rice.sm"
+        \\.include "lib/predictor.sm"
+        \\.include "lib/unmix.sm"
+        \\        bits_init(0x4000)
+        \\        unmix_slots(0x3200)
+        \\        unmix()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    const u_base: u32 = 0x1000;
+    const v_base: u32 = 0x1400;
+    const low_base: u32 = 0x1800;
+    const out_base: u32 = 0x2000;
+    var cases: usize = 0;
+    while (cases < 400) {
+        const lanes: u32 = if (rnd.int(u8) < 200) 2 else 1;
+        const depth = rnd.intRangeAtMost(u32, 8, 24);
+        const shifted: u32 = 8 * rnd.intRangeAtMost(u32, 0, 2);
+        if (shifted >= depth) continue;
+        const cb = depth - shifted + @intFromBool(lanes == 2);
+        if (cb > 23) continue;
+        cases += 1;
+        const n = rnd.intRangeAtMost(usize, 1, 40);
+        const mix_bits = rnd.intRangeAtMost(u32, 0, 31);
+        const mix_res: i8 = if (rnd.int(u8) < 30) 0 else rnd.int(i8);
+        const gap = rnd.intRangeAtMost(u32, 0, 3);
+        const nch = lanes + gap;
+
+        var mix: [2][40]i32 = undefined;
+        var low: [80]u32 = undefined;
+        for (0..lanes) |l| for (mix[l][0..n]) |*x| {
+            x.* = wrapCb(rnd.int(i32), @intCast(cb));
+        };
+        for (low[0 .. n * lanes]) |*x| x.* = rnd.int(u32) & ((@as(u32, 1) << @intCast(shifted)) - 1);
+
+        var want: [200]i32 = @splat(0);
+        const out_shift: u5 = @intCast(32 - depth);
+        for (0..n) |i| {
+            var sv: [2]i32 = undefined;
+            if (lanes == 2 and mix_res != 0) {
+                const u = mix[0][i];
+                const v = mix[1][i];
+                sv[0] = u +% v -% ((@as(i32, mix_res) *% v) >> @intCast(mix_bits));
+                sv[1] = sv[0] -% v;
+            } else {
+                for (0..lanes) |l| sv[l] = mix[l][i];
+            }
+            for (0..lanes) |l| {
+                var ux: u32 = @bitCast(sv[l]);
+                if (shifted != 0) ux = (ux << @intCast(shifted)) | low[i * lanes + l];
+                want[i * nch + l] = @as(i32, @bitCast(ux << out_shift)) >> out_shift;
+            }
+        }
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (0..n) |i| {
+            const k: u32 = @intCast(i);
+            try state.x_mem.put(gpa, u_base + k, @as(u32, @bitCast(mix[0][i])) & 0xFFFFFF);
+            if (lanes == 2) try state.x_mem.put(gpa, v_base + k, @as(u32, @bitCast(mix[1][i])) & 0xFFFFFF);
+        }
+        for (low[0 .. n * lanes], 0..) |x, i| try state.x_mem.put(gpa, low_base + @as(u32, @intCast(i)), x);
+        for (0..n * nch) |i| try state.x_mem.put(gpa, out_base + @as(u32, @intCast(i)), 0);
+        const init = [_]u32{ @intCast(n), mix_bits, @as(u8, @bitCast(mix_res)), shifted, depth, lanes, 0, gap };
+        for (init, 0..) |v, i| try state.y_mem.put(gpa, 0x3200 + @as(u32, @intCast(i)), v);
+        state.a[2] = u_base;
+        state.a[3] = v_base;
+        state.a[4] = low_base;
+        state.a[7] = out_base;
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 24);
+        try testing.expect(state.halted);
+        for (want[0 .. n * nch], 0..) |w, i| {
+            const got = state.x_mem.get(out_base + @as(u32, @intCast(i))).?;
+            if (got != @as(u32, @bitCast(w)) & 0xFFFFFF) {
+                std.debug.print("word {d}: lanes={d} depth={d} shifted={d} mix_bits={d} mix_res={d} gap={d}\n", .{ i, lanes, depth, shifted, mix_bits, mix_res, gap });
+                try testing.expectEqual(@as(u32, @bitCast(w)) & 0xFFFFFF, got);
+            }
         }
     }
 }

@@ -119,6 +119,7 @@ pub fn build(b: *std.Build) void {
     lib_mod.addAnonymousImport("bits.sm", .{ .root_source_file = b.path("examples/lib/bits.sm") });
     lib_mod.addAnonymousImport("rice.sm", .{ .root_source_file = b.path("examples/lib/rice.sm") });
     lib_mod.addAnonymousImport("predictor.sm", .{ .root_source_file = b.path("examples/lib/predictor.sm") });
+    lib_mod.addAnonymousImport("unmix.sm", .{ .root_source_file = b.path("examples/lib/unmix.sm") });
     const lib_t = b.addTest(.{ .root_module = lib_mod });
     test_step.dependOn(&b.addRunArtifact(lib_t).step);
     const disasm_t = b.addTest(.{ .root_module = disasm_mod });
