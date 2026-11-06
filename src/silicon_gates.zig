@@ -600,7 +600,7 @@ const GATES = [_]Gate{
         .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
         .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
         .src =
-        \\x02.yrd s1, e3
+        \\x02.yrd s1, e3, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x886F } }},
@@ -1752,6 +1752,98 @@ const GATES = [_]Gate{
         .post = &.{.{ .r_reg = .{ .index = 6, .value = 0x2340 } }},
     },
     .{
+        .name = "own-x02w3b31",
+        // Pre e3 = 0x490 with Y[0x490] seeded to 0x886F.
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
+        .src =
+        \\x02.yrd s1, e3, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x886F } }},
+    },
+    .{
+        .name = "own-x03w5c2",
+        // Pre e3 = 0x490, Y:0x490 = 0x886F; s7 <- Y:[e3].
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
+        .src =
+        \\x03.yrd s7, e3, #5, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x886F } }},
+    },
+    .{
+        .name = "own-x17ctl",
+        // S1[22:20] = 000 continues; the S1 class 000 tail halts before s6.
+        .src =
+        \\x17.cont
+        \\x17.imm s5, #0x555
+        \\x17.end
+        \\x17.imm s6, #0x666
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 0x555 } },
+            .{ .s_reg = .{ .index = 6, .value = 0 } },
+        },
+    },
+    .{
+        .name = "own-x17eagu",
+        // s4 <- AGU10[7](e14, R10) = 0x200 - 0xB0 = 0x150.
+        .pre = &.{
+            .{ .bank = .e, .index = 14, .value = 0x200 },
+            .{ .bank = .r, .index = 10, .value = 0xB0 },
+        },
+        .src =
+        \\x17.eagu s4, e14, #2, #7
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 4, .value = 0x150 } }},
+    },
+    .{
+        .name = "own-x17sty",
+        // Y:[e2 = 0x600] <- s5 = 0x1234.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x600 },
+            .{ .bank = .s, .index = 5, .value = 0x1234 },
+        },
+        .src =
+        \\x17.sty e2, #5, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x600, .value = 0x1234 } }},
+    },
+    .{
+        .name = "own-x17yld",
+        // s14 <- Y:[e2 = 0x600] = 0x5A5A.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x600 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x600, .value = 0x5A5A }},
+        .src =
+        \\x17.yld s14, e2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 14, .value = 0x5A5A } }},
+    },
+    .{
+        .name = "own-x16mac",
+        // acc = (s1 << 24) + s2 + s3*s5*2 = 0x1_1000_4010: s7 <- 0x110, s6 <- 0x4010.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x100 },
+            .{ .bank = .s, .index = 2, .value = 0x10 },
+            .{ .bank = .s, .index = 3, .value = 0x4001 },
+            .{ .bank = .s, .index = 5, .value = 0x2000 },
+        },
+        .src =
+        \\x16.mac s7, s6, #1, #0, s2, s3, s5, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 7, .value = 0x110 } },
+            .{ .s_reg = .{ .index = 6, .value = 0x4010 } },
+        },
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},
@@ -2449,7 +2541,7 @@ const GATES = [_]Gate{
         .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
         .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
         .src =
-        \\x03.yrd s7, e3, #5
+        \\x03.yrd s7, e3, #5, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x886F } }},
@@ -2460,7 +2552,7 @@ const GATES = [_]Gate{
         .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
         .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
         .src =
-        \\x03.yrd s7, e3, #3
+        \\x03.yrd s7, e3, #3, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x6F00 } }},
@@ -2471,7 +2563,7 @@ const GATES = [_]Gate{
         .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
         .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
         .src =
-        \\x03.yrd s7, e3, #4
+        \\x03.yrd s7, e3, #4, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x3780 } }},

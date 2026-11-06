@@ -302,6 +302,7 @@ x03.xrd	a_lo	imm	30	31	head
 x03.yrd	dest_s	s	3	6	s4
 x03.yrd	src_e	e	27	30	s3
 x03.yrd	mux	imm	11	13	s4
+x03.yrd	w5b30	imm	30	30	s5
 
 # x02.c6 (6 syllables): one X read, two destinations.
 # Grammar: x02.c6 <dest_s>, <dest2_s>, <src_A>
@@ -367,6 +368,7 @@ x18.q23c	shift_bit	imm	2	2	s3
 # Grammar: x02.yrd <dest_s>, <src_e>
 x02.yrd	dest_s	s	3	6	s4
 x02.yrd	src_e	e	27	30	s3
+x02.yrd	w3b31	imm	31	31	s3
 
 # x02.hdhi (6 syllables): x02.imm with head[31:27] (inert) set.
 # Grammar: x02.hdhi <dest_s>, #<imm>
@@ -989,3 +991,30 @@ x10.alu	code	imm	5	10	head
 x10.alu	m	imm	23	25	head
 x10.alu	n	imm	19	22	head
 x10.alu	w1_lo	imm	0	20	s1
+
+# x17.end   (no operands)
+
+# x17.eagu <dest_s>, <x_e>, #<y_hi>, #<fn>
+x17.eagu	dest_s	s	21	24	head
+x17.eagu	x_e	e	4	7	s2
+x17.eagu	y_hi	imm	30	31	s1
+x17.eagu	fn	imm	25	28	s2
+
+# x17.sty <y_e>, #<src_lo>, #<src_hi>
+x17.sty	y_e	e	15	18	s1
+x17.sty	src_lo	imm	29	31	s1
+x17.sty	src_hi	imm	0	0	s2
+
+# x17.yld <dest_s>, <y_e>
+x17.yld	dest_s	s	10	13	s2
+x17.yld	y_e	e	21	24	s2
+
+# x16.mac <hi_dest>, <lo_dest>, #<xhi_lo>, #<xhi_hi>, <x_lo>, <a_s>, <b_s>, #<mode>
+x16.mac	hi_dest	s	10	13	s2
+x16.mac	lo_dest	s	20	23	s1
+x16.mac	xhi_lo	imm	29	31	s1
+x16.mac	xhi_hi	imm	0	0	s2
+x16.mac	x_lo	s	24	27	s1
+x16.mac	a_s	s	1	4	s2
+x16.mac	b_s	s	5	8	s2
+x16.mac	mode	imm	14	15	s2

@@ -145,6 +145,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s2_mode: u32 = (bundle[2] >> 16) & 0x1F;
         const s1_class16: u32 = (bundle[1] >> 29) & 0x7;
         if (s2_class == 0b110 and s1_class16 == 0 and s2_mode <= 7) return execX16Mul(gpa, state, bundle);
+        if (s2_class == 0b110 and s1_class16 == 1) return execX16Mac(state, bundle);
         if (s1_class16 == 0 and s2_class == 0b010) return execX16Xs(state, bundle);
         if (s1_class16 == 3 and s2_class == 0b000) return execX16Xld(state, bundle);
         if (s1_class16 == 3 and s2_class == 0b111) return execX16St2(gpa, state, bundle);
@@ -2064,12 +2065,61 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class == 0b001 and s2_class == 0b000) return execX17Agu2(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b100) return execX17E(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b011) return execX17Ld(gpa, state, bundle);
+    if (s2_class == 0b011) return execX17Sty(gpa, state, bundle);
+    if (s1_class == 0b100 and s2_class == 0b100) return execX17Eagu(state, bundle);
+    if (s1_class == 0b000 and s2_class == 0b000) return execX17Yld(state, bundle);
     if (s1_class == 0b000 and s2_class == 0b110) return execX17Alu05(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b010) return execX17Mve(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b001) return execX17Rsub(gpa, state, bundle);
     if (s1_class == 0b100 and s2_class == 0b110) return execX17Xpm(gpa, state, bundle);
     if (s1_class == 0b010 and s2_class == 0b110 and ((bundle[0] >> 27) & 1) == 0) return execX17XldA10(gpa, state, bundle);
     return RunError.UnknownForm;
+}
+
+/// (S1 class != 0, S2 class 011) (fact 275): the x17ld bundle becomes
+/// a Y store, Y:[e<S1[18:15]>] <- s<{S2[0], S1[31:29]}>, when S2[12:11] = 11.
+fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    if ((s2 >> 11) & 3 != 3) return RunError.UnknownForm;
+    const v: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
+    state.y_mem.put(gpa, state.e[(s1 >> 15) & 0xF], v) catch return RunError.OutOfMemory;
+}
+
+/// (S1 class 100, S2 class 100) with S2[3:0] = 10 (fact 273):
+/// s<head[24:21]> <- AGU10[S2[28:25]](x = e<S2[7:4]>, y = R<8 + S1[31:30]>).
+fn execX17Eagu(state: *State, bundle: []const u32) RunError!void {
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    if (s2 & 0xF != 10) return RunError.UnknownForm;
+    const v = try agu10Eval((s2 >> 25) & 0xF, state.e[(s2 >> 4) & 0xF], state.r[8 + ((s1 >> 30) & 3)]);
+    const dest: u32 = (bundle[0] >> 21) & 0xF;
+    if (dest != 0) state.s[dest] = v;
+}
+
+/// (S1 class 000, S2 class 000) (fact 274): s<S2[13:10]> <- Y:[e<S2[24:21]>].
+fn execX17Yld(state: *State, bundle: []const u32) RunError!void {
+    const s2 = bundle[2];
+    const dest: u32 = (s2 >> 10) & 0xF;
+    if (dest != 0) state.s[dest] = (state.getY(state.e[(s2 >> 21) & 0xF]) orelse 0) & 0xFFFF;
+}
+
+/// x16 S1 class 001 / S2 class 110, 40-bit MAC (fact 203, 213):
+/// acc = (s<{S2[0], S1[31:29]}> << 24) + s<S1[27:24]> + P, P =
+/// s<S2[4:1]> * s<S2[8:5]> << 1 under mode S2[15:14] = 01 (only one measured);
+/// acc[39:24] -> s<S2[13:10]>, acc[15:0] -> s<S1[23:20]>.
+fn execX16Mac(state: *State, bundle: []const u32) RunError!void {
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    if ((s2 >> 14) & 3 != 1) return RunError.UnknownForm;
+    const x_hi: i64 = sx16(state.s[((s2 & 1) << 3) | (s1 >> 29)]);
+    const x_lo: i64 = sx16(state.s[(s1 >> 24) & 0xF]);
+    const p: i64 = sx16(state.s[(s2 >> 1) & 0xF]) * sx16(state.s[(s2 >> 5) & 0xF]) * 2;
+    const acc: u64 = @bitCast((x_hi << 24) + x_lo + p);
+    const hi_dest: u32 = (s2 >> 10) & 0xF;
+    const lo_dest: u32 = (s1 >> 20) & 0xF;
+    if (lo_dest != 0) state.s[lo_dest] = @truncate(acc & 0xFFFF);
+    if (hi_dest != 0) state.s[hi_dest] = @truncate((acc >> 24) & 0xFFFF);
 }
 
 fn execX17XldA10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
