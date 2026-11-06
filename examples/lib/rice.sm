@@ -1,0 +1,59 @@
+; ALAC's adaptive Golomb-Rice codeword: the x17 twin of `get` in sosumi's
+; ref/dsp/alac/rice.zig. Needs lib/bits.sm included first.
+;
+; rice_get(dst): s1 = m, s2 = k (1..15), s3 = escape width (<= 22); dst gets the value.
+;   A prefix of 9 ones is an escape: the next s3 bits, raw.
+;   Otherwise, pre ones then a zero; hi = the next k - 1 bits; with base = pre * m,
+;   hi == 0 gives base, else base + 2 * hi + bit - 1.
+; Uses s4 (as dst), s5, s7, s8; s1..s3 survive. pre * m is pre additions (pre <= 8).
+
+.const MAX_PREFIX = 9
+
+.macro rice_get(dst) {
+        alu s8, s0, s0, #OP_ADD ; pre = 0
+pfx:    getbits(s5, 1)
+        alu s7, s5, s14, #OP_SUB ; bit - 1
+        ptst p1, s7, #NEG, #PTST ; p1 = bit is 0
+        jmp #3, #1, gotpre
+        ldi s7, #MAX_PREFIX     ; (delay slot)
+        alu s5, s8, s14, #OP_ADD ; (delay slot) pre + 1
+        alu s8, s5, s0, #OP_ADD ; pre += 1
+        alu s7, s8, s7, #OP_SUB
+        ptst p1, s7, #NEG, #PTST ; p1 = pre < 9
+        jmp #3, #1, pfx
+        nop()
+        nop()
+        alu s7, s3, s0, #OP_ADD ; escape: n = escape width
+        readn(dst)
+        jmp #IF_NOT, #2, done
+        nop()
+        nop()
+gotpre: alu s7, s2, s14, #OP_SUB ; n = k - 1
+        readn(dst)              ; hi
+        alu s7, s0, s0, #OP_ADD ; base = 0
+mul:    alu s5, s8, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; p1 = pre == 0
+        jmp #3, #1, muldone
+        nop()
+        nop()
+        alu s7, s7, s1, #OP_ADD ; base += m
+        alu s8, s8, s14, #OP_SUB ; pre -= 1
+        jmp #IF_NOT, #2, mul
+        nop()
+        nop()
+muldone: alu s5, dst, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; p1 = hi == 0
+        jmp #3, #1, zero
+        nop()
+        nop()
+        getbits(s5, 1)
+        alu dst, dst, dst, #OP_ADD ; 2 * hi
+        alu dst, dst, s5, #OP_ADD ; + bit
+        alu dst, dst, s7, #OP_ADD ; + base
+        alu dst, dst, s14, #OP_SUB ; - 1
+        jmp #IF_NOT, #2, done
+        nop()
+        nop()
+zero:   alu dst, s7, s0, #OP_ADD
+done:
+}

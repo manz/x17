@@ -4,10 +4,10 @@
 ;   e5   address of the next packet word
 ;   s9   cache: the `avail` unread bits, right-aligned (below 2^23)
 ;   s10  avail
-;   s14  1, s15 16 (constants)
+;   s14  1, s15 16 (constants); p2 clear, so `jmp #IF_NOT, #2` always jumps
 ;   s6, s11, s12, s13 scratch; s0 stays 0
 ;
-; getbits(dst, k), k in 1..8: refill 16 bits when avail < k (avail <= 7 then, so the cache
+; getbits(dst, k), k in 0..8 (getbits_s takes k in s11; k = 0 reads 0): refill 16 bits when avail < k (avail <= 7 then, so the cache
 ; stays below 2^23), then dst = floor(cache / 2^sh), sh = avail - k. The floor comes from the
 ; rounded right shift (0x19 op 23, negative count): floor(c / 2^sh) = rshr(c - h, sh) with
 ; h = rshr(2^sh - 1, 1), which is 0 at sh = 0. Every form used is gated on silicon.
@@ -27,10 +27,19 @@
         ldi s10, #0
         ldi s14, #1
         ldi s15, #16
+        ptst p2, s14, #NEG, #PTST ; p2 = 0: the always-false predicate
+}
+
+.macro nop() {
+        alu s0, s0, s0, #0
 }
 
 .macro getbits(dst, k) {
         ldi s11, #k
+        getbits_s(dst)
+}
+
+.macro getbits_s(dst) {
         alu s12, s10, s11, #OP_SUB ; avail - k
         ptst p1, s12, #NEG, #PTST ; p1 = avail < k
         jmp #IF_NOT, #1, have
@@ -50,4 +59,29 @@ have:   alu s12, s10, s11, #OP_SUB ; sh = avail - k
         x19.alu s13, dst, s12, #SHIFT ; dst << sh
         alu s9, s9, s13, #OP_SUB ; cache keeps the low sh bits
         alu s10, s10, s11, #OP_SUB ; avail -= k
+}
+
+; readn(dst), n in s7 (0..24, consumed): dst = the next n bits, read 8 at a time. Uses s5.
+.macro readn(dst) {
+        alu dst, s0, s0, #OP_ADD
+more:   alu s5, s7, s14, #OP_SUB ; n - 1
+        ptst p1, s5, #NEG, #PTST ; p1 = n == 0
+        jmp #3, #1, done
+        nop()
+        ldi s11, #8             ; (second delay slot, harmless)
+        alu s5, s7, s11, #OP_SUB ; n - 8
+        ptst p1, s5, #NEG, #PTST
+        jmp #IF_NOT, #1, full   ; n >= 8: take 8, n - 8 left
+        nop()
+        nop()
+        alu s11, s7, s0, #OP_ADD ; n < 8: take n
+        alu s5, s0, s0, #OP_ADD ;        none left
+full:   alu s7, s5, s0, #OP_ADD
+        getbits_s(s5)
+        x19.alu dst, dst, s11, #SHIFT ; dst << taken
+        alu dst, dst, s5, #OP_ADD
+        jmp #IF_NOT, #2, more
+        nop()
+        nop()
+done:
 }
