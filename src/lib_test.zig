@@ -11,6 +11,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/predictor.sm", .text = @embedFile("predictor.sm") },
     .{ .path = "lib/unmix.sm", .text = @embedFile("unmix.sm") },
     .{ .path = "lib/alac.sm", .text = @embedFile("alac.sm") },
+    .{ .path = "lib/huffman.sm", .text = @embedFile("huffman.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -660,4 +661,138 @@ test "the libraries branch only on measured ptst rows" {
             }
         }
     }
+}
+
+const HCode = struct { code: u32, len: u5, v: u16 };
+
+/// A random complete prefix code: split random leaves of a binary tree, lengths up to 19.
+fn randomCode(rnd: std.Random, out: []HCode) []HCode {
+    const n = rnd.intRangeAtMost(usize, 2, out.len);
+    var lens: [400]u5 = undefined;
+    lens[0] = 1;
+    lens[1] = 1;
+    var have: usize = 2;
+    while (have < n) {
+        const i = rnd.uintLessThan(usize, have);
+        if (lens[i] >= 19) continue;
+        lens[i] += 1;
+        lens[have] = lens[i];
+        have += 1;
+    }
+    // canonical codes, shortest first
+    std.mem.sort(u5, lens[0..n], {}, std.sort.asc(u5));
+    var code: u32 = 0;
+    var prev: u5 = lens[0];
+    for (out[0..n], lens[0..n], 0..) |*c, l, i| {
+        if (i > 0) code = (code + 1) << (l - prev);
+        prev = l;
+        c.* = .{ .code = code, .len = l, .v = rnd.uintLessThan(u16, 2048) };
+    }
+    rnd.shuffle(HCode, out[0..n]);
+    return out[0..n];
+}
+
+/// sosumi ref/dsp/aac/huffman.zig's table layout: leaf (v << 5) + len, pointer
+/// (base << 5) + 16 + width.
+fn buildTables(t: []u16, n: *usize, syms: []const HCode, depth: u5, width: u4) usize {
+    const base = n.*;
+    const size = @as(usize, 1) << width;
+    n.* += size;
+    @memset(t[base..][0..size], 0);
+    for (syms) |s| {
+        const r = s.len - depth;
+        if (r > width) continue;
+        const rem = s.code & ((@as(u32, 1) << r) - 1);
+        const start = @as(usize, rem) << @intCast(width - r);
+        for (0..@as(usize, 1) << @intCast(width - r)) |j| t[base + start + j] = (s.v << 5) + r;
+    }
+    for (0..size) |p| {
+        var group: [400]HCode = undefined;
+        var ng: usize = 0;
+        var maxrem: u5 = 0;
+        for (syms) |s| {
+            const r = s.len - depth;
+            if (r <= width) continue;
+            const rem = s.code & ((@as(u32, 1) << r) - 1);
+            if (rem >> @intCast(r - width) != p) continue;
+            group[ng] = s;
+            ng += 1;
+            maxrem = @max(maxrem, r - width);
+        }
+        if (ng == 0) continue;
+        const w2: u4 = @intCast(@min(8, maxrem));
+        const sub = buildTables(t, n, group[0..ng], depth + width, w2);
+        t[base + p] = @intCast((sub << 5) + 16 + w2);
+    }
+    return base;
+}
+
+/// Bit-by-bit match against the codewords.
+fn refHuff(data: []const u8, pos: *usize, syms: []const HCode) u32 {
+    var code: u32 = 0;
+    var len: u5 = 0;
+    while (true) {
+        code = code << 1 | refRead(data, pos, 1);
+        len += 1;
+        for (syms) |s| if (s.len == len and s.code == code) return s.v;
+    }
+}
+
+test "huff_decode decodes what a bit-by-bit matcher decodes, through subtables" {
+    const gpa = testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x4AFF);
+    const rnd = prng.random();
+    var deep: usize = 0;
+    for (0..60) |_| {
+        var cbuf: [300]HCode = undefined;
+        const syms = randomCode(rnd, &cbuf);
+        const root = rnd.intRangeAtMost(u4, 1, 8);
+        var t: [8192]u16 = undefined;
+        var n: usize = 0;
+        _ = buildTables(&t, &n, syms, 0, root);
+        var data: [256]u8 = undefined;
+        rnd.bytes(&data);
+        const skip = rnd.intRangeAtMost(u5, 0, 23);
+        const count = 12;
+
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(gpa);
+        try src.print(gpa,
+            \\.include "lib/bits.sm"
+            \\.include "lib/huffman.sm"
+            \\        bits_init(0x4000)
+            \\        ldi s7, #{d}
+            \\        readn(s4)
+            \\
+        , .{skip});
+        for (0..count) |_| try src.print(gpa,
+            \\        ldi s1, #0x1000
+            \\        ldi s11, #{d}
+            \\        huff_decode(s1)
+            \\        stx A6, s1
+            \\        x02.ainc #6, #6
+            \\
+        , .{root});
+        try src.appendSlice(gpa, "        getbits(s8, 8)\n        x17.halt\n");
+        const prog = try assemble(gpa, src.items);
+        defer gpa.free(prog);
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try stage(gpa, &state, &data);
+        for (t[0..n], 0..) |w, i| try state.y_mem.put(gpa, 0x1000 + @as(u32, @intCast(i)), w);
+        state.a[6] = 0x100;
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 20);
+        try testing.expect(state.halted);
+
+        var pos: usize = skip;
+        for (0..count) |i| {
+            const before = pos;
+            const want = refHuff(&data, &pos, syms);
+            if (pos - before > root) deep += 1;
+            try testing.expectEqual(want, state.readX(0x100 + @as(u32, @intCast(i))) orelse 0xDEAD);
+        }
+        try testing.expectEqual(refRead(&data, &pos, 8), state.s[8]);
+    }
+    try testing.expect(deep > 50);
 }

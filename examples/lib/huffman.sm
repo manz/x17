@@ -1,0 +1,57 @@
+; Table-driven Huffman decoding: the x17 twin of sosumi's ref/dsp/aac/huffman.zig `decode`.
+;
+; A code is a tree of lookup tables in Y, one 16-bit word per entry. A step peeks w <= 8 bits
+; and reads the entry at base + those bits. Its low five bits f say what it is:
+;   1..8      a leaf: the codeword is f bits long; value = entry >> 5
+;   16 + w'   a pointer: consume w bits; the next table is at start + (entry >> 5), w' wide
+; (0 marks a prefix no codeword has; complete codes have none, and this routine does not test
+; for it.)
+;
+; huff_decode(dst): s1 = the code's Y address, s11 = its root width (1..8). dst = the value.
+; Uses the bit reader's registers (lib/bits.sm) and s2, s3, s4, s5, s7, s8; s1 and s11 are
+; clobbered. hi = floor(e / 32) = rshr(e - 16, 5) (exact for e >= 0).
+
+.macro huff_decode(dst) {
+        alu s1, s1, s14, #OP_SUB ; s1, s3 sit one below the table: x17.mve adds 1
+        ldi s4, #-5
+        alu s3, s1, s0, #OP_ADD ; start of the code - 1
+        ldi s8, #5
+step:   alu s12, s10, s11, #OP_SUB ; avail - w
+        ptst p1, s0, #LT12, #PTST ; p1 = avail < w
+        jmp #IF_NOT, #1, have
+        ldy s13, e5             ; delay slot: next word, harmless if unused
+        alu s6, s0, s14, #OP_SUB ; delay slot: s6 = -1
+        x19.alu s9, s9, s15, #SHIFT ; refill: cache << 16
+        alu s9, s9, s13, #OP_ADD ;         + word
+        x18.eagu e5, e5, #AGU_INC ;         next word
+        alu s10, s10, s15, #OP_ADD ;         avail += 16
+have:   alu s7, s10, s11, #OP_SUB ; sh = avail - w
+        x19.alu s13, s14, s7, #SHIFT ; 2^sh
+        alu s13, s13, s14, #OP_SUB ; 2^sh - 1
+        x19.alu s13, s13, s6, #SHIFT ; h = rshr(2^sh - 1, 1)
+        alu s13, s9, s13, #OP_SUB ; c - h
+        alu s12, s0, s7, #OP_SUB ; -sh
+        x19.alu s5, s13, s12, #SHIFT ; t = floor(c / 2^sh), the peeked w bits
+        alu s13, s1, s5, #OP_ADD ; entry address - 1
+        x17.mve e6, s13         ; e6 = entry address
+        ldy s2, e6              ; e
+        alu s13, s2, s15, #OP_SUB ; e - 16
+        x19.alu s13, s13, s4, #SHIFT ; hi = rshr(e - 16, 5)
+        x19.alu s12, s13, s8, #SHIFT ; hi << 5
+        alu s2, s2, s12, #OP_SUB ; f
+        alu s12, s2, s15, #OP_SUB ; f - 16
+        ptst p1, s0, #LT12, #PTST ; p1 = leaf
+        jmp #3, #1, leaf
+        alu s1, s3, s13, #OP_ADD ; (delay slot) pointer: next table
+        alu s11, s12, s0, #OP_ADD ; (delay slot) pointer: its width
+        x19.alu s12, s5, s7, #SHIFT ; pointer: consume w bits, t << sh
+        alu s9, s9, s12, #OP_SUB ;          cache keeps the low sh bits
+        alu s10, s7, s0, #OP_ADD ;          avail = sh
+        jmp #IF_NOT, #2, step
+        nop()
+        nop()
+leaf:   alu s11, s2, s0, #OP_ADD ; consume f bits
+        alu s2, s13, s0, #OP_ADD ; keep the value past getbits_s
+        getbits_s(s13)
+        alu dst, s2, s0, #OP_ADD
+}
