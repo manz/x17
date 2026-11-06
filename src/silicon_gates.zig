@@ -965,6 +965,25 @@ const GATES = [_]Gate{
         .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x156 } }},
     },
     .{
+        .name = "own-br-c1",
+        // Pre p1 = 0 (branch NOT taken); all adds execute.
+        .pre = &.{
+            .{ .bank = .p, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\x18.br #1, #2
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\alu s1, s1, s2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 5 } }},
+    },
+    .{
         .name = "own-x18br",
         // p3 = 1, branch offset +2 bundles.  Two delay-slot adds run, two
         // adds are skipped, one add at the target runs: s1 = 3.
