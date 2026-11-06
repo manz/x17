@@ -2624,6 +2624,25 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x02mac",
+        // A reads X:[A2] (0x7EFD) into s4; B: s2 <- P + xd[15:0] = 0x30 + 0xFD00.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .a, .index = 2, .value = 0x567 },
+        },
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x567, .value = 0x7EFD }},
+        .src =
+        \\x02.mac s0, #4, #1, s4, A2
+        \\x02.mac s2, #5, #1, s0, A2
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 4, .value = 0x7EFD } },
+            .{ .s_reg = .{ .index = 2, .value = 0xFD30 } },
+        },
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},

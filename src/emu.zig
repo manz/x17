@@ -63,6 +63,8 @@ pub const State = struct {
     pc: usize = 0,
     /// The value the last X read left (fact 241).
     xd: u32 = 0,
+    /// xd as it stood before the running bundle: the multiply's X (fact 161).
+    xd_pre: u32 = 0,
     /// The Y read latch yagu loads (fact 100, 105, 110).
     yd: u32 = 0,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
@@ -104,6 +106,7 @@ pub const RunError = error{
 pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len == 0) return;
     const head = bundle[0];
+    state.xd_pre = state.xd;
 
     // Low5 0x10 bundles share value/mask across bcc/ystm/agu10r; isa.classify
     // returns the first match.  Discriminate by the S class before falling
@@ -411,7 +414,16 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         prod >> 24
     else
         (prod + (1 << 22)) >> 23;
-    const v: u32 = @truncate(@as(u64, @bitCast(scaled)) & M24);
+    // Modes (fact 161): X = xd before the bundle, at the [15:0] slice;
+    // 1 = a + X, 5 = P + X, 7 = X - P, otherwise P.
+    const xv: i64 = @intCast((state.xd_pre << 8) & 0xFFFF);
+    const r: i64 = switch ((w1 >> 11) & 7) {
+        1 => @as(i64, sx24(state.s[a_s])) + xv,
+        5 => scaled + xv,
+        7 => xv - scaled,
+        else => scaled,
+    };
+    const v: u32 = @truncate(@as(u64, @bitCast(r)) & M24);
     if (dest_s != 0) state.s[dest_s] = v;
     // x02.plo: w4[10:7] carries a second dest that gets (2P)[15:0].
     const w4 = bundle[4];
