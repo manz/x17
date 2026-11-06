@@ -2494,15 +2494,7 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 
     // S2 class 101: S2[1] stores Y:[e<S1[16:15]>] <- reg<S1[28:24]> (fact
     // 22, 32, 47; [16:15] = 10 hits the drifting pointer a2).
-    if (s2_class == 0b101) {
-        if (s2 & 2 != 0) {
-            const k: u32 = (s1 >> 24) & 0x1F;
-            if (k < 16) return RunError.UnknownForm;
-            const v: u32 = if (k == 16) 0 else state.s[k - 16] & 0xFFFF;
-            state.y_mem.put(gpa, state.e[(s1 >> 15) & 3], v) catch return RunError.OutOfMemory;
-        }
-        return;
-    }
+    if (s2_class == 0b101) return execX17Ms(gpa, state, bundle);
     if (s1_class == 0b011 and s2_class == 0b111) return execX17Imm(gpa, state, bundle);
     if (s2_class == 0b111) return execX17Alu(gpa, state, bundle);
     if (s1_class == 0b001 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
@@ -2518,6 +2510,51 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class == 0b100 and s2_class == 0b110) return execX17Xpm(gpa, state, bundle);
     if (s1_class == 0b010 and s2_class == 0b110 and ((bundle[0] >> 27) & 1) == 0) return execX17XldA10(gpa, state, bundle);
     return RunError.UnknownForm;
+}
+
+/// S2 class 101.  S1[22:20] = 011 is the stop, with its S2[1] store.  Otherwise four slots, reads before writes (fact
+/// 410-413, own-x17st/-r/-e/-y).  Y:[e<S1[18:15]>] <- s<S1[27:24]>; R<S2[8:5]> and
+/// e<{S2[0], S1[31:29]}> <- #h[20:5]; with S1[28], s<h[24:21]> <- mux S2[3:1] of the Y word at
+/// e<S1[18:15]>: 0 gives 0, 2 the word, 6 its low byte << 8.  S1[19], S1[21], S1[22] wedge;
+/// S1[28] = 0 with a load, muxes 1/3/4/5 and a Y word of 0x8000 and up are OPEN.
+fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    if ((s1 >> 20) & 7 == 0b011) {
+        // The stop (halt row): S2[1] stores Y:[e<S1[16:15]>] <- reg<S1[28:24]> (fact
+        // 22, 32, 47); the stop itself is the runner's.
+        if (s2 & 2 != 0) {
+            const k: u32 = (s1 >> 24) & 0x1F;
+            if (k < 16) return RunError.UnknownForm;
+            const v: u32 = if (k == 16) 0 else state.s[k - 16] & 0xFFFF;
+            state.y_mem.put(gpa, state.e[(s1 >> 15) & 3], v) catch return RunError.OutOfMemory;
+        }
+        return;
+    }
+    if ((s1 >> 19) & 1 == 1 or (s1 >> 21) & 3 != 0) return RunError.UnknownForm;
+    const y_addr: u32 = state.e[(s1 >> 15) & 0xF];
+    const yv: u32 = (state.getY(y_addr) orelse 0) & 0xFFFF;
+    const imm: u32 = (h >> 5) & 0xFFFF;
+    const ld_dest: u32 = (h >> 21) & 0xF;
+    var ld_val: u32 = 0;
+    if (ld_dest != 0) {
+        if ((s1 >> 28) & 1 == 0) return RunError.UnknownForm;
+        ld_val = switch ((s2 >> 1) & 7) {
+            0 => 0,
+            2 => if (yv & 0x8000 != 0) return RunError.UnknownForm else yv,
+            6 => (yv & 0xFF) << 8,
+            else => return RunError.UnknownForm,
+        };
+    }
+    const st_src: u32 = (s1 >> 24) & 0xF;
+    const st_val: u32 = state.s[st_src] & 0xFFFF;
+    if (st_src != 0) state.y_mem.put(gpa, y_addr, st_val) catch return RunError.OutOfMemory;
+    const r_dest: u32 = (s2 >> 5) & 0xF;
+    if (r_dest != 0) state.r[r_dest] = imm;
+    const e_dest: u32 = ((s2 & 1) << 3) | (s1 >> 29);
+    if (e_dest != 0) state.e[e_dest] = imm;
+    if (ld_dest != 0) state.s[ld_dest] = ld_val;
 }
 
 /// (S1 class != 0, S2 class 011) (fact 275): the x17ld bundle becomes

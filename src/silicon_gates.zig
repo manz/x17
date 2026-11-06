@@ -1232,6 +1232,52 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x17st",
+        // Upstream, fact 410: 00000017 77018000 A0000042, Y:[e3] <- s7 (e3 read before
+        // the e slot's write of #0 to it).
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x720 },
+            .{ .bank = .s, .index = 7, .value = 0x4321 },
+        },
+        .src =
+        \\x17.ms s0, #0, s7, e3, #1, #3, #0, R2, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .y_mem = .{ .addr = 0x720, .value = 0x4321 } },
+            .{ .e_reg = .{ .index = 3, .value = 0 } },
+        },
+    },
+    .{
+        .name = "own-x17r",
+        // fact 411: 00024697 00000000 A00000A0, R5 <- #0x1234.
+        .src =
+        \\x17.ms s0, #0x1234, s0, e0, #0, #0, #0, R5, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 5, .value = 0x1234 } }},
+    },
+    .{
+        .name = "own-x17e",
+        // fact 412: 0000E217 20000000 A0000001, e9 <- #0x710.
+        .src =
+        \\x17.ms s0, #0x710, s0, e0, #0, #1, #1, R0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 9, .value = 0x710 } }},
+    },
+    .{
+        .name = "own-x17y",
+        // fact 413: 00400017 10028000 A0000004, s2 <- Y:[e5] (S1[28] = 1, mux 2).
+        .pre = &.{.{ .bank = .e, .index = 5, .value = 0x730 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x730, .value = 0x2468 }},
+        .src =
+        \\x17.ms s2, #0, s0, e5, #1, #0, #0, R0, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x2468 } }},
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},

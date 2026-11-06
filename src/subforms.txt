@@ -660,6 +660,10 @@ x17.end    3   0x00000017   0x11308001   0xA0000000
 # x17.eagu: S1/S2 class 100, s <- AGU10 (fact 273 / own-x17eagu).
 x17.eagu   3   0x00027937   0x00060000   0x80000E0A
 
+# x17.ms: S2 class 101, four slots (fact 410-413): Y store, R and e immediates,
+# Y load through a mux (S1[28] enables it).
+x17.ms     3   0x00000017   0x00000000   0xA0000000
+
 # x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275).
 x17.sty    3   0x00000017   0x00000109   0x60003800
 
