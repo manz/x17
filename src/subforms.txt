@@ -722,3 +722,9 @@ par        1   0x0030020A
 
 # mul13: low5 0x13 S class 101 with S[19] (fact 128).
 mul13      2   0x00000013   0xA0280000
+
+# st.wr: st with a wr second, Y:[e<[20:17]>] <- reg[25:21] (fact 47, 59).
+st.wr      2   0x2000000F   0x20018000
+
+# alu.m: the class-05 ALU word with its m and # modifiers (fact 67).
+alu.m      1   0x40000005

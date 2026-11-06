@@ -148,6 +148,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (high3 == 0b001 and (head >> 19) & 1 == 1) return execPlog(gpa, state, head);
         if (high3 == 0b100) return execAset0b(state, head);
     }
+    // The class-05 ALU word with its [25:19] modifiers (fact 65-67).
+    if (low5 == 0x05 and (head >> 30) == 1) return execAlu(gpa, state, head);
     // ptst at class 011: head[29] is the dest's bit 3 (fact 219).
     if (low5 == 0x0D and (head >> 29) == 0b011) return execPtst(gpa, state, head);
     // lde with [31] = 1 (fact 280): same fields as class 01x.
@@ -316,7 +318,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         return execPlog(gpa, state, head);
     }
     if (std.mem.eql(u8, f.name, "st.y")) {
-        return execStY(gpa, state, head);
+        return execStY(gpa, state, bundle);
     }
     if (std.mem.eql(u8, f.name, "alu")) {
         return execAlu(gpa, state, head);
@@ -2319,10 +2321,27 @@ fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     state.y_mem.put(gpa, new_e, v) catch return RunError.OutOfMemory;
 }
 
-fn execStY(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+/// st (fact 21, 47, 65, 75): Y:[head[20:5]] <- the lane's V; a second
+/// syllable with [16:15] = 11 is a wr, Y:[e<[20:17]>] <- reg[25:21] (16 reads 0),
+/// its address read before st's own e1 <- [20:5].
+fn execStY(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const head = bundle[0];
     const addr: u32 = (head >> 5) & 0xFFFF;
     const value: u32 = state.v[state.cur_lane & 0x3];
     state.y_mem.put(gpa, addr, value) catch return RunError.OutOfMemory;
+    if (bundle.len >= 2 and bundle[1] != 0) {
+        const w = bundle[1];
+        if (w & 0xE0018000 != 0x20018000) {
+            if (!(w >> 29 == 1 and (w >> 15) & 3 == 0)) return RunError.UnknownForm;
+        } else {
+            const src: u32 = (w >> 21) & 0x1F;
+            if (src < 16) return RunError.UnknownForm;
+            const v: u32 = if (src == 16) 0 else state.s[src - 16] & 0xFFFF;
+            state.y_mem.put(gpa, state.e[(w >> 17) & 0xF], v) catch return RunError.OutOfMemory;
+        }
+    }
+    state.e[1] = addr;
+    state.e[0] = addr;
 }
 
 /// Classify an x17 bundle by its (S1 class, S2 class) field pair.
@@ -2337,7 +2356,16 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const s1_class: u32 = (s1 >> 29) & 0x7;
     const s2_class: u32 = (s2 >> 29) & 0x7;
 
-    if (s2_class == 0b101) return; // halt: no state change
+    // S2 class 101: S2[1] stores Y:[e1] <- reg<S1[28:24]> (fact 32, 47).
+    if (s2_class == 0b101) {
+        if (s2 & 2 != 0) {
+            const k: u32 = (s1 >> 24) & 0x1F;
+            if (k < 16) return RunError.UnknownForm;
+            const v: u32 = if (k == 16) 0 else state.s[k - 16] & 0xFFFF;
+            state.y_mem.put(gpa, state.e[1], v) catch return RunError.OutOfMemory;
+        }
+        return;
+    }
     if (s1_class == 0b011 and s2_class == 0b111) return execX17Imm(gpa, state, bundle);
     if (s2_class == 0b111) return execX17Alu(gpa, state, bundle);
     if (s1_class == 0b001 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
@@ -2763,18 +2791,16 @@ fn sx24FromU32(v: u32) i64 {
 
 fn execAlu(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     _ = gpa;
-    // dest s[18:15], a s[14:11], b s[29:26], op [10:5]; [25:19] = 0 reserved.
+    // dest s[18:15], a s[14:11], b s[29:26], op [10:5], m [25:23], # [22:19].
     const dest: u32 = (head >> 15) & 0xF;
     const a_f: u32 = (head >> 11) & 0xF;
     const b_f: u32 = (head >> 26) & 0xF;
-    const code: u32 = (head >> 5) & 0x3F;
 
     // fact 70: source 0 reads zero.
     const a_val: u32 = if (a_f == 0) 0 else state.s[a_f];
     const b_val: u32 = if (b_f == 0) 0 else state.s[b_f];
 
-    const op = ALU05[code];
-    const result = alu05Eval(op, sx24(a_val), sx24(b_val));
+    const result = (try aluWord(head, sx24(a_val), sx24(b_val))) orelse return RunError.UnknownForm;
     state.s[dest] = result;
 }
 
@@ -2932,6 +2958,7 @@ fn execX17Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) RunError!usize {
     var i: usize = 0;
     var bundles_run: usize = 0;
+    var shadow: ?u8 = null;
     const MAX_BUNDLES: usize = 256;
     while (i < syllables.len) : (bundles_run += 1) {
         if (bundles_run >= MAX_BUNDLES) return RunError.RunawayProgram;
@@ -2943,7 +2970,17 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
         state.pc = i;
         try executeBundle(gpa, state, slice);
         i += len;
-        if (isHaltBundle(slice)) return bundles_run + 1;
+        // The stop has a shadow (fact 72): an ldi and a st + wr after it
+        // still run and the next pair does not; two bundles, exact count OPEN.
+        if (shadow) |*n| {
+            if (n.* == 0) return bundles_run + 1;
+            n.* -= 1;
+            continue;
+        }
+        if (isHaltBundle(slice)) {
+            shadow = 1;
+            continue;
+        }
         // Resolve a pending jmp/br/bcc issued by this bundle.  Target is
         // syllable offset relative to the jump bundle's own start.  TWO
         // delay-slot bundles run before the jump fires (fact 94).
@@ -3228,6 +3265,8 @@ fn execLdi(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     }
     const s_idx: u32 = dest_k - 16;
     state.s[s_idx] = imm;
+    // e0 = the last instruction's [20:5] (fact 65).
+    state.e[0] = imm;
 }
 
 // ---------------------------------------------------------------------------
@@ -3514,21 +3553,27 @@ test "runLinear: x17.alu then halt reproduces shl math" {
     try testing.expectEqual(@as(u32, 0x1238), state.s[1]);
 }
 
-test "runLinear halts even if syllables follow the halt" {
-    // A halt bundle mid-stream stops the run; trailing syllables are
-    // untouched.  Mirrors silicon: execution ends at the stop.
+test "runLinear runs the stop's two-bundle shadow, then halts" {
+    // fact 72: an ldi and a st + wr after the stop land, the next
+    // pair does not.
     var state = State{};
     defer state.deinit(testing.allocator);
 
     const b_halt = try asm_mod.assembleOne("x17.halt");
-    const b_ldi = try asm_mod.assembleOne("ldi s0, #0xDEAD");
+    const b1 = try asm_mod.assembleOne("ldi s1, #0x111");
+    const b2 = try asm_mod.assembleOne("ldi s2, #0x222");
+    const b3 = try asm_mod.assembleOne("ldi s3, #0x333");
 
-    var buf: [8]u32 = undefined;
-    @memcpy(buf[0..b_halt.len], b_halt.slice());
-    @memcpy(buf[b_halt.len .. b_halt.len + b_ldi.len], b_ldi.slice());
-
-    _ = try runLinear(testing.allocator, &state, buf[0 .. b_halt.len + b_ldi.len]);
-    try testing.expectEqual(@as(u32, 0), state.s[0]); // ldi after halt never ran
+    var buf: [16]u32 = undefined;
+    var n: usize = 0;
+    for ([_]@TypeOf(b_halt){ b_halt, b1, b2, b3 }) |b| {
+        @memcpy(buf[n .. n + b.len], b.slice());
+        n += b.len;
+    }
+    _ = try runLinear(testing.allocator, &state, buf[0..n]);
+    try testing.expectEqual(@as(u32, 0x111), state.s[1]);
+    try testing.expectEqual(@as(u32, 0x222), state.s[2]);
+    try testing.expectEqual(@as(u32, 0), state.s[3]);
 }
 
 test "own-st3 reproduces silicon Y writes at lane 2" {

@@ -1160,3 +1160,16 @@ mul13	dest_s	s	11	14	s1
 mul13	a_s	s	3	6	s1
 mul13	b_lo	imm	0	2	s1
 mul13	b_hi	imm	31	31	head
+
+# st.wr #<addr>, <wr_e>, <wr_src>
+st.wr	addr	imm	5	20	head
+st.wr	wr_e	e	17	20	s1
+st.wr	wr_src	dest_ldi	21	25	s1
+
+# alu.m <dest>, <a>, <b>, #<op>, #<m>, #<n>
+alu.m	dest	s	15	18	head
+alu.m	a	s	11	14	head
+alu.m	b	s	26	29	head
+alu.m	op	imm	5	10	head
+alu.m	m	imm	23	25	head
+alu.m	n	imm	19	22	head

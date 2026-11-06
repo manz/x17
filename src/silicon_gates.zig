@@ -27,6 +27,7 @@ const PostCheck = union(enum) {
     y_mem: struct { addr: u32, value: u32 },
     x_mem: struct { addr: u32, value: u32 },
     p_reg: struct { index: u8, value: u8 },
+    y_none: u32,
 };
 
 const Gate = struct {
@@ -1784,11 +1785,13 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17ctl",
-        // S1[22:20] = 000 continues; the S1 class 000 tail halts before s6.
+        // S1[22:20] = 000 continues; the S1 class 000 tail halts, its 2-bundle shadow runs, s6 does not.
         .src =
         \\x17.cont
         \\x17.imm s5, #0x555
         \\x17.end
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
         \\x17.imm s6, #0x666
         \\x17.halt
         ,
@@ -2533,6 +2536,57 @@ const GATES = [_]Gate{
         .post = &.{
             .{ .s_reg = .{ .index = 5, .value = 0x3C } },
             .{ .s_reg = .{ .index = 3, .value = 0x54 } },
+        },
+    },
+    .{
+        .name = "own-alu-addi",
+        // addi m1: s3 <- s2 - 5 = 0x27C; ldi pins e0 = 0x700; wr Y:[e0] <- s3.
+        .src =
+        \\ldi s1, #0xAF
+        \\ldi s2, #0x281
+        \\alu.m s3, s1, s2, #9, #1, #5
+        \\ldi s14, #0x700
+        \\st.wr #0x40, e0, s3
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0x27C } }},
+    },
+    .{
+        .name = "own-entry",
+        // lde e13 <- 0x70D; wr Y:[e13] <- s5 = 0x555.
+        .src =
+        \\lde e13, #0x70D
+        \\ldi s5, #0x555
+        \\st.wr #0x40, e13, s5
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x70D, .value = 0x555 } }},
+    },
+    .{
+        .name = "own-wr",
+        // ldi s5 = 0x50 sets e0; wr Y:[e0] <- s5 reads e0 before st's own update.
+        .src =
+        \\ldi s5, #0x50
+        \\st.wr #0x40, e0, s5
+        \\ldi s1, #0x123
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x50, .value = 0x50 } }},
+    },
+    .{
+        .name = "own-stop-shadow",
+        // the first marker after the stop lands (Y:0x600), the second does not.
+        .src =
+        \\ldi s5, #0x5A5
+        \\x17.halt
+        \\ldi s6, #0x600
+        \\st.wr #0x40, e0, s5
+        \\ldi s6, #0x601
+        \\st.wr #0x40, e0, s5
+        ,
+        .post = &.{
+            .{ .y_mem = .{ .addr = 0x600, .value = 0x5A5 } },
+            .{ .y_none = 0x601 },
         },
     },
     .{
@@ -3499,7 +3553,10 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
     };
     defer gpa.free(words);
 
-    _ = try emu.runLinear(gpa, &state, words);
+    _ = emu.runLinear(gpa, &state, words) catch |e| {
+        std.debug.print("gate '{s}': emulator error {s}\n", .{ g.name, @errorName(e) });
+        return e;
+    };
 
     for (g.post) |check| switch (check) {
         .s_reg => |sr| {
@@ -3533,6 +3590,12 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
             };
             if (got != ym.value) {
                 std.debug.print("gate '{s}': Y:0x{x} = 0x{x}, expected 0x{x}\n", .{ g.name, ym.addr, got, ym.value });
+                return error.GateFailed;
+            }
+        },
+        .y_none => |addr| {
+            if (state.getY(addr)) |got| {
+                std.debug.print("gate '{s}': Y:0x{x} = 0x{x}, expected no write\n", .{ g.name, addr, got });
                 return error.GateFailed;
             }
         },
