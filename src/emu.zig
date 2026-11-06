@@ -189,6 +189,14 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return execX03Mpy(gpa, state, bundle);
         }
     }
+    if (low5 == 0x01 and bundle.len >= 7) {
+        // own-x01st (fact 243): the only modelled effect is the
+        // scalar copy s3 <- e<w4[8:5]>.  X and Y stores are skipped.
+        const w4 = bundle[4];
+        const src_e: u32 = (w4 >> 5) & 0xF;
+        state.s[3] = if (src_e == 0) 0 else state.e[src_e];
+        return;
+    }
     if (low5 == 0x04 and bundle.len >= 6) {
         const head_class: u32 = (head >> 29) & 0x7;
         if (head_class == 0) return execX04Agu(gpa, state, bundle);

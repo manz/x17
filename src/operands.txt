@@ -386,6 +386,10 @@ x02.x3	b_s	s	26	29	s4
 x02.x3	op	imm	6	8	s5
 x02.x3	shift	imm	2	5	s5
 
+# x01.st (7 syllables): only the s3 <- e<src_e> copy is grammar-exposed.
+# Grammar: x01.st <src_e>
+x01.st	src_e	e	5	8	s4
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4

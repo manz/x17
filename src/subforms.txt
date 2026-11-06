@@ -234,6 +234,10 @@ x03.mpy    6   0x00000003   0x0000A0C0   0x01400400   0x00003403   0x08000000   
 # fact 182 / own-x02x3.
 x02.x3     6   0x00000002   0x0000A000   0x00020442   0x00000001   0x00042800   0x00004200
 
+# x01.st: 7-syllable low5 0x01 with stores; this model only commits to
+# the scalar copy s3 <- e<w4[8:5]> (fact 243 / own-x01st).
+x01.st     7   0x00000001   0x00000108   0x000C1C00   0x00000000   0x000120A0   0x01003600   0x00003004
+
 # x02.xrd: 6-syllable VLIW at low5 0x02 w4 mode 5.  X-memory read into s
 # (fact 155 / own-x02xrd):
 #   s<w4[6:3]> <- X:[A<w4[21:17]>]
