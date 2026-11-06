@@ -225,6 +225,10 @@ x02.esrc   6   0x00000002   0x0000A000   0x00020442   0x00000001   0x00041000   
 # s<w4[6:3]> <- A<w3[4:0]> + 1 (fact 190 / own-x02asrc).
 x02.asrc   6   0x00000002   0x0000A000   0x00020442   0x00000000   0x00041000   0x10004200
 
+# x03.mpy: 6-syllable low5 0x03 with 0x02-style mpy in w2 slot.
+# fact 165 / own-x03mpy.  s<w2[12:9]> <- (s_a*s_b+2^22) >> 23.
+x03.mpy    6   0x00000003   0x0000A0C0   0x01400400   0x00003403   0x08000000   0x01D00100
+
 # x02.xrd: 6-syllable VLIW at low5 0x02 w4 mode 5.  X-memory read into s
 # (fact 155 / own-x02xrd):
 #   s<w4[6:3]> <- X:[A<w4[21:17]>]

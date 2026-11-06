@@ -181,7 +181,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             try execX03Xrd(gpa, state, bundle);
             return execX03Agu(gpa, state, bundle);
         }
-        if (w4_mode == 0) return execX03Alu(gpa, state, bundle);
+        if (w4_mode == 0) {
+            try execX03Alu(gpa, state, bundle);
+            return execX03Mpy(gpa, state, bundle);
+        }
     }
     if (low5 == 0x04 and bundle.len >= 6) {
         const head_class: u32 = (head >> 29) & 0x7;
@@ -319,6 +322,26 @@ fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         else => return,
     };
     state.s[dest_s] = v;
+}
+
+fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 6) return RunError.UnknownForm;
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const dest_s: u32 = (w2 >> 9) & 0xF;
+    const a_s: u32 = (w2 >> 1) & 0xF;
+    const b_s: u32 = (w2 >> 5) & 0xF;
+    const mode: u32 = (w1 >> 11) & 0x7;
+    if (dest_s == 0) return;
+    const av: u32 = if (a_s == 0) 0 else state.s[a_s] & 0xFFFF;
+    const bv: u32 = if (b_s == 0) 0 else state.s[b_s] & 0xFFFF;
+    const prod: u32 = av *% bv;
+    const v: u32 = switch (mode) {
+        4 => (prod + (1 << 22)) >> 23, // rounded P
+        else => return,
+    };
+    state.s[dest_s] = v & M24;
 }
 
 fn execX03Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
