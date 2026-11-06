@@ -1,0 +1,53 @@
+; MSB-first bit reader over a packet staged in Y as 16-bit words (x17's host model).
+; The x17 twin of sosumi's ref/dsp/bits.zig, streaming instead of random access:
+;
+;   e5   address of the next packet word
+;   s9   cache: the `avail` unread bits, right-aligned (below 2^23)
+;   s10  avail
+;   s14  1, s15 16 (constants)
+;   s6, s11, s12, s13 scratch; s0 stays 0
+;
+; getbits(dst, k), k in 1..8: refill 16 bits when avail < k (avail <= 7 then, so the cache
+; stays below 2^23), then dst = floor(cache / 2^sh), sh = avail - k. The floor comes from the
+; rounded right shift (0x19 op 23, negative count): floor(c / 2^sh) = rshr(c - h, sh) with
+; h = rshr(2^sh - 1, 1), which is 0 at sh = 0. Every form used is gated on silicon.
+
+.const OP_ADD  = 14
+.const OP_SUB  = 0x10
+.const SHIFT   = 23
+.const AGU_INC = 2
+.const NEG     = 1              ; ptst condition: negative
+.const PTST    = 0x0B
+.const IF_NOT  = 2              ; jmp mode: taken when the predicate is clear
+
+.macro bits_init(base) {
+        ldi s13, #base - 1
+        x17.mve e5, s13         ; e5 = base
+        ldi s9, #0
+        ldi s10, #0
+        ldi s14, #1
+        ldi s15, #16
+}
+
+.macro getbits(dst, k) {
+        ldi s11, #k
+        alu s12, s10, s11, #OP_SUB ; avail - k
+        ptst p1, s12, #NEG, #PTST ; p1 = avail < k
+        jmp #IF_NOT, #1, have
+        ldy s13, e5             ; delay slot: next word, harmless if unused
+        alu s6, s0, s14, #OP_SUB ; delay slot: s6 = -1
+        x19.alu s9, s9, s15, #SHIFT ; refill: cache << 16
+        alu s9, s9, s13, #OP_ADD ;         + word
+        x18.eagu e5, e5, #AGU_INC ;         next word
+        alu s10, s10, s15, #OP_ADD ;         avail += 16
+have:   alu s12, s10, s11, #OP_SUB ; sh = avail - k
+        x19.alu s13, s14, s12, #SHIFT ; 2^sh
+        alu s13, s13, s14, #OP_SUB ; 2^sh - 1
+        x19.alu s13, s13, s6, #SHIFT ; h = rshr(2^sh - 1, 1)
+        alu s13, s9, s13, #OP_SUB ; c - h
+        alu s6, s0, s12, #OP_SUB ; -sh
+        x19.alu dst, s13, s6, #SHIFT ; dst = rshr(c - h, sh) = floor(c / 2^sh)
+        x19.alu s13, dst, s12, #SHIFT ; dst << sh
+        alu s9, s9, s13, #OP_SUB ; cache keeps the low sh bits
+        alu s10, s10, s11, #OP_SUB ; avail -= k
+}

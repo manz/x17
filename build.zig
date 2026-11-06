@@ -109,6 +109,16 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(emu_t).step);
     const gates_t = b.addTest(.{ .root_module = gates_mod });
     test_step.dependOn(&b.addRunArtifact(gates_t).step);
+    const lib_mod = b.createModule(.{
+        .root_source_file = b.path("src/lib_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    lib_mod.addImport("asm", asm_mod);
+    lib_mod.addImport("emu", emu_mod);
+    lib_mod.addAnonymousImport("bits.sm", .{ .root_source_file = b.path("examples/lib/bits.sm") });
+    const lib_t = b.addTest(.{ .root_module = lib_mod });
+    test_step.dependOn(&b.addRunArtifact(lib_t).step);
     const disasm_t = b.addTest(.{ .root_module = disasm_mod });
     test_step.dependOn(&b.addRunArtifact(disasm_t).step);
 }
