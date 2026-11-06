@@ -1037,6 +1037,23 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 2 } }},
     },
     .{
+        .name = "own-x02lo24",
+        // fact 399: 00000002 0002A000 00020442 00000001 00042A80 00004200; w1[17] = 1
+        // leaves the second dest undoubled: s5 = P[15:0] = 0x369F (0x1235 * 3).
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x1235 },
+            .{ .bank = .s, .index = 2, .value = 3 },
+        },
+        .src =
+        \\x02.v s0, A2, A1, A0, A1, s2, s1, s2, s5, #5, #0, #0, s0, s0, #0, #0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 0x369F } },
+            .{ .s_reg = .{ .index = 2, .value = 0 } },
+        },
+    },
+    .{
         .name = "own-pcond",
         // fact 378: 802A7EAC, p1 <- R5 >= A7 (c29), R5 = 0x123, A7 = 0x123.
         .pre = &.{
