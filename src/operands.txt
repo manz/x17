@@ -374,6 +374,7 @@ x02.asrc	src_A	A	0	4	s3
 x03.mpy	dest_s	s	9	12	s2
 x03.mpy	a_s	s	1	4	s2
 x03.mpy	b_s	s	5	8	s2
+x03.mpy	plo_s	s	7	10	s4
 
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>

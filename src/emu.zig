@@ -329,19 +329,24 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (bundle.len < 6) return RunError.UnknownForm;
     const w1 = bundle[1];
     const w2 = bundle[2];
+    const w4 = bundle[4];
     const dest_s: u32 = (w2 >> 9) & 0xF;
     const a_s: u32 = (w2 >> 1) & 0xF;
     const b_s: u32 = (w2 >> 5) & 0xF;
     const mode: u32 = (w1 >> 11) & 0x7;
-    if (dest_s == 0) return;
     const av: u32 = if (a_s == 0) 0 else state.s[a_s] & 0xFFFF;
     const bv: u32 = if (b_s == 0) 0 else state.s[b_s] & 0xFFFF;
     const prod: u32 = av *% bv;
-    const v: u32 = switch (mode) {
-        4 => (prod + (1 << 22)) >> 23, // rounded P
-        else => return,
-    };
-    state.s[dest_s] = v & M24;
+    if (dest_s != 0) {
+        const v: u32 = switch (mode) {
+            4 => (prod + (1 << 22)) >> 23, // rounded P
+            else => return,
+        };
+        state.s[dest_s] = v & M24;
+    }
+    // x03.plo: w4[10:7] carries a second dest that gets (2P)[15:0].
+    const plo_dest: u32 = (w4 >> 7) & 0xF;
+    if (plo_dest != 0) state.s[plo_dest] = (prod *% 2) & 0xFFFF;
 }
 
 fn execX03Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

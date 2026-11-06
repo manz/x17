@@ -872,10 +872,23 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 0x6000 },
         },
         .src =
-        \\x03.mpy s2, s1, s2
+        \\x03.mpy s2, s1, s2, s0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x30 } }},
+    },
+    .{
+        .name = "own-x03plo",
+        // Pre s1=0x123, s2=0x45; prod=0x4E6F, 2P=0x9CDE low16 into s6.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x123 },
+            .{ .bank = .s, .index = 2, .value = 0x45 },
+        },
+        .src =
+        \\x03.mpy s0, s1, s2, s6
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 6, .value = 0x9CDE } }},
     },
     .{
         .name = "own-x02asrc",
