@@ -903,7 +903,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 3, .value = 0x333 },
         },
         .src =
-        \\x02.x3 #1, #2, s2, s3, #5, #2, s2
+        \\x02.x3 #1, #2, s2, s3, #5, #2, s2, #1
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 6, .value = 0xFFFBBC } }},
@@ -918,10 +918,37 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 3, .value = 0x333 },
         },
         .src =
-        \\x02.x3 #1, #2, s2, s3, #0, #0, s6
+        \\x02.x3 #1, #2, s2, s3, #0, #0, s6, #1
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 6, .value = 0x6333 } }},
+    },
+    .{
+        .name = "own-x02u24",
+        // ldi sign-extends: s1 = 0xFFC321, s2 = 0xFF9877.  w1[17:15] = 110:
+        // a signed, b unsigned 24-bit, floor(P / 2^24) = 0xFFC339.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xFFC321 },
+            .{ .bank = .s, .index = 2, .value = 0xFF9877 },
+        },
+        .src =
+        \\x02.x3 #0, #0, s2, s3, #5, #2, s6, #6
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 6, .value = 0xFFC339 } }},
+    },
+    .{
+        .name = "own-x02uu24",
+        // w1[17:15] = 100: both unsigned 24-bit: floor(P / 2^24) = 0xFF5BB0.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xFFC321 },
+            .{ .bank = .s, .index = 2, .value = 0xFF9877 },
+        },
+        .src =
+        \\x02.x3 #0, #0, s2, s3, #5, #2, s6, #4
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 6, .value = 0xFF5BB0 } }},
     },
     .{
         .name = "own-x03mpy",

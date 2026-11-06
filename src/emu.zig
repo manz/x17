@@ -308,21 +308,35 @@ fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
 fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     if (bundle.len < 6) return RunError.UnknownForm;
+    const w1 = bundle[1];
     const w2 = bundle[2];
-    // mode w1[13:11] = 4 (P): round(s<w2[4:1]> * s<w2[8:5]> / 2^23)
+    // mode w1[13:11] = 4 (P).  Operand signedness (fact 185):
+    // a is signed when w1[15] != w1[16]; b is signed when w1[15] = 1.
+    // w1[17] = 1: floor(P / 2^24); else round(P / 2^23).
     const a_s: u32 = (w2 >> 1) & 0xF;
     const b_s: u32 = (w2 >> 5) & 0xF;
     const dest_s: u32 = (w2 >> 9) & 0xF;
-    const av: u64 = state.s[a_s] & M24;
-    const bv: u64 = state.s[b_s] & M24;
-    const prod: u64 = av * bv;
-    // Round: add 2^22, then shift.
-    const v: u32 = @truncate(((prod + (1 << 22)) >> 23) & M24);
+    const b15: u32 = (w1 >> 15) & 1;
+    const b16: u32 = (w1 >> 16) & 1;
+    const av: i64 = mpyOperand(state.s[a_s], b15 != b16);
+    const bv: i64 = mpyOperand(state.s[b_s], b15 == 1);
+    const prod: i64 = av * bv;
+    const scaled: i64 = if ((w1 >> 17) & 1 == 1)
+        prod >> 24
+    else
+        (prod + (1 << 22)) >> 23;
+    const v: u32 = @truncate(@as(u64, @bitCast(scaled)) & M24);
     if (dest_s != 0) state.s[dest_s] = v;
     // x02.plo: w4[10:7] carries a second dest that gets (2P)[15:0].
     const w4 = bundle[4];
     const plo_dest: u32 = (w4 >> 7) & 0xF;
-    if (plo_dest != 0) state.s[plo_dest] = @truncate((prod * 2) & 0xFFFF);
+    if (plo_dest != 0) state.s[plo_dest] = @truncate(@as(u64, @bitCast(prod *% 2)) & 0xFFFF);
+}
+
+fn mpyOperand(raw: u32, signed: bool) i64 {
+    const v: u32 = raw & M24;
+    if (signed and (v & 0x800000) != 0) return @as(i64, v) - 0x1000000;
+    return @as(i64, v);
 }
 
 fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
