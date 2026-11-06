@@ -326,6 +326,10 @@ test "unpredict matches the reference: samples and adapted coefficients" {
         \\.include "lib/rice.sm"
         \\.include "lib/predictor.sm"
         \\        bits_init(0x4000)
+        \\        ldi s9, #0x5A5A
+        \\        ldi s6, #6
+        \\        x19.alu s9, s9, s6, #SHIFT
+        \\        ldi s10, #13
         \\        pred_slots(0x3100)
         \\        unpredict()
         \\        x17.halt
@@ -369,6 +373,9 @@ test "unpredict matches the reference: samples and adapted coefficients" {
         state.a[10] = c_base;
         _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 26);
         try testing.expect(state.halted);
+        // the bit reader survives (set after bits_init): unpredict parks it past the coefficients
+        try testing.expectEqual(@as(u32, 0x5A5A << 6), state.s[9]);
+        try testing.expectEqual(@as(u32, 13), state.s[10]);
 
         for (want[0..n], 0..) |w, i| {
             const got = state.x_mem.get(out_base + @as(u32, @intCast(i))) orelse return error.Missing;

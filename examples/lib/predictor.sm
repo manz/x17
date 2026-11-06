@@ -17,7 +17,9 @@
 ;   e14 Y:base+3  chan_bits (8..23, with den_shift + chan_bits <= 32, chan_bits <= 18 + den_shift)
 ;   e15 Y:base+4  scratch: samples left
 ;
-; Keeps the bit reader (e5, s9, s10) and s14, s15. Uses every other s register.
+; Keeps the bit reader (e5, s9, s10) and s14, s15. Uses every other s register; unpredict
+; parks s9 and s10 at X:[A10 + 32], +33 (past the 31 coefficients; Y is 16 bits, the cache
+; is not) to hold the tap loop's constants there, through A5.
 ; Shifts by a runtime count wrap by doubling (alu add wraps; the 0x19 shift saturates).
 
 .macro pred_slots(base) {
@@ -108,6 +110,13 @@ done:
 }
 
 .macro unpredict() {
+        x03.agu A5, A10, #32, #0, A0 ; park the bit reader
+        stx A5, s9
+        x02.ainc #5, #5
+        stx A5, s10
+        ldi s9, #1 << 14        ; tap constants
+        ldi s10, #-15
+        ldi s11, #8
         ldy s7, e11
         alu s5, s7, s14, #OP_SUB
         ptst p1, s5, #NEG, #PTST ; n == 0
@@ -181,33 +190,30 @@ sample: ldy s7, e15
         alu s4, s0, s0, #OP_ADD ; sum hi
         alu s5, s0, s0, #OP_ADD ; sum lo
         ldy s8, e12
+        x19.xrd s3, #9          ; out[j - 1 - k], one ahead
+        x02.ainc #9, #9
         ; sum += coefs[k] * (out[j - 1 - k] - top), each product exact as hi * 2^15 + lo:
-        ; lo = (2cd)[15:0] / 2, hi = round((c << 8) * d / 2^23) - lo[14]
-tap:    alu s3, s8, s14, #OP_SUB
-        ptst p1, s3, #NEG, #PTST
-        jmp #3, #1, sum
-        nop()
-        nop()
-        x19.xrd s3, #9
-        x02.ainc #9, #9         ; (overwrites s2)
-        x19.xrd s1, #11         ; c
-        x02.ainc #11, #11
+        ; plo = (2cd)[15:0] = 2 lo, hi = round((c << 8) * d / 2^23) - lo[14]. order >= 1 here,
+        ; so the count is tested at the bottom and the delay slots fetch the next term.
+tap:    x19.xrd s1, #11         ; c
+        x02.ainc #11, #11       ; (overwrites s2)
         alu s2, s3, s7, #OP_SUB ; d
-        x02.x3 #0, #0, s0, s0, #5, #0, s0, #1, s6 ; s6 = (2cd)[15:0]
-        ldi s12, #8
-        x19.alu s12, s1, s12, #SHIFT ; c << 8
-        x02.mpy s13, s12, s2    ; round((c << 8) * d / 2^23)
-        alu s3, s0, s14, #OP_SUB
-        x19.alu s6, s6, s3, #SHIFT ; lo (exact: even)
-        alu s5, s5, s6, #OP_ADD
-        alu s12, s6, s0, #OP_ADD
-        floorshr(s3, s12, 14)   ; lo[14]
-        alu s13, s13, s3, #OP_SUB
+        x02.x3 #0, #0, s0, s0, #5, #0, s0, #1, s12 ; s12 = plo
+        x19.alu s13, s1, s11, #SHIFT ; c << 8
+        x02.mpy s13, s13, s2    ; round((c << 8) * d / 2^23)
+        alu s5, s5, s12, #OP_ADD ; 2 lo summed (< 31 * 2^16)
+        alu s12, s12, s9, #OP_SUB
+        x19.alu s12, s12, s10, #SHIFT ; lo[14] = floor(plo / 2^15)
+        alu s13, s13, s12, #OP_SUB
         alu s4, s4, s13, #OP_ADD
         alu s8, s8, s14, #OP_SUB
-        jmp #IF_NOT, #2, tap
-        nop()
-        nop()
+        alu s6, s8, s14, #OP_SUB
+        ptst p1, s6, #NEG, #PTST ; last term done
+        jmp #IF_NOT, #1, tap
+        x19.xrd s3, #9          ; (delay slot) next term
+        x02.ainc #9, #9         ; (delay slot)
+        alu s3, s0, s14, #OP_SUB
+        x19.alu s5, s5, s3, #SHIFT ; lo (exact: even)
         ; normalise: lo < 31 * 2^15, carry it into hi
 sum:    floorshr(s3, s5, 15)
         alu s4, s4, s3, #OP_ADD
@@ -342,5 +348,8 @@ advance: x02.ainc #7, #7
         jmp #IF_NOT, #2, sample
         nop()
         nop()
-finish:
+finish: x03.agu A5, A10, #32, #0, A0 ; the bit reader back
+        x19.xrd s9, #5
+        x02.ainc #5, #5
+        x19.xrd s10, #5
 }

@@ -9,7 +9,7 @@
 ; X layout (24-bit words; addresses stay below 0x8000, ldi sign-extends its immediate):
 ;   PRED   residuals of the lane being decoded       MIX0, MIX1   the two lanes
 ;   X_LOW  low bytes, lane-interleaved               OUT          samples, channel-interleaved
-;   COEF0  coefficients, reversed, 0x40 per lane
+;   COEF0  coefficients, reversed, 0x40 per lane (unpredict parks the bit reader at +32)
 ;
 ; Y slots at PK, filled by the host: +0 frame length, +1 depth, +2 pb, +3 mb, +4 kb,
 ; +5 channels (<= 2 with this OUT). Written: +6 samples per channel, +7 status (0 ok,
