@@ -128,15 +128,6 @@ done:
         x17.mve e10, s5
 }
 
-; dst = pb * x, x in s-register `x` (0 <= x < 2^16). Uses s6.
-.macro mulpb(dst, x) {
-        ldy s6, e7
-        x19.alu s6, s6, s15, #SHIFT ; pb << 16
-        ldi dst, #7
-        x19.alu dst, x, dst, #SHIFT ; x << 7
-        x02.mpy dst, s6, dst
-}
-
 ; dst = floor(x / 2^n) for x >= -2^22, n in 1..15 (ldi sign-extends 2^15). Uses s6.
 .macro floorshr(dst, x, n) {
         ldi s6, #1 << (n - 1)
@@ -228,16 +219,22 @@ even:   stx A6, s8
         nop()
         ; mb += pb * nd - floor(pb * mb / 2^9), with
         ; floor(pb * mb / 2^9) = (pb * hi) << 6 + floor(pb * lo / 2^9)
-grow:   alu s5, s7, s14, #OP_SUB ; nd - 1 < 2^16 (nd reaches 2^16)
-        mulpb(s1, s5)
+grow:   ldy s6, e7
+        x19.alu s6, s6, s15, #SHIFT ; pb << 16
+        ldi s11, #7
+        alu s5, s7, s14, #OP_SUB ; nd - 1 < 2^16 (nd reaches 2^16)
+        x19.alu s5, s5, s11, #SHIFT
+        x02.mpy s1, s6, s5      ; pb * (nd - 1)
         ldy s5, e7
         alu s1, s1, s5, #OP_ADD ; pb * nd
-        ldy s2, e1
-        mulpb(s3, s2)
+        ldy s7, e1              ; hi
+        ldy s8, e2              ; lo
+        x19.alu s2, s7, s11, #SHIFT
+        x02.mpy s3, s6, s2
         ldi s5, #6
         x19.alu s3, s3, s5, #SHIFT ; (pb * hi) << 6
-        ldy s2, e2
-        mulpb(s4, s2)
+        x19.alu s2, s8, s11, #SHIFT
+        x02.mpy s4, s6, s2
         floorshr(s4, s4, 9)
         alu s3, s3, s4, #OP_ADD ; decay
         alu s1, s1, s3, #OP_SUB ; x = pb * nd - decay
@@ -245,10 +242,8 @@ grow:   alu s5, s7, s14, #OP_SUB ; nd - 1 < 2^16 (nd reaches 2^16)
         ldi s5, #15
         x19.alu s4, s3, s5, #SHIFT ; (x hi) << 15, |x hi| <= 2^8
         alu s4, s1, s4, #OP_SUB ; x lo
-        ldy s1, e1
-        alu s1, s1, s3, #OP_ADD ; hi + x hi
-        ldy s2, e2
-        alu s2, s2, s4, #OP_ADD ; lo + x lo, below 2^16
+        alu s1, s7, s3, #OP_ADD ; hi + x hi
+        alu s2, s8, s4, #OP_ADD ; lo + x lo, below 2^16
         floorshr(s3, s2, 15)    ; carry, 0 or 1
         alu s1, s1, s3, #OP_ADD
         x19.alu s3, s3, s5, #SHIFT ; carry << 15 (s5 = 15)
