@@ -53,8 +53,9 @@ Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
   rule.  Interface facts from sosumi's specs/questions.md; packet reads and
   clobbered regions are still named stubs.
 - `zig build bench`: bundles per ALAC packet by stage, from the emulator's
-  per-syllable profile (`State.profile`) between marker bundles.
-- To come: cycles (the clock and the cycles per bundle form are unmeasured).
+  per-syllable profile (`State.profile`) between marker bundles, and the load against
+  the measured rate: one bundle of any form takes about 37.4 ns on silicon (26.7 M/s;
+  the sm1 clock itself is unread, so "one bundle per cycle" is inferred).
 
 ## Mnemonics
 

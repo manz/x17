@@ -610,3 +610,25 @@ test "sxe sign-extends any 24-bit word from k bits, the edges included" {
         }
     }
 }
+
+test "the packet program has no long runs of 0x05 words" {
+    // Silicon: 32 consecutive low5-0x05 words never halted (4 of 4); 8 in a row ran.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/rice.sm"
+        \\.include "lib/predictor.sm"
+        \\.include "lib/unmix.sm"
+        \\.include "lib/alac.sm"
+        \\        bits_init(0x4000)
+        \\        alac_packet()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var run: usize = 0;
+    for (prog) |w| {
+        run = if (w & 0x1F == 0x05) run + 1 else 0;
+        try testing.expect(run <= 8);
+    }
+}

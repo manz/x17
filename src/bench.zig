@@ -1,7 +1,8 @@
 //! Bundles per ALAC packet on the x17 emulator, split by stage: `zig build bench`.
 //! Each stage call is bracketed by marker bundles (alu s0, s0, s0: writes 0 to s0, a no-op)
-//! and the emulator's per-syllable profile is summed between them. Bundles, not cycles: the
-//! clock and the cycles per bundle form are unmeasured.
+//! and the emulator's per-syllable profile is summed between them. Load is against the
+//! measured rate: one bundle of any form takes about 37.4 ns on silicon (26.7 M/s; Upstream,
+//! fact 379), so 100% is real time at the fixture's sample rate.
 const std = @import("std");
 const asm_mod = @import("asm");
 const emu = @import("emu");
@@ -52,7 +53,12 @@ fn le32(b: []const u8, at: usize) u32 {
     return std.mem.readInt(u32, b[at..][0..4], .little);
 }
 
-const fixtures = .{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" };
+const fixtures = .{
+    .{ "mono.at", 44100 },      .{ "tone.at", 44100 },       .{ "white24.at", 48000 },
+    .{ "clicks.c0.ff", 44100 }, .{ "clicks.o30.ff", 44100 }, .{ "mono.at.int", 44100 },
+    .{ "tone.at.int", 44100 },
+};
+const bundles_per_s = 1.0e9 / 37.4;
 
 pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(init.gpa);
@@ -73,9 +79,10 @@ pub fn main(init: std.process.Init) !void {
     const ends = try find(gpa, prog, try assemble(gpa, ".const OP_SUB = 0x10\n" ++ end_mark ++ "\n"));
     if (begins.len != stages.len or ends.len != stages.len) return error.Markers;
     std.debug.print("program: {d} syllables\n", .{prog.len});
-    std.debug.print("{s:<14} {s:>3} {s:>5} {s:>3} {s:>10} {s:>8} {s:>7} {s:>7} {s:>7} {s:>7} {s:>7}\n", .{ "fixture", "pkt", "n", "ch", "bundles", "/sample", "rice", "integr", "predict", "unmix", "other" });
+    std.debug.print("{s:<14} {s:>3} {s:>5} {s:>3} {s:>10} {s:>8} {s:>7} {s:>7} {s:>7} {s:>7} {s:>7} {s:>6}\n", .{ "fixture", "pkt", "n", "ch", "bundles", "/sample", "rice", "integr", "predict", "unmix", "other", "load" });
     const profile = try gpa.alloc(u64, prog.len);
-    inline for (fixtures) |name| {
+    inline for (fixtures) |fx| {
+        const name = fx[0];
         const dump = @embedFile(name ++ ".pkts");
         const cfg = [6]u32{ le32(dump, 4), le32(dump, 8), le32(dump, 12), le32(dump, 16), le32(dump, 20), le32(dump, 24) };
         var p: usize = 32;
@@ -107,7 +114,8 @@ pub fn main(init: std.process.Init) !void {
             const per: f64 = @floatFromInt(n * cfg[5]);
             std.debug.print("{s:<14} {d:>3} {d:>5} {d:>3} {d:>10} {d:>8.1}", .{ name, k, n, cfg[5], total, @as(f64, @floatFromInt(total)) / per });
             for (share) |c| std.debug.print(" {d:>7.1}", .{@as(f64, @floatFromInt(c)) / per});
-            std.debug.print("\n", .{});
+            const rt = @as(f64, @floatFromInt(total)) / per * @as(f64, @floatFromInt(fx[1] * cfg[5])) / bundles_per_s;
+            std.debug.print(" {d:>5.0}%\n", .{100 * rt});
         }
     }
 }
