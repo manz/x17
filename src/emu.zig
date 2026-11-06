@@ -133,9 +133,12 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     }
     if (low5 == 0x0B) {
         const high3: u32 = (head >> 29) & 0x7;
-        if (high3 == 0b010) return execJmp(gpa, state, head);
+        if (high3 == 0b010 or high3 == 0b011) return execJmp(gpa, state, head);
+        if (high3 == 0b001 and (head >> 19) & 1 == 1) return execPlog(gpa, state, head);
         if (high3 == 0b100) return execAset0b(state, head);
     }
+    // ptst at class 011: head[29] is the dest's bit 3 (fact 219).
+    if (low5 == 0x0D and (head >> 29) == 0b011) return execPtst(gpa, state, head);
     // lde with [31] = 1 (fact 280): same fields as class 01x.
     if (low5 == 0x06 and (head >> 30) == 0b11) return execLde(gpa, state, head);
     // rop at classes 011 and 100 (fact 281, 285): s<[29:26]>.
@@ -191,6 +194,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const w3_class: u32 = (bundle[3] >> 29) & 0x7;
         const w1_mode: u32 = (bundle[1] >> 12) & 0x7;
         if (w3_class == 0b110 and ((bundle[3] >> 8) & 1) == 1) return execX18Br(gpa, state, bundle);
+        if (w3_class == 0b011 and bundle[3] & 0x101 == 0x100) return execX18Br(gpa, state, bundle);
         if (w3_class == 0b110 and w1_mode == 5) return execX18Xrd(gpa, state, bundle);
         if (w3_class == 0b110 and bundle[2] != 0) return execX18Mpy(gpa, state, bundle);
         if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
@@ -323,10 +327,11 @@ fn execP010(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     const s1 = bundle[1];
     const p_dest: u32 = (s1 >> 4) & 0xF;
     const cond: u32 = (s1 >> 8) & 0xF;
-    const v: u8 = switch (cond) {
-        9 => 1, // measured as constant-true on own-p010-true
-        else => return RunError.UnknownForm,
-    };
+    // Bit c of the row is cond c; the row is picked by head[28:25] and what
+    // it reads is OPEN (fact 107).
+    const g: u32 = (bundle[0] >> 25) & 0xF;
+    const row: u32 = if (g <= 10) 0xFFFF else if (g <= 13) 0xF8E3 else 0xFD1B;
+    const v: u8 = @intCast((row >> @intCast(cond)) & 1);
     if (p_dest != 0) state.p[p_dest] = v;
 }
 
@@ -888,7 +893,8 @@ fn execBcc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         @as(i32, @intCast(off9));
     if (((s1 >> 14) & 1) != 0) return RunError.UnknownForm;
     const pred_idx: u32 = (s1 >> 15) & 0xF;
-    if (state.p[pred_idx] != 0) state.pending_jmp_offset = off_signed * 4;
+    // p0 is always true (fact 111 / own-bcc-fwd).
+    if (pred_idx == 0 or state.p[pred_idx] != 0) state.pending_jmp_offset = off_signed * 4;
 }
 
 fn execBr(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
@@ -908,7 +914,8 @@ fn execJmp(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     else
         @as(i32, @intCast(off_bits));
     const mode: u32 = (head >> 21) & 0x1F;
-    const pred_idx: u32 = (head >> 26) & 0x7;
+    // p<{[29], [28:26]}> (fact 218).
+    const pred_idx: u32 = (head >> 26) & 0xF;
     const p_val: u32 = state.p[pred_idx];
     const taken: bool = switch (mode) {
         1 => true,
@@ -1646,13 +1653,13 @@ fn execX18Br(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const w1 = bundle[1];
     const w2 = bundle[2];
     const pred_idx: u32 = (w2 >> 28) & 0xF;
-    const off11: u32 = (w1 >> 18) & 0x7FF;
-    const sx: i32 = if (off11 & 0x400 != 0)
-        @as(i32, @bitCast(off11 | 0xFFFFF800))
+    // sext({w2[0], w1[31:18]}) in words (syllables) from the branch bundle
+    // (fact 178: 00200000 = +8, FFE00000 with w2[0] = 1 = -8).
+    const off15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
+    const sx: i32 = if (off15 & 0x4000 != 0)
+        @as(i32, @bitCast(off15 | 0xFFFF8000))
     else
-        @as(i32, @intCast(off11));
-    // sext(w1[28:18]) is in words (syllables) from the branch bundle
-    // (fact 178: 00200000 = +8 words).
+        @as(i32, @intCast(off15));
     if (pred_idx != 0 and state.p[pred_idx] == 1) {
         state.pending_jmp_offset = sx;
     }
@@ -2855,7 +2862,8 @@ fn execPlog(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     _ = gpa;
     const dest: u32 = (head >> 11) & 0xF;
     const a: u32 = (head >> 21) & 0xF;
-    const b: u32 = (head >> 26) & 0x7;
+    // p<{[29], [28:26]}> (fact 220).
+    const b: u32 = (head >> 26) & 0xF;
     const fn_op: u32 = (head >> 15) & 0xF;
     const av: u8 = state.p[a];
     const bv: u8 = state.p[b];

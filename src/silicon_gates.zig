@@ -1284,7 +1284,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 1 },
         },
         .src =
-        \\x18.br #1, #8
+        \\x18.br #1, #8, #0, #6
         \\alu s1, s1, s2, #0
         \\alu s1, s1, s2, #0
         \\alu s1, s1, s2, #0
@@ -1304,7 +1304,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 1 },
         },
         .src =
-        \\x18.br #3, #8
+        \\x18.br #3, #8, #0, #6
         \\alu s1, s1, s2, #0
         \\alu s1, s1, s2, #0
         \\alu s1, s1, s2, #0
@@ -2058,6 +2058,192 @@ const GATES = [_]Gate{
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x111 } }},
+    },
+    .{
+        .name = "own-jmp-hi",
+        // jmp +4 if !p9, p9 false: taken, q+3 skipped.
+        .pre = &.{.{ .bank = .p, .index = 9, .value = 0 }},
+        .src =
+        \\jmp #2, #9, #4
+        \\ldi s3, #5
+        \\ldi s4, #7
+        \\ldi s3, #256
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 5 } }},
+    },
+    .{
+        .name = "own-jmp-hi-t",
+        // mode 3, jmp if p9, p9 false: no jump.
+        .pre = &.{.{ .bank = .p, .index = 9, .value = 0 }},
+        .src =
+        \\jmp #3, #9, #4
+        \\ldi s3, #5
+        \\ldi s4, #7
+        \\ldi s3, #256
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 256 } }},
+    },
+    .{
+        .name = "own-ptst-hi",
+        // ptst p9 <- (s5 < 0) true, then jmp if p9: q+3 skipped.
+        .pre = &.{.{ .bank = .s, .index = 5, .value = 0xFFF000 }},
+        .src =
+        \\ptst p9, s5, #1, #0x0B
+        \\jmp #3, #9, #4
+        \\ldi s3, #5
+        \\ldi s4, #7
+        \\ldi s3, #256
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 5 } }},
+    },
+    .{
+        .name = "own-ptst-hi-pos",
+        // s5 = 0x0F00: p9 false, no jump.
+        .pre = &.{.{ .bank = .s, .index = 5, .value = 0x0F00 }},
+        .src =
+        \\ptst p9, s5, #1, #0x0B
+        \\jmp #3, #9, #4
+        \\ldi s3, #5
+        \\ldi s4, #7
+        \\ldi s3, #256
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 256 } }},
+    },
+    .{
+        .name = "own-plog-hi",
+        // p4 <- p1 & p<{[29], [28:26]}> = p1 & p10 = 0 (p1 & p2 would be 1).
+        .pre = &.{
+            .{ .bank = .p, .index = 1, .value = 1 },
+            .{ .bank = .p, .index = 2, .value = 1 },
+            .{ .bank = .p, .index = 10, .value = 0 },
+            .{ .bank = .p, .index = 4, .value = 1 },
+        },
+        .src =
+        \\plog p4, p1, p10, #3, #0x0E
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 4, .value = 0 } }},
+    },
+    .{
+        .name = "own-plog-hi-c",
+        // class 000: p4 <- p1 & p2 = 1.
+        .pre = &.{
+            .{ .bank = .p, .index = 1, .value = 1 },
+            .{ .bank = .p, .index = 2, .value = 1 },
+            .{ .bank = .p, .index = 10, .value = 0 },
+        },
+        .src =
+        \\plog p4, p1, p2, #3, #0x0E
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 4, .value = 1 } }},
+    },
+    .{
+        .name = "own-p010-false",
+        // head[28:25] = 14 picks row 0xFD1B: cond 9 is false.
+        .pre = &.{.{ .bank = .p, .index = 3, .value = 1 }},
+        .src =
+        \\condset p3, #9, #14
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 3, .value = 0 } }},
+    },
+    .{
+        .name = "own-bcc-fwd",
+        // bcc p0 (always) +8: 2 slot adds run, 4 skipped, 2 run: s1 = 4.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\bcc #0, #2
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 4 } }},
+    },
+    .{
+        .name = "own-bcc-back",
+        // bcc p2 -4: delay slots plog p2 <- !p2 and a nop; 8 + 4 adds.
+        .pre = &.{
+            .{ .bank = .p, .index = 2, .value = 1 },
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+        \\bcc #2, #0x1FF
+        \\plog p2, p2, p2, #7, #0x0E
+\\alu s0, s0, s0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 12 } }},
+    },
+    .{
+        .name = "own-bcc-slots",
+        // a two-word ytst as delay slot 1: plog still runs as slot 2.
+        .pre = &.{
+            .{ .bank = .p, .index = 2, .value = 1 },
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+        \\bcc #2, #0x1FF
+        \\ytst p3, e5
+        \\plog p2, p2, p2, #7, #0x0E
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 12 } }},
+    },
+    .{
+        .name = "own-x18br-back",
+        // class 011 branch -8 words if p2; plog p2 <- !p2 in a slot: 16 adds.
+        .pre = &.{
+            .{ .bank = .p, .index = 2, .value = 1 },
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+\\alu s1, s1, s2, #14
+        \\x18.br #2, #0x3FF8, #1, #3
+        \\plog p2, p2, p2, #7, #0x0E
+\\alu s0, s0, s0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 16 } }},
     },
     .{
         .name = "own-x15pt",
@@ -2874,7 +3060,7 @@ const GATES = [_]Gate{
         // the probe list own-p010-true: p3 <- cond 9 (constant true).
         // Expected bytes: 0x00000014 0x42000930.
         .src =
-        \\condset p3, #9
+        \\condset p3, #9, #0
         \\x17.halt
         ,
         .post = &.{.{ .p_reg = .{ .index = 3, .value = 1 } }},

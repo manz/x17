@@ -36,7 +36,7 @@ ldi	imm16	imm	5	20	head
 # Grammar: jmp #<mode>, #<pred>, #<offset>
 # mode: 1=always, 2=if !p<pred>, 3=if p<pred>.  offset in syllables.
 jmp	mode	imm	21	25	head
-jmp	pred	imm	26	28	head
+jmp	pred	imm	26	29	head
 jmp	offset	imm	5	20	head
 
 # br: 1-syllable branch when p<pred> set, offset is unsigned [25:11].
@@ -400,9 +400,11 @@ x15.pt	p_idx	imm	3	6	s1
 x15.pt	lut	imm	8	10	s1
 
 # x18.br (4 syllables): predicate branch.
-# Grammar: x18.br #<pred>, #<off11>
+# Grammar: x18.br #<pred>, #<off_lo>, #<off_hi>, #<w3 class>
 x18.br	pred	imm	28	31	s2
-x18.br	off11	imm	18	28	s1
+x18.br	off_lo	imm	18	31	s1
+x18.br	off_hi	imm	0	0	s2
+x18.br	cls	imm	29	31	s3
 
 # x02.agu (6 syllables): R-AGU10 via w5-sourced y.
 # Grammar: x02.agu <dest_R>, <y_R>, #<fn>
@@ -531,7 +533,7 @@ ptst	op	imm	5	10	head
 # Grammar: plog <p_dest>, <p_a>, <p_b>, #<fn>, #<op>
 plog	p_dest	p	11	14	head
 plog	p_a	p	21	24	head
-plog	p_b	p	26	28	head
+plog	p_b	p	26	29	head
 plog	fn	imm	15	18	head
 plog	op	imm	5	10	head
 
@@ -577,6 +579,7 @@ yld10	src_e	e	25	28	s1
 # Grammar: p010 <p_dest>, #<cond>
 condset	p_dest	p	4	7	s1
 condset	cond	imm	8	11	s1
+condset	group	imm	25	28	head
 
 # yrm (2 syllables): scalar imm + e-to-R move.
 # Grammar: yrm <dest_s>, #<imm16>, <dest_R>, <src_e>

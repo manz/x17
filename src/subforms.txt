@@ -238,7 +238,7 @@ x15.pt     2   0x00000015   0x20000000
 
 # x18.br: 4-syllable low5 0x18 w3 class 110 with w3[8] = 1 (branch flag).
 # Branch if p<w2[31:28]> by sext(w1[28:18]) bundles (fact 178).
-x18.br     4   0x00000018   0x00000000   0x00006000   0xC0000100
+x18.br     4   0x00000018   0x00000000   0x00006000   0x00000100
 
 # x02.agu: 6-syllable low5 0x02 w4 mode 0 R-AGU slot (fact 249).
 # R<w3[22:19]> <- AGU10B[w1[10:7]](y = R<w5[25:22]>).
