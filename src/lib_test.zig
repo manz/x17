@@ -632,3 +632,31 @@ test "the packet program has no long runs of 0x05 words" {
         try testing.expect(run <= 8);
     }
 }
+
+test "the libraries branch only on measured ptst rows" {
+    // fact 377/387: the b-only rows (b = s4, s8, s12) are the ones the libraries may use.
+    // Row 000 (c0-c3) is a <= -b, which read as "a < 0" mis-branched on silicon.
+    const allowed = [_][]const u8{ "#LT4", "#LT8", "#LT12", "#LE4", "#LE8", "#LE12" };
+    for (libs) |l| {
+        var lines = std.mem.splitScalar(u8, l.text, '\n');
+        var n: usize = 0;
+        while (lines.next()) |line| {
+            n += 1;
+            const code = if (std.mem.indexOfScalar(u8, line, ';')) |c| line[0..c] else line;
+            const at = std.mem.indexOf(u8, code, "ptst ") orelse continue;
+            var fields = std.mem.tokenizeAny(u8, code[at + 5 ..], ", \t");
+            _ = fields.next(); // p
+            const a = fields.next() orelse return error.BadPtst;
+            const cond = fields.next() orelse return error.BadPtst;
+            var ok = std.mem.eql(u8, a, "s0");
+            if (ok) {
+                ok = false;
+                for (allowed) |w| ok = ok or std.mem.eql(u8, cond, w);
+            }
+            if (!ok) {
+                std.debug.print("{s}:{d}: ptst {s}, {s} is not a measured b-only row\n", .{ l.path, n, a, cond });
+                return error.UnmeasuredPtst;
+            }
+        }
+    }
+}
