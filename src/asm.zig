@@ -74,6 +74,7 @@ pub const ErrorCode = enum {
     e0026_include_cycle,
     e0027_bad_macro,
     e0028_macro_call,
+    e0029_form_collision,
 
     pub fn text(c: ErrorCode) []const u8 {
         return switch (c) {
@@ -105,6 +106,7 @@ pub const ErrorCode = enum {
             .e0026_include_cycle => "E0026",
             .e0027_bad_macro => "E0027",
             .e0028_macro_call => "E0028",
+            .e0029_form_collision => "E0029",
         };
     }
 };
@@ -911,7 +913,7 @@ pub fn assembleLine(src: []const u8, start: usize, env: ?*const Env) Result {
         // y_addr consumes three tokens: `Y` `:` `<number>` (optional `#`).
         if (op.kind == .y_addr) {
             switch (parseYAddr(&lex, tok, op)) {
-                .ok => |v| word |= op.encode(v),
+                .ok => |v| word = op.place(word, v),
                 .err => |r| return r,
             }
             continue;
@@ -924,7 +926,7 @@ pub fn assembleLine(src: []const u8, start: usize, env: ?*const Env) Result {
                 return .{ .err = d };
             }
             switch (valueOperand(&lex, tok, op, env)) {
-                .ok => |v| word |= op.encode(v),
+                .ok => |v| word = op.place(word, v),
                 .err => |r| return r,
             }
             continue;
@@ -937,7 +939,7 @@ pub fn assembleLine(src: []const u8, start: usize, env: ?*const Env) Result {
         }
         var d: Diagnostic = undefined;
         const field = matchOperand(op, tok, &d) orelse return .{ .err = d };
-        word |= op.encode(field);
+        word = op.place(word, field);
     }
 
     const tail_r = lex.next();
@@ -1069,7 +1071,7 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
         }
         if (op.kind == .y_addr) {
             switch (parseYAddr(lex, tok, op)) {
-                .ok => |v| b.words[op.syll] |= op.encode(v),
+                .ok => |v| b.words[op.syll] = op.place(b.words[op.syll], v),
                 .err => |r| return r,
             }
             continue;
@@ -1081,7 +1083,10 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
         }
         if (op.kind == .imm or op.kind.isRel()) {
             switch (valueOperand(lex, tok, op, env)) {
-                .ok => |v| b.words[op.syll] |= op.encode(v),
+                .ok => |v| {
+                    if (collides(sf.name, op.name, v)) |d| return .{ .err = d.at(tokSpan(tok)) };
+                    b.words[op.syll] = op.place(b.words[op.syll], v);
+                },
                 .err => |r| return r,
             }
             continue;
@@ -1099,7 +1104,7 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
             dx.setMsg("operand table names a syllable past the bundle length");
             return .{ .err = dx };
         }
-        b.words[op.syll] |= op.encode(field);
+        b.words[op.syll] = op.place(b.words[op.syll], field);
     }
 
     const tail = switch (lex.next()) {
@@ -1114,6 +1119,28 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
         return .{ .err = d };
     }
     return .{ .ok = b };
+}
+
+const Collision = struct {
+    msg: []const u8,
+    hint: []const u8,
+    fn at(c: Collision, span: Span) Diagnostic {
+        var d = Diagnostic{ .code = .e0029_form_collision, .span = span };
+        d.setMsg(c.msg);
+        d.setHint(c.hint);
+        return d;
+    }
+};
+
+/// Operand values that turn a sub-form's bundle into a different form.
+fn collides(form: []const u8, operand: []const u8, v: u32) ?Collision {
+    // x17.sty needs S1 class != 0 (fact 275); S1[31:29] is src_lo.
+    if (std.mem.eql(u8, form, "x17.sty") and std.mem.eql(u8, operand, "src_lo") and v & 7 == 0)
+        return .{
+            .msg = "x17.sty cannot store s0 or s8: src_lo = 0 makes S1 class 000, which decodes as x17.ld",
+            .hint = "copy the value to a register whose index is not a multiple of 8 first",
+        };
+    return null;
 }
 
 fn fromLexErr(e: LexError) Result {
@@ -1791,4 +1818,15 @@ test "file: an error inside a macro names the body line and the call" {
     try testing.expectEqualStrings("        ldi s3, #0x10000", fe.lineText());
     try testing.expectEqualStrings("bad", fe.call_name.get());
     try testing.expectEqual(@as(usize, 5), fe.call_line);
+}
+
+test "x17.sty refuses s0 and s8, whose bundle decodes as x17.ld" {
+    switch (assembleOneResult("x17.sty e3, #0, #1")) {
+        .err => |d| try std.testing.expectEqual(ErrorCode.e0029_form_collision, d.code),
+        .ok => return error.TestUnexpectedResult,
+    }
+    switch (assembleOneResult("x17.sty e3, #5, #0")) {
+        .err => return error.TestUnexpectedResult,
+        .ok => {},
+    }
 }

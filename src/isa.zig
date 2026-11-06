@@ -138,6 +138,12 @@ pub const Operand = struct {
         const mask: u32 = (@as(u32, 1) << w) - 1;
         return (value & mask) << @as(u5, @intCast(self.lo));
     }
+
+    /// `word` with this operand's field replaced by `value`: a template's own bits in
+    /// the field (a sub-form's measured operands) do not leak into the result.
+    pub fn place(self: Operand, word: u32, value: u32) u32 {
+        return (word & ~self.encode(0xFFFFFFFF)) | self.encode(value);
+    }
 };
 
 pub const MAX_OPERANDS: usize = 1024;
