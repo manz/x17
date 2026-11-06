@@ -2246,6 +2246,139 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 16 } }},
     },
     .{
+        .name = "own-psel-imm",
+        // mux 1: s3 <- #0x18; s5 <- s5 + s3 = 0x123 (reads s3 before the head write).
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x100 },
+            .{ .bank = .s, .index = 3, .value = 0x23 },
+        },
+        .src =
+        \\x0e s3, #0x18, #0x0E, s5, s3, s5, #0, #1, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x18 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x123 } },
+        },
+    },
+    .{
+        .name = "own-psel-r",
+        // mux 7: s3 and s5 <- s5 + s3 = 0x123.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x100 },
+            .{ .bank = .s, .index = 3, .value = 0x23 },
+        },
+        .src =
+        \\x0e s3, #0x18, #0x0E, s5, s3, s5, #0, #7, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x123 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x123 } },
+        },
+    },
+    .{
+        .name = "own-psel-sub",
+        // code 0x10 sub: s5 <- s3 - s5 = 0xFF23 (24-bit 0xFFFF23); s3 <- #0x18.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x100 },
+            .{ .bank = .s, .index = 3, .value = 0x23 },
+        },
+        .src =
+        \\x0e s3, #0x18, #0x10, s5, s3, s5, #0, #1, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x18 } },
+            .{ .s_reg = .{ .index = 5, .value = 0xFFFF23 } },
+        },
+    },
+    .{
+        .name = "own-rimm",
+        // R3 <- #0x1234.
+        .src =
+        \\rimm R3, #0x1234
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 3, .value = 0x1234 } }},
+    },
+    .{
+        .name = "own-stx-a",
+        // X:[A15] <- s7, X:[A22] <- s5 (A = 4*S[2:0] + head[31:30]).
+        .pre = &.{
+            .{ .bank = .s, .index = 7, .value = 0x777 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+            .{ .bank = .a, .index = 15, .value = 0x310 },
+            .{ .bank = .a, .index = 22, .value = 0x320 },
+        },
+        .src =
+        \\stx0f #3, #3, s7
+        \\stx0f #2, #5, s5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .x_mem = .{ .addr = 0x310, .value = 0x777 } },
+            .{ .x_mem = .{ .addr = 0x320, .value = 0x555 } },
+        },
+    },
+    .{
+        .name = "own-st-e6",
+        // head[31:29] = 6: e6 <- #0x700.
+        .src =
+        \\ste.n #6, #0x700
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 6, .value = 0x700 } }},
+    },
+    .{
+        .name = "own-slot-st",
+        // ldi2 s2 <- 0x55 | Y:[e3 = 0x700] <- s1 = 0xABC.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x700 },
+            .{ .bank = .s, .index = 1, .value = 0xABC },
+        },
+        .src =
+        \\ldi2.st s2, #0x55, e3, s1, #3
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .y_mem = .{ .addr = 0x700, .value = 0xABC } },
+            .{ .s_reg = .{ .index = 2, .value = 0x55 } },
+        },
+    },
+    .{
+        .name = "own-stk",
+        // Y:[e9 = 0x709] <- s5, Y:[e14 = 0x70E] <- s6.
+        .pre = &.{
+            .{ .bank = .e, .index = 9, .value = 0x709 },
+            .{ .bank = .e, .index = 14, .value = 0x70E },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+            .{ .bank = .s, .index = 6, .value = 0x666 },
+        },
+        .src =
+        \\stk e9, s5
+        \\stk e14, s6
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .y_mem = .{ .addr = 0x709, .value = 0x555 } },
+            .{ .y_mem = .{ .addr = 0x70E, .value = 0x666 } },
+        },
+    },
+    .{
+        .name = "own-st1",
+        // k = 1: Y:[e1 = 0x70D] <- s5.
+        .pre = &.{
+            .{ .bank = .e, .index = 1, .value = 0x70D },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\stk e1, s5
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x70D, .value = 0x555 } }},
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},

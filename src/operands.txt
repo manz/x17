@@ -1082,3 +1082,38 @@ x00.mac	mode	imm	11	13	s1
 # x00.ctl #<target>, #<ctl>
 x00.ctl	target	imm	18	25	s1
 x00.ctl	ctl	imm	0	4	s3
+
+# x0e <head_s>, #<imm>, #<code>, <alu_dest>, <a_s>, <b_s>, #<m>, #<mux>, #<s18>
+x0e	head_s	s	21	24	head
+x0e	imm	imm	5	20	head
+x0e	code	imm	25	30	head
+x0e	alu_dest	s	8	11	s1
+x0e	a_s	s	4	7	s1
+x0e	b_s	s	28	31	s1
+x0e	m	imm	15	17	s1
+x0e	mux	imm	12	14	s1
+x0e	s18	imm	18	18	s1
+
+# rimm <dest_R>, #<imm>
+rimm	dest_R	R	11	14	s1
+rimm	imm	imm	5	20	head
+
+# stx0f #<a_lo>, #<a_hi>, <src_s>
+stx0f	a_lo	imm	30	31	head
+stx0f	a_hi	imm	0	2	s1
+stx0f	src_s	s	25	28	s1
+
+# ste.n #<e_lo>, #<imm>
+ste.n	e_lo	imm	29	31	head
+ste.n	imm	imm	5	20	head
+
+# ldi2.st <dest_s>, #<imm>, <y_e>, <y_src>, #<en>
+ldi2.st	dest_s	s	21	24	head
+ldi2.st	imm16	imm	5	20	head
+ldi2.st	y_e	e	25	28	s1
+ldi2.st	y_src	s	21	24	s1
+ldi2.st	en	imm	19	20	s1
+
+# stk <k_e>, <src_s>
+stk	k_e	e	5	8	head
+stk	src_s	s	22	25	head

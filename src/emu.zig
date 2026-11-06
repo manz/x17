@@ -38,7 +38,7 @@ pub const State = struct {
     x16_xi: ?u32 = null,
     /// Address registers A0..A15: feed X/Y load+store addresses.  Default
     /// zero; seeded via tests or set-up forms that write them.
-    a: [16]u32 = @splat(0),
+    a: [32]u32 = @splat(0),
     /// Predicate bits p0..p15 (1-bit each; stored as u8 for ergonomics).
     /// Written by ptst / plog; consumed by psel / jmp / bcc.  Survives
     /// across bundles per fact.
@@ -144,8 +144,14 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     // rop at classes 011 and 100 (fact 281, 285): s<[29:26]>.
     if (low5 == 0x07 and ((head >> 29) == 0b011 or (head >> 29) == 0b100)) return execRop(gpa, state, head);
     if (low5 == 0x0C and (head >> 31) == 1) return execRagu0c(state, head);
-    if (low5 == 0x0F and (head >> 29) == 0 and bundle.len >= 2 and (bundle[1] >> 29) == 0b001) {
-        return execSte(state, bundle);
+    if (low5 == 0x0F and bundle.len == 2) {
+        const w1 = bundle[1];
+        if (w1 >> 29 == 0b001 and (head >> 29) != 0b001) return execSte(state, bundle);
+        if (w1 >> 29 == 0b101 and w1 & 0x00500000 == 0x00500000) return execStx0f(gpa, state, bundle);
+        if (w1 >> 29 == 0b101) return execRimm(state, bundle);
+    }
+    if (low5 == 0x08 and (head >> 29) == 0b010 and (head >> 5) & 0x30 == 0x30) {
+        return execStk(gpa, state, head);
     }
     if (low5 == 0x08) {
         return execBr(gpa, state, head);
@@ -263,10 +269,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         return execX04Agu(gpa, state, bundle);
     }
     if (low5 == 0x0E and bundle.len >= 2) {
-        const hb: u32 = (head >> 30) & 0x3;
-        if (hb == 0) return execPtest(gpa, state, bundle);
-        if (hb == 1) return execPsel(gpa, state, bundle);
-        return execLd0e(gpa, state, bundle);
+        if (head >> 31 == 1) return execLd0e(gpa, state, bundle);
+        if ((head >> 25) & 0x3F == 0x23) return execPsel(gpa, state, bundle);
+        return execX0E(state, bundle);
     }
 
     const f = isa.classify(head) orelse return RunError.UnknownForm;
@@ -1758,11 +1763,16 @@ fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
 }
 
 fn execLdi2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
     if (bundle.len < 2) return RunError.UnknownForm;
     const head = bundle[0];
     const dest_s: u32 = (head >> 21) & 0x1F;
     const imm: u32 = (head >> 5) & 0xFFFF;
+    // S[20:19] = 11 stores Y:[e<S[28:25]>] <- s<S[24:21]> (fact 89).
+    const sw = bundle[1];
+    if ((sw >> 19) & 3 == 3) {
+        const v: u32 = state.s[(sw >> 21) & 0xF] & 0xFFFF;
+        state.y_mem.put(gpa, state.e[(sw >> 25) & 0xF], v) catch return RunError.OutOfMemory;
+    }
     if (dest_s == 0 or dest_s >= 16) return;
     state.s[dest_s] = imm;
 }
@@ -2902,21 +2912,64 @@ fn execStx(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     try state.x_mem.put(gpa, addr, v);
 }
 
-fn execPtest(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
-    if (bundle.len < 2) return RunError.UnknownForm;
-    const head = bundle[0];
-    const s1 = bundle[1];
-    const dest_s: u32 = (head >> 21) & 0xF;
-    const p_src: u32 = (s1 >> 24) & 0xF;
-    const fn_op: u32 = (s1 >> 21) & 0x7;
-    const pv: u8 = state.p[p_src];
-    const v: u32 = switch (fn_op) {
-        0 => if (pv == 0) 1 else 0, // !p
-        1 => @as(u32, pv), // p
-        else => return RunError.UnknownForm,
+/// low5 0x0E, head[31] = 0, code != 0x23 (fact 221): s<S[11:8]> <-
+/// ALU05[head[30:25]](a = s<S[7:4]>, b = s<S[31:28]>), m = S[17:15]; and
+/// s<head[24:21]> <- mux S[14:12]: c / # / # / D[7:0]<<8 / (D<<7)[15:0] / D / # /
+/// the ALU result, # = head[20:5], D = X:[A<xi>], c = execPtest's value.
+fn execX0E(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const sw = bundle[1];
+    const mux: u32 = (sw >> 12) & 7;
+    const alu_dest: u32 = (sw >> 8) & 0xF;
+    const alu_val: u32 = if (alu_dest == 0 and mux != 7) 0 else blk: {
+        const word: u32 = (((h >> 25) & 0x3F) << 5) | (((sw >> 15) & 7) << 23);
+        break :blk (try aluWord(word, sx24(state.s[(sw >> 4) & 0xF]), sx24(state.s[(sw >> 28) & 0xF]))) orelse return RunError.UnknownForm;
     };
-    if (dest_s != 0) state.s[dest_s] = v;
+    const imm: u32 = (h >> 5) & 0xFFFF;
+    const hd: u32 = (h >> 21) & 0xF;
+    const d: u32 = if (mux >= 3 and mux <= 5) blk: {
+        const xi = state.x16_xi orelse return RunError.UnknownForm;
+        break :blk state.readX(state.a[xi & 0x1F]) orelse 0;
+    } else 0;
+    const hv: u32 = switch (mux) {
+        0 => blk: {
+            const pv: u8 = state.p[(sw >> 24) & 0xF];
+            break :blk switch ((sw >> 21) & 7) {
+                0 => if (pv == 0) 1 else 0,
+                1 => pv,
+                else => return RunError.UnknownForm,
+            };
+        },
+        1, 2, 6 => imm,
+        3 => (d & 0xFF) << 8,
+        4 => (d << 7) & 0xFFFF,
+        5 => d,
+        else => alu_val,
+    };
+    if (alu_dest != 0) state.s[alu_dest] = alu_val;
+    if (hd != 0) state.s[hd] = hv;
+}
+
+/// low5 0x0F, S class 101 without S[22] & S[20] (fact 127): R<S[14:11]> <- #head[20:5].
+fn execRimm(state: *State, bundle: []const u32) RunError!void {
+    const dest: u32 = (bundle[1] >> 11) & 0xF;
+    if (dest != 0) state.r[dest] = (bundle[0] >> 5) & 0xFFFF;
+}
+
+/// low5 0x0F, S class 101 with S[22] and S[20] (fact 127):
+/// X:[A<4*S[2:0] + head[31:30]>] <- sx24 s<S[28:25]>.
+fn execStx0f(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const sw = bundle[1];
+    const a_idx: u32 = 4 * (sw & 7) + (bundle[0] >> 30);
+    const v: u32 = state.s[(sw >> 25) & 0xF] & M24;
+    state.x_mem.put(gpa, state.a[a_idx], v) catch return RunError.OutOfMemory;
+}
+
+/// low5 0x08, [31:29] = 010, op[10:5] = 0x30 + k (fact 61, 101):
+/// Y:[e<k>] <- s<[25:22]>.
+fn execStk(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    const v: u32 = state.s[(head >> 22) & 0xF] & 0xFFFF;
+    state.y_mem.put(gpa, state.e[(head >> 5) & 0xF], v) catch return RunError.OutOfMemory;
 }
 
 fn execPsel(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

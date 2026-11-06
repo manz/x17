@@ -685,3 +685,22 @@ x00.mac    7   0x00000000   0x0000C028   0x00000000   0x00000000   0x00100000   
 
 # x00.ctl: control, jr / ja with two delay slots (fact 230, 244).
 x00.ctl    7   0x00000000   0x00000000   0x00000000   0x00000000   0x00000000   0x00000000   0x00000000
+
+# x0e: low5 0x0E head[31] = 0, the class-05 ALU word plus the muxed head
+# write (fact 221 / own-psel-imm, own-psel-r, own-psel-sub).
+x0e        2   0x0000000E   0x00000000
+
+# rimm: low5 0x0F, S class 101, R <- #head[20:5] (fact 127).
+rimm       2   0x0000000F   0xA0000000
+
+# stx0f: low5 0x0F X store, A index 4*S[2:0] + head[31:30] (fact 127).
+stx0f      2   0x0000000F   0xA0500000
+
+# ste.n: ste with a bare class-001 second (fact 75 / own-st-e6).
+ste.n      2   0x0000000F   0x20000000
+
+# ldi2.st: the 0x10 ldi2 pair with its Y store slot (fact 89).
+ldi2.st    2   0x00000010   0x20000000
+
+# stk: low5 0x08 class 010, Y:[e<k>] <- s, op = 0x30 + k (fact 61, 101).
+stk        1   0x40000608
