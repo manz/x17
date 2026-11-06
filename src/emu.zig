@@ -192,8 +192,20 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return execX03Agu(gpa, state, bundle);
         }
         if (w4_mode == 0) {
+            try execX03XStore(gpa, state, bundle);
             try execX03Alu(gpa, state, bundle);
-            return execX03Mpy(gpa, state, bundle);
+            try execX03Mpy(gpa, state, bundle);
+            return execX03RSlot(gpa, state, bundle);
+        }
+        // Y path (w5[21] = 1): the read enters the 24-bit lane as D << 8;
+        // mux 011 takes lane[15:0], mux 100 lane[16:1] (fact 236).
+        if ((w4_mode == 3 or w4_mode == 4) and ((bundle[5] >> 21) & 1) == 1) {
+            const dest_s: u32 = (bundle[4] >> 3) & 0xF;
+            const src_e: u32 = (bundle[3] >> 27) & 0xF;
+            const lane: u32 = ((state.getY(state.e[src_e]) orelse 0) << 8) & M24;
+            const v: u32 = if (w4_mode == 3) lane & 0xFFFF else (lane >> 1) & 0xFFFF;
+            if (dest_s != 0) state.s[dest_s] = v;
+            return;
         }
         // w4 mux 001 with w5[29:28] = 10: s<w4[6:3]> <- e<w3[30:27]>
         // (fact 190 / own-x03esrc).
@@ -384,6 +396,12 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (w2 >> 9) & 0xF;
     const a_s: u32 = (w2 >> 1) & 0xF;
     const b_s: u32 = (w2 >> 5) & 0xF;
+    // w5[6] = 1: the w2 slot reads X:[A<{w1[2:0], head[31:30]}>] instead
+    // of multiplying (fact 192 / own-x03xw2).
+    if ((bundle[5] >> 6) & 1 == 1) {
+        if (dest_s != 0) state.s[dest_s] = state.getX(state.a[x03AIndex(bundle)]) orelse 0;
+        return;
+    }
     const mode: u32 = (w1 >> 11) & 0x7;
     // Same signedness and scaling bits as 0x02 (fact 185, 191).
     const b15: u32 = (w1 >> 15) & 1;
@@ -412,6 +430,35 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // x03.plo: w4[10:7] carries a second dest that gets (2P)[15:0].
     const plo_dest: u32 = (w4 >> 7) & 0xF;
     if (plo_dest != 0) state.s[plo_dest] = @truncate(@as(u64, @bitCast(prod *% 2)) & 0xFFFF);
+}
+
+fn x03AIndex(bundle: []const u32) u32 {
+    return (((bundle[1] & 0x7) << 2) | ((bundle[0] >> 30) & 0x3)) & 0xF;
+}
+
+/// w5[19:18] = 11: X:[A<{w1[2:0], head[31:30]}>] <- sx24 s<{w2[0], w1[31:29]}>
+/// (fact 255 / own-x03xst).  w5[18] alone stores nothing.
+fn execX03XStore(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    if (((bundle[5] >> 18) & 0x3) != 0b11) return;
+    const src_s: u32 = ((bundle[2] & 1) << 3) | ((bundle[1] >> 29) & 0x7);
+    const raw: u32 = state.s[src_s] & 0xFFFF;
+    const v: u32 = if (raw & 0x8000 != 0) raw | 0xFF0000 else raw;
+    try state.x_mem.put(gpa, state.a[x03AIndex(bundle)], v);
+}
+
+/// 0x03 carries 0x02's R slot (fact 250).  w5[20] = 1 switches it
+/// from AGU10B to AGU10 with i = 0 (fact 252 / own-x03ragu10).
+fn execX03RSlot(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    if ((bundle[5] >> 20) & 1 == 0) return execX02Agu(gpa, state, bundle);
+    const fn_op: u32 = (bundle[1] >> 7) & 0xF;
+    const dest_r: u32 = (bundle[3] >> 19) & 0xF;
+    const y_r: u32 = (bundle[5] >> 22) & 0xF;
+    if (dest_r == 0) return;
+    const y_val: u32 = state.r[y_r];
+    state.r[dest_r] = switch (fn_op) {
+        3 => (y_val +% 1) & 0xFFFF,
+        else => return,
+    };
 }
 
 fn execX03Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

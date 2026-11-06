@@ -173,7 +173,7 @@ x03.xrd    6   0x00000003   0x00000000   0x0140E000   0x04002008   0x00046804   
 
 # x03.yrd: x03.xrd with w5[21] = 1, a Y read at e<w3[30:27]>
 # (fact 190 / own-x03yrd).
-x03.yrd    6   0x00000003   0x00000002   0x0140E000   0x04002008   0x00046804   0x00340100
+x03.yrd    6   0x00000003   0x00000002   0x0140E000   0x04002008   0x00044004   0x00340100
 
 # x02.c6: w4 slot X read, and w5[19] = 1 copies the same read into the
 # w2 slot's destination (fact 158, 161 / own-x02c6).
@@ -182,6 +182,17 @@ x02.c6     6   0x00008002   0x00000000   0x00060000   0x00000000   0x00002800   
 # x03.esrc: w4 mux 001 with w5[29:28] = 10, s <- e<w3[30:27]>
 # (fact 190 / own-x03esrc).
 x03.esrc   6   0x00000003   0x00000002   0x0140E000   0x04002008   0x00044804   0x20140102
+
+# x03.rslot: 0x02's R slot under a 0x03 head (fact 250, 252 /
+# own-x03rslot, own-x03ragu10).
+x03.rslot  6   0x10049803   0x00000000   0x00004000   0x08000000   0x00008000   0x04000000
+
+# x03.xst: w5[19:18] = 11 stores sx24 s<{w2[0], w1[31:29]}> at
+# X:[A<{w1[2:0], head[31:30]}>] (fact 255 / own-x03xst).
+x03.xst    6   0x00000003   0x00000000   0x00000000   0x00000000   0x00000000   0x00000000
+
+# x03.xw2: w5[6] makes the w2 slot read X (fact 192 / own-x03xw2).
+x03.xw2    6   0x00000003   0x00000002   0x0140E000   0x04002008   0x0004403C   0x00140142
 
 # x03.agu: 6-syllable VLIW at low5 0x03 with the A-AGU slot active
 # (fact 164 / own-x03agu).

@@ -1456,10 +1456,76 @@ const GATES = [_]Gate{
         .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
         .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
         .src =
-        \\x03.yrd s7, e3
+        \\x03.yrd s7, e3, #5
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x886F } }},
+    },
+    .{
+        .name = "own-x03ylane",
+        // mux 011: lane = D << 8, take [15:0] = D[7:0] << 8 = 0x6F00.
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
+        .src =
+        \\x03.yrd s7, e3, #3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x6F00 } }},
+    },
+    .{
+        .name = "own-x03ylane4",
+        // mux 100: lane[16:1] = (0x886F << 7)[15:0] = 0x3780.
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
+        .src =
+        \\x03.yrd s7, e3, #4
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x3780 } }},
+    },
+    .{
+        .name = "own-x03rslot",
+        // R1 <- AGU10B[10](y = R12) = R12 = 0x155.
+        .pre = &.{.{ .bank = .r, .index = 12, .value = 0x155 }},
+        .src =
+        \\x03.rslot R1, R12, #10, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x155 } }},
+    },
+    .{
+        .name = "own-x03ragu10",
+        // w5[20] = 1: AGU10[3] with i = 0 gives y + 1 = 0x156.
+        .pre = &.{.{ .bank = .r, .index = 12, .value = 0x155 }},
+        .src =
+        \\x03.rslot R1, R12, #3, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x156 } }},
+    },
+    .{
+        .name = "own-x03xst",
+        // A8 = 0x3A0, s11 = 0xBB0B; X:0x3A0 <- sx24(s11) = 0xFFBB0B.
+        .pre = &.{
+            .{ .bank = .a, .index = 8, .value = 0x3A0 },
+            .{ .bank = .s, .index = 11, .value = 0xBB0B },
+        },
+        .src =
+        \\x03.xst #3, #1, #2, #0, #3
+        \\x17.halt
+        ,
+        .post = &.{.{ .x_mem = .{ .addr = 0x3A0, .value = 0xFFBB0B } }},
+    },
+    .{
+        .name = "own-x03xw2",
+        // A8 = 0x345, X:0x345 = 0xDB7A; the w2 slot reads it into s7.
+        .pre = &.{.{ .bank = .a, .index = 8, .value = 0x345 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x345, .value = 0xDB7A }},
+        .src =
+        \\x03.xw2 s7
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0xDB7A } }},
     },
     .{
         .name = "own-x03xrd",
