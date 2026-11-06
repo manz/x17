@@ -1373,6 +1373,17 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x03yrd",
+        // Pre e3 = 0x490, Y:0x490 = 0x886F; s7 <- Y:[e3].
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x490, .value = 0x886F }},
+        .src =
+        \\x03.yrd s7, e3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x886F } }},
+    },
+    .{
         .name = "own-x03xrd",
         // s7 <- X:[A8] = 0xDB7A via the 6-syllable x03.xrd bundle.
         .pre = &.{.{ .bank = .a, .index = 8, .value = 0x345 }},

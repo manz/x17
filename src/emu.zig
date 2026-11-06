@@ -456,8 +456,12 @@ fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const a_hi: u32 = w1 & 0x7;
     const a_lo: u32 = (head >> 30) & 0x3;
     const a_idx: u32 = ((a_hi << 2) | a_lo) & 0xF;
-    const addr: u32 = state.a[a_idx];
-    const v: u32 = state.getX(addr) orelse 0;
+    // w5[21] = 1 turns the w4 slot into a Y read at e<w3[30:27]>
+    // (fact 190 / own-x03yrd).
+    const v: u32 = if ((bundle[5] >> 21) & 1 == 1) blk: {
+        const src_e: u32 = (bundle[3] >> 27) & 0xF;
+        break :blk state.getY(state.e[src_e]) orelse 0;
+    } else state.getX(state.a[a_idx]) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
 }
 

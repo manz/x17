@@ -171,6 +171,10 @@ x18.mpy    4   0x00000018   0x00000000   0x00000000   0xC1500001
 #   s<w4[6:3]> <- X:[A<{w1[2:0], head[31:30]}>]
 x03.xrd    6   0x00000003   0x00000000   0x0140E000   0x04002008   0x00046804   0x00140102
 
+# x03.yrd: x03.xrd with w5[21] = 1, a Y read at e<w3[30:27]>
+# (fact 190 / own-x03yrd).
+x03.yrd    6   0x00000003   0x00000002   0x0140E000   0x04002008   0x00046804   0x00340100
+
 # x03.agu: 6-syllable VLIW at low5 0x03 with the A-AGU slot active
 # (fact 164 / own-x03agu).
 #   A<w3[14:10]> <- AGU[w2[26:22]](x = A<w3[4:0]>, i = {w5[0], w4[31:17]})

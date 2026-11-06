@@ -286,6 +286,11 @@ x03.xrd	dest_s	s	3	6	s4
 x03.xrd	a_hi	imm	0	2	s1
 x03.xrd	a_lo	imm	30	31	head
 
+# x03.yrd (6 syllables): Y read via the w4 slot.
+# Grammar: x03.yrd <dest_s>, <src_e>
+x03.yrd	dest_s	s	3	6	s4
+x03.yrd	src_e	e	27	30	s3
+
 # x03.agu (6 syllables): A-AGU write.
 # Grammar: x03.agu <dest_A>, <src_A>, #<i_hi>, #<i_lo>
 x03.agu	dest_A	A	10	14	s3
