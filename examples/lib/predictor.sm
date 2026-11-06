@@ -19,7 +19,8 @@
 ;
 ; Keeps the bit reader (e5, s9, s10) and s14, s15. Uses every other s register; unpredict
 ; parks s9 and s10 at X:[A10 + 32], +33 (past the 31 coefficients; Y is 16 bits, the cache
-; is not) to hold the tap loop's constants there, through A5.
+; is not) to free them for the tap and the adaptation, through A5. It also writes R6, R7, e6
+; and p1.
 ; Left shifts by a runtime count that must wrap go through sxr first, so the 0x19 shift
 ; (which saturates) never overflows.
 
@@ -131,8 +132,6 @@ done:
         stx A5, s9
         x02.ainc #5, #5
         stx A5, s10
-        ldi s10, #-16           ; tap constants
-        ldi s11, #8
         ldy s7, e11
         alu s12, s7, s14, #OP_SUB
         ptst p1, s0, #LT12, #PTST ; n == 0
@@ -192,6 +191,14 @@ copy:   ldy s7, e15
 window: x19.aagu5 A8, A4, #5, #0 ; top: out[j - order - 1]
         x19.aagu5 A7, A4, #5, #0
         x02.ainc #7, #7         ; history: out[j - order]
+        ; R6 = A10 + order + 1: where A11 stands once the tap has prefetched its last term
+        ldy s13, e12
+        ldi s12, #3
+        alu s13, s0, s13, #OP_SUB
+        alu s13, s13, s12, #OP_SUB
+        x17.mve e6, s13         ; e6 = -(order + 2)
+        x19.a3 s0, R7, e6, #25, #2, #0 ; R7 = -(order + 1)
+        ragu R6, A10, R7, #29   ; A10 - R7
 sample: ldy s7, e15
         alu s12, s7, s14, #OP_SUB
         ptst p1, s0, #LT12, #PTST
@@ -201,33 +208,22 @@ sample: ldy s7, e15
         x19.xrd s7, #8          ; top
         x19.aagu5 A9, A7, #5, #0
         x19.aagu5 A11, A10, #5, #0
-        alu s4, s0, s0, #OP_ADD ; sum hi
-        alu s5, s0, s0, #OP_ADD ; sum lo
-        ldy s8, e12
-        alu s8, s8, s14, #OP_SUB ; terms left - 1: the loop runs while it is >= 0
-        x19.xrd s3, #9          ; out[j - 1 - k], one ahead
-        x02.ainc #9, #9
-        ; sum += coefs[k] * (out[j - 1 - k] - top), each product exact as hi * 2^15 + lo:
-        ; plo = (2cd)[15:0] = 2 lo, hi = round((c << 8) * d / 2^23) - lo[14]. order >= 1 here,
-        ; so the count is tested at the bottom and the delay slots fetch the next term.
-tap:    x19.xrd s1, #11         ; c
-        x02.ainc #11, #11       ; (overwrites s2)
-        alu s2, s3, s7, #OP_SUB ; d
-        x02.x3 #0, #0, s0, s0, #5, #0, s0, #1, s12 ; s12 = plo
-        x19.alu s13, s1, s11, #SHIFT ; c << 8
-        x02.mpy s13, s13, s2    ; round((c << 8) * d / 2^23)
-        alu s5, s5, s12, #OP_ADD ; 2 lo summed (< 31 * 2^16)
-        x19.alu s12, s12, s10, #SHIFT ; lo[14] = rshr(plo, 16): plo < 2^16
-        alu s13, s13, s12, #OP_SUB
-        alu s4, s4, s13, #OP_ADD
-        alu s8, s8, s14, #OP_SUB
-        ptst p1, s0, #LT8, #PTST ; last term done
-        jmp #IF_NOT, #1, tap
-        x19.xrd s3, #9          ; (delay slot) next term
-        x02.ainc #9, #9         ; (delay slot)
-        alu s3, s0, s14, #OP_SUB
-        x19.alu s5, s5, s3, #SHIFT ; lo (exact: even)
-        ; normalise: lo < 31 * 2^15, carry it into hi
+        ; sum += c * d, d = out[j - 1 - k] - top, exact as floor(cd / 2^16) * 2^16 + cd[15:0]:
+        ; the x02 floor >> 24 of (c << 8) * d and the undoubled low half of c * d (w1[17] = 1,
+        ; fact 399). Four x02.v bundles a term, the X reads and A steps one term ahead, the
+        ; hi add one term behind; no multiply reads an s its own bundle's X read writes.
+        ; Operands: xrd_d, xrd_a, inc_d1, inc_d2, inc_s, mpy_d, mpy_a, mpy_b, plo, #sgn,
+        ; #x3_d >> 2, #x3_d & 3, x3_a, x3_b, #op, #sh
+        x02.v s1, A11, A11, A0, A11, s9, s0, s0, s0, #5, #1, #1, s0, s0, #0, #0 ; c; s9 = s5 = 0
+        x02.v s3, A9, A9, A0, A9, s0, s0, s0, s0, #5, #3, #1, s1, s0, #0, #8 ; out; s13 = c << 8
+        x02.v s0, A0, A0, A0, A0, s4, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0 ; s2 = d; s4 = 0
+tap:    x02.v s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #1, #0, s4, s9, #0, #0 ; s12 = cd[15:0], hi += s9, next out
+        x02.v s1, A11, A11, A0, A11, s9, s13, s2, s0, #5, #1, #1, s5, s12, #0, #0 ; s9 = floor(cd / 2^16), lo += s12, next c
+        pcond p1, R6, A11, #30  ; terms left: A11 != R6
+        jmp #3, #1, tap
+        x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #3, #1, s1, s0, #0, #8 ; (delay slot) c << 8
+        x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0 ; (delay slot) d
+        x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #1, #0, s4, s9, #0, #1 ; hi = 2 (hi + s9): units of 2^15
 sum:    floorshr(s3, s5, 15)
         alu s4, s4, s3, #OP_ADD
         ldi s12, #15
@@ -370,8 +366,7 @@ nneg:   alu s12, s3, s9, #OP_SUB
         jmp #IF_NOT, #2, nput
         nop()
         nop()
-adone:  ldi s10, #-16           ; the tap constants back
-        ldi s11, #8
+adone:
 advance: x02.ainc #7, #7
         x02.ainc #8, #8
         jmp #IF_NOT, #2, sample
