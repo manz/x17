@@ -797,3 +797,118 @@ test "huff_decode decodes what a bit-by-bit matcher decodes, through subtables" 
     }
     try testing.expect(deep > 50);
 }
+
+const Family = struct { name: []const u8, dim: u3, fbits: u3, off: u5, max: u5, signs: bool, esc: bool };
+
+const families = [_]Family{
+    .{ .name = "spec_quad_s", .dim = 4, .fbits = 2, .off = 1, .max = 2, .signs = false, .esc = false },
+    .{ .name = "spec_quad_u", .dim = 4, .fbits = 2, .off = 0, .max = 2, .signs = true, .esc = false },
+    .{ .name = "spec_pair_s", .dim = 2, .fbits = 5, .off = 4, .max = 8, .signs = false, .esc = false },
+    .{ .name = "spec_pair_u", .dim = 2, .fbits = 5, .off = 0, .max = 12, .signs = true, .esc = false },
+    .{ .name = "spec_pair_esc", .dim = 2, .fbits = 5, .off = 0, .max = 16, .signs = true, .esc = true },
+};
+
+/// sosumi ref/dsp/aac/huffman.zig `decodeSpectral` for one family, plain integers.
+fn refSpectral(data: []const u8, pos: *usize, syms: []const HCode, f: Family, out: []i32) error{EscapeTooLong}!void {
+    var v: u32 = refHuff(data, pos, syms);
+    var k: usize = f.dim;
+    while (k > 0) {
+        k -= 1;
+        out[k] = @as(i32, @intCast(v & ((@as(u32, 1) << f.fbits) - 1))) - f.off;
+        v >>= f.fbits;
+    }
+    if (f.signs) for (out) |*x| {
+        if (x.* != 0 and refRead(data, pos, 1) == 1) x.* = -x.*;
+    };
+    if (f.esc) for (out) |*x| {
+        if (@abs(x.*) != 16) continue;
+        var n: u5 = 0;
+        while (refRead(data, pos, 1) == 1) {
+            n += 1;
+            if (n > 8) return error.EscapeTooLong;
+        }
+        const mag: i32 = @intCast((@as(u32, 1) << (n + 4)) + refRead(data, pos, n + 4));
+        x.* = if (x.* < 0) -mag else mag;
+    };
+}
+
+test "the spectral macros unpack, sign and escape as the model does" {
+    const gpa = testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x5BEC);
+    const rnd = prng.random();
+    var escapes: usize = 0;
+    var fails: usize = 0;
+    var exact9: usize = 0;
+    for (families) |f| {
+        for (0..@as(usize, if (f.esc) 200 else 30)) |run| {
+            // a random complete code over random packed values in the family's range
+            var cbuf: [300]HCode = undefined;
+            const syms = randomCode(rnd, cbuf[0..rnd.intRangeAtMost(usize, 2, 120)]);
+            for (syms, 0..) |*s, i| {
+                var v: u16 = 0;
+                for (0..f.dim) |_| v = (v << f.fbits) + rnd.intRangeAtMost(u16, 0, f.max);
+                if (f.esc and i < 3) v = (16 << 5) + @as(u16, @intCast(i)) * 16; // force some escapes
+                s.v = v;
+            }
+            var t: [8192]u16 = undefined;
+            var n: usize = 0;
+            _ = buildTables(&t, &n, syms, 0, 8);
+            if (n > 1024) continue;
+            var data: [256]u8 = undefined;
+            rnd.bytes(&data);
+            // mostly short escape prefixes; dense ones on half the escape runs reach N > 8
+            const dense = f.esc and run % 2 == 1;
+            for (&data) |*b| b.* = if (dense) b.* | rnd.int(u8) else b.* & (rnd.int(u8) | rnd.int(u8));
+            const count = 8;
+
+            var src: std.ArrayList(u8) = .empty;
+            defer src.deinit(gpa);
+            try src.appendSlice(gpa, ".include \"lib/bits.sm\"\n.include \"lib/huffman.sm\"\n        bits_init(0x4000)\n");
+            for (0..count) |_| {
+                try src.appendSlice(gpa, "        ldi s1, #0x1000\n        ldi s11, #8\n");
+                if (f.esc) try src.print(gpa, "        {s}(fail)\n", .{f.name}) else try src.print(gpa, "        {s}()\n", .{f.name});
+            }
+            try src.appendSlice(gpa,
+                \\        getbits(s8, 8)
+                \\        x17.halt
+                \\fail:   ldi s1, #0x777
+                \\        stx A6, s1
+                \\        x17.halt
+                \\
+            );
+            const prog = try assemble(gpa, src.items);
+            defer gpa.free(prog);
+
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            try stage(gpa, &state, &data);
+            for (t[0..n], 0..) |w, i| try state.y_mem.put(gpa, 0x1000 + @as(u32, @intCast(i)), w);
+            state.a[6] = 0x100;
+            _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 20);
+            try testing.expect(state.halted);
+
+            var pos: usize = 0;
+            var at: u32 = 0x100;
+            const failed = for (0..count) |_| {
+                var out: [4]i32 = undefined;
+                refSpectral(&data, &pos, syms, f, out[0..f.dim]) catch {
+                    var peek = pos;
+                    if (refRead(&data, &peek, 1) == 0) exact9 += 1; // nine ones, then the zero
+                    break true;
+                };
+                for (out[0..f.dim]) |x| {
+                    if (@abs(x) > 16) escapes += 1;
+                    try testing.expectEqual(@as(u32, @bitCast(x)) & 0xFFFFFF, state.readX(at) orelse 0xDEAD);
+                    at += 1;
+                }
+            } else false;
+            if (failed) {
+                fails += 1;
+                try testing.expectEqual(@as(u32, 0x777), state.readX(at) orelse 0xDEAD);
+            } else try testing.expectEqual(refRead(&data, &pos, 8), state.s[8]);
+        }
+    }
+    try testing.expect(escapes > 10);
+    try testing.expect(fails > 2);
+    try testing.expect(exact9 > 0); // N = 9 itself fails, not only N >= 10
+}
