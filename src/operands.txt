@@ -487,7 +487,7 @@ lde	imm16	imm	5	20	head
 # rop (1 syllable): R-op into an s and/or R.
 # Grammar: rop <dest_s>, <dest_R>, <x_e>, <y_R>, #<fn>
 # dest_s = 0 or dest_R = 0 means "no write" for that half.
-rop	dest_s	s	26	28	head
+rop	dest_s	s	26	29	head
 rop	dest_R	R	22	25	head
 rop	x_e	e	5	8	head
 rop	y_R	R	13	16	head
@@ -927,3 +927,40 @@ x18.rcl001	fn10b	imm	28	31	s1
 x18.rcl001	fn3	imm	20	24	s3
 x18.rcl001	agu3	imm	30	30	head
 x18.rcl001	st_src	s	22	25	head
+
+# lde.hi <dest_e>, #<imm>   (lde with [31] = 1)
+lde.hi	dest_e	e	26	29	head
+lde.hi	imm16	imm	5	20	head
+
+# rop.c4 <dest_s>, <dest_R>, <x_e>, <y_R>, #<fn>   (rop at class 100)
+rop.c4	dest_s	s	26	29	head
+rop.c4	dest_R	R	22	25	head
+rop.c4	x_e	e	5	8	head
+rop.c4	y_R	R	13	16	head
+rop.c4	fn	imm	17	20	head
+
+# aset0b <dest_s>, <src_e>
+aset0b	dest_s	s	26	28	head
+aset0b	src_e	e	5	8	head
+
+# ragu0c <dest_R>, <x_A>, #<fn>
+ragu0c	dest_R	R	27	30	head
+ragu0c	x_A	A	12	16	head
+ragu0c	fn	imm	7	11	head
+
+# ld0e.a #<addr>, #<n>, #<op0>
+ld0e.a	addr	imm	5	20	head
+ld0e.a	n	imm	1	3	s1
+ld0e.a	op0	imm	0	0	s1
+
+# ste #<e_lo>, #<e_hi>, #<imm>
+ste	e_lo	imm	29	31	head
+ste	e_hi	imm	0	0	s1
+ste	imm	imm	5	20	head
+
+# rop.b21 <dest_s>, <dest_R>, <x_e>, <y_R>, #<fn>
+rop.b21	dest_s	s	26	29	head
+rop.b21	dest_R	R	22	25	head
+rop.b21	x_e	e	5	8	head
+rop.b21	y_R	R	13	16	head
+rop.b21	fn	imm	17	20	head

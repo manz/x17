@@ -121,6 +121,15 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x0B) {
         const high3: u32 = (head >> 29) & 0x7;
         if (high3 == 0b010) return execJmp(gpa, state, head);
+        if (high3 == 0b100) return execAset0b(state, head);
+    }
+    // lde with [31] = 1 (fact 280): same fields as class 01x.
+    if (low5 == 0x06 and (head >> 30) == 0b11) return execLde(gpa, state, head);
+    // rop at classes 011 and 100 (fact 281, 285): s<[29:26]>.
+    if (low5 == 0x07 and ((head >> 29) == 0b011 or (head >> 29) == 0b100)) return execRop(gpa, state, head);
+    if (low5 == 0x0C and (head >> 31) == 1) return execRagu0c(state, head);
+    if (low5 == 0x0F and (head >> 29) == 0 and bundle.len >= 2 and (bundle[1] >> 29) == 0b001) {
+        return execSte(state, bundle);
     }
     if (low5 == 0x08) {
         return execBr(gpa, state, head);
@@ -2713,8 +2722,33 @@ fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     const addr: u32 = (head >> 5) & 0xFFFF;
     const n: u32 = (s1 >> 1) & 0x7;
     if (dest_s != 0) state.s[dest_s] = 0;
-    const a_idx: u32 = (4 * n + 1) & 0xF;
+    // op[0] = s1[0] adds 2 (fact 287): A<4n + 1 + 2*op[0]>.
+    const a_idx: u32 = (4 * n + 1 + 2 * (s1 & 1)) & 0xF;
     state.a[a_idx] = addr;
+}
+
+/// 0x0B class 100 (fact 259): s<[28:26]> <- Y:[e<[8:5]>].  The A<[18:15]>
+/// side named in the note is not modelled.
+fn execAset0b(state: *State, head: u32) RunError!void {
+    const dest: u32 = (head >> 26) & 7;
+    if (dest != 0) state.s[dest] = (state.getY(state.e[(head >> 5) & 0xF]) orelse 0) & 0xFFFF;
+}
+
+/// 0x0C with [31] = 1 (fact 282): R<[30:27]> <- AGUA[[11:7]] over
+/// x = A<[16:12]>, i = [26:17].  Only i = 0 is measured.
+fn execRagu0c(state: *State, head: u32) RunError!void {
+    if ((head >> 17) & 0x3FF != 0) return RunError.UnknownForm;
+    const v = aguaEval((head >> 7) & 0x1F, state.a[(head >> 12) & 0xF], 0) orelse return RunError.UnknownForm;
+    const dest: u32 = (head >> 27) & 0xF;
+    if (dest != 0) state.r[dest] = v;
+}
+
+/// 0x0F head class 000 with a class-001 second (fact 279):
+/// e<{w1[0], head[31:29]}> <- #head[20:5].  The bundle's Y store is not
+/// modelled.
+fn execSte(state: *State, bundle: []const u32) RunError!void {
+    const dest: u32 = ((bundle[1] & 1) << 3) | (bundle[0] >> 29);
+    if (dest != 0) state.e[dest] = (bundle[0] >> 5) & 0xFFFF;
 }
 
 fn execLde(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
@@ -2728,7 +2762,8 @@ fn execLde(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 
 fn execRop(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     _ = gpa;
-    const dest_s: u32 = (head >> 26) & 0x7;
+    // s<[29:26]>: class 010 keeps bit 29 clear, class 011 sets it (281).
+    const dest_s: u32 = (head >> 26) & 0xF;
     const dest_r: u32 = (head >> 22) & 0xF;
     const x_e: u32 = (head >> 5) & 0xF;
     const y_r: u32 = (head >> 13) & 0xF;

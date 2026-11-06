@@ -619,3 +619,25 @@ x18.yb100  4   0x00000018   0x00042080   0x01300000   0x80620C01
 # x18.rcl001: class 001 R slot (AGU10B or, head[30] = 1, AGU3) plus the Y
 # store (fact 199 / own-x18rcl001, own-x18rag001).
 x18.rcl001 4   0x00000018   0x04080000   0x00000800   0x20000000
+
+# lde.hi: lde with [31] = 1 (fact 280 / own-x06lde6).
+lde.hi     1   0xC0000006
+
+# rop.c4: rop at class 100, [21] inert (fact 285 / own-x07rop4).
+rop.c4     1   0x80200007
+
+# aset0b: 0x0B class 100, s <- Y:[e] (fact 259 / own-x0baset).
+aset0b     1   0x8011200B
+
+# ragu0c: 0x0C [31] = 1, R <- AGUA over A (fact 282 / own-x0cragu).
+ragu0c     1   0x8000002C
+
+# ld0e.a: ld0e with no s dest and op[0] (fact 287 / own-x0eld7).
+ld0e.a     2   0x8000000E   0x00041000
+
+# ste: 0x0F head class 000 + class-001 second, e <- #imm (fact 279).
+ste        2   0x0000000F   0x20058000
+
+# rop.b21: rop with the inert [21] set, as the stock words carry it
+# (fact 281 / own-x07rop12).
+rop.b21    1   0x40200007

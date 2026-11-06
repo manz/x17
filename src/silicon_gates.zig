@@ -1598,6 +1598,89 @@ const GATES = [_]Gate{
         .post = &.{.{ .r_reg = .{ .index = 3, .value = 3 } }},
     },
     .{
+        .name = "own-x06lde6",
+        // [31] = 1 lde: e2 <- #0x300.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x555 }},
+        .src =
+        \\lde.hi e2, #0x300
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x300 } }},
+    },
+    .{
+        .name = "own-x07rop12",
+        // class 011 rop: s12 and R6 <- e8 = 0x345.
+        .pre = &.{.{ .bank = .e, .index = 8, .value = 0x345 }},
+        .src =
+        \\rop.b21 s12, R6, e8, R0, #0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 12, .value = 0x345 } },
+            .{ .r_reg = .{ .index = 6, .value = 0x345 } },
+        },
+    },
+    .{
+        .name = "own-x07rop4",
+        // class 100 rop still executes: s2 <- e7 = 0x345.
+        .pre = &.{.{ .bank = .e, .index = 7, .value = 0x345 }},
+        .src =
+        \\rop.c4 s2, R0, e7, R0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x345 } }},
+    },
+    .{
+        .name = "own-x0baset",
+        // s1 <- Y:[e3 = 0x700] = 0x1357.
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x700 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0x1357 }},
+        .src =
+        \\aset0b s1, e3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x1357 } }},
+    },
+    .{
+        .name = "own-x0cragu",
+        // AGUA fn 1 (x+i-1), i = 0: R6 <- A7 - 1 = 0x344.
+        .pre = &.{.{ .bank = .a, .index = 7, .value = 0x345 }},
+        .src =
+        \\ragu0c R6, A7, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 6, .value = 0x344 } }},
+    },
+    .{
+        .name = "own-x0eld7",
+        // n = 1, op[0] = 1: A7 <- #0x345, A5 untouched.
+        .pre = &.{
+            .{ .bank = .a, .index = 7, .value = 0x111 },
+            .{ .bank = .a, .index = 5, .value = 0x222 },
+        },
+        .src =
+        \\ld0e.a #0x345, #1, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .a_reg = .{ .index = 7, .value = 0x345 } },
+            .{ .a_reg = .{ .index = 5, .value = 0x222 } },
+        },
+    },
+    .{
+        .name = "own-x0fe8",
+        // e<{w1[0], head[31:29]}> = e8 <- #0x123.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x600 },
+            .{ .bank = .e, .index = 8, .value = 0x555 },
+        },
+        .src =
+        \\ste #0, #1, #0x123
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 8, .value = 0x123 } }},
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},
@@ -2468,7 +2551,7 @@ const GATES = [_]Gate{
         .post = &.{.{ .x_mem = .{ .addr = 0x300, .value = 0x8BEE } }},
     },
     .{
-        .name = "own-ld0e",
+        .name = "own-0e",
         // the probe list own-0e: s5 <- 0, A13 <- 0x300, via low5 0x0E.
         // Expected bytes: 0x9CA0600E 0x00040006.
         .src =
