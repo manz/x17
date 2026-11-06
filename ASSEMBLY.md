@@ -134,16 +134,19 @@ load" reads as `x17.imm` without further ceremony.
   units of 4 and refuses a target that is not a multiple of 4 away; `br`
   only reaches forward).  `#expr` stays the raw field.  Shipped.
 - `.assert expr`, checked in pass 2 (`.assert end - start <= 64`).  Shipped.
-- Still to come: `.place`, round-trip gate on a whole program.
+- `.include "file"` (relative to the including file, cycles refused) and
+  a816-style macros: `.macro name(a, b) {` ... `}`, called as `name(x, y)`.
+  Parameters substitute as whole identifiers; labels a body defines are
+  renamed per expansion; an error inside a macro also names the call.
+  `examples/macros.sm` assembles to the same bytes as `labels.sm`.  Shipped.
+- Still to come: `.place`, `x17 fmt`, round-trip gate on a whole program.
 
 `.align` is deliberately absent: a zero syllable is not a no-op (low5 0x00
 heads a 7-syllable bundle), so padding needs a measured no-op form first.
 
 **v2 (after the three decoders ask for them)**:
-- `.include` for shared tables between decoders.
 - `.struct` for the sm1 descriptor / PCM ring layout (shared with
   upstream kernel).
-- Macros for AGU setup / loop prologue patterns.
 - `.assert cycles` once isa.toml grows a cycle-cost column.
 
 **Explicitly deferred**:

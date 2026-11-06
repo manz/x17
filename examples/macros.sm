@@ -1,0 +1,21 @@
+; labels.sm again, through an .include and a macro.  The macro's own label
+; is renamed per expansion, so skip4() could be used twice.
+; Expected: s1 = 4 (2 delay-slot adds + 2 after the jump target).
+.include "lib/add.sm"
+
+.macro skip4(d, b) {
+        bcc #0, over            ; bcc reaches multiples of 4 syllables
+        add(d, d, b)            ; delay slot 1
+        add(d, d, b)            ; delay slot 2
+        add(d, d, b)            ; skipped
+        add(d, d, b)            ; skipped
+        add(d, d, b)            ; skipped
+        add(d, d, b)            ; skipped
+over:
+}
+
+        ldi s2, #1
+        skip4(s1, s2)
+        add(s1, s1, s2)
+        add(s1, s1, s2)
+        x17.halt

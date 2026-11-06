@@ -137,8 +137,24 @@ fn readSource(gpa: std.mem.Allocator, path: []const u8) ![]u8 {
 
 fn renderFileError(fe: asm_mod.FileError, path: []const u8, out: *Writer) !void {
     var buf: [1024]u8 = undefined;
-    const n = asm_mod.renderDiagAt(&buf, path, fe.line, fe.line_text, fe.diag);
+    const file = if (fe.file.len > 0) fe.file.get() else path;
+    const n = asm_mod.renderDiagAt(&buf, file, fe.line, fe.lineText(), fe.diag);
     try out.writeAll(buf[0..n]);
+    if (fe.call_line > 0) {
+        try out.print("   = note: in macro '{s}', called at {s}:{d}\n", .{ fe.call_name.get(), fe.call_file.get(), fe.call_line });
+    }
+}
+
+fn loadInclude(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
+    _ = ctx;
+    return readSource(gpa, path) catch |e| switch (e) {
+        error.FileNotFound => null,
+        else => e,
+    };
+}
+
+fn assemblePath(gpa: std.mem.Allocator, src: []const u8, path: []const u8) !asm_mod.FileResult {
+    return asm_mod.assembleFileWith(gpa, src, .{ .path = path, .loader = .{ .load = loadInclude } });
 }
 
 const asm_params = clap.parseParamsComptime(
@@ -170,7 +186,7 @@ fn cmdAsm(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     };
     defer gpa.free(src);
 
-    const result = try asm_mod.assembleFile(gpa, src);
+    const result = try assemblePath(gpa, src, path);
     const words = switch (result) {
         .ok => |w| w,
         .err => |fe| {
@@ -230,7 +246,7 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     const src = try readSource(gpa, path);
     defer gpa.free(src);
 
-    const result = try asm_mod.assembleFile(gpa, src);
+    const result = try assemblePath(gpa, src, path);
     const words = switch (result) {
         .ok => |w| w,
         .err => |fe| {

@@ -1,0 +1,6 @@
+; Shared by examples/macros.sm: alu op 14 is s<d> <- s<a> + s<b>.
+.const ADD = 14
+
+.macro add(d, a, b) {
+        alu d, a, b, #ADD
+}

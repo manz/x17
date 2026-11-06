@@ -17,10 +17,13 @@
 //! Errors are `Diagnostic`s: code, span, expected/found message, hint,
 //! printed as a rust-style caret block.
 //!
-//! What waits: `.include`, macros, data placement in X/Y, `.assert cycles`.
+//! `.include` and macros expand before pass 1 (expand.zig).
+//!
+//! What waits: data placement in X/Y, `.assert cycles`.
 
 const std = @import("std");
 const isa = @import("isa");
+const expand = @import("expand.zig");
 
 pub const AsmError = error{
     AssemblyFailed,
@@ -67,6 +70,10 @@ pub const ErrorCode = enum {
     e0022_branch_out_of_range,
     e0023_bad_directive,
     e0024_assert_failed,
+    e0025_include_failed,
+    e0026_include_cycle,
+    e0027_bad_macro,
+    e0028_macro_call,
 
     pub fn text(c: ErrorCode) []const u8 {
         return switch (c) {
@@ -94,6 +101,10 @@ pub const ErrorCode = enum {
             .e0022_branch_out_of_range => "E0022",
             .e0023_bad_directive => "E0023",
             .e0024_assert_failed => "E0024",
+            .e0025_include_failed => "E0025",
+            .e0026_include_cycle => "E0026",
+            .e0027_bad_macro => "E0027",
+            .e0028_macro_call => "E0028",
         };
     }
 };
@@ -122,13 +133,13 @@ pub const Diagnostic = struct {
         return self.hint_buf[0..self.hint_len];
     }
 
-    fn setMsg(self: *Diagnostic, bytes: []const u8) void {
+    pub fn setMsg(self: *Diagnostic, bytes: []const u8) void {
         const n = @min(bytes.len, self.msg_buf.len);
         @memcpy(self.msg_buf[0..n], bytes[0..n]);
         self.msg_len = @intCast(n);
     }
 
-    fn setHint(self: *Diagnostic, bytes: []const u8) void {
+    pub fn setHint(self: *Diagnostic, bytes: []const u8) void {
         const n = @min(bytes.len, self.hint_buf.len);
         @memcpy(self.hint_buf[0..n], bytes[0..n]);
         self.hint_len = @intCast(n);
@@ -1112,25 +1123,88 @@ fn fromLexErr(e: LexError) Result {
     return .{ .err = d };
 }
 
+/// Fixed-capacity text a `FileError` owns, so it outlives the expansion arena.
+pub fn Fixed(comptime n: usize) type {
+    return struct {
+        buf: [n]u8 = undefined,
+        len: usize = 0,
+
+        pub fn set(self: *@This(), bytes: []const u8) void {
+            self.len = @min(bytes.len, n);
+            @memcpy(self.buf[0..self.len], bytes[0..self.len]);
+        }
+
+        pub fn get(self: *const @This()) []const u8 {
+            return self.buf[0..self.len];
+        }
+    };
+}
+
 /// Error returned by `assembleFile` carrying enough context for a stellar
-/// error print: which line failed, the line text (a slice into the input),
-/// and the diagnostic.
+/// error print: the file and line that failed, the line's text, the
+/// diagnostic, and the macro call that produced the line, if any.
 pub const FileError = struct {
     line: usize,
-    line_text: []const u8,
     diag: Diagnostic,
+    text: Fixed(256) = .{},
+    /// Empty for the top-level source when no path was given.
+    file: Fixed(256) = .{},
+    call_name: Fixed(64) = .{},
+    call_file: Fixed(256) = .{},
+    /// 0 when the line did not come from a macro.
+    call_line: usize = 0,
+
+    pub fn lineText(self: *const FileError) []const u8 {
+        return self.text.get();
+    }
+
+    fn from(l: expand.Line, d: Diagnostic) FileError {
+        var fe: FileError = .{ .line = l.site.line, .diag = d };
+        fe.text.set(l.text);
+        fe.diag.span.end = @min(fe.diag.span.end, fe.text.len);
+        fe.diag.span.start = @min(fe.diag.span.start, fe.diag.span.end);
+        fe.file.set(l.site.file);
+        if (l.call) |c| {
+            fe.call_name.set(c.name);
+            fe.call_file.set(c.site.file);
+            fe.call_line = c.site.line;
+        }
+        return fe;
+    }
 };
 
-/// Assemble a multi-line source file in two passes (see the file header).
-/// Blank lines and lines starting with `;` or `#` are comments.  A line is
+pub const Loader = expand.Loader;
+
+pub const FileOptions = struct {
+    /// The source's path: names it in diagnostics and anchors `.include`.
+    path: []const u8 = "",
+    /// Reads included files; null refuses `.include`.
+    loader: ?Loader = null,
+};
+
+pub const FileResult = union(enum) { ok: []u32, err: FileError };
+
+/// Assemble a source with no path and no includes (see `assembleFileWith`).
+pub fn assembleFile(gpa: std.mem.Allocator, source: []const u8) !FileResult {
+    return assembleFileWith(gpa, source, .{});
+}
+
+/// Assemble a multi-line source file: expand `.include` and macros
+/// (expand.zig), then two passes (see the file header).  Blank lines and
+/// lines starting with `;` or `#` are comments.  A line is
 /// `[label:] [instruction | directive]`.  Directives: `.const NAME = expr`,
 /// `.assert expr` (checked in pass 2).  On success, returns a newly
 /// allocated slice of syllables (caller frees).  On failure, returns a
 /// `FileError` attached to the offending line.
-pub fn assembleFile(
-    gpa: std.mem.Allocator,
-    source: []const u8,
-) !union(enum) { ok: []u32, err: FileError } {
+pub fn assembleFileWith(gpa: std.mem.Allocator, source: []const u8, opts: FileOptions) !FileResult {
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    var x: expand.Expander = .{ .arena = arena_state.allocator(), .gpa = gpa, .loader = opts.loader };
+    x.file(opts.path, source) catch |e| switch (e) {
+        error.Expand => return .{ .err = FileError.from(x.failure.?.line, x.failure.?.diag) },
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+
     var symbols: SymbolTable = .empty;
     defer symbols.deinit(gpa);
     var list: std.ArrayList(u32) = .empty;
@@ -1138,18 +1212,13 @@ pub fn assembleFile(
 
     for ([_]bool{ true, false }) |sizing| {
         var pc: u32 = 0;
-        var line_no: usize = 0;
-        var it = std.mem.splitScalar(u8, source, '\n');
-        while (it.next()) |raw| {
-            line_no += 1;
-            const trimmed = std.mem.trim(u8, raw, " \t\r");
-            if (trimmed.len == 0 or trimmed[0] == ';' or trimmed[0] == '#') continue;
+        for (x.out.items) |l| {
             const env: Env = .{ .symbols = &symbols, .pc = pc, .sizing = sizing };
-            const r = try fileLine(gpa, raw, &symbols, env);
+            const r = try fileLine(gpa, l.text, &symbols, env);
             switch (r) {
                 .err => |d| {
                     list.deinit(gpa);
-                    return .{ .err = .{ .line = line_no, .line_text = raw, .diag = d } };
+                    return .{ .err = FileError.from(l, d) };
                 },
                 .none => {},
                 .bundle => |b| {
@@ -1511,7 +1580,7 @@ fn fileOk(src: []const u8) ![]u32 {
         .ok => |w| w,
         .err => |fe| {
             var buf: [2048]u8 = undefined;
-            const n = renderDiagAt(&buf, "test", fe.line, fe.line_text, fe.diag);
+            const n = renderDiagAt(&buf, "test", fe.line, fe.lineText(), fe.diag);
             std.debug.print("{s}", .{buf[0..n]});
             return error.TestUnexpectedResult;
         },
@@ -1635,7 +1704,7 @@ test "file: undefined symbol points at the name" {
     );
     try testing.expectEqual(ErrorCode.e0018_undefined_symbol, fe.diag.code);
     try testing.expectEqual(@as(usize, 2), fe.line);
-    try testing.expectEqualStrings("MISSING", fe.line_text[fe.diag.span.start..fe.diag.span.end]);
+    try testing.expectEqualStrings("MISSING", fe.lineText()[fe.diag.span.start..fe.diag.span.end]);
 }
 
 test "file: a label defined twice is refused" {
@@ -1680,4 +1749,46 @@ test "file: an immediate out of range reports the value and the field" {
     const fe = try fileErr(".const BIG = 0x10000\nldi s1, #BIG");
     try testing.expectEqual(ErrorCode.e0013_imm_out_of_range, fe.diag.code);
     try testing.expectEqualStrings("immediate 0x10000 does not fit in 16 bits", fe.diag.msg());
+}
+
+test {
+    _ = expand;
+}
+
+test "file: a macro assembles to the same bytes as its expansion" {
+    const with = try assembleFile(testing.allocator,
+        \\.const ADD = 14
+        \\.macro add2(d, a, b) {
+        \\        alu d, a, b, #ADD
+        \\        alu d, a, b, #ADD
+        \\}
+        \\        ldi s2, #1
+        \\        add2(s1, s1, s2)
+        \\        x17.halt
+    );
+    defer testing.allocator.free(with.ok);
+    const by_hand = try assembleFile(testing.allocator,
+        \\        ldi s2, #1
+        \\        alu s1, s1, s2, #14
+        \\        alu s1, s1, s2, #14
+        \\        x17.halt
+    );
+    defer testing.allocator.free(by_hand.ok);
+    try testing.expectEqualSlices(u32, by_hand.ok, with.ok);
+}
+
+test "file: an error inside a macro names the body line and the call" {
+    const r = try assembleFile(testing.allocator,
+        \\.macro bad(r) {
+        \\        ldi r, #0x10000
+        \\}
+        \\        ldi s1, #1
+        \\        bad(s3)
+    );
+    const fe = r.err;
+    try testing.expectEqual(ErrorCode.e0013_imm_out_of_range, fe.diag.code);
+    try testing.expectEqual(@as(usize, 2), fe.line);
+    try testing.expectEqualStrings("        ldi s3, #0x10000", fe.lineText());
+    try testing.expectEqualStrings("bad", fe.call_name.get());
+    try testing.expectEqual(@as(usize, 5), fe.call_line);
 }

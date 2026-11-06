@@ -42,15 +42,16 @@ Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
 ## Status (2026-11-06)
 
 - `x17 asm`: two-pass assembler, labels, `.const`, constant expressions,
-  branch targets, `.assert` (ASSEMBLY.md).  `examples/labels.sm`.
+  branch targets, `.assert`, `.include`, macros (ASSEMBLY.md).
+  `examples/labels.sm`, `examples/macros.sm`.
 - `x17 run`: the emulator over every silicon-measured form; 283 own probe
   programs are gated byte-exact in `src/silicon_gates.zig`.
 - `x17 disasm`: decodes syllables back to source.
 - `src/host.zig`: the host around a codec program, one packet per run:
   parameter block, packet staging, the output ring drain and its owned-buffer
-  rule.  The four open interface questions are named stubs (entry, packet
-  reads, hand-back, clobbered regions).
-- To come: cycle costs, `.include` and macros, the bit-exact harness.
+  rule.  Interface facts from sosumi's specs/questions.md; packet reads and
+  clobbered regions are still named stubs.
+- To come: cycle costs, `x17 fmt`, the bit-exact harness.
 
 ## Mnemonics
 
