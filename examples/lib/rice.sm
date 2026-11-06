@@ -72,6 +72,7 @@ done:
 ;   e8  Y:base+5  kb (1..15)
 ;   e9  Y:base+6  max_bits (<= 22), the escape width
 ;   e10 Y:base+7  error: set to 1 when a zero run overruns (the model's RunTooLong)
+;   e6  Y:base+8  scratch: the last k, where the next sample's search starts
 ;
 ; Residuals go to X:[A6], A6 advancing by one each (x02.ainc, which also overwrites s2
 ; through its bundle's multiply slot). Products are exact single
@@ -113,7 +114,10 @@ done:
         x19.alu dst, dst, s6, #SHIFT
 }
 
-.macro rice_decompress() {
+.macro rice_decompress(base) {
+        ldi s5, #base + 7
+        x17.mve e6, s5
+        x17.sty e6, #6, #1      ; k = 1 (s14)
 top:    ldy s7, e4
         alu s5, s7, s14, #OP_SUB
         ptst p1, s5, #NEG, #PTST ; p1 = no samples left
@@ -130,7 +134,17 @@ top:    ldy s7, e4
         ldi s5, #3
         alu s1, s1, s5, #OP_ADD ; y = q + 3
         ldy s8, e8              ; kb
-        ldi s2, #1              ; k
+        ldy s2, e6              ; k from the last sample (y >= 3, so k >= 1 holds)
+lgd:    x19.alu s7, s14, s2, #SHIFT ; 2^k
+        alu s7, s1, s7, #OP_SUB
+        ptst p1, s7, #NEG, #PTST ; y < 2^k: down one
+        jmp #IF_NOT, #1, lg
+        alu s5, s2, s14, #OP_SUB ; (delay slot) k - 1
+        nop()
+        alu s2, s5, s0, #OP_ADD
+        jmp #IF_NOT, #2, lgd
+        nop()
+        nop()
 lg:     alu s5, s2, s14, #OP_ADD ; t = k + 1
         alu s7, s8, s5, #OP_SUB
         ptst p1, s7, #NEG, #PTST ; t > kb: stop
@@ -145,7 +159,8 @@ lg:     alu s5, s2, s14, #OP_ADD ; t = k + 1
         jmp #IF_NOT, #2, lg
         nop()
         nop()
-lgdone: x19.alu s1, s14, s2, #SHIFT
+lgdone: x17.sty e6, #2, #0      ; keep k
+        x19.alu s1, s14, s2, #SHIFT
         alu s1, s1, s14, #OP_SUB ; m = 2^k - 1
         ldy s3, e9
         rice_get(s4)            ; n

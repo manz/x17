@@ -227,7 +227,7 @@ test "rice_decompress decodes what the reference decodes, means, zero runs and o
             \\.include "lib/rice.sm"
             \\        bits_init(0x4000)
             \\        rice_slots(0x3000)
-            \\        rice_decompress()
+            \\        rice_decompress(0x3000)
             \\        getbits(s8, 8)
             \\        x17.halt
             \\

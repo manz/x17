@@ -334,7 +334,7 @@ alac_pbok:
         yld(s3, PK_CB)
         x17.sty e9, #3, #0      ; max_bits = chan_bits
         aimm(A6, PRED)
-        rice_decompress()
+        rice_decompress(RICE)
         rice_slots(RICE)
         ldy s3, e10
         alu s4, s3, s14, #OP_SUB

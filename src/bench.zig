@@ -11,7 +11,7 @@ const lib_paths = [_][]const u8{ "lib/bits.sm", "lib/rice.sm", "lib/predictor.sm
 const lib_texts = [_][]const u8{ @embedFile("bits.sm"), @embedFile("rice.sm"), @embedFile("predictor.sm"), @embedFile("unmix.sm"), @embedFile("alac.sm") };
 
 /// The stage calls in alac.sm, in program order.
-const stages = [_][]const u8{ "rice_decompress()", "integrate()", "unpredict()", "unmix()" };
+const stages = [_][]const u8{ "rice_decompress(RICE)", "integrate()", "unpredict()", "unmix()" };
 const begin_mark = "alu s0, s0, s0, #OP_ADD";
 const end_mark = "alu s0, s0, s0, #OP_SUB";
 
