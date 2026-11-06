@@ -219,6 +219,7 @@ x19.kmux2	fn	imm	24	27	s1
 x16.mul	dest_s	s	10	13	s2
 x16.mul	a	s	1	4	s2
 x16.mul	b	s	5	8	s2
+x16.mul	op	imm	16	20	s2
 
 # x13.agu (2 syllables): e load + R AGU at low5 0x13 S class 001.
 # Grammar: x13.agu <dest_e>, #<imm>, <dest_R>, <x_e>, <y_R>, #<fn>
@@ -383,6 +384,8 @@ x16.hd	dest_s	s	15	18	head
 x16.hd	a_s	s	11	14	head
 x16.hd	b_s	s	25	28	s2
 x16.hd	op	imm	5	10	head
+x16.hd	m	imm	23	25	head
+x16.hd	sh	imm	19	22	head
 
 # x15.pt (2 syllables): LUT-driven p-to-s copy.
 # Grammar: x15.pt <dest_s>, <p_idx>, #<lut>
@@ -725,3 +728,32 @@ x19.imm4	fn	imm	1	4	s1
 # x19.ragua: x19.ragua <dest_R>, <src_A>
 x19.ragua	dest_R	R	7	10	s3
 x19.ragua	src_A	A	15	19	s3
+
+# x16.alu2 <dest_s>, <a_s>, <b_s>, #<op>, #<neg>
+x16.alu2	dest_s	s	8	11	s1
+x16.alu2	a_s	s	25	28	s2
+x16.alu2	b_s	s	4	7	s1
+x16.alu2	op	imm	16	18	s1
+x16.alu2	neg	imm	15	15	s1
+
+# x16.alux <dest_x>, <dest_s>, <a_s>, <b_s>, #<op>, #<neg>, #<xi>
+x16.alux	dest_x	s	21	24	head
+x16.alux	dest_s	s	8	11	s1
+x16.alux	a_s	s	25	28	s2
+x16.alux	b_s	s	4	7	s1
+x16.alux	op	imm	16	18	s1
+x16.alux	neg	imm	15	15	s1
+x16.alux	xi	imm	8	12	s2
+
+# x16.ld <dest_s>, #<xi>, #<mux>
+x16.ld	dest_s	s	21	24	head
+x16.ld	xi	imm	4	8	s2
+x16.ld	mux	imm	25	26	s1
+
+# x16.aset #<a_lo>, #<imm>
+x16.aset	a_lo	imm	0	2	s1
+x16.aset	imm	imm	5	20	head
+
+# x16.ldi <dest_s>, #<imm>
+x16.ldi	dest_s	s	21	24	head
+x16.ldi	imm	imm	5	20	head

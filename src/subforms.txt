@@ -115,7 +115,7 @@ x19.kmux2  4   0x00000019   0x60042006   0x02D80000   0x00540000
 # Scalar multiply with shift (fact 118 / own-x16mul):
 #   s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]>) >> 23 (truncated)
 # S2[20:16] = 5 variant (rounded) still OPEN.
-x16.mul    3   0x00000016   0x00040000   XXXXXXXX
+x16.mul    3   0x00000016   0x00040000   0xC0000000
 
 # x13.agu: 2-syllable low5 0x13 S class 001.  Scalar e load + R AGU
 # (fact 225 / own-x13agu):
@@ -517,3 +517,23 @@ x19.imm4   4   0x00000019   0x08000A40   0x80002000   0x21E48007
 
 # x19.ragua: (0,4,0) R<w3[10:7]> <- AGUA fn 0 over A<w3[19:15]> (fact 278).
 x19.ragua  4   0x00000019   0x00040001   0x84000006   0x06000000
+
+# x16.alu2: S2 class 010, s<S1[11:8]> <- X16_ALU[S1[15]][S1[18:16]](a, b)
+# (fact 119 / own-x16alu2).
+x16.alu2   3   0x00000016   0x00000000   0x40000000
+
+# x16.alux: S2 class 111, the ALU plus s<head[24:21]> <- X:[A<xi>] with the
+# S2[13] latch (fact 116 / own-x16alu).
+x16.alux   3   0x00000016   0x00005000   0xE0082000
+
+# x16.ld: S1/S2 class 000, s<head[24:21]> <- X:[A<xi>], S2[3] latches
+# xi <- S2[8:4] (fact 115, 122 / own-x16ld, own-x16aset).
+x16.ld     3   0x00000016   0x00045000   0x00000008
+
+# x16.aset: head[31] = 1, S1[3] = 0: A<2*S1[2:0]+1> <- head[20:5]
+# (fact 122 / own-x16aset).
+x16.aset   3   0x80000016   0x00045000   0x00000000
+
+# x16.ldi: S1[26:25] = 11 with mux 110, s<head[24:21]> <- #head[20:5]
+# (fact 217 / own-x16ldi).
+x16.ldi    3   0x00000016   0x07046000   0x000000A8

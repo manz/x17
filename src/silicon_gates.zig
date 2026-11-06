@@ -1148,7 +1148,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 5, .value = 0x2345 },
         },
         .src =
-        \\x16.hd s1, s5, s2, #0xF
+        \\x16.hd s1, s5, s2, #0xF, #0, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x3579 } }},
@@ -1419,6 +1419,132 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x16mul",
+        // op 5 rounds: s5 <- 7; op 1 truncates: s3 <- 6.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x1101 },
+            .{ .bank = .s, .index = 2, .value = 0x3303 },
+        },
+        .src =
+        \\x16.mul s5, s1, s2, #5
+        \\x16.mul s3, s1, s2, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 7 } },
+            .{ .s_reg = .{ .index = 3, .value = 6 } },
+        },
+    },
+    .{
+        .name = "own-x16mul6",
+        // Class-110 S1: s7 <- s9 * s5 >> 23 = 0x10.
+        .pre = &.{
+            .{ .bank = .s, .index = 9, .value = 0x4000 },
+            .{ .bank = .s, .index = 5, .value = 0x2000 },
+        },
+        .src =
+        \\x16.mul2 #3, #1, s9, s5, #0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x10 } }},
+    },
+    .{
+        .name = "own-x16alu2",
+        // s3 <- s1 - s3 = 0xDDFE; s5 <- -s1 = 0xEEFF.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x1101 },
+            .{ .bank = .s, .index = 3, .value = 0x3303 },
+        },
+        .src =
+        \\x16.alu2 s3, s1, s3, #4, #1
+        \\x16.alu2 s5, s1, s3, #7, #0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0xDDFE } },
+            .{ .s_reg = .{ .index = 5, .value = 0xEEFF } },
+        },
+    },
+    .{
+        .name = "own-x16alu",
+        // s3 <- s1 + s2 = 0x123; xi <- 10, s5 <- X:[A10 = 0x300] = 0x0BEE.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x100 },
+            .{ .bank = .s, .index = 2, .value = 0x23 },
+            .{ .bank = .a, .index = 10, .value = 0x300 },
+        },
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x300, .value = 0x0BEE }},
+        .src =
+        \\x16.alux s5, s3, s1, s2, #4, #0, #10
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x123 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x0BEE } },
+        },
+    },
+    .{
+        .name = "own-x16ld",
+        // xi <- 10; s2 <- X:[A10 = 0x300] = 0x0BEE.
+        .pre = &.{.{ .bank = .a, .index = 10, .value = 0x300 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x300, .value = 0x0BEE }},
+        .src =
+        \\x16.ld s2, #10, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x0BEE } }},
+    },
+    .{
+        .name = "own-x16aset",
+        // A3 <- #0x345; then xi <- 3, s5 <- X:[A3] = 0x0BEE.
+        .pre = &.{.{ .bank = .a, .index = 3, .value = 0x100 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x345, .value = 0x0BEE }},
+        .src =
+        \\x16.aset #1, #0x345
+        \\x16.ld s5, #3, #0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .a_reg = .{ .index = 3, .value = 0x345 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x0BEE } },
+        },
+    },
+    .{
+        .name = "own-x16ldi",
+        // s12 <- #head[20:5] = 0x18.
+        .src =
+        \\x16.ldi s12, #0x18
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 12, .value = 0x18 } }},
+    },
+    .{
+        .name = "own-x16hd-and",
+        // m3 on code 0x16: s1 <- s5 & s2 = 0x0204.
+        .pre = &.{
+            .{ .bank = .s, .index = 2, .value = 0x1234 },
+            .{ .bank = .s, .index = 5, .value = 0x2345 },
+        },
+        .src =
+        \\x16.hd s1, s5, s2, #0x16, #3, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x0204 } }},
+    },
+    .{
+        .name = "own-x16hd-shr",
+        // code 0x03 with s = 1: s1 <- (s5 + s2) asr 1 = 0x1ABC.
+        .pre = &.{
+            .{ .bank = .s, .index = 2, .value = 0x1234 },
+            .{ .bank = .s, .index = 5, .value = 0x2345 },
+        },
+        .src =
+        \\x16.hd s1, s5, s2, #3, #0, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x1ABC } }},
+    },
+    .{
         .name = "own-x16mul-trunc",
         // Pre s1 = 0x1101, s2 = 0x3303; s3 <- (s1 * s2) >> 23 = 6 truncated.
         .pre = &.{
@@ -1426,7 +1552,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 0x3303 },
         },
         .src =
-        \\x16.mul s3, s1, s2
+        \\x16.mul s3, s1, s2, #1
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 3, .value = 6 } }},

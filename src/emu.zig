@@ -34,6 +34,8 @@ pub const State = struct {
     /// this out explicitly for st.y ("the LANE's data register"); other
     /// forms may acquire lane dependence as they port.
     cur_lane: u8 = 0,
+    /// 0x16 X index latch (fact 116, 122); null until a bundle sets it.
+    x16_xi: ?u32 = null,
     /// Address registers A0..A15: feed X/Y load+store addresses.  Default
     /// zero; seeded via tests or set-up forms that write them.
     a: [16]u32 = @splat(0),
@@ -131,7 +133,11 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x16 and bundle.len >= 3) {
         const s2_class: u32 = (bundle[2] >> 29) & 0x7;
         const s2_mode: u32 = (bundle[2] >> 16) & 0x1F;
-        if (s2_class == 0b110 and s2_mode == 1) return execX16Mul(gpa, state, bundle);
+        const s1_class16: u32 = (bundle[1] >> 29) & 0x7;
+        if (s2_class == 0b110 and s1_class16 == 0 and s2_mode <= 7) return execX16Mul(gpa, state, bundle);
+        if (s1_class16 == 0 and s2_class == 0b010) return x16Alu(state, bundle[1], bundle[2]);
+        if (s1_class16 == 0 and s2_class == 0b111) return execX16AluX(state, bundle);
+        if (s1_class16 == 0 and s2_class == 0b000) return execX16Ld(state, bundle);
         if (s2_class == 0b011) return execX16Agu(gpa, state, bundle);
         if (s2_class == 0b001) {
             // head[25:11] carrying an ALU05 payload → x16.hd (head-ALU).
@@ -814,12 +820,12 @@ fn execX16Hd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const dest_s: u32 = (head >> 15) & 0xF;
     const a_s: u32 = (head >> 11) & 0xF;
     const b_s: u32 = (s2 >> 25) & 0xF;
-    const code: u32 = (head >> 5) & 0x3F;
     if (dest_s == 0) return;
     const av: u32 = if (a_s == 0) 0 else state.s[a_s];
     const bv: u32 = if (b_s == 0) 0 else state.s[b_s];
-    const op = ALU05[code];
-    state.s[dest_s] = alu05Eval(op, sx24(av), sx24(bv));
+    // Full class-05 word with its [25:19] m/s modifiers (fact 210).
+    const v = (try aluWord(head, sx24(av), sx24(bv))) orelse return RunError.UnknownForm;
+    state.s[dest_s] = v;
 }
 
 fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -864,18 +870,91 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
+/// op = S2[20:16]: op & 1 multiplies 16-bit signed, op & 4 rounds; even
+/// ops give 0 (fact 118).
 fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     if (bundle.len < 3) return RunError.UnknownForm;
     const s2 = bundle[2];
+    const op: u32 = (s2 >> 16) & 0x1F;
     const dest_s: u32 = (s2 >> 10) & 0xF;
-    const a: u32 = (s2 >> 1) & 0xF;
-    const b: u32 = (s2 >> 5) & 0xF;
-    const av: u64 = state.s[a] & M24;
-    const bv: u64 = state.s[b] & M24;
-    const prod: u64 = av * bv;
-    const v: u32 = @truncate((prod >> 23) & M24);
+    const a: i64 = sx16(state.s[(s2 >> 1) & 0xF]);
+    const b: i64 = sx16(state.s[(s2 >> 5) & 0xF]);
+    const bias: i64 = if (op & 4 != 0) 1 << 22 else 0;
+    const v: u32 = if (op & 1 != 0)
+        @truncate(@as(u64, @bitCast((a * b + bias) >> 23)) & 0xFFFF)
+    else
+        0;
     if (dest_s != 0) state.s[dest_s] = v;
+}
+
+fn sx16(v: u32) i64 {
+    const w: u32 = v & 0xFFFF;
+    return if (w & 0x8000 != 0) @as(i64, w) - 0x10000 else @as(i64, w);
+}
+
+/// s<S1[11:8]> <- X16_ALU[S1[15]][S1[18:16]](s<S2[28:25]>, s<S1[7:4]>)
+/// (fact 116, 119).  Ops 0-3 wedge silicon.
+fn x16Alu(state: *State, s1: u32, s2: u32) RunError!void {
+    const op: u32 = (s1 >> 16) & 7;
+    if (op < 4) return RunError.UnknownForm;
+    const a: u32 = state.s[(s2 >> 25) & 0xF];
+    const b: u32 = state.s[(s1 >> 4) & 0xF];
+    const v: u32 = if ((s1 >> 15) & 1 == 0) switch (op) {
+        4 => a +% b,
+        5 => a,
+        6 => a -% 1,
+        else => 0 -% a,
+    } else switch (op) {
+        4 => a -% b,
+        5 => a +% 1,
+        else => a,
+    };
+    const dest: u32 = (s1 >> 8) & 0xF;
+    if (dest != 0) state.s[dest] = v & 0xFFFF;
+}
+
+/// S2 class 111: S2[13] latches xi <- S2[12:8]; source S1[14:12] = 101 with
+/// S2[19] reads X:[A<xi>] into s<head[24:21]> (fact 116).
+fn execX16AluX(state: *State, bundle: []const u32) RunError!void {
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    if ((s2 >> 13) & 1 == 1) state.x16_xi = (s2 >> 8) & 0x1F;
+    try x16Alu(state, s1, s2);
+    const src: u32 = (s1 >> 12) & 7;
+    if (src != 5 or (s2 >> 19) & 1 == 0) return RunError.UnknownForm;
+    const xi = state.x16_xi orelse return RunError.UnknownForm;
+    if (xi == 0) return RunError.UnknownForm;
+    const dest: u32 = (bundle[0] >> 21) & 0xF;
+    if (dest != 0) state.s[dest] = (state.getX(state.a[xi & 0xF]) orelse 0) & 0xFFFF;
+}
+
+/// S1/S2 class 000 (fact 115, 122, 217): S2[3] latches xi <- S2[8:4];
+/// source S1[14:12]: 101 = X:[A<xi>], 111 = 0, 110 with S1[26:25] = 11 =
+/// #head[20:5].  head[31] with S1[3] = 0: A<2*S1[2:0]+1> <- head[20:5].
+fn execX16Ld(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    const imm_mux: bool = (s1 >> 25) & 3 == 3;
+    if (s2 & 4 != 0 or (h >> 27) & 0xF != 0) return RunError.UnknownForm;
+    if ((s2 >> 3) & 1 == 1) state.x16_xi = (s2 >> 4) & 0x1F;
+    if (!imm_mux) try x16Alu(state, s1, s2);
+    const dest: u32 = (h >> 21) & 0xF;
+    if (h >> 31 == 1 and (s1 >> 3) & 1 == 0) state.a[(2 * (s1 & 7) + 1) & 0xF] = (h >> 5) & 0xFFFF;
+    if (dest == 0) return;
+    const src: u32 = (s1 >> 12) & 7;
+    const v: u32 = switch (src) {
+        5 => blk: {
+            const xi = state.x16_xi orelse return RunError.UnknownForm;
+            const addr: u32 = if (xi == 0) 0 else state.a[xi & 0xF];
+            break :blk (state.getX(addr) orelse 0) & 0xFFFF;
+        },
+        7 => 0,
+        6 => if (imm_mux) (h >> 5) & 0xFFFF else return RunError.UnknownForm,
+        else => return RunError.UnknownForm,
+    };
+    state.s[dest] = v;
 }
 
 fn execX13St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
