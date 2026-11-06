@@ -1,7 +1,13 @@
-# Probes wanted
+# Probes
 
 Programs whose silicon result would confirm or kill a rule the emulator (and sosumi's
-DSP-shaped layer, `ref/dsp/ops.zig`) already relies on. Each is a two-line program in x17
+DSP-shaped layer, `ref/dsp/ops.zig`) already relies on.
+
+Status 2026-11-06: all nine below MEASURED, every rule held, no kill value seen (2 or 3
+repeats each; the x02 bundle was already the both-signed setting, w1 = 0x0000A000). They are
+gates in `src/silicon_gates.zig` under the same names with an `own-` prefix. A 57-syllable
+variant with one more op-23 bundle wedged after its stores landed; cause OPEN, unrelated to
+the values. Each is a two-line program in x17
 syntax, run from a clean engine with the `pre` registers set; the `post` register is read
 back. A measured result becomes a gate in `src/silicon_gates.zig`.
 

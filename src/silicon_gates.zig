@@ -3122,6 +3122,114 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x700 } }},
     },
     .{
+        .name = "own-x19shr-round",
+        // op 23, count -4: rounded 0x708 >> 4 = 0x71 (PROBES.md, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x000708 }, .{ .bank = .s, .index = 6, .value = 0xFFFFFC },
+        },
+        .src =
+        \\x19.alu s7, s3, s6, #23
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x000071 } }},
+    },
+    .{
+        .name = "own-x19shr-neg",
+        // op 23, count -4 on -0x708: -112.5 rounds half up to -112 (PROBES.md, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0xFFF8F8 }, .{ .bank = .s, .index = 6, .value = 0xFFFFFC },
+        },
+        .src =
+        \\x19.alu s7, s3, s6, #23
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0xFFFF90 } }},
+    },
+    .{
+        .name = "own-x19shr-23",
+        // op 23, count -23: 0x7FFFFF rounds to 1 (PROBES.md, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x7FFFFF }, .{ .bank = .s, .index = 6, .value = 0xFFFFE9 },
+        },
+        .src =
+        \\x19.alu s7, s3, s6, #23
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x000001 } }},
+    },
+    .{
+        .name = "own-x19shl-neg",
+        // op 23: -1 << 4 = -16, signed (PROBES.md, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0xFFFFFF }, .{ .bank = .s, .index = 6, .value = 0x000004 },
+        },
+        .src =
+        \\x19.alu s7, s3, s6, #23
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0xFFFFF0 } }},
+    },
+    .{
+        .name = "own-x19shl-sat",
+        // op 23: 0x400000 << 2 saturates high (PROBES.md, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x400000 }, .{ .bank = .s, .index = 6, .value = 0x000002 },
+        },
+        .src =
+        \\x19.alu s7, s3, s6, #23
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x7FFFFF } }},
+    },
+    .{
+        .name = "own-x19shl-satneg",
+        // op 23: -0x400000 << 2 saturates low (PROBES.md, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0xC00000 }, .{ .bank = .s, .index = 6, .value = 0x000002 },
+        },
+        .src =
+        \\x19.alu s7, s3, s6, #23
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x800000 } }},
+    },
+    .{
+        .name = "own-x02mpy-neg",
+        // both signed: -0x4000 * 0x6000 / 2^23 = -0x30 (PROBES.md, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xFFC000 }, .{ .bank = .s, .index = 2, .value = 0x006000 },
+        },
+        .src =
+        \\x02.mpy s2, s1, s2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0xFFFFD0 } }},
+    },
+    .{
+        .name = "own-x02mpy-halfneg",
+        // -1 * 0x400000 / 2^23 = -0.5 rounds half up to 0 (PROBES.md, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xFFFFFF }, .{ .bank = .s, .index = 2, .value = 0x400000 },
+        },
+        .src =
+        \\x02.mpy s2, s1, s2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x000000 } }},
+    },
+    .{
+        .name = "own-x02mpy-halfpos",
+        // 1 * 0x400000 / 2^23 = 0.5 rounds half up to 1 (PROBES.md, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x000001 }, .{ .bank = .s, .index = 2, .value = 0x400000 },
+        },
+        .src =
+        \\x02.mpy s2, s1, s2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x000001 } }},
+    },
+    .{
         .name = "own-x19agu",
         // Pre e3 = 0x700, R1 = 2; fn 6 (x+y) → 0x702; R3 and e5 both get v.
         .pre = &.{

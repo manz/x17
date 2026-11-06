@@ -2207,8 +2207,8 @@ fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 }
 
 /// 0x19 ALU op 23 (fact 147): b >= 0 gives sat24(a << b); b < 0 gives the rounded
-/// a >> -b, (a + 2^(-b-1)) >> -b.  MEASURED only for a = 7, b = 8 (own-x19alu); negative a,
-/// negative b and saturation follow isa.toml's text and wait on PROBES.md's x19-shift set.
+/// a >> -b, (a + 2^(-b-1)) >> -b, half up on negatives.  MEASURED: own-x19alu and the
+/// own-x19shr-* / own-x19shl-* gates (PROBES.md).
 pub fn shift23(a: i64, b: i64) i64 {
     if (b >= 0) {
         const s: u6 = @intCast(@min(b, 40));

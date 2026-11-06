@@ -44,7 +44,7 @@ Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
 - `x17 asm`: two-pass assembler, labels, `.const`, constant expressions,
   branch targets, `.assert`, `.include`, macros (ASSEMBLY.md).
   `examples/labels.sm`, `examples/macros.sm`.
-- `x17 run`: the emulator over every silicon-measured form; 283 own probe
+- `x17 run`: the emulator over every silicon-measured form; 292 own probe
   programs are gated byte-exact in `src/silicon_gates.zig`.
 - `x17 disasm`: decodes syllables back to source.
 - `x17 fmt`: canonical layout for .sm sources; `--check` in CI.
