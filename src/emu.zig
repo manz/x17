@@ -171,11 +171,11 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w3_class == 0b110 and w1_mode == 5) return execX18Xrd(gpa, state, bundle);
         if (w3_class == 0b110 and bundle[2] != 0) return execX18Mpy(gpa, state, bundle);
         if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
-        if (w3_class == 0b000) return execX18Eagu(gpa, state, bundle);
+        if (w3_class == 0b000) return execX18C0(gpa, state, bundle);
         if (w3_class == 0b100) return execX18Edec(gpa, state, bundle);
-        if (w3_class == 0b011) return execX18Una(gpa, state, bundle);
-        if (w3_class == 0b101) return execX18Rimm(gpa, state, bundle);
-        if (w3_class == 0b010) return execX18Q23(gpa, state, bundle);
+        if (w3_class == 0b011) return execX18C3(gpa, state, bundle);
+        if (w3_class == 0b101) return execX18C5(gpa, state, bundle);
+        if (w3_class == 0b010) return execX18C2(gpa, state, bundle);
         if (w3_class == 0b001) return execX18Q23c(gpa, state, bundle);
     }
     if (low5 == 0x02 and bundle.len >= 6) {
@@ -1190,30 +1190,125 @@ fn execX18Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
-fn execX18Una(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+/// The x18 class 011/111 ALU slot (fact 168, 206): op w1[17:15] over
+/// a = s<w2[5:2]>, b = s<w1[7:4]>.  Op 0 is only measured as pass (179).
+fn x18SlotAlu(op: u32, a: u32, b: u32) RunError!u32 {
+    return switch (op) {
+        0, 2 => a & M24,
+        1 => (a -% b) & M24,
+        3 => (a +% 1) & M24,
+        5 => (b -% a) & M24,
+        7 => @intCast(@abs(sx16(a)) & M24),
+        else => RunError.UnknownForm,
+    };
+}
+
+/// Class 011 (fact 168, 179, 200, 206): the slot result goes to
+/// s<w1[11:8]> and R<w3[10:7]>, and p<w2[17:14]> <- cond head[28:25] of it.
+/// Only cond 11 (negative) is measured; other conds leave p alone.
+/// w3[0] = 0 is the branch form (178), not modelled.
+fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
+    const h = bundle[0];
     const w1 = bundle[1];
     const w2 = bundle[2];
-    const op: u32 = (w1 >> 15) & 0x7;
+    const w3 = bundle[3];
+    if (w3 & 1 == 0) return RunError.UnknownForm;
+    const a: u32 = state.s[(w2 >> 2) & 0xF];
+    const b: u32 = state.s[(w1 >> 4) & 0xF];
+    const v = try x18SlotAlu((w1 >> 15) & 0x7, a, b);
     const dest_s: u32 = (w1 >> 8) & 0xF;
-    const src_s: u32 = (w2 >> 2) & 0xF;
-    const src_val: u32 = state.s[src_s] & M24;
-    const v: u32 = switch (op) {
-        3 => (src_val +% 1) & M24, // +1
-        7 => blk: {
-            // abs: sm1 treats these s values as 16-bit signed for the
-            // unary slot (fact 168: 0x8001 -> 0x7FFF).
-            const low16: u32 = src_val & 0xFFFF;
-            const signed: i32 = if (low16 & 0x8000 != 0)
-                @bitCast(low16 | 0xFFFF0000)
-            else
-                @intCast(low16);
-            const abs_val: u32 = if (signed < 0) @intCast(-signed) else @intCast(signed);
-            break :blk abs_val & M24;
-        },
+    const dest_r: u32 = (w3 >> 7) & 0xF;
+    if (dest_s != 0) state.s[dest_s] = v;
+    if (dest_r != 0) state.r[dest_r] = v & 0xFFFF;
+    if (((h >> 25) & 0xF) == 11) state.p[(w2 >> 14) & 0xF] = if (sx16(v) < 0) 1 else 0;
+}
+
+/// The class 010/101 R slot (fact 194, 195):
+/// R<w3[10:7]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w3[14:11]>).
+fn x18RSlot(state: *const State, w3: u32) u32 {
+    return agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0xF], state.r[(w3 >> 11) & 0xF], 0);
+}
+
+/// Class 010 (fact 176, 194, 267): X slot s<head[24:21]> by mux
+/// w1[14:12] (001 = e<w3[28:25]>, 110 = #head[20:5]); e AGU
+/// e<w1[23:20]> <- AGU10[w1[27:24]](e<w3[28:25]>) when w1[29] = 1; R slot;
+/// and the multiply when w2[30:28] = 4.  Inputs latch before writes.
+fn execX18C2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const x_e_val: u32 = state.e[(w3 >> 25) & 0xF];
+    const dest_s: u32 = (h >> 21) & 0xF;
+    const dest_e: u32 = (w1 >> 20) & 0xF;
+    const dest_r: u32 = (w3 >> 7) & 0xF;
+    const xs_val: u32 = if (dest_s == 0) 0 else switch ((w1 >> 12) & 7) {
+        1 => x_e_val,
+        6 => (h >> 5) & 0xFFFF,
         else => return RunError.UnknownForm,
     };
+    const e_val: u32 = if (dest_e == 0) 0 else blk: {
+        if ((w1 >> 29) & 1 == 0) return RunError.UnknownForm;
+        break :blk try agu10Eval((w1 >> 24) & 0xF, x_e_val, 0);
+    };
+    const r_val: u32 = x18RSlot(state, w3);
+    if (((w2 >> 28) & 7) == 4) try execX18Q23(gpa, state, bundle);
+    if (dest_s != 0) state.s[dest_s] = xs_val;
+    if (dest_e != 0) state.e[dest_e] = e_val;
+    if (dest_r != 0) state.r[dest_r] = r_val;
+}
+
+/// Class 101 (fact 195): the rimm e slot, class 010's R slot, and an
+/// X slot s<head[24:21]> whose mux 001 is the R slot's value.
+fn execX18C5(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    const w3 = bundle[3];
+    const r_val: u32 = x18RSlot(state, w3);
+    const dest_s: u32 = (h >> 21) & 0xF;
+    if (dest_s != 0 and ((w1 >> 12) & 7) != 1) return RunError.UnknownForm;
+    try execX18Rimm(gpa, state, bundle);
+    const dest_r: u32 = (w3 >> 7) & 0xF;
+    if (dest_r != 0) state.r[dest_r] = r_val;
+    if (dest_s != 0) state.s[dest_s] = r_val;
+}
+
+/// Class 000 (fact 177, 205, 266): e AGU over x = e<w3[28:25]>,
+/// y = e<{w2[1:0], w1[31:30]}>, fn w1[29:26] from AGU10 when w2[15] = 1, or
+/// a second table (only fn 5 = y+1 measured) when 0, into e<w1[25:22]>; X
+/// slot mux w1[17:15] = 010 takes the AGU value into s<head[24:21]>; second
+/// e slot e<w2[5:2]> <- y - 1; Y store (w2[7], w2[16]) of
+/// s<{w3[2:0], w2[31]}> at Y:[e<w3[28:25]>].  Inputs latch before writes.
+fn execX18C0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const x_idx: u32 = (w3 >> 25) & 0xF;
+    const y_idx: u32 = ((w2 & 3) << 2) | ((w1 >> 30) & 3);
+    const x: u32 = state.e[x_idx];
+    const y: u32 = state.e[y_idx];
+    const fn_op: u32 = (w1 >> 26) & 0xF;
+    const dest_e: u32 = (w1 >> 22) & 0xF;
+    const dest_s: u32 = (h >> 21) & 0xF;
+    const dest_e2: u32 = (w2 >> 2) & 0xF;
+    const xmux: u32 = (w1 >> 15) & 7;
+    const need_agu = dest_e != 0 or (dest_s != 0 and xmux == 2);
+    const v: u32 = if (!need_agu) 0 else if ((w2 >> 15) & 1 == 1)
+        try agu10Eval(fn_op, x, y)
+    else switch (fn_op) {
+        5 => (y +% 1) & 0xFFFF,
+        else => return RunError.UnknownForm,
+    };
+    if (dest_s != 0 and xmux != 2) return RunError.UnknownForm;
+    const st_val: u32 = state.s[((w3 & 7) << 1) | (w2 >> 31)] & 0xFFFF;
+    if ((w2 >> 7) & 1 == 1 and (w2 >> 16) & 1 == 1) {
+        state.y_mem.put(gpa, x, st_val) catch return RunError.OutOfMemory;
+    }
+    if (dest_e != 0) state.e[dest_e] = v;
     if (dest_s != 0) state.s[dest_s] = v;
+    if (dest_e2 != 0) state.e[dest_e2] = (y -% 1) & 0xFFFF;
 }
 
 fn execX18Edec(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -1227,18 +1322,6 @@ fn execX18Edec(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         (src_val -% 1) & 0xFFFF
     else
         (src_val +% 1) & 0xFFFF;
-    if (dest_e != 0) state.e[dest_e] = v;
-}
-
-fn execX18Eagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
-    const w1 = bundle[1];
-    const w3 = bundle[3];
-    const fn_op: u32 = (w1 >> 26) & 0xF;
-    const dest_e: u32 = (w1 >> 22) & 0xF;
-    const x_e: u32 = (w3 >> 25) & 0xF;
-    const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
-    const v = try agu10Eval(fn_op, x_val, 0);
     if (dest_e != 0) state.e[dest_e] = v;
 }
 

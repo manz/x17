@@ -145,7 +145,7 @@ x18.edec   4   0x00000018   0x00040180   0x89E00005   0x86000001
 
 # x18.una: 4-syllable low5 0x18 w3 class 011 (fact 168 /
 # own-x18una).  s <- op(s).  Measured: op 3 = +1, op 7 = abs.
-x18.una    4   0x00000018   0x00000001   0x00004000   XXXXXXXX
+x18.una    4   0x1C000018   0x00000001   0x00004000   0x61D53805
 
 # x18.xrd: 4-syllable low5 0x18 w3 class 110, w1 mode 5 (fact 167 /
 # own-x18xrd).  X-memory read into s:
@@ -563,3 +563,29 @@ x16.xld    3   0x00000016   0x68000000   0x00000008
 
 # x16.ldb: x16.ldi with mux 011, X:[A<xi>][7:0] << 8 (fact 217).
 x16.ldb    3   0x00000316   0x07043000   0x000000A8
+
+# x18.pw: class 011 with w3[8] = w3[0] = 1, p<w2[17:14]> <- cond head[28:25]
+# of the slot result (fact 179 / own-x18pw-*).
+x18.pw     4   0x00000018   0x00000000   0x00000000   0x60000101
+
+# x18.c2x: class 010 X slot (fact 176 / own-x18c2x).
+x18.c2x    4   0x00000018   0x20040001   0x00000000   0x40510001
+
+# x18.eagu2: class 010 e AGU, w1[29] = 1 picks AGU10 (fact 267).
+x18.eagu2  4   0x00000018   0x00040000   0x00000000   0x40000000
+
+# x18.rag: class 010 R slot, AGU3 over A and R (fact 194).
+x18.rag    4   0x9C0238B8   0xA2750102   0x00000400   0x4E000008
+
+# x18.rag101: class 101 R slot and the mux-001 X slot (fact 195).
+x18.rag101 4   0x80000018   0x00001002   0x60000000   0xA0000000
+
+# x18.eagu0: class 000 e AGU from the w2[15] = 0 table (fact 266).
+x18.eagu0  4   0x00000018   0x00000000   0x00020000   0x06000000
+
+# x18.agu000: class 000 e AGU into the X slot, with the Y store
+# (fact 205 / own-x18agu000, own-x18agu000b, own-x18st000).
+x18.agu000 4   0x1C029618   0x00010A42   0x40020000   0x00000000
+
+# x18.e2nd: class 000 second e slot, e<w2[5:2]> <- y - 1 (fact 177).
+x18.e2nd   4   0x00000018   0x00030040   0x00028040   0x00000000

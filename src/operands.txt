@@ -259,6 +259,8 @@ x18.edec	is_minus	imm	20	20	s2
 x18.una	dest_s	s	8	11	s1
 x18.una	src_s	s	2	5	s2
 x18.una	op	imm	15	17	s1
+x18.una	dest_r	R	7	10	s3
+x18.una	b_s	s	4	7	s1
 
 # x18.xrd (4 syllables): X-memory read.
 # Grammar: x18.xrd <dest_s>, #<src_a>
@@ -804,3 +806,54 @@ x16.xld	xi	imm	4	8	s2
 
 # x16.ldb <dest_s>
 x16.ldb	dest_s	s	21	24	head
+
+# x18.pw <p>, <src_s>, #<cond>
+x18.pw	p	imm	14	17	s2
+x18.pw	src_s	s	2	5	s2
+x18.pw	cond	imm	25	28	head
+
+# x18.c2x <dest_s>, #<mux>, <x_e>, #<imm>
+x18.c2x	dest_s	s	21	24	head
+x18.c2x	mux	imm	12	14	s1
+x18.c2x	x_e	e	25	28	s3
+x18.c2x	imm	imm	5	20	head
+
+# x18.eagu2 <dest_e>, <x_e>, #<fn>, #<tab>
+x18.eagu2	dest_e	e	20	23	s1
+x18.eagu2	x_e	e	25	28	s3
+x18.eagu2	fn	imm	24	27	s1
+x18.eagu2	tab	imm	29	29	s1
+
+# x18.rag <dest_R>, <x_A>, <y_R>, #<fn>
+x18.rag	dest_R	R	7	10	s3
+x18.rag	x_A	A	15	19	s3
+x18.rag	y_R	R	11	14	s3
+x18.rag	fn	imm	20	24	s3
+
+# x18.rag101 <dest_s>, <dest_R>, <x_A>, <y_R>, #<fn>
+x18.rag101	dest_s	s	21	24	head
+x18.rag101	dest_R	R	7	10	s3
+x18.rag101	x_A	A	15	19	s3
+x18.rag101	y_R	R	11	14	s3
+x18.rag101	fn	imm	20	24	s3
+
+# x18.eagu0 <dest_e>, #<y_lo>, #<fn>
+x18.eagu0	dest_e	e	22	25	s1
+x18.eagu0	y_lo	imm	30	31	s1
+x18.eagu0	fn	imm	26	29	s1
+
+# x18.agu000 <dest_s>, #<fn>, #<y_lo>, #<tab>, <x_e>, #<st>, #<st2>, #<src_lo>, #<src_hi>
+x18.agu000	dest_s	s	21	24	head
+x18.agu000	fn	imm	26	29	s1
+x18.agu000	y_lo	imm	30	31	s1
+x18.agu000	tab	imm	15	15	s2
+x18.agu000	x_e	e	25	28	s3
+x18.agu000	st	imm	7	7	s2
+x18.agu000	st2	imm	16	16	s2
+x18.agu000	src_lo	imm	31	31	s2
+x18.agu000	src_hi	imm	0	2	s3
+
+# x18.e2nd <dest_e>, #<y_lo>, #<y_hi>
+x18.e2nd	dest_e	e	2	5	s2
+x18.e2nd	y_lo	imm	30	31	s1
+x18.e2nd	y_hi	imm	0	1	s2

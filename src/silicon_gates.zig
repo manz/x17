@@ -911,14 +911,199 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 3, .value = 0xDB7A } }},
     },
     .{
-        .name = "own-x18una-abs",
-        // Pre s1 = 0x8001 (signed -0x7FFF); abs(s1) = 0x7FFF lands on s3.
+        .name = "own-x18una",
+        // s1 = 0x8001: abs -> s3 = 0x7FFF; +1 -> s5 = 0x8002.
         .pre = &.{.{ .bank = .s, .index = 1, .value = 0x8001 }},
         .src =
-        \\x18.una s3, s1, #7
+        \\x18.una s3, s1, #7, R13, s0
+        \\x18.una s5, s1, #3, R13, s0
         \\x17.halt
         ,
-        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x7FFF } }},
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x7FFF } },
+            .{ .s_reg = .{ .index = 5, .value = 0x8002 } },
+        },
+    },
+    .{
+        .name = "own-x18runa",
+        // The slot result (+1 of s5) also lands in R3 = 0x556.
+        .pre = &.{.{ .bank = .s, .index = 5, .value = 0x555 }},
+        .src =
+        \\x18.una s0, s5, #3, R3, s0
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 3, .value = 0x556 } }},
+    },
+    .{
+        .name = "own-x18alu011",
+        // op 1 is binary: R3 <- s5 - s3 = 0x222.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+            .{ .bank = .s, .index = 3, .value = 0x333 },
+        },
+        .src =
+        \\x18.una s0, s5, #1, R3, s3
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 3, .value = 0x222 } }},
+    },
+    .{
+        .name = "own-x18pw-false",
+        // cond 11 of +1 is false.  p2 starts at 1 here so the write shows.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 1 },
+            .{ .bank = .p, .index = 2, .value = 1 },
+        },
+        .src =
+        \\x18.pw #2, s3, #11
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 2, .value = 0 } }},
+    },
+    .{
+        .name = "own-x18pw-true",
+        // cond 11 of -1 is true: p2 <- 1.
+        .pre = &.{.{ .bank = .s, .index = 3, .value = 0xFFFFFF }},
+        .src =
+        \\x18.pw #2, s3, #11
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 2, .value = 1 } }},
+    },
+    .{
+        .name = "own-x18c2x",
+        // mux 001: s3 <- e2 = 0x703; mux 110: s5 <- #0x4321.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x703 }},
+        .src =
+        \\x18.c2x s3, #1, e2, #0
+        \\x18.c2x s5, #6, e2, #0x4321
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x703 } },
+            .{ .s_reg = .{ .index = 5, .value = 0x4321 } },
+        },
+    },
+    .{
+        .name = "own-x18eagu2",
+        // AGU10[2] = x+1: e5 <- e3 + 1 = 0x101.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x100 },
+            .{ .bank = .e, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x18.eagu2 e5, e3, #2, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 5, .value = 0x101 } }},
+    },
+    .{
+        .name = "own-x18rag",
+        // R3 <- AGU3[2](A5, R1) = 0x55 + 2 = 0x57.
+        .pre = &.{
+            .{ .bank = .a, .index = 5, .value = 0x55 },
+            .{ .bank = .r, .index = 1, .value = 2 },
+        },
+        .src =
+        \\x18.rag R3, A5, R1, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 3, .value = 0x57 } }},
+    },
+    .{
+        .name = "own-x18rag101",
+        .pre = &.{
+            .{ .bank = .a, .index = 5, .value = 0x55 },
+            .{ .bank = .r, .index = 1, .value = 2 },
+        },
+        .src =
+        \\x18.rag101 s0, R3, A5, R1, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 3, .value = 0x57 } }},
+    },
+    .{
+        .name = "own-x18rmux",
+        // X slot mux 001 takes the R slot value: s1 <- 0x57.
+        .pre = &.{
+            .{ .bank = .a, .index = 5, .value = 0x55 },
+            .{ .bank = .r, .index = 1, .value = 2 },
+        },
+        .src =
+        \\x18.rag101 s1, R3, A5, R1, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x57 } }},
+    },
+    .{
+        .name = "own-x18eagu0",
+        // w2[15] = 0 table, fn 5 = y+1, y = e2 = 0x20: e5 <- 0x21.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x100 },
+            .{ .bank = .e, .index = 2, .value = 0x20 },
+            .{ .bank = .e, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x18.eagu0 e5, #2, #5
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 5, .value = 0x21 } }},
+    },
+    .{
+        .name = "own-x18agu000",
+        // fn 5 (y+1) of y = e3 = 0x705 into s1 via X mux 010.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x703 },
+            .{ .bank = .e, .index = 3, .value = 0x705 },
+        },
+        .src =
+        \\x18.agu000 s1, #5, #3, #0, e2, #0, #1, #1, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x706 } }},
+    },
+    .{
+        .name = "own-x18agu000b",
+        // w2[15] = 1, AGU10[2] = x+1 of x = e2: s1 <- 0x704.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x703 },
+            .{ .bank = .e, .index = 3, .value = 0x705 },
+        },
+        .src =
+        \\x18.agu000 s1, #2, #2, #1, e2, #0, #1, #1, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x704 } }},
+    },
+    .{
+        .name = "own-x18st000",
+        // Y:[e3] <- s5 = 0x555; x is now e3: s1 <- 0x706.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x703 },
+            .{ .bank = .e, .index = 3, .value = 0x705 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x18.agu000 s1, #2, #2, #1, e3, #1, #1, #1, #2
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .y_mem = .{ .addr = 0x705, .value = 0x555 } },
+            .{ .s_reg = .{ .index = 1, .value = 0x706 } },
+        },
+    },
+    .{
+        .name = "own-x18e2nd",
+        // e2 <- e7 - 1 = 0x705.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x703 },
+            .{ .bank = .e, .index = 7, .value = 0x706 },
+        },
+        .src =
+        \\x18.e2nd e2, #3, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x705 } }},
     },
     .{
         .name = "own-x18edec",
