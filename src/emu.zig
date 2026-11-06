@@ -2055,8 +2055,9 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 4 and w3_class == 0) {
         return execX19RAgua(gpa, state, bundle);
     }
-    if (w1_class == 0 and w2_class == 1 and w3_class == 6) {
-        return execX19Mul(gpa, state, bundle);
+    // x19mac: w1 class 000/001 plain, 010/101 with the head ALU (fact 312, 384-386).
+    if (w2_class == 1 and w3_class == 6 and (w1_class == 0 or w1_class == 1 or w1_class == 2 or w1_class == 5)) {
+        return execX19Mac(gpa, state, bundle);
     }
     if (w1_class == 0 and w2_class == 0 and w3_class == 1) {
         return execX19Imm(gpa, state, bundle);
@@ -2318,27 +2319,48 @@ fn execX19RAgua(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunE
     if (dest_r != 0) state.r[dest_r] = (x_val +% 1) & 0xFFFF;
 }
 
-fn execX19Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
+/// x19mac (fact 145, 312, 384-386), one bundle, every read before any write
+/// (the multiply sees the old s when the head ALU writes it: Upstream 2026-11-06).
+///   head ALU, w1 class 010/101: s<h[18:15]> <- ALU05[h[10:5]](s<h[14:11]>, s<h[29:26]>)
+///   multiply, op w1[13:11] (0 -> 0, 4 -> P; others OPEN), x = s<w2[8:5]>, y = s<w2[4:1]>
+///   (24-bit signed): P = low16(xy), doubled when w1[17] = 0; e<w1[6:3]> <- P (0 unless
+///   w2[24]), R<w3[10:7]> <- P (0 if w2[28]); s<w2[12:9]> <- floor(xy / 2^24) (w1[17] = 1)
+///   or floor(xy / 2^23 + 1/2) (w1[17] = 0, w1[15] = 1)
+///   A slot: A<w2[20:17]> <- agu_xr(w3[24:20], A<w3[19:15]>, R<w3[14:11]>); A0 not
+///   written (OPEN whether it is a register here).  The X store (w2[23:22] = 3) is OPEN.
+fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const w1 = bundle[1];
     const w2 = bundle[2];
     const w3 = bundle[3];
-
-    const dest_e: u32 = (w1 >> 3) & 0xF;
-    const dest_r: u32 = (w3 >> 7) & 0xF;
+    if ((w2 >> 22) & 3 == 3) return RunError.UnknownForm;
     const op: u32 = (w1 >> 11) & 0x7;
-    const a_src: u32 = (w2 >> 5) & 0xF;
-    const b_src: u32 = (w2 >> 1) & 0xF;
+    if (op != 0 and op != 4) return RunError.UnknownForm;
+    const xs: u32 = (w2 >> 5) & 0xF;
+    const ys: u32 = (w2 >> 1) & 0xF;
+    const x: i64 = if (xs == 0) 0 else sx24(state.s[xs]);
+    const y: i64 = if (ys == 0) 0 else sx24(state.s[ys]);
+    const prod: i64 = x * y;
+    const wide = (w1 >> 17) & 1 == 1;
+    const p: u32 = if (op == 4) @as(u32, @truncate(@as(u64, @bitCast(if (wide) prod else 2 * prod)))) & 0xFFFF else 0;
 
-    // Only op = 4 modelled today: low16(a * b).
-    if (op != 4) return RunError.UnknownForm;
+    const hi_s: u32 = (w2 >> 9) & 0xF;
+    var hi: u32 = 0;
+    if (hi_s != 0) {
+        if (op != 4) return RunError.UnknownForm;
+        const h: i64 = if (wide) prod >> 24 else if ((w1 >> 15) & 1 == 1) (prod + (1 << 22)) >> 23 else return RunError.UnknownForm;
+        hi = @as(u32, @truncate(@as(u64, @bitCast(h)))) & M24;
+    }
+    const a_dest: u32 = (w2 >> 17) & 0xF;
+    const a_val: u32 = aguXrEval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], state.r[(w3 >> 11) & 0xF]);
 
-    const a_val: u32 = if (a_src == 0) 0 else state.s[a_src];
-    const b_val: u32 = if (b_src == 0) 0 else state.s[b_src];
-    const prod: u32 = (a_val *% b_val) & 0xFFFF;
+    const cls: u32 = w1 >> 29;
+    if (cls == 2 or cls == 5) try execAlu(gpa, state, bundle[0]);
 
-    state.e[dest_e] = prod;
-    if (dest_r != 0) state.r[dest_r] = prod;
+    state.e[(w1 >> 3) & 0xF] = if ((w2 >> 24) & 1 == 1) p else 0;
+    const dest_r: u32 = (w3 >> 7) & 0xF;
+    if (dest_r != 0) state.r[dest_r] = if ((w2 >> 28) & 1 == 1) 0 else p;
+    if (hi_s != 0) state.s[hi_s] = hi;
+    if (a_dest != 0) state.a[a_dest] = a_val;
 }
 
 fn execX19Aagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

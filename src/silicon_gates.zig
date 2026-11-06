@@ -862,6 +862,130 @@ const GATES = [_]Gate{
         .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
     },
     .{
+        .name = "own-x19macw",
+        // fact 312/386: 00000019 2000A000 20000284 C0000380, s1 <- rnd(s4 * s2 / 2^23).
+        .pre = &.{
+            .{ .bank = .s, .index = 4, .value = 0x123400 },
+            .{ .bank = .s, .index = 2, .value = 0xFEAAAB },
+        },
+        .src =
+        \\x19.mac s0, s0, s0, #0, #1, #0x14, e0, s1, s4, s2, #0, A0, R7, #0, A0, R0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 1, .value = 0xFFCF75 } },
+        },
+    },
+    .{
+        .name = "own-x19macw-half",
+        // fact 386: 0x100 * -0xC000 / 2^23 = -1.5 rounds half up to -1 (200006D0).
+        .pre = &.{
+            .{ .bank = .s, .index = 6, .value = 0x100 },
+            .{ .bank = .s, .index = 8, .value = 0xFF4000 },
+        },
+        .src =
+        \\x19.mac s0, s0, s0, #0, #1, #0x14, e0, s3, s6, s8, #0, A0, R7, #0, A0, R0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0xFFFFFF } },
+        },
+    },
+    .{
+        .name = "own-x19macw-max",
+        // fact 386 edge: 0x7fff00 * -0x40000, no saturation.
+        .pre = &.{
+            .{ .bank = .s, .index = 4, .value = 0x7FFF00 },
+            .{ .bank = .s, .index = 2, .value = 0xFC0000 },
+        },
+        .src =
+        \\x19.mac s0, s0, s0, #0, #1, #0x14, e0, s1, s4, s2, #0, A0, R7, #0, A0, R0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 1, .value = 0xFC0008 } },
+        },
+    },
+    .{
+        .name = "own-x19macw-min",
+        // fact 386 edge: -0x800000 * -0x40000, no saturation.
+        .pre = &.{
+            .{ .bank = .s, .index = 4, .value = 0x800000 },
+            .{ .bank = .s, .index = 2, .value = 0xFC0000 },
+        },
+        .src =
+        \\x19.mac s0, s0, s0, #0, #1, #0x14, e0, s1, s4, s2, #0, A0, R7, #0, A0, R0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 1, .value = 0x40000 } },
+        },
+    },
+    .{
+        .name = "own-x19macw-lo",
+        // fact 386: x = 0x7FFF, y = 0x3FFFF: hi = 0x400, R7 = (2xy)[15:0] = 2.
+        .pre = &.{
+            .{ .bank = .s, .index = 4, .value = 0x7FFF },
+            .{ .bank = .s, .index = 2, .value = 0x3FFFF },
+        },
+        .src =
+        \\x19.mac s0, s0, s0, #0, #1, #0x14, e0, s1, s4, s2, #0, A0, R7, #0, A0, R0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 1, .value = 0x400 } },
+            .{ .r_reg = .{ .index = 7, .value = 2 } },
+        },
+    },
+    .{
+        .name = "own-x19head",
+        // fact 384: 080089D9 4002A038 21000048 C0000280, head add s1 <- s1 + s2.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x10 },
+            .{ .bank = .s, .index = 2, .value = 0x20 },
+        },
+        .src =
+        \\x19.mac s1, s1, s2, #0x0E, #2, #0x54, e7, s0, s2, s4, #0x08, A0, R5, #0, A0, R0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 1, .value = 0x30 } },
+        },
+    },
+    .{
+        .name = "own-x19mac-aslot",
+        // fact 385: 00000019 40000000 20020000 C0448000, A1 <- -A9.
+        .pre = &.{
+            .{ .bank = .a, .index = 9, .value = 0x240 },
+        },
+        .src =
+        \\x19.mac s0, s0, s0, #0, #2, #0, e0, s0, s0, s0, #0, A1, R0, #4, A9, R0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .a_reg = .{ .index = 1, .value = 0xFDC0 } },
+        },
+    },
+    .{
+        .name = "own-x19mac-combined",
+        // Upstream 2026-11-06: 140221D9 4000A000 20060284 C0048000; the multiply reads the old s4.
+        .pre = &.{
+            .{ .bank = .s, .index = 4, .value = 0x100 },
+            .{ .bank = .s, .index = 5, .value = 0x300 },
+            .{ .bank = .s, .index = 2, .value = 0x7000 },
+            .{ .bank = .a, .index = 9, .value = 0x190 },
+        },
+        .src =
+        \\x19.mac s4, s4, s5, #0x0E, #2, #0x14, e0, s1, s4, s2, #0, A3, R0, #0, A9, R0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 4, .value = 0x400 } },
+            .{ .s_reg = .{ .index = 1, .value = 1 } },
+            .{ .a_reg = .{ .index = 3, .value = 0x191 } },
+        },
+    },
+    .{
         .name = "own-pcond",
         // fact 378: 802A7EAC, p1 <- R5 >= A7 (c29), R5 = 0x123, A7 = 0x123.
         .pre = &.{

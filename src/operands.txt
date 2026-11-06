@@ -1235,6 +1235,25 @@ x17.stopx	s2j	imm	0	28	s2
 # x03.rep p<pidx>
 x03.rep	pidx	p	14	17	s5
 
+# x19.mac <alu_d>, <alu_a>, <alu_b>, #<alu_op>, #<cls>, #<mode>, <dest_e>, <hi_s>, <x_s>, <y_s>,
+#         #<w2f>, <dest_A>, <dest_R>, #<fn>, <src_A>, <r_R>
+x19.mac	alu_d	s	15	18	head
+x19.mac	alu_a	s	11	14	head
+x19.mac	alu_b	s	26	29	head
+x19.mac	alu_op	imm	5	10	head
+x19.mac	cls	imm	29	31	s1
+x19.mac	mode	imm	11	17	s1
+x19.mac	dest_e	e	3	6	s1
+x19.mac	hi_s	s	9	12	s2
+x19.mac	x_s	s	5	8	s2
+x19.mac	y_s	s	1	4	s2
+x19.mac	w2f	imm	21	28	s2
+x19.mac	dest_A	A	17	20	s2
+x19.mac	dest_R	R	7	10	s3
+x19.mac	fn	imm	20	24	s3
+x19.mac	src_A	A	15	19	s3
+x19.mac	r_R	R	11	14	s3
+
 # pcond <p_dest>, <r_R>, <x_A>, #<cond>
 pcond	p_dest	p	21	24	head
 pcond	r_R	R	17	20	head

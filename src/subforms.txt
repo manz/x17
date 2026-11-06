@@ -759,5 +759,10 @@ x17.stopx  3   0x00000017   0x20300000   0xA0000000
 # x03.rep: w3[31] repeat while p<w5[17:14]>, X store of s3 at A8 (fact 263 / own-x03rep).
 x03.rep    6   0x00000003   0x60000002   0x18106000   0x85800008   0x00004005   0x001C0000
 
+# x19.mac: the whole x19mac bundle, every field an operand so measured words assemble
+# exactly (fact 312, 384-386).  w1 class, w1[17:11] mode and w2[28:21] flags are
+# raw: cls 2 enables the head ALU; mode 0x14 = rounded >> 23 with doubled P (op 4).
+x19.mac    4   0x00000019   0x00000000   0x20000000   0xC0000000
+
 # pcond: the 0x0C [31] = 1 form with R dest 0 (fact 378): p <- test of R vs A.
 pcond      1   0x8000002C
