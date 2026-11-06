@@ -584,30 +584,24 @@ fn shiftM2(n: u32, a: u32, b: u32) u32 {
 
 fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
-    if (bundle.len < 6) return RunError.UnknownForm;
     const w2 = bundle[2];
     const w3 = bundle[3];
     const w4 = bundle[4];
     const w5 = bundle[5];
     const fn_op: u32 = (w2 >> 22) & 0x1F;
     const dest_a: u32 = (w3 >> 10) & 0x1F;
-    const src_a: u32 = w3 & 0x1F;
-    const i_hi: u32 = (w4 >> 17) & 0x7FFF;
-    const i_lo: u32 = w5 & 1;
-    const i_val: u32 = (i_lo << 15) | i_hi;
-    // AGU table "5" = x + i (fact 164).  dest_A=0 skips the write.
-    if (dest_a == 0) return;
-    const x_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
-    const v: u32 = switch (fn_op) {
-        5 => (x_val +% i_val) & 0xFFFFFF,
-        else => return,
-    };
-    state.a[dest_a & 0xF] = v;
-    // Second A dest (x03.acp): A<w2[21:17]> <- A<w3[4:0]>.
+    const x_val: u32 = state.a[w3 & 0xF];
+    const i_val: u32 = ((w5 & 1) << 15) | ((w4 >> 17) & 0x7FFF);
+    // Second A dest (fact 193): A<w2[21:17]> <- A<w3[4:0]>, or with
+    // w5[5] = 1 the Y read Y:[e<w3[30:27]>].
     const acp_dest: u32 = (w2 >> 17) & 0x1F;
-    if (acp_dest != 0 and acp_dest != dest_a) {
-        state.a[acp_dest & 0xF] = x_val;
+    const acp_val: u32 = if ((w5 >> 5) & 1 == 1) (state.getY(state.e[(w3 >> 27) & 0xF]) orelse 0) & 0xFFFF else x_val;
+    // AGU table "5" = x + i (fact 164).
+    if (dest_a != 0) {
+        if (fn_op != 5) return RunError.UnknownForm;
+        state.a[dest_a & 0xF] = (x_val +% i_val) & M24;
     }
+    if (acp_dest != 0 and acp_dest != dest_a) state.a[acp_dest & 0xF] = acp_val;
 }
 
 fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

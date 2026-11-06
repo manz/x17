@@ -668,3 +668,7 @@ x17.yld    3   0x00000177   0x0E000000   0x1C1A8180
 
 # x16.mac: S1 class 001 / S2 class 110 40-bit MAC (fact 213).
 x16.mac    3   0x00000016   0x00040000   0xC0030000
+
+# x03.acp: second A dest, A<w2[21:17]> <- A<w3[4:0]> or (w5[5]) the Y read
+# (fact 193 / own-x03acp, own-x03ayd).
+x03.acp    6   0x00000003   0x00000002   0x0140E000   0x04000000   0x0020683C   0x00340100

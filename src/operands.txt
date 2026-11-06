@@ -442,6 +442,7 @@ x02.x3	op	imm	6	8	s5
 x02.x3	shift	imm	2	5	s5
 x02.x3	mpy_dest	s	9	12	s2
 x02.x3	sgn	imm	15	17	s1
+x02.x3	plo	s	7	10	s4
 
 # x01.st (7 syllables): only the s3 <- e<src_e> copy is grammar-exposed.
 # Grammar: x01.st <src_e>
@@ -1018,3 +1019,9 @@ x16.mac	x_lo	s	24	27	s1
 x16.mac	a_s	s	1	4	s2
 x16.mac	b_s	s	5	8	s2
 x16.mac	mode	imm	14	15	s2
+
+# x03.acp <acp_A>, <src_A>, <y_e>, #<yd>
+x03.acp	acp_A	A	17	21	s2
+x03.acp	src_A	A	0	4	s3
+x03.acp	y_e	e	27	30	s3
+x03.acp	yd	imm	5	5	s5

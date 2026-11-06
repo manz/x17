@@ -589,7 +589,7 @@ const GATES = [_]Gate{
         // acp_dest = A9 also set to A5 = 0x100 (no +1).
         .pre = &.{.{ .bank = .a, .index = 5, .value = 0x100 }},
         .src =
-        \\x03.agu A0, A5, #0, #0, A9
+        \\x03.acp A9, A5, e3, #0
         \\x17.halt
         ,
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x100 } }},
@@ -1163,7 +1163,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 3, .value = 0x333 },
         },
         .src =
-        \\x02.x3 #1, #2, s2, s3, #5, #2, s2, #1
+        \\x02.x3 #1, #2, s2, s3, #5, #2, s2, #1, s0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 6, .value = 0xFFFBBC } }},
@@ -1178,7 +1178,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 3, .value = 0x333 },
         },
         .src =
-        \\x02.x3 #1, #2, s2, s3, #0, #0, s6, #1
+        \\x02.x3 #1, #2, s2, s3, #0, #0, s6, #1, s0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 6, .value = 0x6333 } }},
@@ -1192,7 +1192,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 0xFF9877 },
         },
         .src =
-        \\x02.x3 #0, #0, s2, s3, #5, #2, s6, #6
+        \\x02.x3 #0, #0, s2, s3, #5, #2, s6, #6, s0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 6, .value = 0xFFC339 } }},
@@ -1205,7 +1205,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 0xFF9877 },
         },
         .src =
-        \\x02.x3 #0, #0, s2, s3, #5, #2, s6, #4
+        \\x02.x3 #0, #0, s2, s3, #5, #2, s6, #4, s0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 6, .value = 0xFF5BB0 } }},
@@ -1842,6 +1842,33 @@ const GATES = [_]Gate{
             .{ .s_reg = .{ .index = 7, .value = 0x110 } },
             .{ .s_reg = .{ .index = 6, .value = 0x4010 } },
         },
+    },
+    .{
+        .name = "own-x03ayd",
+        // w5[5]: A9 <- Y:[e3 = 0x416] = 0x332.
+        .pre = &.{
+            .{ .bank = .a, .index = 5, .value = 0x100 },
+            .{ .bank = .e, .index = 3, .value = 0x416 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x416, .value = 0x332 }},
+        .src =
+        \\x03.acp A9, A5, e3, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x332 } }},
+    },
+    .{
+        .name = "own-x02plo",
+        // s6 <- (2 * 0x123 * 0x45)[15:0] = 0x9CDE.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x123 },
+            .{ .bank = .s, .index = 2, .value = 0x45 },
+        },
+        .src =
+        \\x02.x3 #0, #0, s2, s3, #5, #2, s2, #1, s6
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 6, .value = 0x9CDE } }},
     },
     .{
         .name = "own-x15pt",
