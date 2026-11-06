@@ -291,6 +291,12 @@ x03.xrd	a_lo	imm	30	31	head
 x03.yrd	dest_s	s	3	6	s4
 x03.yrd	src_e	e	27	30	s3
 
+# x02.c6 (6 syllables): one X read, two destinations.
+# Grammar: x02.c6 <dest_s>, <dest2_s>, <src_A>
+x02.c6	dest_s	s	3	6	s4
+x02.c6	dest2_s	s	9	12	s2
+x02.c6	src_A	A	17	21	s4
+
 # x03.agu (6 syllables): A-AGU write.
 # Grammar: x03.agu <dest_A>, <src_A>, #<i_hi>, #<i_lo>
 x03.agu	dest_A	A	10	14	s3

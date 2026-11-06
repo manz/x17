@@ -1373,6 +1373,20 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x02c6",
+        // Pre A3 = 0x456, X:0x456 = 0xC09F; s6 and s5 both get the read.
+        .pre = &.{.{ .bank = .a, .index = 3, .value = 0x456 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x456, .value = 0xC09F }},
+        .src =
+        \\x02.c6 s6, s5, A3
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 6, .value = 0xC09F } },
+            .{ .s_reg = .{ .index = 5, .value = 0xC09F } },
+        },
+    },
+    .{
         .name = "own-x03yrd",
         // Pre e3 = 0x490, Y:0x490 = 0x886F; s7 <- Y:[e3].
         .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},

@@ -175,6 +175,10 @@ x03.xrd    6   0x00000003   0x00000000   0x0140E000   0x04002008   0x00046804   
 # (fact 190 / own-x03yrd).
 x03.yrd    6   0x00000003   0x00000002   0x0140E000   0x04002008   0x00046804   0x00340100
 
+# x02.c6: w4 slot X read, and w5[19] = 1 copies the same read into the
+# w2 slot's destination (fact 158, 161 / own-x02c6).
+x02.c6     6   0x00008002   0x00000000   0x00060000   0x00000000   0x00002800   0xC00C4200
+
 # x03.agu: 6-syllable VLIW at low5 0x03 with the A-AGU slot active
 # (fact 164 / own-x03agu).
 #   A<w3[14:10]> <- AGU[w2[26:22]](x = A<w3[4:0]>, i = {w5[0], w4[31:17]})

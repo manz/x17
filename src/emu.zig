@@ -316,6 +316,13 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const a_s: u32 = (w2 >> 1) & 0xF;
     const b_s: u32 = (w2 >> 5) & 0xF;
     const dest_s: u32 = (w2 >> 9) & 0xF;
+    // w5[19] = 1: the w2 slot takes the w4 slot's X read instead of P
+    // (fact 158, 161 / own-x02c6).
+    if ((bundle[5] >> 19) & 1 == 1) {
+        const a_idx: u32 = (bundle[4] >> 17) & 0xF;
+        if (dest_s != 0) state.s[dest_s] = state.getX(state.a[a_idx]) orelse 0;
+        return;
+    }
     const b15: u32 = (w1 >> 15) & 1;
     const b16: u32 = (w1 >> 16) & 1;
     const av: i64 = mpyOperand(state.s[a_s], b15 != b16);
