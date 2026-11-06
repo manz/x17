@@ -98,6 +98,15 @@ pub const OperandKind = enum {
     imm, // raw immediate, width = hi-lo+1
     dest_ldi, // ldi's 5-bit dest index (16..31 = s(k-16))
     y_addr, // Y-space immediate: written `Y:<imm>` or `Y:#<imm>`
+    rel, // branch offset in syllables from the bundle's own q, signed
+    relu, // branch offset in syllables from the bundle's own q, unsigned
+    rel4, // branch offset in units of 4 syllables from the bundle's own q, signed
+
+    /// Branch-offset kinds: a bare label operand is a target the assembler
+    /// turns into this offset; `#expr` stays the raw field.
+    pub fn isRel(k: OperandKind) bool {
+        return k == .rel or k == .relu or k == .rel4;
+    }
 };
 
 /// One operand's bit slice within the HEAD syllable of a bundle.  `lo` and
@@ -275,6 +284,9 @@ fn parseOperands(src: []const u8) OperandsParse {
             else if (std.mem.eql(u8, kind_s, "imm")) .imm
             else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi
             else if (std.mem.eql(u8, kind_s, "y_addr")) .y_addr
+            else if (std.mem.eql(u8, kind_s, "rel")) .rel
+            else if (std.mem.eql(u8, kind_s, "relu")) .relu
+            else if (std.mem.eql(u8, kind_s, "rel4")) .rel4
             else continue;
 
         const syll: u8 = blk: {

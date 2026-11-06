@@ -117,7 +117,7 @@ fn formatOperand(out: []u8, op: isa.Operand, field: u32) usize {
         .r_reg => printTo(out, "R{d}", .{field}),
         .a_reg => printTo(out, "A{d}", .{field}),
         .p => printTo(out, "p{d}", .{field}),
-        .imm => printTo(out, "#0x{x}", .{field}),
+        .imm, .rel, .relu, .rel4 => printTo(out, "#0x{x}", .{field}),
         .dest_ldi => blk: {
             if (field >= 16 and field <= 31) {
                 break :blk printTo(out, "s{d}", .{field - 16});

@@ -1,23 +1,23 @@
-//! x17 assembler, v0: one line, one bundle, one syllable out.
+//! x17 assembler.
 //!
-//! Scope of this spike:
-//!   * Lex a single line into tokens carrying source-byte spans.
-//!   * Parse `mnemonic op (, op)*`.
-//!   * Match operands by file order against `isa.operandsFor(form)`.
-//!   * Emit the head syllable by OR'ing the form's `value` with each
-//!     encoded operand.
-//!   * On error, build a `Diagnostic` carrying an error code, span, and
-//!     "expected/found" message, printable with a rust-style caret block.
+//! One line, one bundle.  A file assembles in two passes, a816-style:
+//!   1. size every bundle and bind labels (`name:`) and constants
+//!      (`.const NAME = expr`) to a flat symbol table;
+//!   2. encode with every symbol known, check `.assert expr`.
+//! Symbols resolve from that one table at the end, never during emit, and
+//! every diagnostic carries a span: a later link step can take the symbols
+//! a file leaves unresolved without a rewrite (ARCHITECTURE.md).
 //!
-//! What waits:
-//!   * Multi-line source, labels, directives, const-expression folding.
-//!   * Multi-syllable bundles (x17's head+S1+S2, bcc's S word).
-//!   * ldi's dest decoding beyond s<N> (0 = address entry 0, 1 = source 1,
-//!     2..15 marked OPEN in isa.toml - the assembler refuses them today).
-//!   * `Y:<imm>` operand kind for st.y.
+//! Operands match by file order against `isa.operandsFor(form)`.  Immediates
+//! are constant expressions (`+ - * / << >> & | ~`, parentheses, symbols).
+//! Branch offsets (operand kinds rel / relu / rel4) take a bare label, the
+//! target, which the assembler turns into the form's offset; `#expr` stays
+//! the raw field, so measured gate programs keep their exact bytes.
 //!
-//! The round-trip gate (reassemble a disassembled stock bundle byte-exact)
-//! bolts onto this file as a test once labels land.
+//! Errors are `Diagnostic`s: code, span, expected/found message, hint,
+//! printed as a rust-style caret block.
+//!
+//! What waits: `.include`, macros, data placement in X/Y, `.assert cycles`.
 
 const std = @import("std");
 const isa = @import("isa");
@@ -60,6 +60,13 @@ pub const ErrorCode = enum {
     e0015_ldi_dest_not_s_reg,
     e0016_expected_y_prefix,
     e0017_expected_colon,
+    e0018_undefined_symbol,
+    e0019_duplicate_symbol,
+    e0020_bad_expression,
+    e0021_branch_misaligned,
+    e0022_branch_out_of_range,
+    e0023_bad_directive,
+    e0024_assert_failed,
 
     pub fn text(c: ErrorCode) []const u8 {
         return switch (c) {
@@ -80,6 +87,13 @@ pub const ErrorCode = enum {
             .e0015_ldi_dest_not_s_reg => "E0015",
             .e0016_expected_y_prefix => "E0016",
             .e0017_expected_colon => "E0017",
+            .e0018_undefined_symbol => "E0018",
+            .e0019_duplicate_symbol => "E0019",
+            .e0020_bad_expression => "E0020",
+            .e0021_branch_misaligned => "E0021",
+            .e0022_branch_out_of_range => "E0022",
+            .e0023_bad_directive => "E0023",
+            .e0024_assert_failed => "E0024",
         };
     }
 };
@@ -214,6 +228,24 @@ pub const TokenKind = enum {
     comma,
     hash,
     colon,
+    lparen,
+    rparen,
+    plus,
+    minus,
+    star,
+    slash,
+    shl,
+    shr,
+    amp,
+    pipe,
+    tilde,
+    equals,
+    eq,
+    ne,
+    lt,
+    le,
+    gt,
+    ge,
     end,
 };
 
@@ -277,13 +309,53 @@ const Lexer = struct {
         if (isDigit(c)) return self.number(start);
         if (isAlpha(c)) return self.wordOrReg(start);
 
+        const two = self.i + 1 < self.src.len;
+        if (two and c == '<' and self.src[self.i + 1] == '<') return self.punct(start, 2, .shl);
+        if (two and c == '>' and self.src[self.i + 1] == '>') return self.punct(start, 2, .shr);
+        if (two and self.src[self.i + 1] == '=') {
+            switch (c) {
+                '=' => return self.punct(start, 2, .eq),
+                '!' => return self.punct(start, 2, .ne),
+                '<' => return self.punct(start, 2, .le),
+                '>' => return self.punct(start, 2, .ge),
+                else => {},
+            }
+        }
+        if (c == '<') return self.punct(start, 1, .lt);
+        if (c == '>') return self.punct(start, 1, .gt);
+        const single: ?TokenKind = switch (c) {
+            '(' => .lparen,
+            ')' => .rparen,
+            '+' => .plus,
+            '-' => .minus,
+            '*' => .star,
+            '/' => .slash,
+            '&' => .amp,
+            '|' => .pipe,
+            '~' => .tilde,
+            '=' => .equals,
+            else => null,
+        };
+        if (single) |k| return self.punct(start, 1, k);
+
         self.i += 1;
         return .{ .err = .{
             .code = .e0003_bad_token,
             .span = .{ .start = start, .end = self.i },
             .msg = "unexpected character",
-            .hint = "x17 source accepts identifiers, numbers, ',' ':' '#'",
+            .hint = "x17 source accepts identifiers, numbers, operators and ',' ':' '#'",
         } };
+    }
+
+    fn punct(self: *Lexer, start: usize, n: usize, k: TokenKind) LexResult {
+        self.i += n;
+        return .{ .tok = .{ .kind = k, .text = self.src[start..self.i], .start = start } };
+    }
+
+    fn peek(self: *Lexer) LexResult {
+        const save = self.i;
+        defer self.i = save;
+        return self.next();
     }
 
     fn number(self: *Lexer, start: usize) LexResult {
@@ -449,7 +521,7 @@ fn matchOperand(op: isa.Operand, tok: Token, d: *Diagnostic) ?u32 {
             }
             return tok.value;
         },
-        .y_addr => unreachable, // handled inline in the operand loop
+        .y_addr, .rel, .relu, .rel4 => unreachable, // handled inline in the operand loop
         .dest_ldi => {
             if (tok.kind != .s_reg) {
                 d.* = .{ .code = .e0015_ldi_dest_not_s_reg, .span = tokSpan(tok) };
@@ -483,6 +555,24 @@ fn kindName(k: TokenKind) []const u8 {
         .comma => "','",
         .hash => "'#'",
         .colon => "':'",
+        .lparen => "'('",
+        .rparen => "')'",
+        .plus => "'+'",
+        .minus => "'-'",
+        .star => "'*'",
+        .slash => "'/'",
+        .shl => "'<<'",
+        .shr => "'>>'",
+        .amp => "'&'",
+        .pipe => "'|'",
+        .tilde => "'~'",
+        .equals => "'='",
+        .eq => "'=='",
+        .ne => "'!='",
+        .lt => "'<'",
+        .le => "'<='",
+        .gt => "'>'",
+        .ge => "'>='",
         .end => "end of input",
     };
 }
@@ -494,12 +584,237 @@ fn setExpected(d: *Diagnostic, want: []const u8, tok: Token) void {
 }
 
 // ---------------------------------------------------------------------------
+// Symbols and constant expressions
+// ---------------------------------------------------------------------------
+
+pub const SymbolTable = std.StringHashMapUnmanaged(i64);
+
+/// What a line assembles against: the flat symbol table, the bundle's own
+/// position (q, in syllables), and whether this is the sizing pass, where an
+/// unknown symbol reads as 0 and no range is checked.
+pub const Env = struct {
+    symbols: *const SymbolTable,
+    pc: u32 = 0,
+    sizing: bool = false,
+};
+
+const Value = struct {
+    v: i64,
+    span: Span,
+};
+
+const ExprResult = union(enum) {
+    ok: Value,
+    err: Result,
+};
+
+fn diagAt(code: ErrorCode, span: Span, msg: []const u8, hint: []const u8) Result {
+    var d = Diagnostic{ .code = code, .span = span };
+    d.setMsg(msg);
+    if (hint.len > 0) d.setHint(hint);
+    return .{ .err = d };
+}
+
+fn nextTok(lex: *Lexer) union(enum) { tok: Token, err: Result } {
+    return switch (lex.next()) {
+        .tok => |t| .{ .tok = t },
+        .err => |e| .{ .err = fromLexErr(e) },
+    };
+}
+
+fn peekKind(lex: *Lexer) TokenKind {
+    return switch (lex.peek()) {
+        .tok => |t| t.kind,
+        .err => .end,
+    };
+}
+
+/// Binary levels, loosest first: comparisons (0 or 1), | & (<< >>) (+ -) (* /).
+const levels = [_][]const TokenKind{
+    &.{ .eq, .ne, .lt, .le, .gt, .ge },
+    &.{.pipe},
+    &.{.amp},
+    &.{ .shl, .shr },
+    &.{ .plus, .minus },
+    &.{ .star, .slash },
+};
+
+/// expr := the binary levels above over unary := ('-' | '~') unary | primary,
+/// primary := number | symbol | '(' expr ')'.  64-bit, wrapping.
+fn parseExpr(lex: *Lexer, env: ?*const Env) ExprResult {
+    return parseLevel(lex, env, 0);
+}
+
+fn parseLevel(lex: *Lexer, env: ?*const Env, level: usize) ExprResult {
+    if (level == levels.len) return parseUnary(lex, env);
+    var lhs = switch (parseLevel(lex, env, level + 1)) {
+        .ok => |v| v,
+        .err => |r| return .{ .err = r },
+    };
+    while (std.mem.indexOfScalar(TokenKind, levels[level], peekKind(lex)) != null) {
+        const op = switch (nextTok(lex)) {
+            .tok => |t| t,
+            .err => |r| return .{ .err = r },
+        };
+        const rhs = switch (parseLevel(lex, env, level + 1)) {
+            .ok => |v| v,
+            .err => |r| return .{ .err = r },
+        };
+        const span: Span = .{ .start = lhs.span.start, .end = rhs.span.end };
+        lhs = .{ .span = span, .v = switch (op.kind) {
+            .eq => @intFromBool(lhs.v == rhs.v),
+            .ne => @intFromBool(lhs.v != rhs.v),
+            .lt => @intFromBool(lhs.v < rhs.v),
+            .le => @intFromBool(lhs.v <= rhs.v),
+            .gt => @intFromBool(lhs.v > rhs.v),
+            .ge => @intFromBool(lhs.v >= rhs.v),
+            .pipe => lhs.v | rhs.v,
+            .amp => lhs.v & rhs.v,
+            .plus => lhs.v +% rhs.v,
+            .minus => lhs.v -% rhs.v,
+            .star => lhs.v *% rhs.v,
+            .shl, .shr => blk: {
+                if (rhs.v < 0 or rhs.v > 63) return .{ .err = diagAt(.e0020_bad_expression, rhs.span, "shift amount must be 0..63", "") };
+                const n: u6 = @intCast(rhs.v);
+                break :blk if (op.kind == .shl) lhs.v << n else lhs.v >> n;
+            },
+            .slash => blk: {
+                if (rhs.v == 0) return .{ .err = diagAt(.e0020_bad_expression, rhs.span, "division by zero", "") };
+                break :blk @divTrunc(lhs.v, rhs.v);
+            },
+            else => unreachable,
+        } };
+    }
+    return .{ .ok = lhs };
+}
+
+fn parseUnary(lex: *Lexer, env: ?*const Env) ExprResult {
+    const t = switch (nextTok(lex)) {
+        .tok => |tok| tok,
+        .err => |r| return .{ .err = r },
+    };
+    switch (t.kind) {
+        .minus, .tilde => {
+            const inner = switch (parseUnary(lex, env)) {
+                .ok => |v| v,
+                .err => |r| return .{ .err = r },
+            };
+            const v = if (t.kind == .minus) -%inner.v else ~inner.v;
+            return .{ .ok = .{ .v = v, .span = .{ .start = t.start, .end = inner.span.end } } };
+        },
+        .lparen => {
+            const inner = switch (parseExpr(lex, env)) {
+                .ok => |v| v,
+                .err => |r| return .{ .err = r },
+            };
+            const close = switch (nextTok(lex)) {
+                .tok => |tok| tok,
+                .err => |r| return .{ .err = r },
+            };
+            if (close.kind != .rparen) {
+                var d = Diagnostic{ .code = .e0020_bad_expression, .span = tokSpan(close) };
+                setExpected(&d, "')'", close);
+                d.setHint("every '(' needs its ')'");
+                return .{ .err = .{ .err = d } };
+            }
+            return .{ .ok = .{ .v = inner.v, .span = .{ .start = t.start, .end = close.start + 1 } } };
+        },
+        .number => return .{ .ok = .{ .v = t.value, .span = tokSpan(t) } },
+        .ident => {
+            if (env) |e| {
+                if (e.symbols.get(t.text)) |v| return .{ .ok = .{ .v = v, .span = tokSpan(t) } };
+                if (e.sizing) return .{ .ok = .{ .v = 0, .span = tokSpan(t) } };
+            }
+            var buf: [128]u8 = undefined;
+            const m = std.fmt.bufPrint(&buf, "undefined symbol '{s}'", .{t.text}) catch buf[0..0];
+            return .{ .err = diagAt(.e0018_undefined_symbol, tokSpan(t), m, "define it with `name:` or `.const name = value`") };
+        },
+        else => {
+            var d = Diagnostic{ .code = .e0012_expected_immediate, .span = tokSpan(t) };
+            setExpected(&d, "a number, symbol or '('", t);
+            d.setHint("immediates look like #0x1234, #42 or #(BASE + 4)");
+            return .{ .err = .{ .err = d } };
+        },
+    }
+}
+
+const FieldResult = union(enum) {
+    ok: u32,
+    err: Result,
+};
+
+/// A value into a w-bit field: 0..2^w-1, or a negative value down to
+/// -2^(w-1) stored as two's complement.
+fn immField(val: Value, op: isa.Operand, env: ?*const Env) FieldResult {
+    const w: u6 = @intCast(op.width());
+    const mask: u64 = (@as(u64, 1) << w) - 1;
+    const bits: u32 = @intCast(@as(u64, @bitCast(val.v)) & mask);
+    if (env) |e| if (e.sizing) return .{ .ok = bits };
+    const lo: i64 = -(@as(i64, 1) << (w - 1));
+    if (val.v > @as(i64, @intCast(mask)) or val.v < lo) {
+        var buf: [128]u8 = undefined;
+        const m = if (val.v < 0)
+            std.fmt.bufPrint(&buf, "immediate {d} does not fit in {d} bits", .{ val.v, w }) catch buf[0..0]
+        else
+            std.fmt.bufPrint(&buf, "immediate 0x{x} does not fit in {d} bits", .{ val.v, w }) catch buf[0..0];
+        var hb: [96]u8 = undefined;
+        const h = std.fmt.bufPrint(&hb, "{s} takes {d}..0x{x}", .{ op.name, lo, mask }) catch hb[0..0];
+        return .{ .err = diagAt(.e0013_imm_out_of_range, val.span, m, h) };
+    }
+    return .{ .ok = bits };
+}
+
+/// A branch target into the form's offset field: (target - q) / scale.
+fn relField(target: Value, op: isa.Operand, env: ?*const Env) FieldResult {
+    const e = env orelse return .{ .err = diagAt(.e0018_undefined_symbol, target.span, "a branch target needs a file to resolve against", "write the raw offset with '#', or assemble a whole file") };
+    if (e.sizing) return .{ .ok = 0 };
+    const w: u6 = @intCast(op.width());
+    const scale: i64 = if (op.kind == .rel4) 4 else 1;
+    const d = target.v - @as(i64, e.pc);
+    if (@rem(d, scale) != 0) {
+        var buf: [128]u8 = undefined;
+        const m = std.fmt.bufPrint(&buf, "target is {d} syllables away; this branch reaches multiples of 4", .{d}) catch buf[0..0];
+        return .{ .err = diagAt(.e0021_branch_misaligned, target.span, m, "move the label or the branch by the remainder") };
+    }
+    const off = @divExact(d, scale);
+    const lo: i64 = if (op.kind == .relu) 0 else -(@as(i64, 1) << (w - 1));
+    const hi: i64 = if (op.kind == .relu) (@as(i64, 1) << w) - 1 else (@as(i64, 1) << (w - 1)) - 1;
+    if (off < lo or off > hi) {
+        var buf: [128]u8 = undefined;
+        const m = std.fmt.bufPrint(&buf, "target is {d} syllables away; this branch reaches {d}..{d}", .{ d, lo * scale, hi * scale }) catch buf[0..0];
+        const h = if (op.kind == .relu) "this branch only jumps forward" else "";
+        return .{ .err = diagAt(.e0022_branch_out_of_range, target.span, m, h) };
+    }
+    const mask: u64 = (@as(u64, 1) << w) - 1;
+    return .{ .ok = @intCast(@as(u64, @bitCast(off)) & mask) };
+}
+
+/// An immediate or branch operand whose first token `tok` is already read.
+fn valueOperand(lex: *Lexer, tok: Token, op: isa.Operand, env: ?*const Env) FieldResult {
+    const raw = tok.kind == .hash;
+    if (!raw) lex.i = tok.start; // re-read the expression from its first token
+    const val = switch (parseExpr(lex, env)) {
+        .ok => |v| v,
+        .err => |r| return .{ .err = r },
+    };
+    if (op.kind.isRel() and !raw) return relField(val, op, env);
+    return immField(val, op, env);
+}
+
+// ---------------------------------------------------------------------------
 // Assemble one line
 // ---------------------------------------------------------------------------
 
-/// Assemble one source line.  Carries diagnostics.
+/// Assemble one source line.  Carries diagnostics.  No symbols: branch
+/// operands take the raw `#offset` form only.
 pub fn assembleOneResult(src: []const u8) Result {
-    var lex = Lexer{ .src = src };
+    return assembleLine(src, 0, null);
+}
+
+/// Assemble the instruction starting at byte `start` of the line `src`
+/// (after any label), against `env`.  Spans stay line-relative.
+pub fn assembleLine(src: []const u8, start: usize, env: ?*const Env) Result {
+    var lex = Lexer{ .src = src, .i = start };
     const head_r = lex.next();
     const head = switch (head_r) {
         .tok => |t| t,
@@ -520,7 +835,7 @@ pub fn assembleOneResult(src: []const u8) Result {
     // in assembleX17.  The sub-form name (x17.e, x19.ld, alu11, ...) picks
     // the base words + operand table; the "x17/x19" prefix is not special.
     if (isa.subFormByName(head.text) != null) {
-        return assembleX17(head, &lex, src);
+        return assembleX17(head, &lex, src, env);
     }
 
     var form: ?*const isa.Form = null;
@@ -591,17 +906,23 @@ pub fn assembleOneResult(src: []const u8) Result {
             continue;
         }
 
-        if (tok.kind == .hash) {
-            const nr = lex.next();
-            tok = switch (nr) {
-                .tok => |t| t,
-                .err => |e| return fromLexErr(e),
-            };
-            if (tok.kind == .end) {
+        if (op.kind == .imm or op.kind.isRel()) {
+            if (tok.kind == .hash and peekKind(&lex) == .end) {
                 var d = Diagnostic{ .code = .e0005_missing_operand, .span = .{ .start = src.len, .end = src.len } };
                 d.setMsg("'#' is not followed by a number");
                 return .{ .err = d };
             }
+            switch (valueOperand(&lex, tok, op, env)) {
+                .ok => |v| word |= op.encode(v),
+                .err => |r| return r,
+            }
+            continue;
+        }
+        if (tok.kind == .hash) {
+            tok = switch (lex.next()) {
+                .tok => |t| t,
+                .err => |e| return fromLexErr(e),
+            };
         }
         var d: Diagnostic = undefined;
         const field = matchOperand(op, tok, &d) orelse return .{ .err = d };
@@ -687,7 +1008,7 @@ fn parseYAddr(lex: *Lexer, tok: Token, op: isa.Operand) union(enum) { ok: u32, e
     return .{ .ok = ntok.value };
 }
 
-fn assembleX17(head: Token, lex: *Lexer, src: []const u8) Result {
+fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Result {
     const sf = isa.subFormByName(head.text) orelse {
         var d = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(head) };
         var buf: [96]u8 = undefined;
@@ -742,6 +1063,18 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8) Result {
             }
             continue;
         }
+        if (op.syll >= sf.syllables) {
+            var dx = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(tok) };
+            dx.setMsg("operand table names a syllable past the bundle length");
+            return .{ .err = dx };
+        }
+        if (op.kind == .imm or op.kind.isRel()) {
+            switch (valueOperand(lex, tok, op, env)) {
+                .ok => |v| b.words[op.syll] |= op.encode(v),
+                .err => |r| return r,
+            }
+            continue;
+        }
         if (tok.kind == .hash) {
             tok = switch (lex.next()) {
                 .tok => |t| t,
@@ -788,31 +1121,164 @@ pub const FileError = struct {
     diag: Diagnostic,
 };
 
-/// Assemble a multi-line source file.  Blank lines and lines starting with
-/// `;` or `#` are skipped as comments.  On success, returns a newly
+/// Assemble a multi-line source file in two passes (see the file header).
+/// Blank lines and lines starting with `;` or `#` are comments.  A line is
+/// `[label:] [instruction | directive]`.  Directives: `.const NAME = expr`,
+/// `.assert expr` (checked in pass 2).  On success, returns a newly
 /// allocated slice of syllables (caller frees).  On failure, returns a
 /// `FileError` attached to the offending line.
 pub fn assembleFile(
     gpa: std.mem.Allocator,
     source: []const u8,
 ) !union(enum) { ok: []u32, err: FileError } {
+    var symbols: SymbolTable = .empty;
+    defer symbols.deinit(gpa);
     var list: std.ArrayList(u32) = .empty;
     errdefer list.deinit(gpa);
 
-    var line_no: usize = 0;
-    var it = std.mem.splitScalar(u8, source, '\n');
-    while (it.next()) |raw| {
-        line_no += 1;
-        const trimmed = std.mem.trim(u8, raw, " \t\r");
-        if (trimmed.len == 0) continue;
-        if (trimmed[0] == ';' or trimmed[0] == '#') continue;
-        switch (assembleOneResult(raw)) {
-            .ok => |b| try list.appendSlice(gpa, b.slice()),
-            .err => |d| return .{ .err = .{ .line = line_no, .line_text = raw, .diag = d } },
+    for ([_]bool{ true, false }) |sizing| {
+        var pc: u32 = 0;
+        var line_no: usize = 0;
+        var it = std.mem.splitScalar(u8, source, '\n');
+        while (it.next()) |raw| {
+            line_no += 1;
+            const trimmed = std.mem.trim(u8, raw, " \t\r");
+            if (trimmed.len == 0 or trimmed[0] == ';' or trimmed[0] == '#') continue;
+            const env: Env = .{ .symbols = &symbols, .pc = pc, .sizing = sizing };
+            const r = try fileLine(gpa, raw, &symbols, env);
+            switch (r) {
+                .err => |d| {
+                    list.deinit(gpa);
+                    return .{ .err = .{ .line = line_no, .line_text = raw, .diag = d } };
+                },
+                .none => {},
+                .bundle => |b| {
+                    if (!sizing) try list.appendSlice(gpa, b.slice());
+                    pc += b.len;
+                },
+            }
         }
     }
-    const owned = try list.toOwnedSlice(gpa);
-    return .{ .ok = owned };
+    return .{ .ok = try list.toOwnedSlice(gpa) };
+}
+
+const LineResult = union(enum) {
+    none,
+    bundle: Bundle,
+    err: Diagnostic,
+};
+
+fn lineErr(r: Result) LineResult {
+    return .{ .err = r.err };
+}
+
+/// One file line in either pass.  Pass 1 (env.sizing) binds labels and
+/// constants; pass 2 re-evaluates constants with every symbol known and
+/// checks asserts.
+fn fileLine(gpa: std.mem.Allocator, raw: []const u8, symbols: *SymbolTable, env: Env) !LineResult {
+    var lex = Lexer{ .src = raw };
+    var start: usize = 0;
+    // `name:` at the start of the line binds name to this bundle's q
+    const first = switch (nextTok(&lex)) {
+        .tok => |t| t,
+        .err => |r| return lineErr(r),
+    };
+    if (first.kind == .ident and peekKind(&lex) == .colon) {
+        _ = lex.next();
+        start = lex.i;
+        if (env.sizing) {
+            if (try define(gpa, symbols, first, env.pc)) |d| return .{ .err = d };
+        }
+    } else {
+        lex.i = 0;
+    }
+    const tok = switch (nextTok(&lex)) {
+        .tok => |t| t,
+        .err => |r| return lineErr(r),
+    };
+    if (tok.kind == .end) return .none;
+    if (tok.kind == .ident and tok.text[0] == '.') return directive(gpa, &lex, tok, symbols, &env);
+    return switch (assembleLine(raw, start, &env)) {
+        .ok => |b| .{ .bundle = b },
+        .err => |d| .{ .err = d },
+    };
+}
+
+fn define(gpa: std.mem.Allocator, symbols: *SymbolTable, name: Token, v: i64) !?Diagnostic {
+    const gop = try symbols.getOrPut(gpa, name.text);
+    if (gop.found_existing) {
+        var d = Diagnostic{ .code = .e0019_duplicate_symbol, .span = tokSpan(name) };
+        var buf: [128]u8 = undefined;
+        d.setMsg(std.fmt.bufPrint(&buf, "symbol '{s}' is already defined", .{name.text}) catch buf[0..0]);
+        d.setHint("labels and constants share one namespace");
+        return d;
+    }
+    gop.value_ptr.* = v;
+    return null;
+}
+
+fn expectEnd(lex: *Lexer) ?Diagnostic {
+    const t = switch (lex.next()) {
+        .tok => |tok| tok,
+        .err => |e| return fromLexErr(e).err,
+    };
+    if (t.kind == .end) return null;
+    var d = Diagnostic{ .code = .e0007_extra_tokens, .span = tokSpan(t) };
+    var buf: [96]u8 = undefined;
+    d.setMsg(std.fmt.bufPrint(&buf, "unexpected token '{s}' after the directive", .{t.text}) catch buf[0..0]);
+    return d;
+}
+
+fn directive(gpa: std.mem.Allocator, lex: *Lexer, dir: Token, symbols: *SymbolTable, env: *const Env) !LineResult {
+    if (std.mem.eql(u8, dir.text, ".const")) {
+        const name = switch (nextTok(lex)) {
+            .tok => |t| t,
+            .err => |r| return lineErr(r),
+        };
+        if (name.kind != .ident or name.text[0] == '.') {
+            var d = Diagnostic{ .code = .e0023_bad_directive, .span = tokSpan(name) };
+            setExpected(&d, "a constant name", name);
+            d.setHint(".const NAME = expr");
+            return .{ .err = d };
+        }
+        const eq = switch (nextTok(lex)) {
+            .tok => |t| t,
+            .err => |r| return lineErr(r),
+        };
+        if (eq.kind != .equals) {
+            var d = Diagnostic{ .code = .e0023_bad_directive, .span = tokSpan(eq) };
+            setExpected(&d, "'='", eq);
+            d.setHint(".const NAME = expr");
+            return .{ .err = d };
+        }
+        const val = switch (parseExpr(lex, env)) {
+            .ok => |v| v,
+            .err => |r| return lineErr(r),
+        };
+        if (expectEnd(lex)) |d| return .{ .err = d };
+        if (env.sizing) {
+            if (try define(gpa, symbols, name, val.v)) |d| return .{ .err = d };
+        } else {
+            symbols.getPtr(name.text).?.* = val.v;
+        }
+        return .none;
+    }
+    if (std.mem.eql(u8, dir.text, ".assert")) {
+        const val = switch (parseExpr(lex, env)) {
+            .ok => |v| v,
+            .err => |r| return lineErr(r),
+        };
+        if (expectEnd(lex)) |d| return .{ .err = d };
+        if (!env.sizing and val.v == 0) {
+            return lineErr(diagAt(.e0024_assert_failed, val.span, "assertion failed", "the expression evaluated to 0"));
+        }
+        return .none;
+    }
+    var d = Diagnostic{ .code = .e0023_bad_directive, .span = tokSpan(dir) };
+    var buf: [96]u8 = undefined;
+    d.setMsg(std.fmt.bufPrint(&buf, "unknown directive '{s}'", .{dir.text}) catch buf[0..0]);
+    d.setHint("directives: .const NAME = expr, .assert expr");
+    return .{ .err = d };
 }
 
 /// Thin wrapper that drops diagnostics and returns the bundle.
@@ -839,7 +1305,6 @@ fn okWord(src: []const u8) !u32 {
 }
 
 /// st.y and other 0x0E..0x10 one-word forms assemble as head + zero second.
-
 fn okBundle(src: []const u8) !Bundle {
     return switch (assembleOneResult(src)) {
         .ok => |b| b,
@@ -1035,4 +1500,184 @@ test "comment to end of line is tolerated" {
         @as(u32, 0xC000_000B) | (16 << 21),
         try okWord("ldi s0, #0 ; load zero into source k=16"),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Two-pass file tests: labels, constants, expressions
+// ---------------------------------------------------------------------------
+
+fn fileOk(src: []const u8) ![]u32 {
+    return switch (try assembleFile(testing.allocator, src)) {
+        .ok => |w| w,
+        .err => |fe| {
+            var buf: [2048]u8 = undefined;
+            const n = renderDiagAt(&buf, "test", fe.line, fe.line_text, fe.diag);
+            std.debug.print("{s}", .{buf[0..n]});
+            return error.TestUnexpectedResult;
+        },
+    };
+}
+
+fn fileErr(src: []const u8) !FileError {
+    return switch (try assembleFile(testing.allocator, src)) {
+        .ok => |w| {
+            testing.allocator.free(w);
+            return error.TestUnexpectedResult;
+        },
+        .err => |fe| fe,
+    };
+}
+
+fn expectSameBytes(a_src: []const u8, b_src: []const u8) !void {
+    const a = try fileOk(a_src);
+    defer testing.allocator.free(a);
+    const b = try fileOk(b_src);
+    defer testing.allocator.free(b);
+    try testing.expectEqualSlices(u32, b, a);
+}
+
+test "file: a forward label on bcc encodes the measured own-bcc-fwd bytes" {
+    try expectSameBytes(
+        \\bcc #0, skip
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\skip: alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\x17.halt
+    ,
+        \\bcc #0, #2
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\x17.halt
+    );
+}
+
+test "file: a backward label on bcc encodes the measured own-bcc-back bytes" {
+    try expectSameBytes(
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\again:
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\bcc #2, again
+        \\plog p2, p2, p2, #7, #0x0E
+        \\alu s0, s0, s0, #0
+        \\x17.halt
+    ,
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\bcc #2, #0x1FF
+        \\plog p2, p2, p2, #7, #0x0E
+        \\alu s0, s0, s0, #0
+        \\x17.halt
+    );
+}
+
+test "file: jmp and br take label targets in syllables" {
+    try expectSameBytes(
+        \\top: ldi s1, #1
+        \\jmp #1, #0, top
+        \\br #3, out
+        \\ldi s2, #2
+        \\out: x17.halt
+    ,
+        \\ldi s1, #1
+        \\jmp #1, #0, #0xFFFF
+        \\br #3, #2
+        \\ldi s2, #2
+        \\x17.halt
+    );
+}
+
+test "file: constants, forward references and expressions fold" {
+    try expectSameBytes(
+        \\.const WORD = BASE << 4 | 3
+        \\.const BASE = 0x40
+        \\ldi s5, #WORD
+        \\ldi s6, #-1
+        \\ldi s7, #(end - start) * 2
+        \\start: x17.imm s5, #~0 & 0xFF
+        \\end: x17.halt
+        \\.assert end - start == 3
+    ,
+        \\ldi s5, #0x403
+        \\ldi s6, #0xFFFF
+        \\ldi s7, #6
+        \\x17.imm s5, #0xFF
+        \\x17.halt
+    );
+}
+
+test "file: undefined symbol points at the name" {
+    const fe = try fileErr(
+        \\ldi s1, #1
+        \\ldi s2, #(MISSING + 1)
+    );
+    try testing.expectEqual(ErrorCode.e0018_undefined_symbol, fe.diag.code);
+    try testing.expectEqual(@as(usize, 2), fe.line);
+    try testing.expectEqualStrings("MISSING", fe.line_text[fe.diag.span.start..fe.diag.span.end]);
+}
+
+test "file: a label defined twice is refused" {
+    const fe = try fileErr(
+        \\a: ldi s1, #1
+        \\a: ldi s2, #2
+    );
+    try testing.expectEqual(ErrorCode.e0019_duplicate_symbol, fe.diag.code);
+}
+
+test "file: bcc to a target not a multiple of 4 away is refused" {
+    const fe = try fileErr(
+        \\bcc #0, t
+        \\ldi s1, #1
+        \\t: x17.halt
+    );
+    try testing.expectEqual(ErrorCode.e0021_branch_misaligned, fe.diag.code);
+}
+
+test "file: br cannot reach backwards" {
+    const fe = try fileErr(
+        \\t: ldi s1, #1
+        \\br #3, t
+    );
+    try testing.expectEqual(ErrorCode.e0022_branch_out_of_range, fe.diag.code);
+}
+
+test "file: a false .assert fails in pass 2" {
+    const fe = try fileErr(
+        \\.const N = 3
+        \\.assert N == 4
+    );
+    try testing.expectEqual(ErrorCode.e0024_assert_failed, fe.diag.code);
+}
+
+test "file: unknown directive" {
+    const fe = try fileErr(".org 0x40");
+    try testing.expectEqual(ErrorCode.e0023_bad_directive, fe.diag.code);
+}
+
+test "file: an immediate out of range reports the value and the field" {
+    const fe = try fileErr(".const BIG = 0x10000\nldi s1, #BIG");
+    try testing.expectEqual(ErrorCode.e0013_imm_out_of_range, fe.diag.code);
+    try testing.expectEqualStrings("immediate 0x10000 does not fit in 16 bits", fe.diag.msg());
 }

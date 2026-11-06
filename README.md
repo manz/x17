@@ -39,12 +39,15 @@ Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
     data/
       isa.toml              single source of truth (synced from RE tree)
 
-## Spike status (2026-11-05)
+## Status (2026-11-06)
 
-Comptime parse of `[layout]` section lands the `row_syllables`, `main_row`
-and length lookup table.  `zig build run` prints them.  Opcode form tables
-(x17 bundles, head + S1 + S2 classes), the assembler's parser, the emulator
-and the test harness are all to come.
+- `x17 asm`: two-pass assembler, labels, `.const`, constant expressions,
+  branch targets, `.assert` (ASSEMBLY.md).  `examples/labels.sm`.
+- `x17 run`: the emulator over every silicon-measured form; 283 own probe
+  programs are gated byte-exact in `src/silicon_gates.zig`.
+- `x17 disasm`: decodes syllables back to source.
+- To come: the host interface model (descriptors in, output ring out),
+  cycle costs, `.include` and macros, the bit-exact harness.
 
 ## Mnemonics
 

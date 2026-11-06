@@ -3745,3 +3745,31 @@ test "own-st3 reproduces silicon Y writes at lane 2" {
         try testing.expectEqual(ld.expected, state.getY(ld.addr).?);
     }
 }
+
+test "a file with labels and constants runs: bcc over four adds gives s1 = 4" {
+    const gpa = testing.allocator;
+    const r = try asm_mod.assembleFile(gpa,
+        \\.const ADD = 14
+        \\        ldi s2, #1
+        \\        bcc #0, skip
+        \\        alu s1, s1, s2, #ADD
+        \\        alu s1, s1, s2, #ADD
+        \\        alu s1, s1, s2, #ADD
+        \\        alu s1, s1, s2, #ADD
+        \\        alu s1, s1, s2, #ADD
+        \\        alu s1, s1, s2, #ADD
+        \\skip:   alu s1, s1, s2, #ADD
+        \\        alu s1, s1, s2, #ADD
+        \\        x17.halt
+    );
+    const words = switch (r) {
+        .ok => |w| w,
+        .err => return error.TestUnexpectedResult,
+    };
+    defer gpa.free(words);
+    var st: State = .{};
+    defer st.deinit(gpa);
+    _ = try runLinear(gpa, &st, words);
+    try testing.expect(st.halted);
+    try testing.expectEqual(@as(u32, 4), st.s[1]);
+}

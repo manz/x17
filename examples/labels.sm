@@ -1,0 +1,17 @@
+; Labels, constants and .assert.  The own-bcc-fwd program, self-contained:
+; bcc always (p0) jumps over 4 adds; its two delay-slot adds still run.
+; Expected: s1 = 4 (2 delay-slot adds + 2 after the label).
+.const ADD = 14                 ; alu op 14: s1 <- s1 + s2
+
+        ldi s2, #1
+        bcc #0, skip            ; bcc reaches multiples of 4 syllables
+        alu s1, s1, s2, #ADD    ; delay slot 1
+        alu s1, s1, s2, #ADD    ; delay slot 2
+        alu s1, s1, s2, #ADD    ; skipped
+        alu s1, s1, s2, #ADD    ; skipped
+        alu s1, s1, s2, #ADD    ; skipped
+        alu s1, s1, s2, #ADD    ; skipped
+skip:   alu s1, s1, s2, #ADD
+        alu s1, s1, s2, #ADD
+        x17.halt
+.assert skip == 9

@@ -15,6 +15,9 @@
 #   p    predicate, N bits                     (form-specific width)
 #   imm  immediate, bit field                  (width = hi-lo+1)
 #   dest_ldi  ldi-style destination index     (5 bits, 16..31 = s(k-16))
+#   rel  branch offset, syllables from own q, signed    (label target or #raw)
+#   relu branch offset, syllables from own q, unsigned  (label target or #raw)
+#   rel4 branch offset, 4-syllable units, signed        (label target or #raw)
 #
 # Sources: each `[lo:hi]` reference here is quoted from `src/isa.toml`'s ref
 # string for the form.  When the assembler's needs grow this table gets more
@@ -33,16 +36,16 @@ ldi	dest	dest_ldi	21	25	head
 ldi	imm16	imm	5	20	head
 
 # jmp: 1-syllable control flow.
-# Grammar: jmp #<mode>, #<pred>, #<offset>
+# Grammar: jmp #<mode>, #<pred>, <label> | #<offset>
 # mode: 1=always, 2=if !p<pred>, 3=if p<pred>.  offset in syllables.
 jmp	mode	imm	21	25	head
 jmp	pred	imm	26	29	head
-jmp	offset	imm	5	20	head
+jmp	offset	rel	5	20	head
 
 # br: 1-syllable branch when p<pred> set, offset is unsigned [25:11].
-# Grammar: br #<pred>, #<offset>
+# Grammar: br #<pred>, <label> | #<offset>
 br	pred	imm	26	29	head
-br	offset	imm	11	25	head
+br	offset	relu	11	25	head
 
 # st.y (1 syllable):
 # "[20:5] is a 16-bit immediate; [31:29]=001 selects it."  The stored value
@@ -499,10 +502,10 @@ rop	y_R	R	13	16	head
 rop	fn	imm	17	20	head
 
 # bcc (2 syllables): Branch if p<pred> set.
-# Grammar: bcc #<pred>, #<quarter_offset>
+# Grammar: bcc #<pred>, <label> | #<quarter_offset>
 # quarter_offset in bundles of 4 syllables; signed 9-bit [8:0] of S1.
 bcc	pred	imm	15	18	s1
-bcc	quarter_offset	imm	0	8	s1
+bcc	quarter_offset	rel4	0	8	s1
 
 # ealu (2 syllables): X16_ALU 1-arg op into e.
 # Grammar: ealu <dest_e>, <src_s>, #<op_bit>, #<op>
