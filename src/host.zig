@@ -1,24 +1,29 @@
 //! The host side of an sm1 run: what the ARM does around a codec program.
 //!
-//! Facts come from sosumi's specs/aac.md (input and output contracts).  The
-//! four interface questions still open there (sosumi specs/questions.md 1..4)
-//! are explicit stubs below, each named after its question, so a program
-//! written against this model shows exactly what it assumed:
+//! Facts come from sosumi's specs/aac.md (input and output contracts) and the
+//! answers in sosumi specs/questions.md.  What is still unknown is a named
+//! stub, so a program written against this model shows what it assumed:
 //!
-//!   Q1 entry       `Config.entry`: the syllable the program starts at.
-//!   Q2 packet in   `Config.packet`: the host stages packet bytes in Y.
-//!   Q3 hand-back   one packet per run; the run ends at the program's stop.
-//!   Q4 clobber     `Config.clobber`: regions the host poisons between packets.
+//!   Q1 entry       `Config.entry`: syllable 0 of the program window
+//!                  (MEASURED); kept settable for tests.
+//!   Q2 packet in   STUB `Config.packet`: the host stages packet bytes in Y.
+//!                  How the engine sees them is unknown.
+//!   Q3 hand-back   one packet per run; the run ends at the stop form
+//!                  (MEASURED).  No CPU code writes the status header, so the
+//!                  hardware raises it (FIRMWARE); what makes it do so, and
+//!                  the interrupt, are unknown: tests raise it by hand.
+//!   Q4 clobber     STUB `Config.clobber`: regions poisoned between packets.
 //!
 //! What is modelled from measurement: the descriptor control word, the
 //! parameter block (flags, rate index), and the output ring the host drains
 //! (entry table, PCM buffers, status header), including the rule that the
 //! program must not write a buffer the host still owns.
 //!
-//! Y addresses are words.  The default `Map` follows the spec's engine view,
-//! two bytes per Y word from 0x22038000 (Y:0x80 at 0x22038100).  isa.toml's
-//! `param` region puts the 0x2203FF00 page at Y:0xFD80 instead of this map's
-//! Y:0x3F80; which one holds is OPEN, so the map is a parameter.
+//! Y addresses are words.  Engine addresses map per load-map entry, not by
+//! one formula (Q5): the 0x2203FF00 page is Y:0xFD80 (FIRMWARE), so the
+//! status header 0x2203FF28 is Y:0xFD94 (INFERRED).  The entry table and PCM
+//! at Y:0 and Y:0x80 (0x22038000, 0x22038100) are INFERRED; the map stays a
+//! parameter.
 
 const std = @import("std");
 const emu = @import("emu");
@@ -40,22 +45,24 @@ pub fn rateIndex(hz: u32) u16 {
 pub const Map = struct {
     /// Entry table: +1 ring size, +2 units per buffer; entry i owned at
     /// +5 + 2i, length (16-bit units) at +6 + 2i.  MEASURED (byte offsets
-    /// +2, +4, +0xA + 4i, +0xC + 4i).
+    /// +2, +4, +0xA + 4i, +0xC + 4i).  Y word INFERRED.
     entry_table: u32 = 0x0000,
-    /// PCM buffers, buffer i at + i * units, interleaved 16-bit.  MEASURED.
+    /// PCM buffers, buffer i at + i * units, interleaved 16-bit.  MEASURED
+    /// layout, Y word INFERRED.
     pcm: u32 = 0x0080,
     /// Status header (0x2203FF28): +0 bit 0 output ready, +1 must be 0.
-    /// Address MEASURED, Y mapping INFERRED.
-    status: u32 = 0x3F94,
-    /// Parameter block (0x2203FF00): +0 flags, +3 rate index (FF06).
-    param: u32 = 0x3F80,
+    /// Y word INFERRED from the param page's.
+    status: u32 = 0xFD94,
+    /// Parameter block (0x2203FF00 = Y:0xFD80, FIRMWARE): +0 flags, +3 rate
+    /// index (FF06).
+    param: u32 = 0xFD80,
 };
 
 pub const Region = struct { lo: u32, hi: u32 };
 
 pub const Config = struct {
     map: Map = .{},
-    /// Q1 STUB: where execution enters after the two-pass load.
+    /// Q1: execution enters at syllable 0 of the program window (MEASURED).
     entry: usize = 0,
     /// Q2 STUB: how the program reads packet bytes.  Until measured, the host
     /// writes the length in bytes at `len_at` and the bytes from `base`,
@@ -250,8 +257,8 @@ test "rate index: listed rates, and unlisted ones fall back to 44100's" {
 test "init writes the parameter block" {
     var h = try Host.init(testing.allocator, .{ .rate_hz = 48000 });
     defer h.deinit();
-    try testing.expectEqual(@as(u32, 7), h.getY(0x3F80));
-    try testing.expectEqual(@as(u32, 3), h.getY(0x3F83));
+    try testing.expectEqual(@as(u32, 7), h.getY(0xFD80));
+    try testing.expectEqual(@as(u32, 3), h.getY(0xFD83));
 }
 
 test "a packet is staged as big-endian pairs with its length" {
