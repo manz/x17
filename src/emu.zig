@@ -304,6 +304,10 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // Round: add 2^22, then shift.
     const v: u32 = @truncate(((prod + (1 << 22)) >> 23) & M24);
     if (dest_s != 0) state.s[dest_s] = v;
+    // x02.plo: w4[10:7] carries a second dest that gets (2P)[15:0].
+    const w4 = bundle[4];
+    const plo_dest: u32 = (w4 >> 7) & 0xF;
+    if (plo_dest != 0) state.s[plo_dest] = @truncate((prod * 2) & 0xFFFF);
 }
 
 fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
