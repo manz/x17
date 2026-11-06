@@ -304,7 +304,9 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # 154: H3 is not a register: mux 101 reads X:[x] (x19a43: A<w3[19:15]>); X:0 = 0x038A00 at harness start.  own-x19xrd
 # x02 (fact 155): 6 words; w4 slot s<w4[6:3]> <- mux w4[13:11] (101 X:[A<w4[21:17]>], 100 its 16:1, 111 0).  own-x02xrd
 # x02 w2 slot (156): s<w2[12:9]> <- mode w1[13:11] (0 0, 4 P, 5 P+X, 6 P-X) of P = rnd(s<w2[4:1]>*s<w2[8:5]> >> 23); w1[15]=0 trunc, w1[17] >>24.  own-x02mpy
-# x02 A slot (157): A<w2[21:17]> and A<w3[14:10]> <- w5[18] ? yd : A<w3[4:0]> + 1.  own-x02ainc
+# x02 A slot (157, 403), modes 0 and 5, w1 inert: sum = agu_xr(w2[26:22], A<w3[4:0]>, R<w5[25:22]>) (the ragu table;
+# fn 0 is the A + 1 of 157).  A<w2[21:17]> <- w5[18] ? yd : sum.  A<w3[14:10]> <- sum + A<w3[9:5]>, or sum alone if
+# w5[21]; dest 0 writes nothing; that add with fn >= 16 is OPEN.  own-x02ainc, own-x02aa
 # x02 (158): w5[31:29] inert in (0,0,0,0,0,6); w5[19] makes the w2 slot read X:[A<w4[21:17]>].  own-x02c6
 # x02 (159): inert class bits w1[31:29], w3[29], w5[31:30]; w4[31:29], w3[30], w5[29] are fields (OPEN).
 # x02 mux (160): 001 = I = head[26:11]; 011/100/101 = X:[x] [15:0]/[16:1]/[23:8]; 000/111 = 0.  own-x02imm

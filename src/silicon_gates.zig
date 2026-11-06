@@ -4055,6 +4055,24 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x7FFFFF } }},
     },
     .{
+        .name = "own-x02aa",
+        // Upstream, fact 403: 00000002 00000000 008E0000 000014C3 00000000 01400000.
+        // fn 2: A7 <- A3 + R5 = 0x50; A5 <- that + A6 = 0x150.
+        .pre = &.{
+            .{ .bank = .a, .index = 3, .value = 0x40 },
+            .{ .bank = .r, .index = 5, .value = 0x10 },
+            .{ .bank = .a, .index = 6, .value = 0x100 },
+        },
+        .src =
+        \\x02.aa A7, A3, R5, #2, A5, A6
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .a_reg = .{ .index = 7, .value = 0x50 } },
+            .{ .a_reg = .{ .index = 5, .value = 0x150 } },
+        },
+    },
+    .{
         .name = "own-x02mpy-halfpos",
         // 1 * 0x400000 / 2^23 = 0.5 rounds half up to 1 (PROBES.md, measured 2026-11-06).
         .pre = &.{

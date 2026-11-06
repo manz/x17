@@ -264,7 +264,11 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return;
         }
         if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
-        if (w4_mode == 0) return execX02Agu(gpa, state, bundle);
+        if (w4_mode == 0) {
+            // The A slot reads R before the R slot writes it.
+            try execX02Ainc(gpa, state, bundle);
+            return execX02Agu(gpa, state, bundle);
+        }
         if (w4_mode == 2) return execX02Xrd(gpa, state, bundle); // esrc path
     }
     if (low5 == 0x03 and bundle.len >= 6) {
@@ -404,15 +408,23 @@ fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     _ = gpa;
     const w2 = bundle[2];
     const w3 = bundle[3];
-    // isa.toml (fact 157): A<w2[21:17]> and A<w3[14:10]> <- A<w3[4:0]> + 1.
+    const w5 = bundle[5];
+    // The A slot (fact 403, own-x02aa): sum = agu_xr(w2[26:22], A<w3[4:0]>, R<w5[25:22]>);
+    // A<w2[21:17]> <- sum, or the Y latch yd if w5[18]; A<w3[14:10]> <- sum + A<w3[9:5]>, or sum
+    // alone if w5[21].  The second add is measured for fn < 16 only.  w1 is inert.
+    const fn_op: u32 = (w2 >> 22) & 0x1F;
     const dest_a: u32 = (w2 >> 17) & 0x1F;
     const dest_b: u32 = (w3 >> 10) & 0x1F;
-    const src_a: u32 = w3 & 0x1F;
-    // 5-bit A index; A0 reads zero.
-    const src_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
-    const v: u32 = (src_val +% 1) & 0xFFFFFF;
-    if (dest_a != 0) state.a[dest_a & 0xF] = v;
-    if (dest_b != 0) state.a[dest_b & 0xF] = v;
+    const sum = aguXrEval(fn_op, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]);
+    if (dest_a != 0) state.a[dest_a] = if ((w5 >> 18) & 1 == 1) state.yd else sum;
+    if (dest_b != 0) {
+        if ((w5 >> 21) & 1 == 1) {
+            state.a[dest_b] = sum;
+        } else {
+            if (fn_op >= 16) return RunError.UnknownForm;
+            state.a[dest_b] = (sum +% state.a[(w3 >> 5) & 0x1F]) & 0xFFFF;
+        }
+    }
 }
 
 fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

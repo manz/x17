@@ -1284,6 +1284,14 @@ x02.v	x3_b	s	26	29	s4
 x02.v	x3_op	imm	6	8	s5
 x02.v	x3_sh	imm	2	5	s5
 
+# x02.aa <dest_A>, <x_A>, <r_R>, #<fn>, <dest2_A>, <add_A>
+x02.aa	dest_A	A	17	21	s2
+x02.aa	x_A	A	0	4	s3
+x02.aa	r_R	R	22	25	s5
+x02.aa	fn	imm	22	26	s2
+x02.aa	dest2_A	A	10	14	s3
+x02.aa	add_A	A	5	9	s3
+
 # ragu <dest_R>, <x_A>, <r_R>, #<fn>
 ragu	dest_R	R	27	30	head
 ragu	x_A	A	12	16	head
