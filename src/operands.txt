@@ -390,6 +390,11 @@ x02.x3	shift	imm	2	5	s5
 # Grammar: x01.st <src_e>
 x01.st	src_e	e	5	8	s4
 
+# x12.aset (2 syllables): A<2*n> <- R<...>.
+# Grammar: x12.aset #<n>, <src_R>
+x12.aset	n	imm	0	2	s1
+x12.aset	src_R	R	13	16	head
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4

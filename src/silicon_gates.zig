@@ -876,6 +876,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x157 } }},
     },
     .{
+        .name = "own-aset12",
+        // Pre R3 = 0x345; A10 <- R3 = 0x345.
+        .pre = &.{.{ .bank = .r, .index = 3, .value = 0x345 }},
+        .src =
+        \\x12.aset #5, R3
+        \\x17.halt
+        ,
+        .post = &.{.{ .a_reg = .{ .index = 10, .value = 0x345 } }},
+    },
+    .{
         .name = "own-x01st",
         // Pre e5 = 0x300; s3 <- e5 = 0x300 (X/Y stores skipped).
         .pre = &.{.{ .bank = .e, .index = 5, .value = 0x300 }},

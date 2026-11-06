@@ -114,6 +114,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x12 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execX12Agu(gpa, state, bundle);
+        if (s_class == 0b101) return execX12Aset(gpa, state, bundle);
     }
     if (low5 == 0x0B) {
         const high3: u32 = (head >> 29) & 0x7;
@@ -524,6 +525,17 @@ fn execX02Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (w4 >> 3) & 0xF;
     const imm: u32 = (head >> 11) & 0xFFFF;
     if (dest_s != 0) state.s[dest_s] = imm;
+}
+
+fn execX12Aset(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    if (bundle.len < 2) return RunError.UnknownForm;
+    const head = bundle[0];
+    const s = bundle[1];
+    const dest_a: u32 = 2 * (s & 0x7);
+    const src_r: u32 = (head >> 13) & 0xF;
+    if (dest_a == 0) return;
+    state.a[dest_a & 0xF] = if (src_r == 0) 0 else state.r[src_r];
 }
 
 fn execX12Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
