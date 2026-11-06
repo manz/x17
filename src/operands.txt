@@ -1173,3 +1173,23 @@ alu.m	b	s	26	29	head
 alu.m	op	imm	5	10	head
 alu.m	m	imm	23	25	head
 alu.m	n	imm	19	22	head
+
+# x16.b16 <head_s>, #<xa>, <st_src>, <y_e>
+x16.b16	head_s	s	21	24	head
+x16.b16	xa	imm	5	20	head
+x16.b16	st_src	s	28	31	s1
+x16.b16	y_e	e	21	24	s2
+
+# x16.agu100 <head_s>, #<imm>, <x_e>, #<fn>
+x16.agu100	head_s	s	21	24	head
+x16.agu100	imm	imm	5	20	head
+x16.agu100	x_e	e	15	18	s1
+x16.agu100	fn	imm	7	10	s1
+
+# x16.sh <head_s>, #<imm>, #<hsrc>, <dest_s>, #<n>, <b_s>
+x16.sh	head_s	s	21	24	head
+x16.sh	imm	imm	5	20	head
+x16.sh	hsrc	imm	12	14	s1
+x16.sh	dest_s	s	8	11	s1
+x16.sh	n	imm	20	23	s1
+x16.sh	b_s	s	25	28	s2

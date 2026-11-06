@@ -2590,6 +2590,40 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-b16",
+        // the second bundle stores s3 at xa = 0x300, set by the first.
+        .pre = &.{.{ .bank = .s, .index = 3, .value = 0x456 }},
+        .src =
+        \\x16.b16 s10, #0x300, s3, e5
+        \\x16.b16 s10, #0x310, s3, e5
+        \\x17.halt
+        ,
+        .post = &.{.{ .x_mem = .{ .addr = 0x300, .value = 0x456 } }},
+    },
+    .{
+        .name = "own-b16agu",
+        // FN 2: s1 <- e6 + 1 = 0x301.
+        .pre = &.{.{ .bank = .e, .index = 6, .value = 0x300 }},
+        .src =
+        \\x16.agu100 s1, #0x1092, e6, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x301 } }},
+    },
+    .{
+        .name = "own-b16sh",
+        // s2 <- #3; s1 <- s5 asr 3 = 0xF00 >> 3 = 0x1E0.
+        .pre = &.{.{ .bank = .s, .index = 5, .value = 0xF00 }},
+        .src =
+        \\x16.sh s2, #3, #6, s1, #3, s5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 1, .value = 0x1E0 } },
+            .{ .s_reg = .{ .index = 2, .value = 3 } },
+        },
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},

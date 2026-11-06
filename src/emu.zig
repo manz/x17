@@ -65,6 +65,8 @@ pub const State = struct {
     xd: u32 = 0,
     /// The Y read latch yagu loads (fact 100, 105, 110).
     yd: u32 = 0,
+    /// The 0x16 X store address latch, one bundle behind (fact 90).
+    xa: ?u32 = null,
 
     pub fn deinit(self: *State, gpa: std.mem.Allocator) void {
         self.y_mem.deinit(gpa);
@@ -180,6 +182,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s1_class16: u32 = (bundle[1] >> 29) & 0x7;
         if (s2_class == 0b110 and s1_class16 == 0 and s2_mode <= 7) return execX16Mul(gpa, state, bundle);
         if (s2_class == 0b110 and s1_class16 == 1) return execX16Mac(state, bundle);
+        if (s2_class == 0b100) return execX16Agu100(state, bundle);
+        if (s1_class16 == 1 and s2_class == 0b111) return execX16B16(gpa, state, bundle);
+        if (s1_class16 == 0 and s2_class == 0 and (bundle[2] >> 12) & 1 == 1) return execX16Sh(state, bundle);
         if (s1_class16 == 0 and s2_class == 0b010) return execX16Xs(state, bundle);
         if (s1_class16 == 3 and s2_class == 0b000) return execX16Xld(state, bundle);
         if (s1_class16 == 3 and s2_class == 0b111) return execX16St2(gpa, state, bundle);
@@ -2427,6 +2432,80 @@ fn execX16Mac(state: *State, bundle: []const u32) RunError!void {
     const lo_dest: u32 = (s1 >> 20) & 0xF;
     if (lo_dest != 0) state.s[lo_dest] = @truncate(acc & 0xFFFF);
     if (hi_dest != 0) state.s[hi_dest] = @truncate((acc >> 24) & 0xFFFF);
+}
+
+const X16_FN100 = [16]?i8{ 0, null, 1, null, -1, null, 0, 0, null, null, null, null, null, 0, null, null };
+
+/// x16 S2 class 100 (fact 92): s<head[24:21]> <- FN[S1[10:7]](x = e<S1[18:15]>),
+/// FN = x, 0, x+1, 1, x-1, -1, x, x, 0 x5, x, 0, 0; R<S1[14:11]> <- #head[20:5].
+fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const s1 = bundle[1];
+    if ((s1 >> 25) & 0xF != 0) return RunError.UnknownForm;
+    const f: u32 = (s1 >> 7) & 0xF;
+    const x: u32 = state.e[(s1 >> 15) & 0xF];
+    const v: u32 = switch (f) {
+        3 => 1,
+        5 => 0xFFFF,
+        else => if (X16_FN100[f]) |d| (x +% @as(u32, @bitCast(@as(i32, d)))) & 0xFFFF else 0,
+    };
+    const hd: u32 = (h >> 21) & 0xF;
+    if (hd != 0) state.s[hd] = v;
+    if ((s1 >> 11) & 0xF != 0) state.r[(s1 >> 11) & 0xF] = (h >> 5) & 0xFFFF;
+}
+
+/// x16 S1 class 001 / S2 class 111 (fact 90): Y load s<head[24:21]> <-
+/// Y:[e<S2[24:21]>] placed by S1[13:12] (00: 0, 01: plain, 11: << 8); X store
+/// X:[xa] <- sx24 s<S1[31:28]> with S1[18], S2[14:13] = 11, S2[11] = 0, using xa
+/// as it was before the bundle; then xa <- head[20:5] when head[31] and S1[3].
+fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    if ((s1 >> 8) & 0xF != 0) return RunError.UnknownForm;
+    const yv: u32 = (state.getY(state.e[(s2 >> 21) & 0xF]) orelse 0) & 0xFFFF;
+    const hv: u32 = switch ((s1 >> 12) & 3) {
+        0 => 0,
+        1 => yv,
+        3 => (yv << 8) & M24,
+        else => return RunError.UnknownForm,
+    };
+    if ((s1 >> 18) & 1 == 1 and (s2 >> 13) & 3 == 3 and (s2 >> 11) & 1 == 0) {
+        if (state.xa) |addr| {
+            state.x_mem.put(gpa, addr, sx16To24(state.s[(s1 >> 28) & 0xF])) catch return RunError.OutOfMemory;
+        }
+    }
+    if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) state.xa = (h >> 5) & 0xFFFF;
+    const hd: u32 = (h >> 21) & 0xF;
+    if (hd != 0) state.s[hd] = hv;
+}
+
+fn sx16To24(v: u32) u32 {
+    const w: u32 = v & 0xFFFF;
+    return if (w & 0x8000 != 0) w | 0xFF0000 else w;
+}
+
+/// x16 shifter, S1 / S2 class 000 with S2[12] (fact 91): s<head[24:21]> <-
+/// S1[14:12] = 110: #head[20:5], 111: 0, 010: yd; s<S1[11:8]> <- s<S2[28:25]> asr
+/// S1[23:20] with head[26:25] = 11 (amount 0 writes nothing).  The result
+/// arrives late (a write-back window); that is not modelled.
+fn execX16Sh(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    if (s1 >> 29 != 0 or (s1 >> 17) & 1 == 1 or (h >> 25) & 3 != 3) return RunError.UnknownForm;
+    const hv: u32 = switch ((s1 >> 12) & 7) {
+        6 => (h >> 5) & 0xFFFF,
+        7 => 0,
+        2 => state.yd,
+        else => return RunError.UnknownForm,
+    };
+    const n: u32 = (s1 >> 20) & 0xF;
+    const dest: u32 = (s1 >> 8) & 0xF;
+    const sh: u32 = @as(u32, @bitCast(sx24(state.s[(s2 >> 25) & 0xF]) >> @intCast(n))) & M24;
+    const hd: u32 = (h >> 21) & 0xF;
+    if (hd != 0) state.s[hd] = hv;
+    if (dest != 0 and n != 0) state.s[dest] = sh;
 }
 
 fn execX17XldA10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

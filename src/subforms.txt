@@ -728,3 +728,12 @@ st.wr      2   0x2000000F   0x20018000
 
 # alu.m: the class-05 ALU word with its m and # modifiers (fact 67).
 alu.m      1   0x40000005
+
+# x16.b16: Y load + X store through the xa latch (fact 90 / own-b16).
+x16.b16    3   0x80000016   0x00041008   0xE0067100
+
+# x16.agu100: S2 class 100 address-unit op (fact 92 / own-b16agu).
+x16.agu100 3   0x00000016   0x01000003   0x80000100
+
+# x16.sh: the shifter bundle (fact 91 / own-b16sh).
+x16.sh     3   0x06000016   0x00000000   0x00001000
