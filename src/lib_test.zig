@@ -634,9 +634,10 @@ test "the packet program has no long runs of 0x05 words" {
 }
 
 test "the libraries branch only on measured ptst rows" {
-    // fact 377/387: the b-only rows (b = s4, s8, s12) are the ones the libraries may use.
+    // fact 387/389: the b-only rows (b = s4, s8, s12), each gated on silicon, are the
+    // ones the libraries may use.
     // Row 000 (c0-c3) is a <= -b, which read as "a < 0" mis-branched on silicon.
-    const allowed = [_][]const u8{ "#LT4", "#LT8", "#LT12", "#LE4", "#LE8", "#LE12" };
+    const allowed = [_][]const u8{ "#LT4", "#LT8", "#LT12", "#LE4", "#LE8", "#LE12", "#EQ4", "#EQ8", "#EQ12" };
     for (libs) |l| {
         var lines = std.mem.splitScalar(u8, l.text, '\n');
         var n: usize = 0;

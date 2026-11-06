@@ -17,14 +17,18 @@
 .const SHIFT   = 23
 .const AGU_INC = 2
 .const PTST    = 0x0B
-; ptst conditions (fact 376/377; c1 = a <= -s4 on silicon, 7 of 7): the b-only rows,
-; b = s<4 * c[1:0]>. Each test puts its value in s4, s8 or s12 (s0 as a register is OPEN).
+; ptst conditions (fact 377/387/389; c1 = a <= -s4 on silicon, 7 of 7): the b-only rows,
+; b = s<4 * c[1:0]>, a ignored, each gated on silicon. Each test puts its value in s4, s8 or
+; s12 (s0 as a register is OPEN).
 .const LT4    = 13              ; s4 < 0
 .const LT8    = 14              ; s8 < 0
 .const LT12   = 15              ; s12 < 0
-.const LE4    = 9               ; s4 <= 0 (own-ptst-b0)
+.const LE4    = 9               ; s4 <= 0
 .const LE8    = 10              ; s8 <= 0
 .const LE12   = 11              ; s12 <= 0
+.const EQ4    = 29              ; s4 == 0
+.const EQ8    = 30              ; s8 == 0
+.const EQ12   = 31              ; s12 == 0
 .const IF_NOT = 2               ; jmp mode: taken when the predicate is clear
 
 .macro bits_init(base) {
