@@ -179,6 +179,10 @@ x03.yrd    6   0x00000003   0x00000002   0x0140E000   0x04002008   0x00046804   
 # w2 slot's destination (fact 158, 161 / own-x02c6).
 x02.c6     6   0x00008002   0x00000000   0x00060000   0x00000000   0x00002800   0xC00C4200
 
+# x03.esrc: w4 mux 001 with w5[29:28] = 10, s <- e<w3[30:27]>
+# (fact 190 / own-x03esrc).
+x03.esrc   6   0x00000003   0x00000002   0x0140E000   0x04002008   0x00044804   0x20140102
+
 # x03.agu: 6-syllable VLIW at low5 0x03 with the A-AGU slot active
 # (fact 164 / own-x03agu).
 #   A<w3[14:10]> <- AGU[w2[26:22]](x = A<w3[4:0]>, i = {w5[0], w4[31:17]})
@@ -235,7 +239,7 @@ x02.asrc   6   0x00000002   0x0000A000   0x00020442   0x00000000   0x00041000   
 
 # x03.mpy: 6-syllable low5 0x03 with 0x02-style mpy in w2 slot.
 # fact 165 / own-x03mpy.  s<w2[12:9]> <- (s_a*s_b+2^22) >> 23.
-x03.mpy    6   0x00000003   0x0000A0C0   0x01400400   0x00003403   0x08000000   0x01D00100
+x03.mpy    6   0x00000003   0x000000C0   0x01400400   0x00003403   0x08000000   0x01D00100
 
 # x02.x3: third slot in x02 mode 5.  s<{w5[1:0], w4[31:30]}> <-
 # (op w5[8:6]) s_a, s_b shifted by w5[5:2].  op 5 = sub.

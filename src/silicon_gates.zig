@@ -958,7 +958,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 0x6000 },
         },
         .src =
-        \\x03.mpy s2, s1, s2, s0
+        \\x03.mpy s2, s1, s2, s0, #4, #1, #0, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x30 } }},
@@ -971,7 +971,7 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 0x45 },
         },
         .src =
-        \\x03.mpy s0, s1, s2, s6
+        \\x03.mpy s0, s1, s2, s6, #4, #1, #0, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 6, .value = 0x9CDE } }},
@@ -1371,6 +1371,70 @@ const GATES = [_]Gate{
             .{ .e_reg = .{ .index = 9, .value = 0x350 } },
             .{ .r_reg = .{ .index = 5, .value = 0x123 } },
         },
+    },
+    .{
+        .name = "own-x03esrc",
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
+        .src =
+        \\x03.esrc s7, e3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x490 } }},
+    },
+    .{
+        .name = "own-x03u24",
+        // ldi sign-extends: s1 = 0xFFC321, s2 = 0xFF9877.  Same bits as
+        // own-x02u24: s6 <- 0xFFC339.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0xFFC321 },
+            .{ .bank = .s, .index = 2, .value = 0xFF9877 },
+        },
+        .src =
+        \\x03.mpy s6, s1, s2, s0, #4, #6, #0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 6, .value = 0xFFC339 } }},
+    },
+    .{
+        .name = "own-x03xsn",
+        // mode 5 with w1[14] = 1: s2 <- P + s<w1[31:29]> = 0x30 + 0x555.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x03.mpy s2, s1, s2, s0, #13, #1, #5, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x585 } }},
+    },
+    .{
+        .name = "own-x03w2c5",
+        // w2 class 101 behaves as class 000: same result as own-x03xsn.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x03.mpy s2, s1, s2, s0, #13, #1, #5, #5
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x585 } }},
+    },
+    .{
+        .name = "own-x03alub",
+        // head[29] is b's top bit: b = s12.  s9 <- s3 + s12 = 0x123.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x100 },
+            .{ .bank = .s, .index = 12, .value = 0x23 },
+        },
+        .src =
+        \\x03.alu s9, s3, s12, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 9, .value = 0x123 } }},
     },
     .{
         .name = "own-x02c6",

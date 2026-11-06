@@ -195,6 +195,14 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             try execX03Alu(gpa, state, bundle);
             return execX03Mpy(gpa, state, bundle);
         }
+        // w4 mux 001 with w5[29:28] = 10: s<w4[6:3]> <- e<w3[30:27]>
+        // (fact 190 / own-x03esrc).
+        if (w4_mode == 1 and ((bundle[5] >> 28) & 0x3) == 0b10) {
+            const dest_s: u32 = (bundle[4] >> 3) & 0xF;
+            const src_e: u32 = (bundle[3] >> 27) & 0xF;
+            if (dest_s != 0) state.s[dest_s] = state.e[src_e];
+            return;
+        }
     }
     if (low5 == 0x01 and bundle.len >= 7) {
         // own-x01st (fact 243): the only modelled effect is the
@@ -377,19 +385,33 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const a_s: u32 = (w2 >> 1) & 0xF;
     const b_s: u32 = (w2 >> 5) & 0xF;
     const mode: u32 = (w1 >> 11) & 0x7;
-    const av: u32 = if (a_s == 0) 0 else state.s[a_s] & 0xFFFF;
-    const bv: u32 = if (b_s == 0) 0 else state.s[b_s] & 0xFFFF;
-    const prod: u32 = av *% bv;
+    // Same signedness and scaling bits as 0x02 (fact 185, 191).
+    const b15: u32 = (w1 >> 15) & 1;
+    const b16: u32 = (w1 >> 16) & 1;
+    const av: i64 = mpyOperand(state.s[a_s], b15 != b16);
+    const bv: i64 = mpyOperand(state.s[b_s], b15 == 1);
+    const prod: i64 = av * bv;
+    const p: i64 = if ((w1 >> 17) & 1 == 1)
+        prod >> 24
+    else
+        (prod + (1 << 22)) >> 23;
     if (dest_s != 0) {
-        const v: u32 = switch (mode) {
-            4 => (prod + (1 << 22)) >> 23, // rounded P
+        const v: i64 = switch (mode) {
+            4 => p,
+            // mode 5: P + X; w1[14] = 1 takes X from s<w1[31:29]>
+            // (fact 254 / own-x03xsn).
+            5 => blk: {
+                if ((w1 >> 14) & 1 == 0) return;
+                const x_s: u32 = (w1 >> 29) & 0x7;
+                break :blk p + @as(i64, state.s[x_s] & M24);
+            },
             else => return,
         };
-        state.s[dest_s] = v & M24;
+        state.s[dest_s] = @truncate(@as(u64, @bitCast(v)) & M24);
     }
     // x03.plo: w4[10:7] carries a second dest that gets (2P)[15:0].
     const plo_dest: u32 = (w4 >> 7) & 0xF;
-    if (plo_dest != 0) state.s[plo_dest] = (prod *% 2) & 0xFFFF;
+    if (plo_dest != 0) state.s[plo_dest] = @truncate(@as(u64, @bitCast(prod *% 2)) & 0xFFFF);
 }
 
 fn execX03Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
