@@ -42,10 +42,7 @@ pfx:    alu s12, s10, s14, #OP_SUB ; sh = avail - 1
         jmp #IF_NOT, #1, pbit
         ldy s13, e5             ; (delay slot) next word
         nop()
-        x19.alu s9, s9, s15, #SHIFT ; refill
-        alu s9, s9, s13, #OP_ADD
-        x18.eagu e5, e5, #AGU_INC
-        alu s10, s10, s15, #OP_ADD
+        refill()
         alu s12, s10, s14, #OP_SUB
 pbit:   x19.alu s13, s14, s12, #SHIFT ; 2^sh
         alu s10, s12, s0, #OP_ADD ; avail -= 1

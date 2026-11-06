@@ -3305,8 +3305,9 @@ fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     if (dest_k < 16) return;
     const dest_s: u32 = dest_k - 16;
     const addr: u32 = state.e[src_e];
-    const v: u32 = state.getY(addr) orelse 0;
-    state.s[dest_s] = v;
+    const raw: u32 = (state.getY(addr) orelse 0) & 0xFFFF;
+    // Sign-extends the 16-bit word (fact 409, own-ldysx).
+    state.s[dest_s] = if (raw & 0x8000 != 0) raw | 0xFF0000 else raw;
 }
 
 fn execStx(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

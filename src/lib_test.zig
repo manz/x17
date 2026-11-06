@@ -686,7 +686,7 @@ fn randomCode(rnd: std.Random, out: []HCode) []HCode {
     for (out[0..n], lens[0..n], 0..) |*c, l, i| {
         if (i > 0) code = (code + 1) << (l - prev);
         prev = l;
-        c.* = .{ .code = code, .len = l, .v = rnd.uintLessThan(u16, 2048) };
+        c.* = .{ .code = code, .len = l, .v = rnd.uintLessThan(u16, 1024) }; // entries stay below 0x8000: ldy sign-extends
     }
     rnd.shuffle(HCode, out[0..n]);
     return out[0..n];
@@ -750,6 +750,7 @@ test "huff_decode decodes what a bit-by-bit matcher decodes, through subtables" 
         var t: [8192]u16 = undefined;
         var n: usize = 0;
         _ = buildTables(&t, &n, syms, 0, root);
+        if (n > 1024) continue; // pointer bases must stay below 1024 too
         var data: [256]u8 = undefined;
         rnd.bytes(&data);
         const skip = rnd.intRangeAtMost(u5, 0, 23);

@@ -1210,6 +1210,28 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 14, .value = 0x1357 } }},
     },
     .{
+        .name = "own-ldysx",
+        // Upstream, fact 409 (3 of 3): ldy sign-extends; 0x8001 reads 0xFF8001, 0xFFFF
+        // reads 0xFFFFFF (stx stores all 24 bits, controlled).
+        .pre = &.{
+            .{ .bank = .e, .index = 5, .value = 0x710 },
+            .{ .bank = .e, .index = 3, .value = 0x711 },
+        },
+        .pre_mem = &.{
+            .{ .kind = .y, .addr = 0x710, .value = 0x8001 },
+            .{ .kind = .y, .addr = 0x711, .value = 0xFFFF },
+        },
+        .src =
+        \\ldy s14, e5
+        \\ldy s13, e3
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 14, .value = 0xFF8001 } },
+            .{ .s_reg = .{ .index = 13, .value = 0xFFFFFF } },
+        },
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},

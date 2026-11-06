@@ -9,7 +9,8 @@
 ;
 ; huff_decode(dst): s1 = the code's Y address, s11 = its root width (1..8). dst = the value.
 ; Uses the bit reader's registers (lib/bits.sm) and s2, s3, s4, s5, s7, s8; s1 and s11 are
-; clobbered. hi = floor(e / 32) = rshr(e - 16, 5) (exact for e >= 0).
+; clobbered. hi = floor(e / 32) = rshr(e - 16, 5) (exact for e >= 0). ldy sign-extends
+; (fact 409), so every entry must stay below 0x8000: values and bases below 1024.
 
 .macro huff_decode(dst) {
         alu s1, s1, s14, #OP_SUB ; s1, s3 sit one below the table: x17.mve adds 1
@@ -21,10 +22,7 @@ step:   alu s12, s10, s11, #OP_SUB ; avail - w
         jmp #IF_NOT, #1, have
         ldy s13, e5             ; delay slot: next word, harmless if unused
         alu s6, s0, s14, #OP_SUB ; delay slot: s6 = -1
-        x19.alu s9, s9, s15, #SHIFT ; refill: cache << 16
-        alu s9, s9, s13, #OP_ADD ;         + word
-        x18.eagu e5, e5, #AGU_INC ;         next word
-        alu s10, s10, s15, #OP_ADD ;         avail += 16
+        refill()
 have:   alu s7, s10, s11, #OP_SUB ; sh = avail - w
         x19.alu s13, s14, s7, #SHIFT ; 2^sh
         alu s13, s13, s14, #OP_SUB ; 2^sh - 1
