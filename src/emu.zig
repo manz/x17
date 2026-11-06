@@ -248,8 +248,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             const s_pre = state.s;
             try execX02Xrd(gpa, state, bundle);
             try execX02Mpy(gpa, state, bundle);
-            const w3_ainc: u32 = (bundle[3] >> 1) & 1;
-            if (w3_ainc == 1) try execX02Ainc(gpa, state, bundle);
+            try execX02Ainc(gpa, state, bundle);
             try execX02X3Pre(gpa, state, bundle, s_pre);
             return;
         }
@@ -393,12 +392,15 @@ fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     _ = gpa;
     const w2 = bundle[2];
     const w3 = bundle[3];
+    // isa.toml (fact 157): A<w2[21:17]> and A<w3[14:10]> <- A<w3[4:0]> + 1.
     const dest_a: u32 = (w2 >> 17) & 0x1F;
+    const dest_b: u32 = (w3 >> 10) & 0x1F;
     const src_a: u32 = w3 & 0x1F;
     // 5-bit A index; A0 reads zero.
     const src_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
     const v: u32 = (src_val +% 1) & 0xFFFFFF;
     if (dest_a != 0) state.a[dest_a & 0xF] = v;
+    if (dest_b != 0) state.a[dest_b & 0xF] = v;
 }
 
 fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
