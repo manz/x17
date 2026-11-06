@@ -3230,6 +3230,51 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x000001 } }},
     },
     .{
+        .name = "own-ldi-sx",
+        // ldi sign-extends its 16-bit immediate: 0xFFF7 lands as 0xFFFFF7 (read back
+        // through stx; measured 2026-11-06, fact 371).
+        .src =
+        \\ldi s7, #0xFFF7
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0xFFFFF7 } }},
+    },
+    .{
+        .name = "own-ldi-sx-pos",
+        // 0x7FF7 stays 0x007FF7 (measured 2026-11-06).
+        .src =
+        \\ldi s7, #0x7FF7
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x7FF7 } }},
+    },
+    .{
+        .name = "own-stx24",
+        // stx keeps all 24 bits: X:0x3A0 <- 0x0ABCDE (3 of 3, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 6, .value = 0x0ABCDE },
+            .{ .bank = .a, .index = 6, .value = 0x3A0 },
+        },
+        .src =
+        \\stx A6, s6
+        \\x17.halt
+        ,
+        .post = &.{.{ .x_mem = .{ .addr = 0x3A0, .value = 0x0ABCDE } }},
+    },
+    .{
+        .name = "own-xst24",
+        // xst keeps all 24 bits: X:[A11 = 0x300] <- 0x0ABCDE (measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 6, .value = 0x0ABCDE },
+            .{ .bank = .a, .index = 11, .value = 0x300 },
+        },
+        .src =
+        \\xst #3, s8, #1, #2, s6
+        \\x17.halt
+        ,
+        .post = &.{.{ .x_mem = .{ .addr = 0x300, .value = 0x0ABCDE } }},
+    },
+    .{
         .name = "own-x19agu",
         // Pre e3 = 0x700, R1 = 2; fn 6 (x+y) → 0x702; R3 and e5 both get v.
         .pre = &.{

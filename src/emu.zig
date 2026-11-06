@@ -3423,7 +3423,9 @@ fn execLdi(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         return RunError.LdiDestOpen;
     }
     const s_idx: u32 = dest_k - 16;
-    state.s[s_idx] = imm;
+    // The immediate is sign-extended to 24 bits (own-x02u24's operands, built with ldi:
+    // 0xC321 lands as 0xFFC321).
+    state.s[s_idx] = sx16To24(imm);
     // e0 = the last instruction's [20:5] (fact 65).
     state.e[0] = imm;
 }
@@ -3453,7 +3455,7 @@ test "ldi to s0 maps from dest k=16" {
 
     const b = try asm_mod.assembleOne("ldi s0, #0xDEAD");
     try executeBundle(testing.allocator, &state, b.slice());
-    try testing.expectEqual(@as(u32, 0xDEAD), state.s[0]);
+    try testing.expectEqual(@as(u32, 0xFFDEAD), state.s[0]); // sign-extended
 }
 
 test "two ldi in sequence land in distinct regs" {
@@ -3690,7 +3692,7 @@ test "runLinear walks ldi then halt and stops" {
 
     const bundles = try runLinear(testing.allocator, &state, stream);
     try testing.expectEqual(@as(usize, 2), bundles);
-    try testing.expectEqual(@as(u32, 0xBEEF), state.s[3]);
+    try testing.expectEqual(@as(u32, 0xFFBEEF), state.s[3]); // sign-extended
 }
 
 test "runLinear: x17.alu then halt reproduces shl math" {
@@ -3807,4 +3809,15 @@ test "x19.alu #23 with a negative count register shifts right, rounded" {
     @memcpy(buf[b_alu.len .. b_alu.len + b_halt.len], b_halt.slice());
     _ = try runLinear(testing.allocator, &state, buf[0 .. b_alu.len + b_halt.len]);
     try testing.expectEqual(@as(u32, 0x71), state.s[7]);
+}
+
+test "ldi sign-extends its 16-bit immediate" {
+    var state = State{};
+    defer state.deinit(testing.allocator);
+    const neg = try asm_mod.assembleOne("ldi s5, #-9");
+    try executeBundle(testing.allocator, &state, neg.slice());
+    try testing.expectEqual(@as(u32, 0xFFFFF7), state.s[5]);
+    const pos = try asm_mod.assembleOne("ldi s5, #0x7FFF");
+    try executeBundle(testing.allocator, &state, pos.slice());
+    try testing.expectEqual(@as(u32, 0x7FFF), state.s[5]);
 }
