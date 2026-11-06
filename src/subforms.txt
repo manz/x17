@@ -641,3 +641,15 @@ ste        2   0x0000000F   0x20058000
 # rop.b21: rop with the inert [21] set, as the stock words carry it
 # (fact 281 / own-x07rop12).
 rop.b21    1   0x40200007
+
+# x04.ragu: 0x04 R slot y-i over R<head[30:27]> (fact 293).
+x04.ragu   6   0x00000064   0x00000007   0x00000000   0x00000000   0x08062810   0x85424088
+
+# x04.yd: 0x04 Y read to R and s (fact 276, 290).
+x04.yd     6   0x10004004   0x00000582   0x00100000   0x00000000   0x00000801   0x32060000
+
+# x04.xst: 0x04 X store slot (fact 292 / own-x04xst).
+x04.xst    6   0x20002004   0x0018051B   0x18106000   0x83000008   0x00004005   0x01C00000
+
+# x10.alu: 0x10 head ALU word to R, class-100 second (fact 269, 283).
+x10.alu    2   0x00000010   0x80000000

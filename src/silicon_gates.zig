@@ -1681,6 +1681,77 @@ const GATES = [_]Gate{
         .post = &.{.{ .e_reg = .{ .index = 8, .value = 0x123 } }},
     },
     .{
+        .name = "own-x04ragu",
+        // R6 <- R5 - 0x30 = 0x1000 - 0x30 = 0xFD0.
+        .pre = &.{.{ .bank = .r, .index = 5, .value = 0x1000 }},
+        .src =
+        \\x04.ragu R6, R5, #11, #0x30
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 6, .value = 0xFD0 } }},
+    },
+    .{
+        .name = "own-x04yd",
+        // R5 <- Y:[e4] = 0x1357.
+        .pre = &.{.{ .bank = .e, .index = 4, .value = 0x700 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0x1357 }},
+        .src =
+        \\x04.yd R5, s7, e4
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 5, .value = 0x1357 } }},
+    },
+    .{
+        .name = "own-x04yef",
+        // s7 <- Y:[e6] = 0x1357, not Y:[e4].
+        .pre = &.{
+            .{ .bank = .e, .index = 6, .value = 0x600 },
+            .{ .bank = .e, .index = 4, .value = 0x400 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x600, .value = 0x1357 }},
+        .src =
+        \\x04.yd R0, s7, e6
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x1357 } }},
+    },
+    .{
+        .name = "own-x04xst",
+        // X:[A9 = 0x320] <- s3 = 0x777.
+        .pre = &.{
+            .{ .bank = .a, .index = 9, .value = 0x320 },
+            .{ .bank = .s, .index = 3, .value = 0x777 },
+        },
+        .src =
+        \\x04.xst A9, #3, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .x_mem = .{ .addr = 0x320, .value = 0x777 } }},
+    },
+    .{
+        .name = "own-x10alu0",
+        // add m4, b = s2, a = s0: R5 <- 0x1233.
+        .pre = &.{.{ .bank = .s, .index = 2, .value = 0x1234 }},
+        .src =
+        \\x10.alu R5, s2, s0, #14, #4, #0, #0x20017
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 5, .value = 0x1233 } }},
+    },
+    .{
+        .name = "own-x10shl",
+        // code 0x3F m2 #4: R6 <- s8 << s1 = 0x1234 << 4 = 0x2340 (16-bit).
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 4 },
+            .{ .bank = .s, .index = 8, .value = 0x1234 },
+        },
+        .src =
+        \\x10.alu R6, s8, s1, #0x3F, #2, #4, #0x4000
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 6, .value = 0x2340 } }},
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},

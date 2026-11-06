@@ -105,6 +105,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b111) return execYld10(gpa, state, bundle);
         if (s_class == 0b110) return execEalu(gpa, state, bundle);
         if (s_class == 0b000) return execBcc(gpa, state, bundle);
+        if (s_class == 0b100) return execX10Alu(state, bundle);
     }
     if (low5 == 0x14 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
@@ -247,8 +248,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         return;
     }
     if (low5 == 0x04 and bundle.len >= 6) {
-        const head_class: u32 = (head >> 29) & 0x7;
-        if (head_class == 0) return execX04Agu(gpa, state, bundle);
+        return execX04Agu(gpa, state, bundle);
     }
     if (low5 == 0x0E and bundle.len >= 2) {
         const hb: u32 = (head >> 30) & 0x3;
@@ -521,23 +521,64 @@ fn execX03Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     state.s[dest_s] = alu05Eval(op, sx24(av), sx24(bv));
 }
 
+/// 0x04 slots, inputs latched (fact 276, 290, 292, 293):
+/// R<w3[22:19]> <- w5[27:26] = 01: AGU10[w1[10:7]](y = R<head[30:27]>,
+/// i = head[26:11]), 10 = y+i, 11 = y-i; = 00: the Y read.  The Y read is
+/// Y:[e<w3[30:27]>] and also goes to s<w4[6:3]> when w5[27:26] = 00.  X store
+/// (w5[23:22] = 11) of sx24 s<{w2[0], w1[31:29]}> at X:[A<w4[21:17]>].
 fn execX04Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
-    if (bundle.len < 6) return RunError.UnknownForm;
     const head = bundle[0];
     const w1 = bundle[1];
+    const w2 = bundle[2];
     const w3 = bundle[3];
-    const fn_op: u32 = (w1 >> 7) & 0xF;
+    const w4 = bundle[4];
+    const w5 = bundle[5];
+    const rsel: u32 = (w5 >> 26) & 3;
+    const yd: u32 = (state.getY(state.e[(w3 >> 27) & 0xF]) orelse 0) & 0xFFFF;
     const dest_r: u32 = (w3 >> 19) & 0xF;
-    const y_r: u32 = (head >> 27) & 0xF;
-    const imm: u32 = (head >> 11) & 0xFFFF;
-    if (dest_r == 0) return;
-    const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
-    const v: u32 = switch (fn_op) {
-        10 => (y_val +% imm) & 0xFFFF,
-        else => return,
+    const r_val: u32 = if (dest_r == 0) 0 else switch (rsel) {
+        0 => yd,
+        1 => blk: {
+            const y: u32 = state.r[(head >> 27) & 0xF];
+            const i: u32 = (head >> 11) & 0xFFFF;
+            break :blk switch ((w1 >> 7) & 0xF) {
+                10 => (y +% i) & 0xFFFF,
+                11 => (y -% i) & 0xFFFF,
+                else => return RunError.UnknownForm,
+            };
+        },
+        else => return RunError.UnknownForm,
     };
-    state.r[dest_r] = v;
+    const dest_s: u32 = (w4 >> 3) & 0xF;
+    const xst = (w5 >> 22) & 3 == 3;
+    const x_addr: u32 = state.a[(w4 >> 17) & 0xF];
+    const x_val: u32 = state.s[((w2 & 1) << 3) | (w1 >> 29)] & M24;
+    if (xst) state.x_mem.put(gpa, x_addr, x_val) catch return RunError.OutOfMemory;
+    if (dest_r != 0) state.r[dest_r] = r_val;
+    if (dest_s != 0 and rsel == 0) state.s[dest_s] = yd;
+}
+
+/// 0x10 with a class-100 second (fact 269, 283): the head is a 0x05
+/// ALU word (a = s<head[14:11]>, b = s<head[29:26]>) written to R<w1[24:21]>.
+fn execX10Alu(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const dest: u32 = (bundle[1] >> 21) & 0xF;
+    if ((h >> 5) & 0x3F == 0x3F and (h >> 23) & 7 == 2) {
+        if (dest != 0) state.r[dest] = shiftM2((h >> 19) & 0xF, state.s[(h >> 11) & 0xF] & 0xFFFF, state.s[(h >> 26) & 0xF] & 0xFFFF);
+        return;
+    }
+    const v = (try aluWord(h, sx24(state.s[(h >> 11) & 0xF]), sx24(state.s[(h >> 26) & 0xF]))) orelse return RunError.UnknownForm;
+    if (dest != 0) state.r[dest] = v & 0xFFFF;
+}
+
+/// Code 0x3F under m2 (fact 269): #[22:21] = 00 is b, 01 is b << a, 1x
+/// is b >> a; a left shift past the width gives 0, or 0xFFFF when #[20] = 1.
+fn shiftM2(n: u32, a: u32, b: u32) u32 {
+    return switch ((n >> 2) & 3) {
+        0 => b,
+        1 => if (a >= 16) (if ((n >> 1) & 1 == 1) 0xFFFF else 0) else (b << @intCast(a)) & 0xFFFF,
+        else => if (a >= 16) 0 else b >> @intCast(a),
+    };
 }
 
 fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

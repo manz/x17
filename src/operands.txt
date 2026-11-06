@@ -964,3 +964,28 @@ rop.b21	dest_R	R	22	25	head
 rop.b21	x_e	e	5	8	head
 rop.b21	y_R	R	13	16	head
 rop.b21	fn	imm	17	20	head
+
+# x04.ragu <dest_R>, <y_R>, #<fn>, #<imm>
+x04.ragu	dest_R	R	19	22	s3
+x04.ragu	y_R	R	27	30	head
+x04.ragu	fn	imm	7	10	s1
+x04.ragu	imm	imm	11	26	head
+
+# x04.yd <dest_R>, <dest_s>, <y_e>
+x04.yd	dest_R	R	19	22	s3
+x04.yd	dest_s	s	3	6	s4
+x04.yd	y_e	e	27	30	s3
+
+# x04.xst <x_A>, #<src_lo>, #<src_hi>
+x04.xst	x_A	A	17	21	s4
+x04.xst	src_lo	imm	29	31	s1
+x04.xst	src_hi	imm	0	0	s2
+
+# x10.alu <dest_R>, <b_s>, <a_s>, #<code>, #<m>, #<n>, #<w1_lo>
+x10.alu	dest_R	R	21	24	s1
+x10.alu	b_s	s	26	29	head
+x10.alu	a_s	s	11	14	head
+x10.alu	code	imm	5	10	head
+x10.alu	m	imm	23	25	head
+x10.alu	n	imm	19	22	head
+x10.alu	w1_lo	imm	0	20	s1
