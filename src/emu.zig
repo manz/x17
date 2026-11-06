@@ -1220,6 +1220,18 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 4 and w3_class == 2) {
         return execX19Aagu(gpa, state, bundle);
     }
+    // w1 class 101 is inert on the A AGU (fact 271 / own-x19aagu5).
+    if (w1_class == 5 and w2_class == 0 and w3_class == 2) {
+        return execX19Aagu(gpa, state, bundle);
+    }
+    // w2 class 100 is inert on the imm form (fact 272 / own-x19imm4).
+    if (w1_class == 0 and w2_class == 4 and w3_class == 1) {
+        return execX19Imm(gpa, state, bundle);
+    }
+    // w2[31] = 1 makes R<w3[10:7]> <- AGUA(A<w3[19:15]>) (fact 278).
+    if (w1_class == 0 and w2_class == 4 and w3_class == 0) {
+        return execX19RAgua(gpa, state, bundle);
+    }
     if (w1_class == 0 and w2_class == 1 and w3_class == 6) {
         return execX19Mul(gpa, state, bundle);
     }
@@ -1314,11 +1326,16 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 }
 
 /// Y:[e<w3[28:25]>] <- s<{w2[0], w1[31:29]}>.
+/// Also runs the s slot: s<head[24:21]> <- AGU3[w3[24:20]](x = A<w3[19:15]>).
 fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const src_s: u32 = ((bundle[2] & 1) << 3) | ((bundle[1] >> 29) & 0x7);
     const addr_e: u32 = (bundle[3] >> 25) & 0xF;
     const v: u32 = state.s[src_s] & 0xFFFF;
+    const w3 = bundle[3];
+    const dest_s: u32 = (bundle[0] >> 21) & 0xF;
+    const s_val = agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0xF], 0, 2 * (w3 & 0x7FFF));
     state.y_mem.put(gpa, state.e[addr_e], v) catch return RunError.OutOfMemory;
+    if (dest_s != 0) state.s[dest_s] = s_val;
 }
 
 fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -1430,7 +1447,9 @@ fn execX19Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
     const v = try agu10Eval(fn_op, x_val, y_val);
-    if (dest_e != 0) state.e[dest_e] = v;
+    // w2[24] = 1: the e destination takes #head[20:5] (fact 270).
+    const e_val: u32 = if ((bundle[2] >> 24) & 1 == 1) (bundle[0] >> 5) & 0xFFFF else v;
+    if (dest_e != 0) state.e[dest_e] = e_val;
     if (dest_r != 0) state.r[dest_r] = v;
 }
 
@@ -1449,12 +1468,24 @@ fn execX19Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const fn_op: u32 = (w1 >> 1) & 0xF;
     const imm: u32 = (w2 >> 15) & 0xFFFF;
 
-    // Only fn_op = 10 (y + i) modelled today.
-    if (fn_op != 10) return RunError.UnknownForm;
+    // fn 0 (x, fact 272) and fn 10 (y + i) are the measured cases.
+    const v: u32 = switch (fn_op) {
+        0 => state.e[x_src] & 0xFFFF,
+        10 => ((if (y_src == 0) 0 else state.r[y_src]) +% imm) & 0xFFFF,
+        else => return RunError.UnknownForm,
+    };
+    if (dest_e != 0) state.e[dest_e] = v;
+}
 
-    const y_val: u32 = if (y_src == 0) 0 else state.r[y_src];
-    _ = x_src; // unused for fn_op 10
-    state.e[dest_e] = (y_val +% imm) & 0xFFFF;
+fn execX19RAgua(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    _ = gpa;
+    const w3 = bundle[3];
+    const dest_r: u32 = (w3 >> 7) & 0xF;
+    const x_val: u32 = state.a[(w3 >> 15) & 0xF];
+    // Only fn 0 with w3[14:0] = 0 is measured: x + 1 (w2[31] is the class
+    // bit here, not an i bit, per own-x19ragua's 0x346).
+    if (((w3 >> 20) & 0x1F) != 0 or (w3 & 0x7F) != 0) return RunError.UnknownForm;
+    if (dest_r != 0) state.r[dest_r] = (x_val +% 1) & 0xFFFF;
 }
 
 fn execX19Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -1496,16 +1527,7 @@ fn execX19Aagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const imm_scaled: u32 = (imm_base << 1) | w2_bit31;
 
     const x_val: u32 = state.a[src_a & 0xF];
-    const new_val: u32 = switch (fn_op) {
-        0 => x_val,
-        2 => blk: {
-            // class (0,0,2): fn 2 -> x + 2*i.  class (0,4,2) adds w2[31].
-            if (w2_bit31 == 0 and (w2 >> 29) & 7 == 0)
-                break :blk (x_val +% (2 * imm_base)) & 0xFFFF;
-            break :blk (x_val +% imm_scaled) & 0xFFFF;
-        },
-        else => return RunError.UnknownForm,
-    };
+    const new_val: u32 = aguaEval(fn_op, x_val, imm_scaled) orelse return RunError.UnknownForm;
     state.a[dest_a & 0xF] = new_val;
 }
 
@@ -1951,6 +1973,44 @@ fn execAlu(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 // upstream emu.py (fact 109).  Values compute over (x, y) and wrap at
 // 16 bits (the AGU is a 16-bit address unit, not a 24-bit ALU).
 // ---------------------------------------------------------------------------
+
+/// 0x19 s/A slot AGU (fact 149; fn 4 from 164).  fn = w3[24:20].
+fn agu3Eval(fn_op: u32, x: u32, y: u32, i: u32) u32 {
+    const r: u32 = switch (fn_op & 0x1F) {
+        0, 6, 12 => x +% 1,
+        1, 7, 13 => x -% 1,
+        2, 8, 14 => x +% y,
+        3, 9, 15, 23, 24 => x -% y,
+        4 => i -% x,
+        10 => 0 -% x,
+        5, 11, 16, 17 => x,
+        18 => y +% 1,
+        19 => y -% 1,
+        20 => 0 -% y,
+        22 => y,
+        25 => i,
+        21, 26, 27, 28, 29, 30, 31 => x -% i,
+        else => unreachable,
+    };
+    return r & 0xFFFF;
+}
+
+/// 0x19 A-register AGU (fact 144; fn 4 from 164).  null = OPEN.
+fn aguaEval(fn_op: u32, x: u32, i: u32) ?u32 {
+    const r: u32 = switch (fn_op & 0x1F) {
+        0, 6, 12 => x +% i +% 1,
+        1, 7, 13 => x +% i -% 1,
+        2, 3, 5, 8, 9, 11, 14, 15, 17, 23, 24 => x +% i,
+        16 => ((x -% 1) >> 1) +% i,
+        18 => i +% 1,
+        19 => i -% 1,
+        20, 22, 25 => i,
+        21, 26, 27, 28, 29, 30, 31 => x -% i,
+        4 => i -% x,
+        else => return null,
+    };
+    return r & 0xFFFF;
+}
 
 fn agu10Eval(fn_op: u32, x: u32, y: u32) RunError!u32 {
     const xw: u32 = x & 0xFFFF;

@@ -701,3 +701,27 @@ x17.alu	a	s	25	28	s2
 x17.alu	b	s	16	19	s1
 x17.alu	op	imm	7	10	head
 x17.alu	n	imm	20	23	s1
+
+# x19.aimm: x19.aimm <dest_R>, <dest_e>, <x_e>, <y_R>, #<fn>, #<imm>
+x19.aimm	dest_R	R	7	10	s3
+x19.aimm	dest_e	e	20	23	s1
+x19.aimm	x_e	e	25	28	s3
+x19.aimm	y_R	R	11	14	s3
+x19.aimm	fn	imm	24	27	s1
+x19.aimm	imm	imm	5	20	head
+
+# x19.aagu5: x19.aagu5 <dest_A>, <src_A>, #<fn>, #<i>
+x19.aagu5	dest_A	A	3	7	s1
+x19.aagu5	src_A	A	15	19	s3
+x19.aagu5	fn_op	imm	20	24	s3
+x19.aagu5	imm	imm	0	14	s3
+
+# x19.imm4: x19.imm4 #<dest_lo>, #<dest_hi>, <x_e>, #<fn>
+x19.imm4	dest_lo	imm	29	31	head
+x19.imm4	dest_hi	imm	0	0	s1
+x19.imm4	x_e	e	25	28	s3
+x19.imm4	fn	imm	1	4	s1
+
+# x19.ragua: x19.ragua <dest_R>, <src_A>
+x19.ragua	dest_R	R	7	10	s3
+x19.ragua	src_A	A	15	19	s3

@@ -782,6 +782,49 @@ const GATES = [_]Gate{
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x111 } }},
     },
     .{
+        .name = "own-x19aimm",
+        // w2[24] = 1: e5 <- #0x123 instead of x + y.
+        .src =
+        \\x19.aimm R3, e5, e3, R1, #6, #0x123
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 5, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-x19aagu5",
+        // First bundle only: A2 <- A5 + #0 under w1 class 101.  The second
+        // (x19a3 reading s2 <- A2, then the Y store) is not gated here.
+        .pre = &.{.{ .bank = .a, .index = 5, .value = 0x345 }},
+        .src =
+        \\x19.aagu5 A2, A5, #5, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .a_reg = .{ .index = 2, .value = 0x345 } }},
+    },
+    .{
+        .name = "own-x19imm4",
+        // e8 <- AGU10 fn 0 = x = e4 = 0x100.
+        .pre = &.{
+            .{ .bank = .e, .index = 4, .value = 0x100 },
+            .{ .bank = .e, .index = 8, .value = 0x555 },
+        },
+        .src =
+        \\x19.imm4 #0, #1, e4, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .e_reg = .{ .index = 8, .value = 0x100 } }},
+    },
+    .{
+        .name = "own-x19ragua",
+        // R2 <- AGUA fn 0 (x + 1) over A3 = 0x345.
+        .pre = &.{.{ .bank = .a, .index = 3, .value = 0x345 }},
+        .src =
+        \\x19.ragua R2, A3
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 2, .value = 0x346 } }},
+    },
+    .{
         .name = "own-x19a3st",
         // e2 = 0x700, s5 = 0x1357; Y:[e2] <- s5.
         .pre = &.{

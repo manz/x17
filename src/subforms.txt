@@ -505,3 +505,15 @@ x17.agu    3   0x00000017   0x30000000   0x40000000
 # Silicon-measured: own-x17alu-shl (op=0 shl, n=3) and own-x17alu-rsub
 # (op=4 b-a) both match this base.
 x17.alu    3   0x00000017   0x30008000   0xE0000000
+
+# x19.aimm: x19.agu with w2[24] = 1, e dest <- #head[20:5] (fact 270).
+x19.aimm   4   0x00000019   0x10040000   0x03C40000   0x00000000
+
+# x19.aagu5: x19.aagu with w1 class 101 (inert) (fact 271).
+x19.aagu5  4   0x093A5019   0xA4020000   0x00000007   0x40000000
+
+# x19.imm4: x19.imm with w2 class 100 (inert), fn 0 = x (fact 272).
+x19.imm4   4   0x00000019   0x08000A40   0x80002000   0x21E48007
+
+# x19.ragua: (0,4,0) R<w3[10:7]> <- AGUA fn 0 over A<w3[19:15]> (fact 278).
+x19.ragua  4   0x00000019   0x00040001   0x84000006   0x06000000
