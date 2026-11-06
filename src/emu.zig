@@ -59,6 +59,10 @@ pub const State = struct {
     /// syllables relative to the jmp bundle's own syllable position; null
     /// when no jump requested this bundle.  runLinear consumes it.
     pending_jmp_offset: ?i32 = null,
+    /// The running bundle's syllable index, for absolute jumps.
+    pc: usize = 0,
+    /// The value the last X read left (fact 241).
+    xd: u32 = 0,
 
     pub fn deinit(self: *State, gpa: std.mem.Allocator) void {
         self.y_mem.deinit(gpa);
@@ -71,6 +75,14 @@ pub const State = struct {
 
     pub fn getX(self: *const State, addr: u32) ?u32 {
         return self.x_mem.get(addr);
+    }
+
+    /// An executor's X read: also latches xd, the last X word read
+    /// (fact 161, 241).
+    pub fn readX(self: *State, addr: u32) ?u32 {
+        const v = self.x_mem.get(addr);
+        self.xd = v orelse 0;
+        return v;
     }
 };
 
@@ -240,13 +252,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return;
         }
     }
-    if (low5 == 0x01 and bundle.len >= 7) {
-        // own-x01st (fact 243): the only modelled effect is the
-        // scalar copy s3 <- e<w4[8:5]>.  X and Y stores are skipped.
-        const w4 = bundle[4];
-        const src_e: u32 = (w4 >> 5) & 0xF;
-        state.s[3] = if (src_e == 0) 0 else state.e[src_e];
-        return;
+    if ((low5 == 0x00 or (low5 == 0x01 and (head >> 30) == 0)) and bundle.len == 7) {
+        return execX00(gpa, state, bundle);
     }
     if (low5 == 0x04 and bundle.len >= 6) {
         return execX04Agu(gpa, state, bundle);
@@ -363,7 +370,7 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // (fact 158, 161 / own-x02c6).
     if ((bundle[5] >> 19) & 1 == 1) {
         const a_idx: u32 = (bundle[4] >> 17) & 0xF;
-        if (dest_s != 0) state.s[dest_s] = state.getX(state.a[a_idx]) orelse 0;
+        if (dest_s != 0) state.s[dest_s] = state.readX(state.a[a_idx]) orelse 0;
         return;
     }
     const b15: u32 = (w1 >> 15) & 1;
@@ -446,7 +453,7 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // w5[6] = 1: the w2 slot reads X:[A<{w1[2:0], head[31:30]}>] instead
     // of multiplying (fact 192 / own-x03xw2).
     if ((bundle[5] >> 6) & 1 == 1) {
-        if (dest_s != 0) state.s[dest_s] = state.getX(state.a[x03AIndex(bundle)]) orelse 0;
+        if (dest_s != 0) state.s[dest_s] = state.readX(state.a[x03AIndex(bundle)]) orelse 0;
         return;
     }
     const mode: u32 = (w1 >> 11) & 0x7;
@@ -561,6 +568,134 @@ fn execX04Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
 /// 0x10 with a class-100 second (fact 269, 283): the head is a 0x05
 /// ALU word (a = s<head[14:11]>, b = s<head[29:26]>) written to R<w1[24:21]>.
+const X00_OPS = [16][]const u8{ "a", "0", "b", "-a", "0", "b+1", "a", "a", "0", "0", "0", "0", "0", "0", "1", "b-1" };
+const X01_OPS = [16][]const u8{ "a", "y", "b", "-a", "-y", "b+1", "a+y", "a-y", "0", "0", "y", "y", "y-b", "b-y", "y-b+1", "y-b-1" };
+
+/// w1[10:7] on the s slot's e path (fact 234): a = e<w4[8:5]>,
+/// b = e<w4[4:1]>.  0x01's y source is OPEN.
+fn x00Op(x01: bool, op: u32, a: u32, b: u32) RunError!u32 {
+    const t = (if (x01) X01_OPS else X00_OPS)[op & 0xF];
+    const r: u32 = if (std.mem.eql(u8, t, "a")) a else if (std.mem.eql(u8, t, "b")) b else if (std.mem.eql(u8, t, "-a")) 0 -% a else if (std.mem.eql(u8, t, "b+1")) b +% 1 else if (std.mem.eql(u8, t, "b-1")) b -% 1 else if (std.mem.eql(u8, t, "0")) 0 else if (std.mem.eql(u8, t, "1")) 1 else return RunError.UnknownForm;
+    return r & 0xFFFF;
+}
+
+/// The 7-word 0x00 bundle and 0x01 (head[29] inert), slots latched then
+/// written (fact 227-230, 234, 241-244, 286):
+/// s slot s<w6[15:12]> <- mux w6[3:1] (0 / sub / sub / D / D / D / #head[26:11] / 0),
+///   sub-mux w5[24:23] (#imm / 1 / the w1[10:7] op / D); D is not modelled;
+/// Y store Y:[e<w4[8:5]>] <- s<w4[16:13]>, X store X:[A<w2[22:18]>] <- sx24 s<w2[13:10]>,
+///   enabled by w5[5:4] / w5[2:1] = 11 on 0x00 and 8 bits higher on 0x01;
+/// ALU slot s<w6[7:4]> <- ALU05[head[10:5]](0, s<w2[5:2]>) with shift w2[9:6];
+/// MAC slot s<w6[11:8]> <- w4[23] = 1: xd (w4[17] = 1); else acc[15:0],
+///   acc = mode w1[13:11]({s<w2[13:10]> : sx24 s<w4[15:13]>}, 2 s<w6[27:24]> s<w6[31:28]>);
+/// multiply s<w6[19:16]> <- mode w1[13:11](X = s<w2[13:10]>, P = s*s >> 23 (24 if w1[17])
+///   rounded when w1[15] = 1);
+/// control w3[4:0]: jr +w1[25:18], ja w1[25:18], two delay slots.
+fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const w4 = bundle[4];
+    const w5 = bundle[5];
+    const w6 = bundle[6];
+    const x01 = (h & 0x1F) == 0x01;
+    const imm: u32 = (h >> 11) & 0xFFFF;
+
+    const s_dest: u32 = (w6 >> 12) & 0xF;
+    const s_val: u32 = if (s_dest == 0) 0 else blk: {
+        const src: u32 = (w6 >> 1) & 7;
+        const sub: u32 = (w5 >> 23) & 3;
+        const op: u32 = (w1 >> 7) & 0xF;
+        if (x01 and op != 2 and !(sub == 2 and (src == 1 or src == 2))) return RunError.UnknownForm;
+        const sub_val: u32 = switch (sub) {
+            0 => imm,
+            1 => 1,
+            2 => try x00Op(x01, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
+            else => return RunError.UnknownForm,
+        };
+        break :blk switch (src) {
+            0, 7 => 0,
+            1, 2 => sub_val,
+            6 => imm,
+            else => return RunError.UnknownForm,
+        };
+    };
+
+    const ye: u5 = if (x01) 12 else 4;
+    const xe: u5 = if (x01) 9 else 1;
+    const y_on = (w5 >> ye) & 3 == 3;
+    const x_on = (w5 >> xe) & 3 == 3;
+    const y_addr: u32 = state.e[(w4 >> 5) & 0xF];
+    const y_val: u32 = state.s[(w4 >> 13) & 0xF] & 0xFFFF;
+    const x_addr: u32 = state.a[(w2 >> 18) & 0xF];
+    const x_src: u32 = (w2 >> 10) & 0xF;
+    const x_val: u32 = if (x01 and x_src == 0) (state.xd << 8) & M24 else state.s[x_src] & M24;
+
+    const alu_dest: u32 = (w6 >> 4) & 0xF;
+    const alu_val: u32 = if (alu_dest == 0) 0 else blk: {
+        if ((w4 >> 19) & 1 == 1) return RunError.UnknownForm;
+        const word: u32 = (((h >> 5) & 0x3F) << 5) | (((w2 >> 6) & 0xF) << 19);
+        break :blk (try aluWord(word, 0, sx24(state.s[(w2 >> 2) & 0xF]))) orelse return RunError.UnknownForm;
+    };
+
+    const mode: u32 = (w1 >> 11) & 7;
+    const xs: i64 = sx24(state.s[(w2 >> 10) & 0xF]);
+    const pa: i64 = sx16(state.s[(w6 >> 24) & 0xF]);
+    const pb: i64 = sx16(state.s[(w6 >> 28) & 0xF]);
+    const mac_dest: u32 = (w6 >> 8) & 0xF;
+    const mac_val: u32 = if (mac_dest == 0) 0 else blk: {
+        if ((w4 >> 23) & 1 == 1) {
+            if ((w4 >> 17) & 1 == 0) return RunError.UnknownForm;
+            break :blk state.xd & 0xFFFF;
+        }
+        if (mode == 0) break :blk 0;
+        const xl: u32 = (w4 >> 13) & 7;
+        if (xl == 0) return RunError.UnknownForm;
+        const x40: i64 = (xs << 24) + sx24(state.s[xl]);
+        const p2: i64 = 2 * pa * pb;
+        const acc: i64 = switch (mode) {
+            3 => x40,
+            5 => x40 + p2,
+            6 => p2 - x40,
+            7 => x40 - p2,
+            else => return RunError.UnknownForm,
+        };
+        break :blk @truncate(@as(u64, @bitCast(acc)) & 0xFFFF);
+    };
+    const mpy_dest: u32 = (w6 >> 16) & 0xF;
+    const mpy_val: u32 = if (mpy_dest == 0) 0 else blk: {
+        if ((w1 >> 14) & 1 == 0) return RunError.UnknownForm;
+        const sh: u6 = if ((w1 >> 17) & 1 == 1) 24 else 23;
+        const bias: i64 = if ((w1 >> 15) & 1 == 1) @as(i64, 1) << (sh - 1) else 0;
+        const p: i64 = (pa * pb + bias) >> sh;
+        const r: i64 = switch (mode) {
+            3 => xs,
+            5 => xs + p,
+            6 => p - xs,
+            7 => xs - p,
+            else => return RunError.UnknownForm,
+        };
+        break :blk @truncate(@as(u64, @bitCast(r)) & M24);
+    };
+
+    const ctl: u32 = w3 & 0x1F;
+    const target: u32 = (w1 >> 18) & 0xFF;
+    switch (ctl) {
+        1, 3, 0xE, 0x11, 0x13, 0x16, 0x17 => state.pending_jmp_offset = @intCast(target),
+        4 => state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc)),
+        0, 2, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
+        else => return RunError.UnknownForm,
+    }
+
+    if (y_on) state.y_mem.put(gpa, y_addr, y_val) catch return RunError.OutOfMemory;
+    if (x_on) state.x_mem.put(gpa, x_addr, x_val) catch return RunError.OutOfMemory;
+    if (s_dest != 0) state.s[s_dest] = s_val;
+    if (alu_dest != 0) state.s[alu_dest] = alu_val;
+    if (mac_dest != 0) state.s[mac_dest] = mac_val;
+    if (mpy_dest != 0) state.s[mpy_dest] = mpy_val;
+}
+
 fn execX10Alu(state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const dest: u32 = (bundle[1] >> 21) & 0xF;
@@ -619,7 +754,7 @@ fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const v: u32 = if ((bundle[5] >> 21) & 1 == 1) blk: {
         const src_e: u32 = (bundle[3] >> 27) & 0xF;
         break :blk state.getY(state.e[src_e]) orelse 0;
-    } else state.getX(state.a[a_idx]) orelse 0;
+    } else state.readX(state.a[a_idx]) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
@@ -694,7 +829,7 @@ fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     } else blk: {
         const src_a: u32 = (w4 >> 17) & 0xF;
         const addr: u32 = state.a[src_a];
-        break :blk state.getX(addr) orelse 0;
+        break :blk state.readX(addr) orelse 0;
     };
     if (dest_s != 0) state.s[dest_s] = v;
 }
@@ -999,7 +1134,7 @@ fn execX16Xld(state: *State, bundle: []const u32) RunError!void {
     const xi = state.x16_xi orelse return RunError.UnknownForm;
     const dest: u32 = (s1 >> 28) & 0xF;
     const addr: u32 = if (xi == 0) 0 else state.a[xi & 0xF];
-    if (dest != 0) state.s[dest] = (state.getX(addr) orelse 0) & 0xFFFF;
+    if (dest != 0) state.s[dest] = (state.readX(addr) orelse 0) & 0xFFFF;
 }
 
 /// S1 class 011, S2 class 111: X:[A<S2[12:8]>] <- s<S1[31:28]> when
@@ -1124,7 +1259,7 @@ fn execX16AluX(state: *State, bundle: []const u32) RunError!void {
     const xi = state.x16_xi orelse return RunError.UnknownForm;
     if (xi == 0) return RunError.UnknownForm;
     const dest: u32 = (bundle[0] >> 21) & 0xF;
-    if (dest != 0) state.s[dest] = (state.getX(state.a[xi & 0xF]) orelse 0) & 0xFFFF;
+    if (dest != 0) state.s[dest] = (state.readX(state.a[xi & 0xF]) orelse 0) & 0xFFFF;
 }
 
 /// S1/S2 class 000 (fact 115, 122, 217): S2[3] latches xi <- S2[8:4];
@@ -1146,7 +1281,7 @@ fn execX16Ld(state: *State, bundle: []const u32) RunError!void {
         5 => blk: {
             const xi = state.x16_xi orelse return RunError.UnknownForm;
             const addr: u32 = if (xi == 0) 0 else state.a[xi & 0xF];
-            break :blk (state.getX(addr) orelse 0) & 0xFFFF;
+            break :blk (state.readX(addr) orelse 0) & 0xFFFF;
         },
         7 => 0,
         6 => if (imm_mux) (h >> 5) & 0xFFFF else return RunError.UnknownForm,
@@ -1154,7 +1289,7 @@ fn execX16Ld(state: *State, bundle: []const u32) RunError!void {
         3 => if (imm_mux) blk: {
             const xi = state.x16_xi orelse return RunError.UnknownForm;
             const addr: u32 = if (xi == 0) 0 else state.a[xi & 0xF];
-            break :blk ((state.getX(addr) orelse 0) & 0xFF) << 8;
+            break :blk ((state.readX(addr) orelse 0) & 0xFF) << 8;
         } else return RunError.UnknownForm,
         else => return RunError.UnknownForm,
     };
@@ -1256,7 +1391,7 @@ fn execX18Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (head >> 21) & 0xF;
     const src_a: u32 = (w2 >> 17) & 0x1F;
     const a_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
-    const v: u32 = state.getX(a_val) orelse 0;
+    const v: u32 = state.readX(a_val) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
@@ -1569,7 +1704,7 @@ fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const a_low: u32 = s1 & 0x7;
     const a_idx: u32 = (4 * a_low + a_half) & 0xF;
     const addr: u32 = state.a[a_idx];
-    const v: u32 = state.getX(addr) orelse 0;
+    const v: u32 = state.readX(addr) orelse 0;
     if (dest_s_x != 0) state.s[dest_s_x] = v;
     if (dest_s2 != 0) state.s[dest_s2] = imm16;
 }
@@ -1861,7 +1996,7 @@ fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (head >> 21) & 0xF;
     const src_a: u32 = (w3 >> 15) & 0x1F;
     const a_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
-    const v: u32 = state.getX(a_val) orelse 0;
+    const v: u32 = state.readX(a_val) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
@@ -2126,7 +2261,7 @@ fn execX17XldA10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) Run
     const a_idx: u32 = (8 * a_half + 2) & 0xF;
 
     const addr: u32 = state.a[a_idx];
-    const loaded: u32 = state.getX(addr) orelse 0;
+    const loaded: u32 = state.readX(addr) orelse 0;
     state.s[dest_s] = loaded;
 }
 
@@ -2139,7 +2274,7 @@ fn execX17Xpm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const a_idx: u32 = (8 * a_half + 4) & 0xF;
 
     const addr: u32 = state.a[a_idx];
-    const loaded: u32 = state.getX(addr) orelse 0;
+    const loaded: u32 = state.readX(addr) orelse 0;
     state.s[dest_s] = loaded;
 }
 
@@ -2655,6 +2790,7 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
         if (i + len > syllables.len) return RunError.UnknownBundleLength;
         const slice = syllables[i .. i + len];
         const pc_at_bundle = i;
+        state.pc = i;
         try executeBundle(gpa, state, slice);
         i += len;
         if (isHaltBundle(slice)) return bundles_run + 1;

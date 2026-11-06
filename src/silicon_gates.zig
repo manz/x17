@@ -1147,13 +1147,22 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x01st",
-        // Pre e5 = 0x300; s3 <- e5 = 0x300 (X/Y stores skipped).
-        .pre = &.{.{ .bank = .e, .index = 5, .value = 0x300 }},
+        // Y:[e5 = 0x360] <- s9, X:[A3 = 0x320] <- s7, s3 <- e5 (fact 243).
+        .pre = &.{
+            .{ .bank = .e, .index = 5, .value = 0x360 },
+            .{ .bank = .a, .index = 3, .value = 0x320 },
+            .{ .bank = .s, .index = 7, .value = 0x777 },
+            .{ .bank = .s, .index = 9, .value = 0x999 },
+        },
         .src =
-        \\x01.st e5
+        \\x01.slots s3, #2, #2, #2, e5, e5, s9, A3, s7, s0, #0, #0, #3, #3, #0, #0
         \\x17.halt
         ,
-        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x300 } }},
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x360 } },
+            .{ .y_mem = .{ .addr = 0x360, .value = 0x999 } },
+            .{ .x_mem = .{ .addr = 0x320, .value = 0x777 } },
+        },
     },
     .{
         .name = "own-x02x3",
@@ -1869,6 +1878,186 @@ const GATES = [_]Gate{
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 6, .value = 0x9CDE } }},
+    },
+    .{
+        .name = "own-x00slots",
+        // Y:[e5] <- s9, X:[A3] <- s7, s3 <- e5 (w5[5:4], w5[2:1] = 11).
+        .pre = &.{
+            .{ .bank = .e, .index = 5, .value = 0x360 },
+            .{ .bank = .a, .index = 3, .value = 0x320 },
+            .{ .bank = .s, .index = 7, .value = 0x777 },
+            .{ .bank = .s, .index = 9, .value = 0x999 },
+        },
+        .src =
+        \\x00.slots s3, #2, #2, #2, e5, e5, s9, A3, s7, #3, #3, s0, #0, #0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x360 } },
+            .{ .y_mem = .{ .addr = 0x360, .value = 0x999 } },
+            .{ .x_mem = .{ .addr = 0x320, .value = 0x777 } },
+        },
+    },
+    .{
+        .name = "own-x01w5old",
+        // 0x00's store bits set on 0x01 are inert: same three writes.
+        .pre = &.{
+            .{ .bank = .e, .index = 5, .value = 0x360 },
+            .{ .bank = .a, .index = 3, .value = 0x320 },
+            .{ .bank = .s, .index = 7, .value = 0x777 },
+            .{ .bank = .s, .index = 9, .value = 0x999 },
+        },
+        .src =
+        \\x01.slots s3, #2, #2, #2, e5, e5, s9, A3, s7, s0, #0, #0, #3, #3, #0x36, #0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x360 } },
+            .{ .y_mem = .{ .addr = 0x360, .value = 0x999 } },
+            .{ .x_mem = .{ .addr = 0x320, .value = 0x777 } },
+        },
+    },
+    .{
+        .name = "own-x00eop",
+        // op 3: s3 <- -e5 = 0xFCA0.
+        .pre = &.{.{ .bank = .e, .index = 5, .value = 0x360 }},
+        .src =
+        \\x00.slots s3, #2, #2, #3, e5, e5, s0, A0, s0, #0, #0, s0, #0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0xFCA0 } }},
+    },
+    .{
+        .name = "own-x01eop",
+        // class 001 0x01, op 3: s3 <- -e5 = 0xFCA0.
+        .pre = &.{.{ .bank = .e, .index = 5, .value = 0x360 }},
+        .src =
+        \\x01.slots s3, #2, #2, #3, e5, e5, s0, A0, s0, s0, #0, #0, #0, #0, #0, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0xFCA0 } }},
+    },
+    .{
+        .name = "own-x00xd",
+        // s5 <- xd, the last X read (0x02 s1 <- X:[A2] = 0xEF41).
+        .pre = &.{
+            .{ .bank = .a, .index = 2, .value = 0x234 },
+            .{ .bank = .e, .index = 5, .value = 0x360 },
+            .{ .bank = .a, .index = 3, .value = 0x320 },
+            .{ .bank = .s, .index = 7, .value = 0x777 },
+            .{ .bank = .s, .index = 9, .value = 0x999 },
+        },
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x234, .value = 0xEF41 }},
+        .src =
+        \\x02.xrd s1, A2
+        \\x00.slots s3, #2, #2, #2, e5, e5, s9, A3, s7, #3, #3, s5, #1, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 5, .value = 0xEF41 } }},
+    },
+    .{
+        .name = "own-x00alu",
+        // s1 <- add(0, s3) << 1 = 0x246; s2 <- 0 (MAC slot, mode 0).
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x123 },
+            .{ .bank = .s, .index = 2, .value = 0x222 },
+        },
+        .src =
+        \\x00.alu s1, s2, s3, #1, #0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 1, .value = 0x246 } },
+            .{ .s_reg = .{ .index = 2, .value = 0 } },
+        },
+    },
+    .{
+        .name = "own-x00mac",
+        // mode 7: s9 <- s6 - rnd(s3 * s5 >> 23) = 0x100 - 0x12 = 0xEE.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x4000 },
+            .{ .bank = .s, .index = 5, .value = 0x2345 },
+            .{ .bank = .s, .index = 6, .value = 0x100 },
+        },
+        .src =
+        \\x00.mac s9, s0, s3, s5, s6, #7, #7
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 9, .value = 0xEE } }},
+    },
+    .{
+        .name = "own-x00acclo",
+        // acc = {s6 : s7} - 2 s3 s5 = 0xEE5DF707: s4 <- 0xF707.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x4000 },
+            .{ .bank = .s, .index = 5, .value = 0x2345 },
+            .{ .bank = .s, .index = 6, .value = 0x100 },
+            .{ .bank = .s, .index = 7, .value = 0x7707 },
+        },
+        .src =
+        \\x00.mac s9, s4, s3, s5, s6, #7, #7
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 4, .value = 0xF707 } },
+            .{ .s_reg = .{ .index = 9, .value = 0xEE } },
+        },
+    },
+    .{
+        .name = "own-x00jr",
+        // q2 jr +10 = q12 skips q11's ldi.
+        .src =
+        \\ldi s1, #0x111
+        \\lde e15, #0x700
+        \\x00.ctl #10, #1
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\ldi s1, #0xBAD
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x111 } }},
+    },
+    .{
+        .name = "own-x00jr16",
+        // ctl 0x16 jumps like 1.
+        .src =
+        \\ldi s1, #0x111
+        \\lde e15, #0x700
+        \\x00.ctl #10, #22
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\ldi s1, #0xBAD
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x111 } }},
+    },
+    .{
+        .name = "own-x00nj10",
+        // ctl 0x10 does not jump: q11 runs.
+        .src =
+        \\ldi s1, #0x111
+        \\lde e15, #0x700
+        \\x00.ctl #10, #16
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\ldi s1, #0xBAD
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0xBAD } }},
+    },
+    .{
+        .name = "own-x00ja",
+        // ja to absolute q12 skips q11.
+        .src =
+        \\ldi s1, #0x111
+        \\lde e15, #0x700
+        \\x00.ctl #12, #4
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\ldi s1, #0xBAD
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x111 } }},
     },
     .{
         .name = "own-x15pt",
