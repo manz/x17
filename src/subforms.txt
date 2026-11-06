@@ -770,3 +770,12 @@ pcond      1   0x8000002C
 # x03.jrc: x03 w2[28] = 1, a conditional jr inside the bundle (fact 394): taken to
 # q + sext(w1[28:18]) on p<w5[17:14]>, sense w2[31:29] (101 set; 000/100 clear; 001 OPEN).
 x03.jrc    6   0x00000003   0x00000000   0x10000000   0x00000000   0x00000000   0x00000000
+
+# x02.v: the whole x02 mode-5 bundle, every slot an operand (fact 156-161, 182-185):
+# X read s<w4[6:3]> <- X:[A<w4[20:17]>]; A<w2[21:17]>, A<w3[14:10]> <- A<w3[4:0]> + 1;
+# multiply s<w2[12:9]> <- s<w2[4:1]> * s<w2[8:5]> (w1[17:15]), s<w4[10:7]> <- (2P)[15:0];
+# x3 s<{w5[1:0], w4[31:30]}> <- (s<w4[25:22]> op w5[8:6] s<w4[29:26]>) << w5[5:2].
+x02.v      6   0x00000002   0x00002000   0x00000000   0x00000000   0x00002800   0x00004200
+
+# ragu: ragu0c with its R operand (fact 378): R <- agu_xr(fn, A, R).
+ragu       1   0x8000002C

@@ -254,6 +254,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             // commits (fact 182/184 / own-x02x3, own-x02coll).
             // Snapshot s-regs so x3 reads pre-slot values.
             const s_pre = state.s;
+            // The X read writes before the multiply reads here.  Whether silicon's
+            // multiply sees the old or the new s is OPEN (own-x02yrd overlaps them
+            // but observes only the read); code should not lean on either.
             try execX02Xrd(gpa, state, bundle);
             try execX02Mpy(gpa, state, bundle);
             try execX02Ainc(gpa, state, bundle);

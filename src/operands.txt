@@ -1264,3 +1264,28 @@ pcond	cond	imm	7	11	head
 x03.jrc	sense	imm	29	31	s2
 x03.jrc	pred	p	14	17	s5
 x03.jrc	offset	rel	18	28	s1
+
+# x02.v <xrd_d>, <xrd_a>, <inc_d1>, <inc_d2>, <inc_s>, <mpy_d>, <mpy_a>, <mpy_b>, <plo>, #<sgn>,
+#       #<x3_dlo>, #<x3_dhi>, <x3_a>, <x3_b>, #<x3_op>, #<x3_sh>
+x02.v	xrd_d	s	3	6	s4
+x02.v	xrd_a	A	17	20	s4
+x02.v	inc_d1	A	17	21	s2
+x02.v	inc_d2	A	10	14	s3
+x02.v	inc_s	A	0	4	s3
+x02.v	mpy_d	s	9	12	s2
+x02.v	mpy_a	s	1	4	s2
+x02.v	mpy_b	s	5	8	s2
+x02.v	plo	s	7	10	s4
+x02.v	sgn	imm	15	17	s1
+x02.v	x3_dlo	imm	0	1	s5
+x02.v	x3_dhi	imm	30	31	s4
+x02.v	x3_a	s	22	25	s4
+x02.v	x3_b	s	26	29	s4
+x02.v	x3_op	imm	6	8	s5
+x02.v	x3_sh	imm	2	5	s5
+
+# ragu <dest_R>, <x_A>, <r_R>, #<fn>
+ragu	dest_R	R	27	30	head
+ragu	x_A	A	12	16	head
+ragu	r_R	R	17	20	head
+ragu	fn	imm	7	11	head
