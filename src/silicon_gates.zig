@@ -215,7 +215,7 @@ const GATES = [_]Gate{
         // the probe list own-x19ld: pre e10 = 0x702, Y:[0x702] = 0x222, v[0] = 0x333.
         // Bundle: s5 <- Y:[e10] = 0x222; e10 <- AGU10[2](x = e10) = 0x703;
         //         st.y Y:[e10 = 0x703] <- v[0] = 0x333.
-        .pre = &.{.{ .bank = .e, .index = 10, .value = 0x702 }, .{ .bank = .v, .index = 0, .value = 0x333 }},
+        .pre = &.{ .{ .bank = .e, .index = 10, .value = 0x702 }, .{ .bank = .v, .index = 0, .value = 0x333 } },
         .pre_mem = &.{.{ .kind = .y, .addr = 0x702, .value = 0x222 }},
         .src =
         \\x19.ld s5, #5, e10, #2
@@ -2166,14 +2166,14 @@ const GATES = [_]Gate{
         },
         .src =
         \\bcc #0, #2
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 4 } }},
@@ -2187,17 +2187,17 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 1 },
         },
         .src =
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
         \\bcc #2, #0x1FF
         \\plog p2, p2, p2, #7, #0x0E
-\\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 12 } }},
@@ -2211,14 +2211,14 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 1 },
         },
         .src =
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
         \\bcc #2, #0x1FF
         \\ytst p3, e5
         \\plog p2, p2, p2, #7, #0x0E
@@ -2235,17 +2235,17 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 2, .value = 1 },
         },
         .src =
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
-\\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
+        \\alu s1, s1, s2, #14
         \\x18.br #2, #0x3FF8, #1, #3
         \\plog p2, p2, p2, #7, #0x0E
-\\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 16 } }},
@@ -2796,79 +2796,79 @@ const GATES = [_]Gate{
     .{
         .name = "own-st3",
         // three stores in lanes 1..3: each writes its lane's V (V2 = 2).
-        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .pre = &.{ .{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F } },
         .src =
         \\st.sel Y:0x100, #0
         \\st.sel Y:0x200, #0
         \\st.sel Y:0x300, #0
         \\x17.halt
         ,
-        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x0 } }},
+        .post = &.{ .{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x0 } } },
         .lane = 1,
     },
     .{
         .name = "own-st3-l1sel1",
         // sel 1 on l1: V2 <- the previous store address 0x108F.
-        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .pre = &.{ .{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F } },
         .src =
         \\st.sel Y:0x100, #1
         \\st.sel Y:0x200, #0
         \\st.sel Y:0x300, #0
         \\x17.halt
         ,
-        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x108F } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x0 } }},
+        .post = &.{ .{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x108F } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x0 } } },
         .lane = 1,
     },
     .{
         .name = "own-st3-l1sel2",
         // sel 2 on l1: V1, V3 <- 0x108F before l1 writes.
-        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .pre = &.{ .{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F } },
         .src =
         \\st.sel Y:0x100, #2
         \\st.sel Y:0x200, #0
         \\st.sel Y:0x300, #0
         \\x17.halt
         ,
-        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x108F } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x108F } }},
+        .post = &.{ .{ .y_mem = .{ .addr = 0x100, .value = 0x108F } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x108F } } },
         .lane = 1,
     },
     .{
         .name = "own-st3-l1sel3",
         // sel 3 on l1: no effect.
-        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .pre = &.{ .{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F } },
         .src =
         \\st.sel Y:0x100, #3
         \\st.sel Y:0x200, #0
         \\st.sel Y:0x300, #0
         \\x17.halt
         ,
-        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x0 } }},
+        .post = &.{ .{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x0 } } },
         .lane = 1,
     },
     .{
         .name = "own-st3-l2sel2",
         // sel 2 on l2: V1, V3 <- 0x100; l1 already wrote, l3 writes 0x100.
-        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .pre = &.{ .{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F } },
         .src =
         \\st.sel Y:0x100, #0
         \\st.sel Y:0x200, #2
         \\st.sel Y:0x300, #0
         \\x17.halt
         ,
-        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x100 } }},
+        .post = &.{ .{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x100 } } },
         .lane = 1,
     },
     .{
         .name = "own-st3-l3sel2",
         // sel 2 on l3: V1, V3 <- 0x200 before its own write.
-        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .pre = &.{ .{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F } },
         .src =
         \\st.sel Y:0x100, #0
         \\st.sel Y:0x200, #0
         \\st.sel Y:0x300, #2
         \\x17.halt
         ,
-        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x200 } }},
+        .post = &.{ .{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x200 } } },
         .lane = 1,
     },
     .{

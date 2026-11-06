@@ -276,18 +276,7 @@ fn parseOperands(src: []const u8) OperandsParse {
         const lo_s = std.mem.trim(u8, rest3[0..f4], " \t\r");
 
         const kind: OperandKind =
-            if (std.mem.eql(u8, kind_s, "s")) .s
-            else if (std.mem.eql(u8, kind_s, "e")) .e
-            else if (std.mem.eql(u8, kind_s, "R")) .r_reg
-            else if (std.mem.eql(u8, kind_s, "A")) .a_reg
-            else if (std.mem.eql(u8, kind_s, "p")) .p
-            else if (std.mem.eql(u8, kind_s, "imm")) .imm
-            else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi
-            else if (std.mem.eql(u8, kind_s, "y_addr")) .y_addr
-            else if (std.mem.eql(u8, kind_s, "rel")) .rel
-            else if (std.mem.eql(u8, kind_s, "relu")) .relu
-            else if (std.mem.eql(u8, kind_s, "rel4")) .rel4
-            else continue;
+            if (std.mem.eql(u8, kind_s, "s")) .s else if (std.mem.eql(u8, kind_s, "e")) .e else if (std.mem.eql(u8, kind_s, "R")) .r_reg else if (std.mem.eql(u8, kind_s, "A")) .a_reg else if (std.mem.eql(u8, kind_s, "p")) .p else if (std.mem.eql(u8, kind_s, "imm")) .imm else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi else if (std.mem.eql(u8, kind_s, "y_addr")) .y_addr else if (std.mem.eql(u8, kind_s, "rel")) .rel else if (std.mem.eql(u8, kind_s, "relu")) .relu else if (std.mem.eql(u8, kind_s, "rel4")) .rel4 else continue;
 
         const syll: u8 = blk: {
             if (std.mem.eql(u8, syll_s, "head")) break :blk 0;

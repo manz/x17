@@ -19,6 +19,8 @@ jobs:
         run: zig build -Doptimize=ReleaseFast
       - name: Sources are formatted
         run: zig-out/bin/x17 fmt --check examples/*.sm examples/lib/*.sm
+      - name: Zig is formatted
+        run: zig fmt --check src build.zig
 
   action-selftest:
     runs-on: ubuntu-latest
