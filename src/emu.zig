@@ -428,6 +428,13 @@ fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         const addr: u32 = state.e[src_e];
         break :blk state.getY(addr) orelse 0;
     } else if (mux == 0b010) blk: {
+        // w5[29:28] selects the mux-010 subsource.
+        const sub: u32 = (w5 >> 28) & 0x3;
+        if (sub == 0b01) {
+            // asrc: s <- A<w3[4:0]> + 1
+            const src_a: u32 = w3 & 0x1F;
+            break :blk ((if (src_a == 0) 0 else state.a[src_a]) +% 1) & M24;
+        }
         const src_e: u32 = (w3 >> 27) & 0xF;
         break :blk if (src_e == 0) 0 else state.e[src_e];
     } else blk: {

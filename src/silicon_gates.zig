@@ -865,6 +865,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x157 } }},
     },
     .{
+        .name = "own-x02asrc",
+        // Pre A1 = 0x515; s1 <- A1 + 1 = 0x516 via w4 mode 010, w5[29:28]=01.
+        .pre = &.{.{ .bank = .a, .index = 1, .value = 0x515 }},
+        .src =
+        \\x02.asrc s1, A1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x516 } }},
+    },
+    .{
         .name = "own-x02esrc",
         // Pre e3 = 0x490; s1 <- e3 = 0x490 via w4 mode 010.
         .pre = &.{.{ .bank = .e, .index = 3, .value = 0x490 }},
