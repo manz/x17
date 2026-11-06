@@ -2585,18 +2585,8 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
     return bundles_run;
 }
 
-/// Bundle length in syllables from the HEAD's low5, via isa.layout's
-/// length table.  Returns null for a low5 not in the table (today those
-/// are treated as "unknown"; future RE may fill them in).
 pub fn bundleLen(head: u32) ?u8 {
-    const low5: u8 = @intCast(head & 0x1F);
-    for (isa.layout.length_table) |e| {
-        if (e.low5 == low5) return e.syllables;
-    }
-    // Unlisted low5s show up in practice: default to 1 so a lone st.y or
-    // ldi ok execute.  TODO: this is a spike heuristic; replace with a
-    // measured default once isa.toml's table is complete.
-    return 1;
+    return isa.bundleLen(head);
 }
 
 fn isHaltBundle(bundle: []const u32) bool {

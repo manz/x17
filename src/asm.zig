@@ -660,7 +660,15 @@ pub fn assembleOneResult(src: []const u8) Result {
         d.setMsg(m);
         return .{ .err = d };
     }
-    return .{ .ok = oneWord(word) };
+    // A one-word form whose low5 makes a longer bundle (st.y at 0x0F is 2)
+    // gets zero syllables after it, the no-op second the engine reads.
+    var b = oneWord(word);
+    const n = isa.bundleLen(word) orelse 1;
+    if (n > 1 and n <= 2) {
+        b.words[1] = 0;
+        b.len = n;
+    }
+    return .{ .ok = b };
 }
 
 /// Assemble an x17.* bundle.  Head's text is `x17.<sub>`; the lexer is
@@ -812,6 +820,16 @@ fn okWord(src: []const u8) !u32 {
     return b.words[0];
 }
 
+/// st.y and other 0x0E..0x10 one-word forms assemble as head + zero second.
+fn okStore(src: []const u8) !u32 {
+    const b = try okBundle(src);
+    if (b.len != 2 or b.words[1] != 0) {
+        std.debug.print("expected head + zero second, got {d} syllables\n", .{b.len});
+        return error.TestExpectedTwoSyllables;
+    }
+    return b.words[0];
+}
+
 fn okBundle(src: []const u8) !Bundle {
     return switch (assembleOneResult(src)) {
         .ok => |b| b,
@@ -906,12 +924,12 @@ test "diag: renderDiag prints rust-style block" {
 
 test "assemble st.y Y:1" {
     // addr=1 << 5 = 0x20; base = 0x2000_000F; OR = 0x2000_002F
-    try testing.expectEqual(@as(u32, 0x2000_002F), try okWord("st.y Y:1"));
+    try testing.expectEqual(@as(u32, 0x2000_002F), try okStore("st.y Y:1"));
 }
 
 test "assemble st.y Y:#0x1234" {
     // addr=0x1234 << 5 = 0x0002_4680; base = 0x2000_000F; OR = 0x2002_468F
-    try testing.expectEqual(@as(u32, 0x2002_468F), try okWord("st.y Y:#0x1234"));
+    try testing.expectEqual(@as(u32, 0x2002_468F), try okStore("st.y Y:#0x1234"));
 }
 
 test "diag: y_addr missing Y prefix" {
@@ -997,9 +1015,9 @@ test "round-trip gate: own-st3 reassembles byte-exact" {
     //   r5l2 = 0x2000400F  <- st.y Y:0x200
     //   r5l3 = 0x2000600F  <- st.y Y:0x300
     // Byte-exact: no inert bits (unlike own-ldi-y2's [29:26] = 0xC quirk).
-    try testing.expectEqual(@as(u32, 0x2000_200F), try okWord("st.y Y:0x100"));
-    try testing.expectEqual(@as(u32, 0x2000_400F), try okWord("st.y Y:0x200"));
-    try testing.expectEqual(@as(u32, 0x2000_600F), try okWord("st.y Y:0x300"));
+    try testing.expectEqual(@as(u32, 0x2000_200F), try okStore("st.y Y:0x100"));
+    try testing.expectEqual(@as(u32, 0x2000_400F), try okStore("st.y Y:0x200"));
+    try testing.expectEqual(@as(u32, 0x2000_600F), try okStore("st.y Y:0x300"));
 }
 
 test "comment to end of line is tolerated" {
