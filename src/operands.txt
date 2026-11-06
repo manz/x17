@@ -385,6 +385,7 @@ x02.x3	a_s	s	22	25	s4
 x02.x3	b_s	s	26	29	s4
 x02.x3	op	imm	6	8	s5
 x02.x3	shift	imm	2	5	s5
+x02.x3	mpy_dest	s	9	12	s2
 
 # x01.st (7 syllables): only the s3 <- e<src_e> copy is grammar-exposed.
 # Grammar: x01.st <src_e>

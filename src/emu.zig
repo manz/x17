@@ -170,15 +170,15 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
         if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
         if (w4_mode == 5) {
-            // Three x02 slots can coexist: xrd (w4), mpy (w2), A-inc (w3).
-            // The third-slot (x02.x3) is exclusive with mpy on silicon
-            // (op w5[8:6] != 0 switches the w2 slot off).
+            // Slots are VLIW; all slot inputs latch before any write
+            // commits (fact 182/184 / own-x02x3, own-x02coll).
+            // Snapshot s-regs so x3 reads pre-slot values.
+            const s_pre = state.s;
             try execX02Xrd(gpa, state, bundle);
-            const x3_op: u32 = (bundle[5] >> 6) & 0x7;
-            if (x3_op == 0) try execX02Mpy(gpa, state, bundle);
+            try execX02Mpy(gpa, state, bundle);
             const w3_ainc: u32 = (bundle[3] >> 1) & 1;
             if (w3_ainc == 1) try execX02Ainc(gpa, state, bundle);
-            try execX02X3(gpa, state, bundle);
+            try execX02X3Pre(gpa, state, bundle, s_pre);
             return;
         }
         if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
@@ -447,23 +447,23 @@ fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
-fn execX02X3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+fn execX02X3Pre(gpa: std.mem.Allocator, state: *State, bundle: []const u32, s_pre: [16]u32) RunError!void {
     _ = gpa;
     if (bundle.len < 6) return;
     const w4 = bundle[4];
     const w5 = bundle[5];
-    const op: u32 = (w5 >> 6) & 0x7;
-    if (op == 0) return; // disabled slot
     const dest_lo: u32 = w5 & 0x3;
     const dest_hi: u32 = (w4 >> 30) & 0x3;
     const dest_s: u32 = (dest_lo << 2) | dest_hi;
     if (dest_s == 0) return;
+    const op: u32 = (w5 >> 6) & 0x7;
     const a_s: u32 = (w4 >> 22) & 0xF;
     const b_s: u32 = (w4 >> 26) & 0xF;
     const shift: u5 = @intCast((w5 >> 2) & 0xF);
-    const av: u32 = if (a_s == 0) 0 else state.s[a_s] & M24;
-    const bv: u32 = if (b_s == 0) 0 else state.s[b_s] & M24;
+    const av: u32 = if (a_s == 0) 0 else s_pre[a_s] & M24;
+    const bv: u32 = if (b_s == 0) 0 else s_pre[b_s] & M24;
     const base: u32 = switch (op) {
+        0 => (av +% bv) & M24,
         5 => (av -% bv) & M24,
         else => return,
     };

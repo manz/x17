@@ -903,10 +903,25 @@ const GATES = [_]Gate{
             .{ .bank = .s, .index = 3, .value = 0x333 },
         },
         .src =
-        \\x02.x3 #1, #2, s2, s3, #5, #2
+        \\x02.x3 #1, #2, s2, s3, #5, #2, s2
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 6, .value = 0xFFFBBC } }},
+    },
+    .{
+        .name = "own-x02coll",
+        // mpy (s6 <- P = 0x30) and third slot (s6 <- s2 + s3) both write
+        // s6; the third slot wins: s6 = 0x6000 + 0x333 = 0x6333.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .s, .index = 3, .value = 0x333 },
+        },
+        .src =
+        \\x02.x3 #1, #2, s2, s3, #0, #0, s6
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 6, .value = 0x6333 } }},
     },
     .{
         .name = "own-x03mpy",
