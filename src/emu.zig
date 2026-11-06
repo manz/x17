@@ -402,8 +402,10 @@ fn execX02Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const y_r: u32 = (w5 >> 22) & 0xF;
     if (dest_r == 0) return;
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
+    const cin: u32 = (w5 >> 27) & 1;
     const v: u32 = switch (fn_op) {
-        10 => y_val & 0xFFFF, // y+imm with imm=0 = y
+        10 => (y_val +% cin) & 0xFFFF,
+        14 => (y_val +% 1 +% cin) & 0xFFFF,
         else => return,
     };
     state.r[dest_r] = v;

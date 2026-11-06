@@ -849,10 +849,30 @@ const GATES = [_]Gate{
         // Pre R12 = 0x155; R1 <- R12 = 0x155.
         .pre = &.{.{ .bank = .r, .index = 12, .value = 0x155 }},
         .src =
-        \\x02.agu R1, R12, #10
+        \\x02.agu R1, R12, #10, #0
         \\x17.halt
         ,
         .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x155 } }},
+    },
+    .{
+        .name = "own-x02cin",
+        // Pre R12 = 0x155; fn 14 (y+1) with cin=1: R1 <- R12 + 1 + 1 = 0x157.
+        .pre = &.{.{ .bank = .r, .index = 12, .value = 0x155 }},
+        .src =
+        \\x02.agu R1, R12, #14, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x157 } }},
+    },
+    .{
+        .name = "own-x02cin1",
+        // Pre R12 = 0x155; fn 10 (y) with cin=1: R1 <- y + 1 = 0x156.
+        .pre = &.{.{ .bank = .r, .index = 12, .value = 0x155 }},
+        .src =
+        \\x02.agu R1, R12, #10, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 1, .value = 0x156 } }},
     },
     .{
         .name = "own-x18br",
