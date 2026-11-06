@@ -57,3 +57,250 @@ muldone: alu s5, dst, s14, #OP_SUB
 zero:   alu dst, s7, s0, #OP_ADD
 done:
 }
+
+; ---------------------------------------------------------------------------
+; rice_decompress: the adaptive loop, the x17 twin of sosumi's `rice.decompress`.
+;
+; State lives in Y slots (every value fits 16 bits), pointed at by e registers that
+; rice_slots(base) sets up; the caller fills them before the loop:
+;
+;   e1  Y:base+0  mean hi    the mean mb = hi * 2^15 + lo, lo in [0, 2^15)
+;   e2  Y:base+1  mean lo
+;   e3  Y:base+2  zmode
+;   e4  Y:base+3  samples left
+;   e7  Y:base+4  pb (<= 127)
+;   e8  Y:base+5  kb (1..15)
+;   e9  Y:base+6  max_bits (<= 22), the escape width
+;   e10 Y:base+7  error: set to 1 when a zero run overruns (the model's RunTooLong)
+;
+; Residuals go to X:[A6], A6 advancing by one each (x02.ainc, which also overwrites s2
+; through its bundle's multiply slot). Products are exact single
+; multiplies: round((pb << 16) * (x << 7) / 2^23) = pb * x for pb < 2^7, x < 2^16.
+
+.macro rice_slots(base) {
+        ldi s5, #base - 1
+        x17.mve e1, s5
+        ldi s5, #base
+        x17.mve e2, s5
+        ldi s5, #base + 1
+        x17.mve e3, s5
+        ldi s5, #base + 2
+        x17.mve e4, s5
+        ldi s5, #base + 3
+        x17.mve e7, s5
+        ldi s5, #base + 4
+        x17.mve e8, s5
+        ldi s5, #base + 5
+        x17.mve e9, s5
+        ldi s5, #base + 6
+        x17.mve e10, s5
+}
+
+; dst = pb * x, x in s-register `x` (0 <= x < 2^16). Uses s6.
+.macro mulpb(dst, x) {
+        ldy s6, e7
+        x19.alu s6, s6, s15, #SHIFT ; pb << 16
+        ldi dst, #7
+        x19.alu dst, x, dst, #SHIFT ; x << 7
+        x02.mpy dst, s6, dst
+}
+
+; dst = floor(x / 2^n) for x >= -2^22, n in 1..15 (ldi sign-extends 2^15). Uses s6.
+.macro floorshr(dst, x, n) {
+        ldi s6, #1 << (n - 1)
+        alu dst, x, s6, #OP_SUB
+        ldi s6, #-n
+        x19.alu dst, dst, s6, #SHIFT
+}
+
+.macro rice_decompress() {
+top:    ldy s7, e4
+        alu s5, s7, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; p1 = no samples left
+        jmp #3, #1, finish
+        nop()
+        nop()
+        ; k = min(floor(log2(q + 3)), kb), q = floor(mb / 2^9) = hi * 2^6 + floor(lo / 2^9)
+        ldy s1, e1
+        ldi s5, #6
+        x19.alu s1, s1, s5, #SHIFT
+        ldy s2, e2
+        floorshr(s2, s2, 9)
+        alu s1, s1, s2, #OP_ADD
+        ldi s5, #3
+        alu s1, s1, s5, #OP_ADD ; y = q + 3
+        ldy s8, e8              ; kb
+        ldi s2, #1              ; k
+lg:     alu s5, s2, s14, #OP_ADD ; t = k + 1
+        alu s7, s8, s5, #OP_SUB
+        ptst p1, s7, #NEG, #PTST ; t > kb: stop
+        jmp #3, #1, lgdone
+        x19.alu s7, s14, s5, #SHIFT ; (delay slot) 2^t
+        alu s7, s1, s7, #OP_SUB ; (delay slot) y - 2^t
+        ptst p1, s7, #NEG, #PTST ; y < 2^t: stop
+        jmp #3, #1, lgdone
+        nop()
+        nop()
+        alu s2, s5, s0, #OP_ADD ; k = t
+        jmp #IF_NOT, #2, lg
+        nop()
+        nop()
+lgdone: x19.alu s1, s14, s2, #SHIFT
+        alu s1, s1, s14, #OP_SUB ; m = 2^k - 1
+        ldy s3, e9
+        rice_get(s4)            ; n
+        ldy s5, e3
+        alu s7, s4, s5, #OP_ADD ; nd = n + zmode
+        ; residual: mag = floor((nd + 1) / 2), negated when nd is odd
+        alu s5, s7, s14, #OP_SUB
+        alu s6, s0, s14, #OP_SUB
+        x19.alu s8, s5, s6, #SHIFT ; half = floor(nd / 2)
+        alu s5, s8, s8, #OP_ADD
+        alu s5, s7, s5, #OP_SUB ; odd = nd - 2 * half
+        alu s8, s8, s5, #OP_ADD ; mag = half + odd
+        alu s6, s5, s14, #OP_SUB
+        ptst p1, s6, #NEG, #PTST ; p1 = even
+        jmp #3, #1, even
+        nop()
+        nop()
+        alu s8, s0, s8, #OP_SUB
+even:   stx A6, s8
+        x02.ainc #6, #6
+        ldy s5, e4
+        alu s5, s5, s14, #OP_SUB
+        x17.sty e4, #5, #0      ; left -= 1
+        ; the mean: n >= 2^16 clamps it to 0xFFFF
+        x19.alu s5, s14, s15, #SHIFT
+        alu s5, s4, s5, #OP_SUB
+        ptst p1, s5, #NEG, #PTST
+        jmp #3, #1, grow
+        nop()
+        nop()
+        x17.sty e1, #6, #1      ; hi = 1 (s14)
+        ldi s5, #0x7FFF
+        x17.sty e2, #5, #0
+        jmp #IF_NOT, #2, zchk
+        nop()
+        nop()
+        ; mb += pb * nd - floor(pb * mb / 2^9), with
+        ; floor(pb * mb / 2^9) = (pb * hi) << 6 + floor(pb * lo / 2^9)
+grow:   alu s5, s7, s14, #OP_SUB ; nd - 1 < 2^16 (nd reaches 2^16)
+        mulpb(s1, s5)
+        ldy s5, e7
+        alu s1, s1, s5, #OP_ADD ; pb * nd
+        ldy s2, e1
+        mulpb(s3, s2)
+        ldi s5, #6
+        x19.alu s3, s3, s5, #SHIFT ; (pb * hi) << 6
+        ldy s2, e2
+        mulpb(s4, s2)
+        floorshr(s4, s4, 9)
+        alu s3, s3, s4, #OP_ADD ; decay
+        alu s1, s1, s3, #OP_SUB ; x = pb * nd - decay
+        floorshr(s3, s1, 15)    ; x hi
+        ldi s5, #15
+        x19.alu s4, s3, s5, #SHIFT ; (x hi) << 15, |x hi| <= 2^8
+        alu s4, s1, s4, #OP_SUB ; x lo
+        ldy s1, e1
+        alu s1, s1, s3, #OP_ADD ; hi + x hi
+        ldy s2, e2
+        alu s2, s2, s4, #OP_ADD ; lo + x lo, below 2^16
+        floorshr(s3, s2, 15)    ; carry, 0 or 1
+        alu s1, s1, s3, #OP_ADD
+        x19.alu s3, s3, s5, #SHIFT ; carry << 15 (s5 = 15)
+        alu s2, s2, s3, #OP_SUB
+        x17.sty e1, #1, #0
+        x17.sty e2, #2, #0
+        ; a zero run follows when mb < 128 and samples are left
+zchk:   ldi s5, #0
+        x17.sty e3, #5, #0      ; zmode = 0
+        ldy s1, e1
+        alu s5, s1, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; p1 = hi == 0
+        jmp #IF_NOT, #1, top
+        ldy s2, e2              ; (delay slot) lo
+        ldi s5, #128            ; (delay slot)
+        alu s5, s2, s5, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; p1 = lo < 128
+        jmp #IF_NOT, #1, top
+        ldy s7, e4              ; (delay slot) left
+        alu s5, s7, s14, #OP_SUB ; (delay slot)
+        ptst p1, s5, #NEG, #PTST ; p1 = none left
+        jmp #3, #1, finish
+        nop()
+        nop()
+        x17.sty e3, #6, #1      ; zmode = 1 (s14)
+        ; kz = 8 - bitlen(lo) + floor((lo + 16) / 2^6)
+        ldi s3, #0              ; bitlen
+bl:     ldi s5, #7
+        alu s5, s3, s5, #OP_SUB
+        ptst p1, s5, #NEG, #PTST
+        jmp #IF_NOT, #1, bldone ; bitlen == 7
+        x19.alu s5, s14, s3, #SHIFT ; (delay slot) 2^bitlen
+        alu s5, s2, s5, #OP_SUB ; (delay slot) lo - 2^bitlen
+        ptst p1, s5, #NEG, #PTST
+        jmp #3, #1, bldone
+        nop()
+        nop()
+        alu s3, s3, s14, #OP_ADD
+        jmp #IF_NOT, #2, bl
+        nop()
+        nop()
+bldone: ldi s5, #16
+        alu s5, s2, s5, #OP_ADD
+        floorshr(s5, s5, 6)
+        ldi s2, #8
+        alu s2, s2, s3, #OP_SUB
+        alu s2, s2, s5, #OP_ADD ; k = kz
+        ; mz = 2^min(kz, kb) - 1
+        ldy s8, e8
+        alu s5, s8, s2, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; p1 = kb < kz
+        jmp #3, #1, kbmin
+        alu s1, s2, s0, #OP_ADD ; (delay slot) min = kz
+        nop()
+        jmp #IF_NOT, #2, mz
+        nop()
+        nop()
+kbmin:  alu s1, s8, s0, #OP_ADD ; min = kb
+mz:     x19.alu s1, s14, s1, #SHIFT
+        alu s1, s1, s14, #OP_SUB
+        alu s3, s15, s0, #OP_ADD ; escape width 16
+        rice_get(s4)            ; run
+        ldy s7, e4
+        alu s5, s7, s4, #OP_SUB ; left - run
+        ptst p1, s5, #NEG, #PTST
+        jmp #3, #1, overrun
+        nop()
+        nop()
+        x17.sty e4, #5, #0      ; left -= run
+        alu s7, s4, s0, #OP_ADD
+zrun:   alu s5, s7, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; p1 = all written
+        jmp #3, #1, zdone
+        nop()
+        nop()
+        alu s8, s0, s0, #OP_ADD
+        stx A6, s8
+        x02.ainc #6, #6
+        alu s7, s7, s14, #OP_SUB
+        jmp #IF_NOT, #2, zrun
+        nop()
+        nop()
+zdone:  ldi s5, #0x7FFF
+        alu s5, s5, s5, #OP_ADD ; 0xFFFE
+        alu s5, s5, s14, #OP_ADD ; 65535
+        alu s5, s4, s5, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; p1 = run < 65535
+        jmp #3, #1, keepz
+        ldi s5, #0              ; (delay slot)
+        nop()
+        x17.sty e3, #5, #0      ; zmode = 0
+keepz:  x17.sty e1, #5, #0      ; mb = 0
+        x17.sty e2, #5, #0
+        jmp #IF_NOT, #2, top
+        nop()
+        nop()
+overrun: x17.sty e10, #6, #1    ; error = 1
+finish:
+}
