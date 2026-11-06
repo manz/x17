@@ -1234,3 +1234,9 @@ x17.stopx	s2j	imm	0	28	s2
 
 # x03.rep p<pidx>
 x03.rep	pidx	p	14	17	s5
+
+# pcond <p_dest>, <r_R>, <x_A>, #<cond>
+pcond	p_dest	p	21	24	head
+pcond	r_R	R	17	20	head
+pcond	x_A	A	12	16	head
+pcond	cond	imm	7	11	head

@@ -3362,13 +3362,61 @@ fn execAset0b(state: *State, head: u32) RunError!void {
     if (dest != 0) state.s[dest] = (state.getY(state.e[(head >> 5) & 0xF]) orelse 0) & 0xFFFF;
 }
 
-/// 0x0C with [31] = 1 (fact 282): R<[30:27]> <- AGUA[[11:7]] over
-/// x = A<[16:12]>, i = [26:17].  Only i = 0 is measured.
+/// 0x0C with [31] = 1 (fact 282, 378; Upstream 2026-11-06): one form.
+/// R<[30:27]> <- agu_xr(fn = [11:7], x = A<[16:12]>, r = R<[20:17]>), and with
+/// R dest 0 the pcond rows: p<[24:21]> <- c22-27 R >0 >=0 <=0 <0 !=0 ==0,
+/// c28-31 R<A R>=A R!=A R==A (signed).  [5] = 1 required (without it, wedge
+/// per 306).  OPEN: p with R dest != 0, p0 with slot 0, pcond c0-21.
 fn execRagu0c(state: *State, head: u32) RunError!void {
-    if ((head >> 17) & 0x3FF != 0) return RunError.UnknownForm;
-    const v = aguaEval((head >> 7) & 0x1F, state.a[(head >> 12) & 0xF], 0) orelse return RunError.UnknownForm;
+    if ((head >> 5) & 1 == 0) return RunError.UnknownForm;
     const dest: u32 = (head >> 27) & 0xF;
-    if (dest != 0) state.r[dest] = v;
+    const slot: u32 = (head >> 21) & 0xF;
+    const fn_op: u32 = (head >> 7) & 0x1F;
+    const x: u32 = state.a[(head >> 12) & 0x1F];
+    const r: u32 = state.r[(head >> 17) & 0xF];
+    if (dest != 0) {
+        if (slot != 0) return RunError.UnknownForm;
+        state.r[dest] = aguXrEval(fn_op, x, r);
+        return;
+    }
+    if (slot == 0) return;
+    const rs: i64 = sx16(r);
+    const as: i64 = sx16(x);
+    const t: bool = switch (fn_op) {
+        22 => rs > 0,
+        23 => rs >= 0,
+        24 => rs <= 0,
+        25 => rs < 0,
+        26 => rs != 0,
+        27 => rs == 0,
+        28 => rs < as,
+        29 => rs >= as,
+        30 => rs != as,
+        31 => rs == as,
+        else => return RunError.UnknownForm,
+    };
+    state.p[slot] = @intFromBool(t);
+}
+
+/// agu_xr (fact 338, 385): the x19mac A slot and the 0x0C R form.
+fn aguXrEval(fn_op: u32, x: u32, r: u32) u32 {
+    const v: u32 = switch (fn_op & 0x1F) {
+        16, 17, 21 => x,
+        18 => r +% 1,
+        19 => r -% 1,
+        20 => 0 -% r,
+        22, 23, 24, 25, 26, 27 => r,
+        28, 29, 30, 31 => x -% r,
+        else => switch ((fn_op & 0xF) % 6) {
+            0 => x +% 1,
+            1 => x -% 1,
+            2 => x +% r,
+            3 => x -% r,
+            4 => 0 -% x,
+            else => x,
+        },
+    };
+    return v & 0xFFFF;
 }
 
 /// 0x0F head class 000 with a class-001 second (fact 279):

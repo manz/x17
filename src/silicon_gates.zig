@@ -862,6 +862,36 @@ const GATES = [_]Gate{
         .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
     },
     .{
+        .name = "own-pcond",
+        // fact 378: 802A7EAC, p1 <- R5 >= A7 (c29), R5 = 0x123, A7 = 0x123.
+        .pre = &.{
+            .{ .bank = .r, .index = 5, .value = 0x123 },
+            .{ .bank = .a, .index = 7, .value = 0x123 },
+        },
+        .src =
+        \\pcond p1, R5, A7, #29
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .p_reg = .{ .index = 1, .value = 1 } },
+        },
+    },
+    .{
+        .name = "own-pcond-false",
+        // fact 378: 802A7EAC, p1 <- R5 >= A7 (c29), R5 = 0x123, A7 = 0x124.
+        .pre = &.{
+            .{ .bank = .r, .index = 5, .value = 0x123 },
+            .{ .bank = .a, .index = 7, .value = 0x124 },
+        },
+        .src =
+        \\pcond p1, R5, A7, #29
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .p_reg = .{ .index = 1, .value = 0 } },
+        },
+    },
+    .{
         .name = "own-plog-and",
         // Pre p1 = 1, p2 = 0; p4 <- p1 AND p2 = 0.
         .pre = &.{
