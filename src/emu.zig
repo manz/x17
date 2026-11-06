@@ -1243,6 +1243,11 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         if (src_sel == 5) return execX19Xrd(gpa, state, bundle);
         if (src_sel == 1) return execX19A43(gpa, state, bundle);
     }
+    // w2[9] = w2[1] = 1 with w3 class 3: Y store, any w1 class
+    // (fact 257 / own-x19a3st).
+    if (w2_class == 0 and w3_class == 3 and (bundle[2] & 0x202) == 0x202) {
+        return execX19A3St(gpa, state, bundle);
+    }
     if (w1_class == 0 and w2_class == 0 and w3_class == 3) {
         return execX19A3(gpa, state, bundle);
     }
@@ -1259,6 +1264,8 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (head >> 21) & 0xF;
     const mux: u32 = (w1 >> 12) & 0x7;
     const w1_mod: u32 = (w1 >> 15) & 0x7;
+    // The store source is read before the bundle's writes (fact 239).
+    const store_val: u32 = state.s[(w1 >> 28) & 0xF] & M24;
     const v: u32 = switch (mux) {
         1, 2 => blk: {
             if (w1_mod == 5 or w1_mod == 7) {
@@ -1302,13 +1309,16 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (store_en == 0b11) {
         const a_idx: u32 = (w2 >> 17) & 0x1F;
         const src_s: u32 = (w1 >> 28) & 0xF;
-        if (a_idx != 0 and src_s != 0) {
-            const addr = state.a[a_idx & 0xF];
-            const val: u32 = state.s[src_s] & M24;
-            // sx24: already 24-bit.
-            state.x_mem.put(gpa, addr, val) catch {};
-        }
+        if (src_s != 0) try state.x_mem.put(gpa, state.a[a_idx & 0xF], store_val);
     }
+}
+
+/// Y:[e<w3[28:25]>] <- s<{w2[0], w1[31:29]}>.
+fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const src_s: u32 = ((bundle[2] & 1) << 3) | ((bundle[1] >> 29) & 0x7);
+    const addr_e: u32 = (bundle[3] >> 25) & 0xF;
+    const v: u32 = state.s[src_s] & 0xFFFF;
+    state.y_mem.put(gpa, state.e[addr_e], v) catch return RunError.OutOfMemory;
 }
 
 fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

@@ -730,6 +730,25 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 9, .value = 0x123 } }},
     },
     .{
+        .name = "own-x19kst",
+        // Same bundle as own-x19k00; w2[23:22] = 11 stores s6 (ldi
+        // sign-extended to 0xFF8123) at X:[A12 = 0x300].
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x100 },
+            .{ .bank = .r, .index = 6, .value = 0x23 },
+            .{ .bank = .s, .index = 6, .value = 0xFF8123 },
+            .{ .bank = .a, .index = 12, .value = 0x300 },
+        },
+        .src =
+        \\x19.k00 s9, e3, R6, #1, #6, #0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 9, .value = 0x123 } },
+            .{ .x_mem = .{ .addr = 0x300, .value = 0xFF8123 } },
+        },
+    },
+    .{
         .name = "own-x19a43",
         // s4 <- (0x381 << 1) | 1 = 0x703.
         .src =
@@ -761,6 +780,19 @@ const GATES = [_]Gate{
         \\x17.halt
         ,
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x111 } }},
+    },
+    .{
+        .name = "own-x19a3st",
+        // e2 = 0x700, s5 = 0x1357; Y:[e2] <- s5.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x700 },
+            .{ .bank = .s, .index = 5, .value = 0x1357 },
+        },
+        .src =
+        \\x19.a3st #5, #0, e2
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0x1357 } }},
     },
     .{
         .name = "own-x19a3",

@@ -73,6 +73,10 @@ x19.xrd    4   0xC8000019   0x08028002   0x80003000   0x61500554
 # (returns i) modelled.
 x19.a3     4   0x00000019   0x08008000   0x00002008   0x60000000
 
+# x19.a3st: w2[9] = w2[1] = 1, Y:[e<w3[28:25]>] <- s<{w2[0], w1[31:29]}>
+# (fact 257 / own-x19a3st).
+x19.a3st   4   0x00000019   0x08010008   0x00004202   0x60510000
+
 # x19.aagu42: 4-syllable low5 0x19 class (0,4,2) (fact 152 /
 # own-x19aagu42).  Same as x19.aagu with w2[31] set, which widens i:
 #   i = (w3[14:0] << 1) | w2[31]
