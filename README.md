@@ -47,11 +47,12 @@ Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
 - `x17 run`: the emulator over every silicon-measured form; 283 own probe
   programs are gated byte-exact in `src/silicon_gates.zig`.
 - `x17 disasm`: decodes syllables back to source.
+- `x17 fmt`: canonical layout for .sm sources; `--check` in CI.
 - `src/host.zig`: the host around a codec program, one packet per run:
   parameter block, packet staging, the output ring drain and its owned-buffer
   rule.  Interface facts from sosumi's specs/questions.md; packet reads and
   clobbered regions are still named stubs.
-- To come: cycle costs, `x17 fmt`, the bit-exact harness.
+- To come: cycle costs, the bit-exact harness.
 
 ## Mnemonics
 

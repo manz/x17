@@ -25,7 +25,7 @@ pub fn main(init: std.process.Init) !void {
 
     const args: []const []const u8 = if (list.items.len == 0) &.{} else list.items[1..];
     dispatch.run(gpa, args, out) catch |e| switch (e) {
-        error.UnknownVerb, error.AssemblyFailed, error.MissingFile, error.BadFormat => {
+        error.UnknownVerb, error.AssemblyFailed, error.MissingFile, error.BadFormat, error.Unformatted, error.FormatChangedBytes => {
             out.flush() catch {};
             std.process.exit(2);
         },

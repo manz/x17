@@ -139,7 +139,12 @@ load" reads as `x17.imm` without further ceremony.
   Parameters substitute as whole identifiers; labels a body defines are
   renamed per expansion; an error inside a macro also names the call.
   `examples/macros.sm` assembles to the same bytes as `labels.sm`.  Shipped.
-- Still to come: `.place`, `x17 fmt`, round-trip gate on a whole program.
+- `x17 fmt [--check] <file.sm>...`: one canonical layout (labels at 0,
+  code at 8, trailing comments at 32, one space after commas, `.const`
+  runs aligned).  Only whitespace moves; the file is assembled before and
+  after and left alone if its bytes would change.  CI checks `examples/`.
+  Shipped.
+- Still to come: `.place`, round-trip gate on a whole program.
 
 `.align` is deliberately absent: a zero syllable is not a no-op (low5 0x00
 heads a 7-syllable bundle), so padding needs a measured no-op form first.

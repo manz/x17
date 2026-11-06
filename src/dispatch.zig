@@ -8,6 +8,7 @@ const isa = @import("isa");
 const asm_mod = @import("asm");
 const emu = @import("emu");
 const disasm = @import("disasm");
+const fmt_mod = @import("fmt");
 
 const Writer = std.Io.Writer;
 const Handler = *const fn (gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) anyerror!void;
@@ -26,6 +27,7 @@ pub const Verb = struct {
 pub const top = [_]Verb{
     .{ .name = "asm", .help = "assemble a .sm file; prints hex syllables", .run = &cmdAsm },
     .{ .name = "run", .help = "assemble + execute a .sm file; prints s/Y state", .run = &cmdRun },
+    .{ .name = "fmt", .help = "format .sm files in place (--check: report only)", .run = &cmdFmt },
     .{ .name = "disasm", .help = "decode syllables (hex arg or .bin file) to .sm", .run = &cmdDisasm },
     .{ .name = "forms", .help = "list known forms", .run = &cmdForms },
 };
@@ -211,6 +213,97 @@ fn cmdAsm(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     } else {
         try out.print("asm: unknown --format '{s}' (hex|c|bin)\n", .{format});
         return error.BadFormat;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Verb: fmt
+// ---------------------------------------------------------------------------
+
+const fmt_params = clap.parseParamsComptime(
+    \\-h, --help               show help for `x17 fmt`
+    \\    --check              list files that would change; change nothing
+    \\<str>...                 source files (.sm)
+    \\
+);
+
+fn cmdFmt(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void {
+    var iter: SliceIter = .{};
+    var parsed = try parseVerb(&fmt_params, gpa, args, "fmt", out, &iter);
+    defer parsed.deinit();
+
+    if (parsed.args.help != 0) {
+        try out.writeAll("usage: x17 fmt [--check] <file.sm>...\n");
+        return;
+    }
+    const paths = parsed.positionals[0];
+    if (paths.len == 0) {
+        try out.writeAll("fmt: missing <file.sm>\n");
+        return error.MissingFile;
+    }
+    const check = parsed.args.check != 0;
+    var unformatted = false;
+    for (paths) |path| {
+        if (try fmtOne(gpa, path, check, out)) unformatted = true;
+    }
+    if (check and unformatted) return error.Unformatted;
+}
+
+/// Formats one file; returns whether it was (or would be) changed.  Refuses
+/// to write a result that assembles to different bytes.
+fn fmtOne(gpa: std.mem.Allocator, path: []const u8, check: bool, out: *Writer) !bool {
+    const src = readSource(gpa, path) catch |e| {
+        try out.print("fmt: cannot read '{s}': {s}\n", .{ path, @errorName(e) });
+        return e;
+    };
+    defer gpa.free(src);
+    const formatted = try fmt_mod.format(gpa, src);
+    defer gpa.free(formatted);
+    if (std.mem.eql(u8, src, formatted)) return false;
+
+    const before = switch (try assemblePath(gpa, src, path)) {
+        .ok => |w| w,
+        .err => |fe| {
+            try renderFileError(fe, path, out);
+            try out.print("fmt: '{s}' does not assemble; left as it is\n", .{path});
+            return error.AssemblyFailed;
+        },
+    };
+    defer gpa.free(before);
+    const after = switch (try assemblePath(gpa, formatted, path)) {
+        .ok => |w| w,
+        .err => |fe| {
+            try renderFileError(fe, path, out);
+            try out.print("fmt: bug: the formatted '{s}' no longer assembles; left as it is\n", .{path});
+            return error.FormatChangedBytes;
+        },
+    };
+    defer gpa.free(after);
+    if (!std.mem.eql(u32, before, after)) {
+        try out.print("fmt: bug: formatting '{s}' changes its bytes; left as it is\n", .{path});
+        return error.FormatChangedBytes;
+    }
+    if (check) {
+        try out.print("{s}\n", .{path});
+        return true;
+    }
+    try writeFile(gpa, path, formatted);
+    try out.print("formatted {s}\n", .{path});
+    return true;
+}
+
+fn writeFile(gpa: std.mem.Allocator, path: []const u8, bytes: []const u8) !void {
+    const path_z = try gpa.allocSentinel(u8, path.len, 0);
+    @memcpy(path_z[0..path.len], path);
+    defer gpa.free(path_z);
+    const fd = std.c.open(path_z, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, @as(std.c.mode_t, 0o644));
+    if (fd < 0) return error.WriteFailed;
+    defer _ = std.c.close(fd);
+    var done: usize = 0;
+    while (done < bytes.len) {
+        const n = std.c.write(fd, bytes[done..].ptr, bytes.len - done);
+        if (n <= 0) return error.WriteFailed;
+        done += @intCast(n);
     }
 }
 
