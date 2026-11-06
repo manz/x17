@@ -1054,6 +1054,94 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-alac-tap",
+        // Upstream 2026-11-06, silicon 2 of 2: the ALAC tap (predictor.sm, x17 d694cec), four terms.
+        // Loop jmp 447FFE6B, the word x17 emits.  s4 = 2 sum floor(256 c d / 2^24), s5 = sum
+        // (cd)[15:0], d = o - top; R6 = A10 - R7 = 0x45.  Silicon read back 16 bits (Y).
+        .pre = &.{
+            .{ .bank = .s, .index = 7, .value = 0x0 },
+            .{ .bank = .a, .index = 11, .value = 0x40 },
+            .{ .bank = .a, .index = 9, .value = 0x60 },
+            .{ .bank = .a, .index = 10, .value = 0x304C },
+            .{ .bank = .r, .index = 7, .value = 0x3007 },
+        },
+        .pre_mem = &.{
+            .{ .kind = .x, .addr = 0x40, .value = 0x4000 },
+            .{ .kind = .x, .addr = 0x41, .value = 0x2000 },
+            .{ .kind = .x, .addr = 0x42, .value = 0x1000 },
+            .{ .kind = .x, .addr = 0x43, .value = 0x7000 },
+            .{ .kind = .x, .addr = 0x44, .value = 0x0 },
+            .{ .kind = .x, .addr = 0x60, .value = 0x5000 },
+            .{ .kind = .x, .addr = 0x61, .value = 0x3000 },
+            .{ .kind = .x, .addr = 0x62, .value = 0x6000 },
+            .{ .kind = .x, .addr = 0x63, .value = 0x7FFF },
+            .{ .kind = .x, .addr = 0x64, .value = 0x0 },
+        },
+        .src =
+        \\ragu R6, A10, R7, #29
+        \\x02.v s1, A11, A11, A0, A11, s9, s0, s0, s0, #5, #1, #1, s0, s0, #0, #0
+        \\x02.v s3, A9, A9, A0, A9, s0, s0, s0, s0, #5, #3, #1, s1, s0, #0, #8
+        \\x02.v s0, A0, A0, A0, A0, s4, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0
+        \\tap:    x02.v s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #1, #0, s4, s9, #0, #0
+        \\x02.v s1, A11, A11, A0, A11, s9, s13, s2, s0, #5, #1, #1, s5, s12, #0, #0
+        \\pcond p1, R6, A11, #30
+        \\jmp #3, #1, tap
+        \\x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #3, #1, s1, s0, #0, #8
+        \\x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0
+        \\x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #1, #0, s4, s9, #0, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 4, .value = 0xAFFE } },
+            .{ .s_reg = .{ .index = 5, .value = 0x9000 } },
+            .{ .r_reg = .{ .index = 6, .value = 0x45 } },
+        },
+    },
+    .{
+        .name = "own-alac-tap-2",
+        // Upstream 2026-11-06, silicon 2 of 2: the ALAC tap (predictor.sm, x17 d694cec), four terms.
+        // Loop jmp 447FFE6B, the word x17 emits.  s4 = 2 sum floor(256 c d / 2^24), s5 = sum
+        // (cd)[15:0], d = o - top; R6 = A10 - R7 = 0x45.  Silicon read back 16 bits (Y).
+        .pre = &.{
+            .{ .bank = .s, .index = 7, .value = 0x100 },
+            .{ .bank = .a, .index = 11, .value = 0x40 },
+            .{ .bank = .a, .index = 9, .value = 0x60 },
+            .{ .bank = .a, .index = 10, .value = 0x304C },
+            .{ .bank = .r, .index = 7, .value = 0x3007 },
+        },
+        .pre_mem = &.{
+            .{ .kind = .x, .addr = 0x40, .value = 0x1234 },
+            .{ .kind = .x, .addr = 0x41, .value = 0x567 },
+            .{ .kind = .x, .addr = 0x42, .value = 0x7ABC },
+            .{ .kind = .x, .addr = 0x43, .value = 0xDEF },
+            .{ .kind = .x, .addr = 0x44, .value = 0x0 },
+            .{ .kind = .x, .addr = 0x60, .value = 0x2345 },
+            .{ .kind = .x, .addr = 0x61, .value = 0x6789 },
+            .{ .kind = .x, .addr = 0x62, .value = 0x1357 },
+            .{ .kind = .x, .addr = 0x63, .value = 0x2468 },
+            .{ .kind = .x, .addr = 0x64, .value = 0x0 },
+        },
+        .src =
+        \\ragu R6, A10, R7, #29
+        \\x02.v s1, A11, A11, A0, A11, s9, s0, s0, s0, #5, #1, #1, s0, s0, #0, #0
+        \\x02.v s3, A9, A9, A0, A9, s0, s0, s0, s0, #5, #3, #1, s1, s0, #0, #8
+        \\x02.v s0, A0, A0, A0, A0, s4, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0
+        \\tap:    x02.v s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #1, #0, s4, s9, #0, #0
+        \\x02.v s1, A11, A11, A0, A11, s9, s13, s2, s0, #5, #1, #1, s5, s12, #0, #0
+        \\pcond p1, R6, A11, #30
+        \\jmp #3, #1, tap
+        \\x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #3, #1, s1, s0, #0, #8
+        \\x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0
+        \\x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #1, #0, s4, s9, #0, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 4, .value = 0x1E9E } },
+            .{ .s_reg = .{ .index = 5, .value = 0x3021F } }, // silicon: 0x021F, its low 16 bits
+            .{ .r_reg = .{ .index = 6, .value = 0x45 } },
+        },
+    },
+    .{
         .name = "own-pcond",
         // fact 378: 802A7EAC, p1 <- R5 >= A7 (c29), R5 = 0x123, A7 = 0x123.
         .pre = &.{
