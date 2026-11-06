@@ -177,7 +177,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w3_class == 0b111) return execX18C7(gpa, state, bundle);
         if (w3_class == 0b101) return execX18C5(gpa, state, bundle);
         if (w3_class == 0b010) return execX18C2(gpa, state, bundle);
-        if (w3_class == 0b001) return execX18Q23c(gpa, state, bundle);
+        if (w3_class == 0b001) return execX18C1(gpa, state, bundle);
     }
     if (low5 == 0x02 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
@@ -377,6 +377,30 @@ fn mpyOperand(raw: u32, signed: bool) i64 {
     const v: u32 = raw & M24;
     if (signed and (v & 0x800000) != 0) return @as(i64, v) - 0x1000000;
     return @as(i64, v);
+}
+
+/// Class 001 (fact 199): R slot R<w3[10:7]> <- head[30] = 0:
+/// AGU10B[w1[31:28]](x = e<w3[28:25]>, y = R<w3[14:11]>); head[30] = 1:
+/// AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w3[14:11]>).  Y store (w1[19]
+/// and w2[11]) of s<head[25:22]> at Y:[e<w3[28:25]>].  Then the multiply.
+fn execX18C1(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const xe_val: u32 = state.e[(w3 >> 25) & 0xF];
+    const y: u32 = state.r[(w3 >> 11) & 0xF];
+    const dest_r: u32 = (w3 >> 7) & 0xF;
+    const r_val: u32 = if ((h >> 30) & 1 == 1)
+        agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0xF], y, 0)
+    else
+        agu10bEval((w1 >> 28) & 0xF, xe_val, y);
+    const st_val: u32 = state.s[(h >> 22) & 0xF] & 0xFFFF;
+    if ((w1 >> 19) & 1 == 1 and (w2 >> 11) & 1 == 1) {
+        state.y_mem.put(gpa, xe_val, st_val) catch return RunError.OutOfMemory;
+    }
+    try execX18Q23c(gpa, state, bundle);
+    if (dest_r != 0) state.r[dest_r] = r_val;
 }
 
 fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

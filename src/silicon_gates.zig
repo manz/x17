@@ -1565,6 +1565,39 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x5500 } }},
     },
     .{
+        .name = "own-x18rcl001",
+        // R3 <- AGU10B[6](e3, R1) = 0x707; Y:[e3] <- s5 = 0x555.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x703 },
+            .{ .bank = .e, .index = 3, .value = 0x705 },
+            .{ .bank = .r, .index = 1, .value = 2 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x18.rcl001 R3, e3, R1, #6, #18, #0, s5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .r_reg = .{ .index = 3, .value = 0x707 } },
+            .{ .y_mem = .{ .addr = 0x705, .value = 0x555 } },
+        },
+    },
+    .{
+        .name = "own-x18rag001",
+        // head[30] = 1: R3 <- AGU3[18](y = R1) = y + 1 = 3.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x703 },
+            .{ .bank = .e, .index = 3, .value = 0x705 },
+            .{ .bank = .r, .index = 1, .value = 2 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x18.rcl001 R3, e3, R1, #6, #18, #1, s5
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 3, .value = 3 } }},
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},

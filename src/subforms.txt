@@ -615,3 +615,7 @@ x18.sh100  4   0x00000018   0x00040300   0x22100030   0x88001900
 
 # x18.yb100: class 100 X slot, Y[7:0] << 8 (fact 204).
 x18.yb100  4   0x00000018   0x00042080   0x01300000   0x80620C01
+
+# x18.rcl001: class 001 R slot (AGU10B or, head[30] = 1, AGU3) plus the Y
+# store (fact 199 / own-x18rcl001, own-x18rag001).
+x18.rcl001 4   0x00000018   0x04080000   0x00000800   0x20000000

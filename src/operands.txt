@@ -918,3 +918,12 @@ x18.sh100	right	imm	27	27	head
 # x18.yb100 <dest_s>, <y_e>
 x18.yb100	dest_s	s	21	24	head
 x18.yb100	y_e	e	25	28	s3
+
+# x18.rcl001 <dest_R>, <x_e>, <y_R>, #<fn10b>, #<fn3>, #<agu3>, <st_src>
+x18.rcl001	dest_R	R	7	10	s3
+x18.rcl001	x_e	e	25	28	s3
+x18.rcl001	y_R	R	11	14	s3
+x18.rcl001	fn10b	imm	28	31	s1
+x18.rcl001	fn3	imm	20	24	s3
+x18.rcl001	agu3	imm	30	30	head
+x18.rcl001	st_src	s	22	25	head
