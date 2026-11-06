@@ -441,7 +441,7 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const scaled: i64 = if ((w1 >> 17) & 1 == 1)
         prod >> 24
     else
-        (prod + (1 << 22)) >> 23;
+        @min((prod + (1 << 22)) >> 23, 0x7FFFFF); // -1 * -1 saturates (fact 402)
     // Modes (fact 161): X = xd before the bundle, at the [15:0] slice;
     // 1 = a + X, 5 = P + X, 7 = X - P, otherwise P.
     const xv: i64 = @intCast((state.xd_pre << 8) & 0xFFFF);
@@ -2372,7 +2372,7 @@ fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     var hi: u32 = 0;
     if (hi_s != 0) {
         if (op != 4) return RunError.UnknownForm;
-        const h: i64 = if (wide) prod >> 24 else if ((w1 >> 15) & 1 == 1) (prod + (1 << 22)) >> 23 else return RunError.UnknownForm;
+        const h: i64 = if (wide) prod >> 24 else if ((w1 >> 15) & 1 == 1) @min((prod + (1 << 22)) >> 23, 0x7FFFFF) else return RunError.UnknownForm; // sat: 402
         hi = @as(u32, @truncate(@as(u64, @bitCast(h)))) & M24;
     }
     const a_dest: u32 = (w2 >> 17) & 0xF;

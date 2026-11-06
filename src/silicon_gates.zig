@@ -4022,6 +4022,39 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x000000 } }},
     },
     .{
+        .name = "own-mpysat-x19",
+        // Upstream, fact 402 (own-mpysat, 3 of 3): -1 * -1 saturates to 0x7FFFFF;
+        // 0x7FFFFF^2 and -0x800000 * 0x7FFFFF stay exact.
+        .pre = &.{
+            .{ .bank = .s, .index = 4, .value = 0x800000 }, .{ .bank = .s, .index = 2, .value = 0x800000 },
+            .{ .bank = .s, .index = 6, .value = 0x7FFFFF }, .{ .bank = .s, .index = 8, .value = 0x7FFFFF },
+            .{ .bank = .s, .index = 9, .value = 0x800000 },
+        },
+        .src =
+        \\x19.mac s0, s0, s0, #0, #1, #0x14, e0, s1, s4, s2, #0, A0, R7, #0, A0, R0
+        \\x19.mac s0, s0, s0, #0, #1, #0x14, e0, s3, s6, s8, #0, A0, R7, #0, A0, R0
+        \\x19.mac s0, s0, s0, #0, #1, #0x14, e0, s5, s9, s8, #0, A0, R7, #0, A0, R0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 1, .value = 0x7FFFFF } },
+            .{ .s_reg = .{ .index = 3, .value = 0x7FFFFE } },
+            .{ .s_reg = .{ .index = 5, .value = 0x800001 } },
+        },
+    },
+    .{
+        .name = "own-mpysat-x02",
+        // fact 402: x02 op 4, rounded, -1 * -1 = 0x7FFFFF.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x800000 }, .{ .bank = .s, .index = 2, .value = 0x800000 },
+        },
+        .src =
+        \\x02.mpy s2, s1, s2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x7FFFFF } }},
+    },
+    .{
         .name = "own-x02mpy-halfpos",
         // 1 * 0x400000 / 2^23 = 0.5 rounds half up to 1 (PROBES.md, measured 2026-11-06).
         .pre = &.{

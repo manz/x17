@@ -285,6 +285,8 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # p<w5[17:14]>: sense w2[31:29] 101 jumps if set, 000 / 100 if clear, 001 OPEN.  p0 is not a constant.  own-x03jrc
 # x02 mode 5 second multiply dest s<w4[10:7]> (fact 399): (2P)[15:0], or P[15:0] undoubled with w1[17] = 1 (op 4;
 # op 5 with w1[17] = 1 is OPEN: xd joins it).  own-x02plo, own-x02lo24
+# Rounded multiply round(ab / 2^23), x02 op 4 and x19mac (fact 402): -0x800000 * -0x800000 saturates to
+# 0x7FFFFF; 0x7FFFFF^2 = 0x7FFFFE and -0x800000 * 0x7FFFFF = 0x800001 are exact.  own-mpysat-x19, own-mpysat-x02
 # x19imm (fact 146): classes (0,0,1): e<{w1[0], head[31:29]}>, s<head[24:21]> <- AGU10[w1[4:1]](x = e<w3[28:25]>,
 # y = R<head[28:25]>, i = w2[30:15]); w1[18] required; R<w1[16:13]> <- a second slot (OPEN).  own-x19imm
 # x19alu (fact 147): classes (0,0,4): s<w1[27:24]> <- OP[head[9:5]](a = s<w2[21:18]>, b = s<w1[19:16]>): 0/a/a+1/a+2/b
