@@ -37,6 +37,8 @@ const Gate = struct {
     src: []const u8,
     post: []const PostCheck,
     lane: u8 = 0,
+    /// The run must not reach a stop (silicon wedged).
+    wedge: bool = false,
 };
 
 const GATES = [_]Gate{
@@ -2659,6 +2661,217 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-all",
+        // st sets e1 = 2; the stop's S2[1] write stores s1 = 0x123 at Y:[e1].
+        .src =
+        \\st.y Y:2
+        \\ldi.q s1, #0x123, #2
+        \\x17.stop s1, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x2, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-core",
+        // st sets e1 = 2; the stop's S2[1] write stores s1 = 0x123 at Y:[e1].
+        .src =
+        \\st.y Y:2
+        \\ldi.q s1, #0x123, #2
+        \\x17.stop s1, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x2, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-core-17",
+        // st sets e1 = 2; the stop's S2[1] write stores s1 = 0x123 at Y:[e1].
+        .src =
+        \\st.y Y:2
+        \\ldi.q s1, #0x123, #2
+        \\x17.stop s1, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x2, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-q23",
+        // st sets e1 = 2; the stop's S2[1] write stores s1 = 0x123 at Y:[e1].
+        .src =
+        \\st.y Y:2
+        \\ldi.q s1, #0x123, #2
+        \\x17.stop s1, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x2, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-all-x",
+        // own-all with the stop's inert head and S2 bits filled with junk.
+        .src =
+        \\st.y Y:2
+        \\ldi.q s1, #0x123, #2
+        \\x17.stopx s1, e1, #0x2D2D2D2, #0x1234567
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x2, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-core-02",
+        // S2 class 000 is no stop: the run never halts (silicon wedges).
+        .src =
+        \\st.y Y:2
+        \\ldi.q s1, #0x123, #2
+        \\x17.stop s1, e1, #0, #1
+        ,
+        .post = &.{},
+        .wedge = true,
+    },
+    .{
+        .name = "own-core-a2",
+        // S1[16:15] = 10 writes at a2, the drifting pointer (Y:9 on silicon).
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 9 }},
+        .src =
+        \\st.y Y:2
+        \\ldi.q s1, #0x123, #2
+        \\x17.stop s1, e2, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x9, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-core-s5-y40",
+        // st at Y:0x40, ldi s5, the stop writes s5 at e1 = 0x40.
+        .src =
+        \\st.y Y:0x40
+        \\ldi.q s5, #0x456, #2
+        \\x17.stop s5, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x40, .value = 0x456 } }},
+    },
+    .{
+        .name = "own-core-y77",
+        // st at Y:0x77: the stop's write follows e1.
+        .src =
+        \\st.y Y:0x77
+        \\ldi.q s1, #0x123, #2
+        \\x17.stop s1, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x77, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-pre-ldi",
+        // an ldi s5 before the store survives to the stop's write.
+        .src =
+        \\ldi.q s5, #0xA5A, #2
+        \\st.y Y:2
+        \\ldi.q s1, #0x123, #2
+        \\x17.stop s5, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x2, .value = 0xA5A } }},
+    },
+    .{
+        .name = "own-ldi-s5",
+        // ldi into register 21 (s5), the stop reads register 21.
+        .src =
+        \\st.y Y:2
+        \\ldi.q s5, #0xA15, #2
+        \\x17.stop s5, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x2, .value = 0xA15 } }},
+    },
+    .{
+        .name = "own-ldi-y2",
+        // our ldi's immediate is what the write stores at Y:2.
+        .src =
+        \\st.y Y:2
+        \\ldi.q s1, #0x1234, #2
+        \\x17.stop s1, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x2, .value = 0x1234 } }},
+    },
+    .{
+        .name = "own-ldi-y4",
+        // our ldi's immediate is what the stub's Y:4 write stores.
+        .src =
+        \\st.y Y:4
+        \\ldi.q s1, #0x55, #2
+        \\x17.stop s1, e1, #5, #1
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x4, .value = 0x55 } }},
+    },
+    .{
+        .name = "own-st3",
+        // three stores in lanes 1..3: each writes its lane's V (V2 = 2).
+        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .src =
+        \\st.sel Y:0x100, #0
+        \\st.sel Y:0x200, #0
+        \\st.sel Y:0x300, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x0 } }},
+        .lane = 1,
+    },
+    .{
+        .name = "own-st3-l1sel1",
+        // sel 1 on l1: V2 <- the previous store address 0x108F.
+        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .src =
+        \\st.sel Y:0x100, #1
+        \\st.sel Y:0x200, #0
+        \\st.sel Y:0x300, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x108F } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x0 } }},
+        .lane = 1,
+    },
+    .{
+        .name = "own-st3-l1sel2",
+        // sel 2 on l1: V1, V3 <- 0x108F before l1 writes.
+        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .src =
+        \\st.sel Y:0x100, #2
+        \\st.sel Y:0x200, #0
+        \\st.sel Y:0x300, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x108F } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x108F } }},
+        .lane = 1,
+    },
+    .{
+        .name = "own-st3-l1sel3",
+        // sel 3 on l1: no effect.
+        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .src =
+        \\st.sel Y:0x100, #3
+        \\st.sel Y:0x200, #0
+        \\st.sel Y:0x300, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x0 } }},
+        .lane = 1,
+    },
+    .{
+        .name = "own-st3-l2sel2",
+        // sel 2 on l2: V1, V3 <- 0x100; l1 already wrote, l3 writes 0x100.
+        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .src =
+        \\st.sel Y:0x100, #0
+        \\st.sel Y:0x200, #2
+        \\st.sel Y:0x300, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x100 } }},
+        .lane = 1,
+    },
+    .{
+        .name = "own-st3-l3sel2",
+        // sel 2 on l3: V1, V3 <- 0x200 before its own write.
+        .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }, .{ .bank = .e, .index = 1, .value = 0x108F }},
+        .src =
+        \\st.sel Y:0x100, #0
+        \\st.sel Y:0x200, #0
+        \\st.sel Y:0x300, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x100, .value = 0x0 } }, .{ .y_mem = .{ .addr = 0x200, .value = 0x2 } }, .{ .y_mem = .{ .addr = 0x300, .value = 0x200 } }},
+        .lane = 1,
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},
@@ -3622,7 +3835,16 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
     };
     defer gpa.free(words);
 
-    _ = emu.runLinear(gpa, &state, words) catch |e| {
+    const ran = emu.runLinear(gpa, &state, words);
+    if (g.wedge) {
+        const ok = if (ran) |_| !state.halted else |_| true;
+        if (!ok) {
+            std.debug.print("gate '{s}': halted, expected a wedge\n", .{g.name});
+            return error.GateFailed;
+        }
+        return;
+    }
+    _ = ran catch |e| {
         std.debug.print("gate '{s}': emulator error {s}\n", .{ g.name, @errorName(e) });
         return e;
     };

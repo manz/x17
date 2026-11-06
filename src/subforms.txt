@@ -743,3 +743,15 @@ x02.mac    6   0x00000002   0x00000000   0x00020042   0x00000001   0x00002800   
 
 # x18.e2nd17: the stock class-000 bundle with w2[17] = 0, phase T (fact 180).
 x18.e2nd17 4   0x80800018   0x00028024   0x0000A940   0x00048100
+
+# ldi.q: ldi with its inert [29:26] spelt out (fact 87).
+ldi.q      1   0xC000000B
+
+# st.sel: st with sel [22:21] (fact 21-22 / own-st3-l*sel*).
+st.sel     1   0x2000000F
+
+# x17.stop: the stop with S2[1]'s write, Y:[e<S1[16:15]>] <- reg<S1[28:24]> (fact 32, 47).
+x17.stop   3   0x00000017   0x20300000   0x00000000
+
+# x17.stopx: the same with every inert head and S2 bit filled (own-all-x).
+x17.stopx  3   0x00000017   0x20300000   0xA0000000

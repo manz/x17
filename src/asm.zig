@@ -584,50 +584,10 @@ pub fn assembleOneResult(src: []const u8) Result {
 
         // y_addr consumes three tokens: `Y` `:` `<number>` (optional `#`).
         if (op.kind == .y_addr) {
-            if (tok.kind != .ident or !std.mem.eql(u8, tok.text, "Y")) {
-                var d = Diagnostic{ .code = .e0016_expected_y_prefix, .span = tokSpan(tok) };
-                setExpected(&d, "'Y'", tok);
-                d.setHint("Y-space addresses look like Y:1 or Y:#0x1234");
-                return .{ .err = d };
+            switch (parseYAddr(&lex, tok, op)) {
+                .ok => |v| word |= op.encode(v),
+                .err => |r| return r,
             }
-            const cr = lex.next();
-            const colon = switch (cr) {
-                .tok => |t| t,
-                .err => |e| return fromLexErr(e),
-            };
-            if (colon.kind != .colon) {
-                var d = Diagnostic{ .code = .e0017_expected_colon, .span = tokSpan(colon) };
-                setExpected(&d, "':' after 'Y'", colon);
-                return .{ .err = d };
-            }
-            var nr = lex.next();
-            var ntok = switch (nr) {
-                .tok => |t| t,
-                .err => |e| return fromLexErr(e),
-            };
-            if (ntok.kind == .hash) {
-                nr = lex.next();
-                ntok = switch (nr) {
-                    .tok => |t| t,
-                    .err => |e| return fromLexErr(e),
-                };
-            }
-            if (ntok.kind != .number) {
-                var d = Diagnostic{ .code = .e0012_expected_immediate, .span = tokSpan(ntok) };
-                setExpected(&d, "Y-space address immediate", ntok);
-                d.setHint("Y:<N> or Y:#<N>; N is a 16-bit value");
-                return .{ .err = d };
-            }
-            const w = op.width();
-            const max: u32 = (@as(u32, 1) << @as(u5, @intCast(w))) - 1;
-            if (ntok.value > max) {
-                var d = Diagnostic{ .code = .e0013_imm_out_of_range, .span = tokSpan(ntok) };
-                var buf: [96]u8 = undefined;
-                const m = std.fmt.bufPrint(&buf, "Y-space address 0x{x} does not fit in {d} bits", .{ ntok.value, w }) catch buf[0..0];
-                d.setMsg(m);
-                return .{ .err = d };
-            }
-            word |= op.encode(ntok.value);
             continue;
         }
 
@@ -662,8 +622,11 @@ pub fn assembleOneResult(src: []const u8) Result {
     }
     // A one-word form whose low5 makes a longer bundle (st.y at 0x0F is 2)
     // gets zero syllables after it, the no-op second the engine reads.
+    // st (0x0F class 001) stays one word: its second is only a paired wr
+    // (fact 21: three back-to-back stores each run, one per lane).
     var b = oneWord(word);
-    const n = isa.bundleLen(word) orelse 1;
+    const is_st = word & 0x1F == 0x0F and word >> 29 == 1;
+    const n = if (is_st) 1 else isa.bundleLen(word) orelse 1;
     if (n > 1 and n <= 2) {
         b.words[1] = 0;
         b.len = n;
@@ -676,6 +639,54 @@ pub fn assembleOneResult(src: []const u8) Result {
 /// seeds each syllable with the sub-form's base, then walks the operand
 /// rows (which name their syllable via `syll`) and OR's the encoded
 /// fields into the matching word.
+/// `Y` `:` `<number>` (optional `#`), the y_addr operand; `tok` is the `Y`.
+fn parseYAddr(lex: *Lexer, tok: Token, op: isa.Operand) union(enum) { ok: u32, err: Result } {
+    if (tok.kind != .ident or !std.mem.eql(u8, tok.text, "Y")) {
+        var d = Diagnostic{ .code = .e0016_expected_y_prefix, .span = tokSpan(tok) };
+        setExpected(&d, "'Y'", tok);
+        d.setHint("Y-space addresses look like Y:1 or Y:#0x1234");
+        return .{ .err = .{ .err = d } };
+    }
+    const cr = lex.next();
+    const colon = switch (cr) {
+        .tok => |t| t,
+        .err => |e| return .{ .err = fromLexErr(e) },
+    };
+    if (colon.kind != .colon) {
+        var d = Diagnostic{ .code = .e0017_expected_colon, .span = tokSpan(colon) };
+        setExpected(&d, "':' after 'Y'", colon);
+        return .{ .err = .{ .err = d } };
+    }
+    var nr = lex.next();
+    var ntok = switch (nr) {
+        .tok => |t| t,
+        .err => |e| return .{ .err = fromLexErr(e) },
+    };
+    if (ntok.kind == .hash) {
+        nr = lex.next();
+        ntok = switch (nr) {
+            .tok => |t| t,
+            .err => |e| return .{ .err = fromLexErr(e) },
+        };
+    }
+    if (ntok.kind != .number) {
+        var d = Diagnostic{ .code = .e0012_expected_immediate, .span = tokSpan(ntok) };
+        setExpected(&d, "Y-space address immediate", ntok);
+        d.setHint("Y:<N> or Y:#<N>; N is a 16-bit value");
+        return .{ .err = .{ .err = d } };
+    }
+    const w = op.width();
+    const max: u32 = (@as(u32, 1) << @as(u5, @intCast(w))) - 1;
+    if (ntok.value > max) {
+        var d = Diagnostic{ .code = .e0013_imm_out_of_range, .span = tokSpan(ntok) };
+        var buf: [96]u8 = undefined;
+        const m = std.fmt.bufPrint(&buf, "Y-space address 0x{x} does not fit in {d} bits", .{ ntok.value, w }) catch buf[0..0];
+        d.setMsg(m);
+        return .{ .err = .{ .err = d } };
+    }
+    return .{ .ok = ntok.value };
+}
+
 fn assembleX17(head: Token, lex: *Lexer, src: []const u8) Result {
     const sf = isa.subFormByName(head.text) orelse {
         var d = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(head) };
@@ -723,6 +734,13 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8) Result {
             const m = std.fmt.bufPrint(&buf, "missing operand {d}/{d} ({s})", .{ i + 1, ops.len, op.name }) catch buf[0..0];
             d.setMsg(m);
             return .{ .err = d };
+        }
+        if (op.kind == .y_addr) {
+            switch (parseYAddr(lex, tok, op)) {
+                .ok => |v| b.words[op.syll] |= op.encode(v),
+                .err => |r| return r,
+            }
+            continue;
         }
         if (tok.kind == .hash) {
             tok = switch (lex.next()) {
@@ -821,14 +839,6 @@ fn okWord(src: []const u8) !u32 {
 }
 
 /// st.y and other 0x0E..0x10 one-word forms assemble as head + zero second.
-fn okStore(src: []const u8) !u32 {
-    const b = try okBundle(src);
-    if (b.len != 2 or b.words[1] != 0) {
-        std.debug.print("expected head + zero second, got {d} syllables\n", .{b.len});
-        return error.TestExpectedTwoSyllables;
-    }
-    return b.words[0];
-}
 
 fn okBundle(src: []const u8) !Bundle {
     return switch (assembleOneResult(src)) {
@@ -924,12 +934,12 @@ test "diag: renderDiag prints rust-style block" {
 
 test "assemble st.y Y:1" {
     // addr=1 << 5 = 0x20; base = 0x2000_000F; OR = 0x2000_002F
-    try testing.expectEqual(@as(u32, 0x2000_002F), try okStore("st.y Y:1"));
+    try testing.expectEqual(@as(u32, 0x2000_002F), try okWord("st.y Y:1"));
 }
 
 test "assemble st.y Y:#0x1234" {
     // addr=0x1234 << 5 = 0x0002_4680; base = 0x2000_000F; OR = 0x2002_468F
-    try testing.expectEqual(@as(u32, 0x2002_468F), try okStore("st.y Y:#0x1234"));
+    try testing.expectEqual(@as(u32, 0x2002_468F), try okWord("st.y Y:#0x1234"));
 }
 
 test "diag: y_addr missing Y prefix" {
@@ -1015,9 +1025,9 @@ test "round-trip gate: own-st3 reassembles byte-exact" {
     //   r5l2 = 0x2000400F  <- st.y Y:0x200
     //   r5l3 = 0x2000600F  <- st.y Y:0x300
     // Byte-exact: no inert bits (unlike own-ldi-y2's [29:26] = 0xC quirk).
-    try testing.expectEqual(@as(u32, 0x2000_200F), try okStore("st.y Y:0x100"));
-    try testing.expectEqual(@as(u32, 0x2000_400F), try okStore("st.y Y:0x200"));
-    try testing.expectEqual(@as(u32, 0x2000_600F), try okStore("st.y Y:0x300"));
+    try testing.expectEqual(@as(u32, 0x2000_200F), try okWord("st.y Y:0x100"));
+    try testing.expectEqual(@as(u32, 0x2000_400F), try okWord("st.y Y:0x200"));
+    try testing.expectEqual(@as(u32, 0x2000_600F), try okWord("st.y Y:0x300"));
 }
 
 test "comment to end of line is tolerated" {

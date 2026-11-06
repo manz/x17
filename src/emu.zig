@@ -67,6 +67,8 @@ pub const State = struct {
     xd_pre: u32 = 0,
     /// The Y read latch yagu loads (fact 100, 105, 110).
     yd: u32 = 0,
+    /// Set when runLinear met a stop; a run without one is a wedge on silicon.
+    halted: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
     xa: ?u32 = null,
     /// The 0x18 class-000 phase T, flipped by w2[17] = 0 (fact 180).
@@ -2362,6 +2364,16 @@ fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 fn execStY(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const head = bundle[0];
     const addr: u32 = (head >> 5) & 0xFFFF;
+    // sel [22:21] (fact 21-22): before the store, 1 sets V2 and 2 sets
+    // V1 and V3 to the previous store's address; 3 does nothing.
+    switch ((head >> 21) & 3) {
+        1 => state.v[2] = state.e[1],
+        2 => {
+            state.v[1] = state.e[1];
+            state.v[3] = state.e[1];
+        },
+        else => {},
+    }
     const value: u32 = state.v[state.cur_lane & 0x3];
     state.y_mem.put(gpa, addr, value) catch return RunError.OutOfMemory;
     if (bundle.len >= 2 and bundle[1] != 0) {
@@ -2391,13 +2403,14 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const s1_class: u32 = (s1 >> 29) & 0x7;
     const s2_class: u32 = (s2 >> 29) & 0x7;
 
-    // S2 class 101: S2[1] stores Y:[e1] <- reg<S1[28:24]> (fact 32, 47).
+    // S2 class 101: S2[1] stores Y:[e<S1[16:15]>] <- reg<S1[28:24]> (fact
+    // 22, 32, 47; [16:15] = 10 hits the drifting pointer a2).
     if (s2_class == 0b101) {
         if (s2 & 2 != 0) {
             const k: u32 = (s1 >> 24) & 0x1F;
             if (k < 16) return RunError.UnknownForm;
             const v: u32 = if (k == 16) 0 else state.s[k - 16] & 0xFFFF;
-            state.y_mem.put(gpa, state.e[1], v) catch return RunError.OutOfMemory;
+            state.y_mem.put(gpa, state.e[(s1 >> 15) & 3], v) catch return RunError.OutOfMemory;
         }
         return;
     }
@@ -3068,11 +3081,18 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
     var i: usize = 0;
     var bundles_run: usize = 0;
     var shadow: ?u8 = null;
+    const lane0: usize = state.cur_lane;
+    state.halted = false;
     const MAX_BUNDLES: usize = 256;
     while (i < syllables.len) : (bundles_run += 1) {
         if (bundles_run >= MAX_BUNDLES) return RunError.RunawayProgram;
         const head = syllables[i];
-        const len = bundleLen(head) orelse return RunError.UnknownBundleLength;
+        // Each syllable sits in lane (position mod 4) (fact 21).
+        state.cur_lane = @intCast((lane0 + i) & 3);
+        var len = bundleLen(head) orelse return RunError.UnknownBundleLength;
+        // st pairs only with a wr second ([31:29] = 001, [16:15] = 11).
+        if (head & 0x1F == 0x0F and head >> 29 == 1 and len == 2 and
+            (i + 1 >= syllables.len or syllables[i + 1] & 0xE0018000 != 0x20018000)) len = 1;
         if (i + len > syllables.len) return RunError.UnknownBundleLength;
         const slice = syllables[i .. i + len];
         const pc_at_bundle = i;
@@ -3087,6 +3107,7 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
             continue;
         }
         if (isHaltBundle(slice)) {
+            state.halted = true;
             shadow = 1;
             continue;
         }

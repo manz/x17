@@ -1205,3 +1205,24 @@ x02.mac	x_A	A	17	21	s4
 x18.e2nd17	dest_e	e	2	5	s2
 x18.e2nd17	y_lo	imm	30	31	s1
 x18.e2nd17	y_hi	imm	0	1	s2
+
+# ldi.q <dest>, #<imm>, #<q>
+ldi.q	dest	dest_ldi	21	25	head
+ldi.q	imm	imm	5	20	head
+ldi.q	q	imm	26	29	head
+
+# st.sel Y:<addr>, #<sel>
+st.sel	addr	y_addr	5	20	head
+st.sel	sel	imm	21	22	head
+
+# x17.stop <src>, <e>, #<cls>, #<wr>
+x17.stop	src	dest_ldi	24	28	s1
+x17.stop	ea	e	15	16	s1
+x17.stop	cls	imm	29	31	s2
+x17.stop	wr	imm	1	1	s2
+
+# x17.stopx <src>, <e>, #<head_junk>, #<s2_junk>
+x17.stopx	src	dest_ldi	24	28	s1
+x17.stopx	ea	e	15	16	s1
+x17.stopx	hj	imm	5	31	head
+x17.stopx	s2j	imm	0	28	s2
