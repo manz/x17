@@ -141,7 +141,7 @@ x18.eagu   4   0x00000018   0x00000004   0x0002AC00   0x00040000
 
 # x18.edec: 4-syllable low5 0x18 w3 class 100 (fact 172 /
 # own-x18edec).  e <- e +/- 1, sign picked by w2[20].
-x18.edec   4   0x00000018   0x00040180   0x89E00005   0x86000001
+x18.edec   4   0x00000018   0x00040180   0x89E00000   0x86000001
 
 # x18.una: 4-syllable low5 0x18 w3 class 011 (fact 168 /
 # own-x18una).  s <- op(s).  Measured: op 3 = +1, op 7 = abs.
@@ -603,3 +603,15 @@ x18.mac    4   0x1C000018   0x02070007   0x00320000   0xE6070180
 # x18.sh111: class 111 ALU slot with the shift, plus the Y store
 # (fact 202, 206 / own-x18shr111, shl111, alu111, st111).
 x18.sh111  4   0x00000018   0x42040007   0x21100005   0xE00701E3
+
+# x18.rcl100: class 100 R slot plus the Y store (fact 196).
+x18.rcl100 4   0x00000018   0x00040000   0x08700550   0x80000000
+
+# x18.mpy100: class 100 multiply slot plus the Y store (fact 197).
+x18.mpy100 4   0x80000018   0x00048304   0x39F00550   0x80000000
+
+# x18.sh100: class 100 shift slot (fact 198 / own-x18shr100, shl100).
+x18.sh100  4   0x00000018   0x00040300   0x22100030   0x88001900
+
+# x18.yb100: class 100 X slot, Y[7:0] << 8 (fact 204).
+x18.yb100  4   0x00000018   0x00042080   0x01300000   0x80620C01

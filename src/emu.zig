@@ -172,7 +172,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w3_class == 0b110 and bundle[2] != 0) return execX18Mpy(gpa, state, bundle);
         if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
         if (w3_class == 0b000) return execX18C0(gpa, state, bundle);
-        if (w3_class == 0b100) return execX18Edec(gpa, state, bundle);
+        if (w3_class == 0b100) return execX18C4(gpa, state, bundle);
         if (w3_class == 0b011) return execX18C3(gpa, state, bundle);
         if (w3_class == 0b111) return execX18C7(gpa, state, bundle);
         if (w3_class == 0b101) return execX18C5(gpa, state, bundle);
@@ -1382,18 +1382,58 @@ fn execX18C0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (dest_e2 != 0) state.e[dest_e2] = (y -% 1) & 0xFFFF;
 }
 
-fn execX18Edec(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
+/// Class 100 (fact 172, 196-198, 204), slots latched then written:
+/// e slot e<w2[11:8]> <- e<w2[7:4]> -1 (w2[20] = 1) or +1; Y store
+/// (w2[22:21] = 11) of s<w2[3:0]> at Y:[e<w3[28:25]>]; R slot
+/// R<{w3[2:0], w2[31]}> <- AGU10[w1[10:7]](e<w3[28:25]>, R<w2[26:23]>) with
+/// w2[20] = 1 (the other table is unmeasured); multiply s<w3[16:13]> <- mode
+/// w1[13:11] = 4, round(s<w3[20:17]> * s<w3[24:21]> / 2^23); shift
+/// s<w1[27:24]> <- s<w2[19:16]> by w1[23:20] (head[27] = 1: right,
+/// rounding); X slot s<head[24:21]> <- Y:[e<w3[28:25]>][7:0] << 8 when
+/// w2[22:21] = 01 and w3[12:10] = 011.
+fn execX18C4(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
     const w2 = bundle[2];
+    const w3 = bundle[3];
+    const xe_val: u32 = state.e[(w3 >> 25) & 0xF];
+    const ysel: u32 = (w2 >> 21) & 3;
+    const st_val: u32 = state.s[w2 & 0xF] & 0xFFFF;
     const dest_e: u32 = (w2 >> 8) & 0xF;
-    const src_e: u32 = (w2 >> 4) & 0xF;
-    const is_minus: u32 = (w2 >> 20) & 1;
-    const src_val: u32 = if (src_e == 0) 0 else state.e[src_e];
-    const v: u32 = if (is_minus == 1)
-        (src_val -% 1) & 0xFFFF
-    else
-        (src_val +% 1) & 0xFFFF;
-    if (dest_e != 0) state.e[dest_e] = v;
+    const src_e_val: u32 = state.e[(w2 >> 4) & 0xF];
+    const e_val: u32 = if ((w2 >> 20) & 1 == 1) (src_e_val -% 1) & 0xFFFF else (src_e_val +% 1) & 0xFFFF;
+    const dest_r: u32 = ((w3 & 7) << 1) | (w2 >> 31);
+    const r_val: u32 = if (dest_r == 0) 0 else blk: {
+        if ((w2 >> 20) & 1 == 0) return RunError.UnknownForm;
+        break :blk try agu10Eval((w1 >> 7) & 0xF, xe_val, state.r[(w2 >> 23) & 0xF]);
+    };
+    const dest_m: u32 = (w3 >> 13) & 0xF;
+    const m_val: u32 = if (dest_m == 0) 0 else blk: {
+        if (((w1 >> 11) & 7) != 4) return RunError.UnknownForm;
+        const prod: i64 = sx16(state.s[(w3 >> 17) & 0xF]) * sx16(state.s[(w3 >> 21) & 0xF]);
+        break :blk @truncate(@as(u64, @bitCast((prod + (1 << 22)) >> 23)) & 0xFFFF);
+    };
+    const dest_sh: u32 = (w1 >> 24) & 0xF;
+    const sh_val: u32 = if (dest_sh == 0) 0 else blk: {
+        const src: u32 = state.s[(w2 >> 16) & 0xF];
+        const n: u5 = @intCast((w1 >> 20) & 0xF);
+        if ((h >> 27) & 1 == 1) {
+            const bias: i64 = if (n == 0) 0 else @as(i64, 1) << (n - 1);
+            break :blk @truncate(@as(u64, @bitCast((@as(i64, sx24(src)) + bias) >> n)) & 0xFFFF);
+        }
+        break :blk (src << n) & 0xFFFF;
+    };
+    const dest_x: u32 = (h >> 21) & 0xF;
+    const x_val: u32 = if (dest_x == 0) 0 else blk: {
+        if (ysel != 1 or ((w3 >> 10) & 7) != 3) return RunError.UnknownForm;
+        break :blk ((state.getY(xe_val) orelse 0) & 0xFF) << 8;
+    };
+    if (ysel == 3) state.y_mem.put(gpa, xe_val, st_val) catch return RunError.OutOfMemory;
+    if (dest_e != 0) state.e[dest_e] = e_val;
+    if (dest_r != 0) state.r[dest_r] = r_val;
+    if (dest_m != 0) state.s[dest_m] = m_val;
+    if (dest_sh != 0) state.s[dest_sh] = sh_val;
+    if (dest_x != 0) state.s[dest_x] = x_val;
 }
 
 fn execX18Br(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

@@ -1110,7 +1110,7 @@ const GATES = [_]Gate{
         // Pre e2 = 0x703; e2 <- e2 - 1 = 0x702.
         .pre = &.{.{ .bank = .e, .index = 2, .value = 0x703 }},
         .src =
-        \\x18.edec e2, e2, #1
+        \\x18.edec e2, e2, #1, s5
         \\x17.halt
         ,
         .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
@@ -1498,6 +1498,73 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x18rcl100",
+        // R3 <- AGU10[2](e3) = 0x706; Y:[e3] <- s5.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x703 },
+            .{ .bank = .e, .index = 3, .value = 0x705 },
+            .{ .bank = .r, .index = 1, .value = 2 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x18.rcl100 #1, #1, #2, e3, R1, s5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .r_reg = .{ .index = 3, .value = 0x706 } },
+            .{ .y_mem = .{ .addr = 0x705, .value = 0x555 } },
+        },
+    },
+    .{
+        .name = "own-x18mpy100",
+        // s4 <- round(0x4000 * 0x6000 / 2^23) = 0x30; Y:[e3] <- s5.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x705 },
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .s, .index = 5, .value = 0x555 },
+        },
+        .src =
+        \\x18.mpy100 s4, s1, s2, #4, s5, e3
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 4, .value = 0x30 } },
+            .{ .y_mem = .{ .addr = 0x705, .value = 0x555 } },
+        },
+    },
+    .{
+        .name = "own-x18shr100",
+        // s1 <- round(0x555 / 16) = 0x55.
+        .pre = &.{.{ .bank = .s, .index = 5, .value = 0x555 }},
+        .src =
+        \\x18.sh100 s1, s5, #4, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x55 } }},
+    },
+    .{
+        .name = "own-x18shl100",
+        // s1 <- 0x555 << 4 = 0x5550.
+        .pre = &.{.{ .bank = .s, .index = 5, .value = 0x555 }},
+        .src =
+        \\x18.sh100 s1, s5, #4, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x5550 } }},
+    },
+    .{
+        .name = "own-x18yb100",
+        // s1 <- Y:[e3 = 0x701][7:0] << 8 = 0x5500.
+        .pre = &.{.{ .bank = .e, .index = 3, .value = 0x701 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x701, .value = 0x555 }},
+        .src =
+        \\x18.yb100 s1, e3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x5500 } }},
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},
@@ -1656,13 +1723,20 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x18yst",
-        // Y-store side is not modelled; verify the e2 decrement that pairs it.
-        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x703 }},
+        // Y:[e3] <- s3 = 0x333; e2 <- e2 - 1 = 0x702.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x333 },
+            .{ .bank = .e, .index = 2, .value = 0x703 },
+            .{ .bank = .e, .index = 3, .value = 0x705 },
+        },
         .src =
-        \\x18.edec e2, e2, #1
+        \\x18.edec e2, e2, #1, s3
         \\x17.halt
         ,
-        .post = &.{.{ .e_reg = .{ .index = 2, .value = 0x702 } }},
+        .post = &.{
+            .{ .e_reg = .{ .index = 2, .value = 0x702 } },
+            .{ .y_mem = .{ .addr = 0x705, .value = 0x333 } },
+        },
     },
     .{
         .name = "own-x18eagu",

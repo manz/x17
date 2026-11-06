@@ -253,6 +253,7 @@ x18.eagu	fn	imm	26	29	s1
 x18.edec	dest_e	e	8	11	s2
 x18.edec	src_e	e	4	7	s2
 x18.edec	is_minus	imm	20	20	s2
+x18.edec	st_src	s	0	3	s2
 
 # x18.una (4 syllables): unary s op.
 # Grammar: x18.una <dest_s>, <src_s>, #<op>
@@ -891,3 +892,29 @@ x18.sh111	sh	imm	11	14	s3
 x18.sh111	right	imm	27	27	head
 x18.sh111	st	imm	21	22	s2
 x18.sh111	y_e	e	25	28	s3
+
+# x18.rcl100 #<r_lo>, #<r_hi>, #<fn>, <x_e>, <y_R>, <st_src>
+x18.rcl100	r_lo	imm	31	31	s2
+x18.rcl100	r_hi	imm	0	2	s3
+x18.rcl100	fn	imm	7	10	s1
+x18.rcl100	x_e	e	25	28	s3
+x18.rcl100	y_R	R	23	26	s2
+x18.rcl100	st_src	s	0	3	s2
+
+# x18.mpy100 <dest_s>, <a_s>, <b_s>, #<mode>, <st_src>, <y_e>
+x18.mpy100	dest_s	s	13	16	s3
+x18.mpy100	a_s	s	17	20	s3
+x18.mpy100	b_s	s	21	24	s3
+x18.mpy100	mode	imm	11	13	s1
+x18.mpy100	st_src	s	0	3	s2
+x18.mpy100	y_e	e	25	28	s3
+
+# x18.sh100 <dest_s>, <src_s>, #<n>, #<right>
+x18.sh100	dest_s	s	24	27	s1
+x18.sh100	src_s	s	16	19	s2
+x18.sh100	n	imm	20	23	s1
+x18.sh100	right	imm	27	27	head
+
+# x18.yb100 <dest_s>, <y_e>
+x18.yb100	dest_s	s	21	24	head
+x18.yb100	y_e	e	25	28	s3
