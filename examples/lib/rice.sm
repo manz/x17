@@ -17,10 +17,10 @@
 ; dst = the next n bits, n in s7 (1..16), read as at most two getbits_s. Uses s5, s11.
 .macro readk(dst) {
         ldi s11, #8
-        alu s5, s7, s11, #OP_SUB ; n - 8
-        ptst p1, s5, #NEG, #PTST ; n < 8
+        alu s12, s7, s11, #OP_SUB ; n - 8
+        ptst p1, s0, #LT12, #PTST ; n < 8
         jmp #3, #1, short
-        nop()
+        alu s5, s12, s0, #OP_ADD ; (delay slot)
         nop()
         getbits_s(dst)          ; the top 8
         alu s11, s5, s0, #OP_ADD
@@ -38,7 +38,7 @@ done:
 .macro rice_get(dst) {
         alu s8, s0, s14, #OP_SUB ; pre = -1: the delay slot counts each bit
 pfx:    alu s12, s10, s14, #OP_SUB ; sh = avail - 1
-        ptst p1, s12, #NEG, #PTST ; cache empty
+        ptst p1, s0, #LT12, #PTST ; cache empty
         jmp #IF_NOT, #1, pbit
         ldy s13, e5             ; (delay slot) next word
         nop()
@@ -48,15 +48,15 @@ pfx:    alu s12, s10, s14, #OP_SUB ; sh = avail - 1
         alu s10, s10, s15, #OP_ADD
         alu s12, s10, s14, #OP_SUB
 pbit:   x19.alu s13, s14, s12, #SHIFT ; 2^sh
-        alu s13, s9, s13, #OP_SUB
         alu s10, s12, s0, #OP_ADD ; avail -= 1
-        ptst p1, s13, #NEG, #PTST ; the bit is 0
+        alu s12, s9, s13, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; the bit is 0
         jmp #3, #1, gotpre
         alu s8, s8, s14, #OP_ADD ; (delay slot) pre += 1
         ldi s7, #MAX_PREFIX - 1 ; (delay slot)
-        alu s9, s13, s0, #OP_ADD ; the 1 leaves the cache
-        alu s7, s8, s7, #OP_SUB
-        ptst p1, s7, #NEG, #PTST ; fewer than 9 ones so far
+        alu s9, s12, s0, #OP_ADD ; the 1 leaves the cache
+        alu s12, s8, s7, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; fewer than 9 ones so far
         jmp #3, #1, pfx
         nop()
         nop()
@@ -72,9 +72,9 @@ gotpre: ldi s5, #8
         x02.mpy s8, s5, s7      ; base = pre * m
         alu s7, s2, s0, #OP_ADD
         readk(dst)              ; v
-        alu s5, dst, s14, #OP_SUB
-        alu s5, s5, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; v < 2: hi == 0
+        alu s12, dst, s14, #OP_SUB
+        alu s12, s12, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; v < 2: hi == 0
         jmp #IF_NOT, #1, big
         alu s7, dst, s8, #OP_ADD ; (delay slot) base + v
         alu s7, s7, s14, #OP_SUB ; (delay slot) - 1
@@ -141,8 +141,8 @@ done:
         x17.mve e6, s5
         x17.sty e6, #6, #1      ; k = 1 (s14)
 top:    ldy s7, e4
-        alu s5, s7, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; p1 = no samples left
+        alu s12, s7, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; p1 = no samples left
         jmp #3, #1, finish
         nop()
         nop()
@@ -158,8 +158,8 @@ top:    ldy s7, e4
         ldy s8, e8              ; kb
         ldy s2, e6              ; k from the last sample (y >= 3, so k >= 1 holds)
 lgd:    x19.alu s7, s14, s2, #SHIFT ; 2^k
-        alu s7, s1, s7, #OP_SUB
-        ptst p1, s7, #NEG, #PTST ; y < 2^k: down one
+        alu s12, s1, s7, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; y < 2^k: down one
         jmp #IF_NOT, #1, lg
         alu s5, s2, s14, #OP_SUB ; (delay slot) k - 1
         nop()
@@ -168,12 +168,12 @@ lgd:    x19.alu s7, s14, s2, #SHIFT ; 2^k
         nop()
         nop()
 lg:     alu s5, s2, s14, #OP_ADD ; t = k + 1
-        alu s7, s8, s5, #OP_SUB
-        ptst p1, s7, #NEG, #PTST ; t > kb: stop
+        alu s12, s8, s5, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; t > kb: stop
         jmp #3, #1, lgdone
         x19.alu s7, s14, s5, #SHIFT ; (delay slot) 2^t
-        alu s7, s1, s7, #OP_SUB ; (delay slot) y - 2^t
-        ptst p1, s7, #NEG, #PTST ; y < 2^t: stop
+        alu s12, s1, s7, #OP_SUB ; (delay slot) y - 2^t
+        ptst p1, s0, #LT12, #PTST ; y < 2^t: stop
         jmp #3, #1, lgdone
         nop()
         nop()
@@ -191,10 +191,10 @@ lgdone: x17.sty e6, #2, #0      ; keep k
         ; residual: mag = floor((nd + 1) / 2) = rshr(nd, 1), negated when nd is odd
         alu s6, s0, s14, #OP_SUB
         x19.alu s8, s7, s6, #SHIFT ; mag
-        alu s5, s8, s8, #OP_ADD
-        alu s5, s5, s7, #OP_SUB ; 2 mag - nd: 1 when odd
-        alu s5, s5, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; p1 = even
+        alu s12, s8, s8, #OP_ADD
+        alu s12, s12, s7, #OP_SUB ; 2 mag - nd: 1 when odd
+        alu s12, s12, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; p1 = even
         jmp #3, #1, even
         alu s6, s0, s8, #OP_SUB ; (delay slot) -mag
         nop()
@@ -206,8 +206,8 @@ even:   stx A6, s8
         x17.sty e4, #5, #0      ; left -= 1
         ; the mean: n >= 2^16 clamps it to 0xFFFF
         x19.alu s5, s14, s15, #SHIFT
-        alu s5, s4, s5, #OP_SUB
-        ptst p1, s5, #NEG, #PTST
+        alu s12, s4, s5, #OP_SUB
+        ptst p1, s0, #LT12, #PTST
         jmp #3, #1, grow
         nop()
         nop()
@@ -254,17 +254,17 @@ grow:   ldy s6, e7
 zchk:   ldi s5, #0
         x17.sty e3, #5, #0      ; zmode = 0
         ldy s1, e1
-        alu s5, s1, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; p1 = hi == 0
+        alu s12, s1, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; p1 = hi == 0
         jmp #IF_NOT, #1, top
         ldy s2, e2              ; (delay slot) lo
         ldi s5, #128            ; (delay slot)
-        alu s5, s2, s5, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; p1 = lo < 128
+        alu s12, s2, s5, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; p1 = lo < 128
         jmp #IF_NOT, #1, top
         ldy s7, e4              ; (delay slot) left
-        alu s5, s7, s14, #OP_SUB ; (delay slot)
-        ptst p1, s5, #NEG, #PTST ; p1 = none left
+        alu s12, s7, s14, #OP_SUB ; (delay slot)
+        ptst p1, s0, #LT12, #PTST ; p1 = none left
         jmp #3, #1, finish
         nop()
         nop()
@@ -272,12 +272,12 @@ zchk:   ldi s5, #0
         ; kz = 8 - bitlen(lo) + floor((lo + 16) / 2^6)
         ldi s3, #0              ; bitlen
 bl:     ldi s5, #7
-        alu s5, s3, s5, #OP_SUB
-        ptst p1, s5, #NEG, #PTST
+        alu s12, s3, s5, #OP_SUB
+        ptst p1, s0, #LT12, #PTST
         jmp #IF_NOT, #1, bldone ; bitlen == 7
         x19.alu s5, s14, s3, #SHIFT ; (delay slot) 2^bitlen
-        alu s5, s2, s5, #OP_SUB ; (delay slot) lo - 2^bitlen
-        ptst p1, s5, #NEG, #PTST
+        alu s12, s2, s5, #OP_SUB ; (delay slot) lo - 2^bitlen
+        ptst p1, s0, #LT12, #PTST
         jmp #3, #1, bldone
         nop()
         nop()
@@ -293,8 +293,8 @@ bldone: ldi s5, #16
         alu s2, s2, s5, #OP_ADD ; k = kz
         ; mz = 2^min(kz, kb) - 1
         ldy s8, e8
-        alu s5, s8, s2, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; p1 = kb < kz
+        alu s12, s8, s2, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; p1 = kb < kz
         jmp #3, #1, kbmin
         alu s1, s2, s0, #OP_ADD ; (delay slot) min = kz
         nop()
@@ -307,15 +307,15 @@ mz:     x19.alu s1, s14, s1, #SHIFT
         alu s3, s15, s0, #OP_ADD ; escape width 16
         rice_get(s4)            ; run
         ldy s7, e4
-        alu s5, s7, s4, #OP_SUB ; left - run
-        ptst p1, s5, #NEG, #PTST
+        alu s12, s7, s4, #OP_SUB ; left - run
+        ptst p1, s0, #LT12, #PTST
         jmp #3, #1, overrun
-        nop()
+        alu s5, s12, s0, #OP_ADD ; (delay slot)
         nop()
         x17.sty e4, #5, #0      ; left -= run
         alu s7, s4, s0, #OP_ADD
-zrun:   alu s5, s7, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; p1 = all written
+zrun:   alu s12, s7, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; p1 = all written
         jmp #3, #1, zdone
         nop()
         nop()
@@ -329,8 +329,8 @@ zrun:   alu s5, s7, s14, #OP_SUB
 zdone:  ldi s5, #0x7FFF
         alu s5, s5, s5, #OP_ADD ; 0xFFFE
         alu s5, s5, s14, #OP_ADD ; 65535
-        alu s5, s4, s5, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; p1 = run < 65535
+        alu s12, s4, s5, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; p1 = run < 65535
         jmp #3, #1, keepz
         ldi s5, #0              ; (delay slot)
         nop()

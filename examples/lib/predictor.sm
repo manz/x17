@@ -78,15 +78,15 @@
 .macro integrate() {
         ldy s1, e11
         alu s4, s1, s14, #OP_SUB
-        ptst p1, s4, #NEG, #PTST ; n == 0
+        ptst p1, s0, #LT4, #PTST ; n == 0
         jmp #3, #1, done
         nop()
         nop()
         x19.xrd s4, #2          ; prev = buf[0]
         x02.ainc #2, #2
         alu s1, s1, s14, #OP_SUB
-next:   alu s3, s1, s14, #OP_SUB
-        ptst p1, s3, #NEG, #PTST
+next:   alu s12, s1, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST
         jmp #3, #1, done
         nop()
         nop()
@@ -105,7 +105,8 @@ done:
 
 ; The adaptation's registers: A9 = out[j - order], A11 = the reversed coefficients,
 ; s8 = order steps, s9 = h = rshr(2^ds - 1, 1), s10 = -ds (floor(v / 2^ds) = rshr(v - h, ds)),
-; s11 = 5, s6 = 2^15 - 1, s1 = 2^18, s4 = w << 18 (w = 1), s3 = the first out. Uses s2.
+; s11 = 5, s6 = 2^15 - 1, s1 = 2^18, s5 = w << 18 (w = 1), s3 = the first out. Uses s2.
+; D (set before, in s4) is tested directly: s4 <= 0.
 .macro adapt_init() {
         x19.aagu5 A9, A7, #5, #0
         x19.aagu5 A11, A10, #5, #0
@@ -120,7 +121,7 @@ done:
         ldi s6, #0x7FFF
         ldi s1, #18
         x19.alu s1, s14, s1, #SHIFT ; 2^18
-        alu s4, s1, s0, #OP_ADD
+        alu s5, s1, s0, #OP_ADD
         x19.xrd s3, #9
         x02.ainc #9, #9
 }
@@ -133,8 +134,8 @@ done:
         ldi s10, #-16           ; tap constants
         ldi s11, #8
         ldy s7, e11
-        alu s5, s7, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; n == 0
+        alu s12, s7, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; n == 0
         jmp #3, #1, finish
         x19.aagu5 A4, A3, #5, #0 ; (delay slot) A4 = out base
         nop()
@@ -145,13 +146,12 @@ done:
         alu s7, s7, s14, #OP_SUB ; left = n - 1
         ldy s8, e12             ; warm-up count = order
         ; out[j] = sx(pc[j] + out[j - 1]) for j = 1 .. min(order, n - 1)
-warm:   alu s5, s7, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; nothing left
+warm:   alu s12, s7, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; nothing left
         jmp #3, #1, finish
         nop()
         nop()
-        alu s5, s8, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; warm-up done
+        ptst p1, s0, #LE8, #PTST ; warm-up done
         jmp #3, #1, main
         nop()
         nop()
@@ -170,14 +170,13 @@ warm:   alu s5, s7, s14, #OP_SUB
         ; out[j] = sx(pc[j] + top); handled apart to match the reference's plain copy)
 main:   x17.sty e15, #7, #0     ; left
         ldy s8, e12
-        alu s5, s8, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; order == 0
+        ptst p1, s0, #LE8, #PTST ; order == 0
         jmp #IF_NOT, #1, window
         nop()
         nop()
 copy:   ldy s7, e15
-        alu s5, s7, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST
+        alu s12, s7, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST
         jmp #3, #1, finish
         nop()
         nop()
@@ -194,8 +193,8 @@ window: x19.aagu5 A8, A4, #5, #0 ; top: out[j - order - 1]
         x19.aagu5 A7, A4, #5, #0
         x02.ainc #7, #7         ; history: out[j - order]
 sample: ldy s7, e15
-        alu s5, s7, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST
+        alu s12, s7, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST
         jmp #3, #1, finish
         nop()
         nop()
@@ -222,7 +221,7 @@ tap:    x19.xrd s1, #11         ; c
         alu s13, s13, s12, #OP_SUB
         alu s4, s4, s13, #OP_ADD
         alu s8, s8, s14, #OP_SUB
-        ptst p1, s8, #NEG, #PTST ; last term done
+        ptst p1, s0, #LT8, #PTST ; last term done
         jmp #IF_NOT, #1, tap
         x19.xrd s3, #9          ; (delay slot) next term
         x02.ainc #9, #9         ; (delay slot)
@@ -254,14 +253,14 @@ sum:    floorshr(s3, s5, 15)
         ldy s5, e15
         alu s5, s5, s14, #OP_SUB
         x17.sty e15, #5, #0     ; left -= 1
-        alu s5, s1, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; res <= 0
+        alu s12, s1, s14, #OP_SUB
+        ptst p1, s0, #LT12, #PTST ; res <= 0
         jmp #IF_NOT, #1, adp    ; res > 0
-        alu s5, s1, s0, #OP_ADD ; (delay slot) D = res
-        nop()
-        ptst p1, s1, #NEG, #PTST ; res < 0
+        alu s4, s1, s0, #OP_ADD ; (delay slot) D = res
+        alu s12, s1, s0, #OP_ADD ; (delay slot)
+        ptst p1, s0, #LT12, #PTST ; res < 0
         jmp #3, #1, adn
-        alu s5, s0, s1, #OP_SUB ; (delay slot) D = -res
+        alu s4, s0, s1, #OP_SUB ; (delay slot) D = -res
         nop()
         jmp #IF_NOT, #2, advance ; res == 0: no adaptation
         nop()
@@ -274,36 +273,34 @@ sum:    floorshr(s3, s5, 15)
 adp:    adapt_init()
 pstep:  alu s3, s7, s3, #OP_SUB ; dd = top - out
         alu s12, s0, s3, #OP_SUB ; -dd
-        ptst p1, s3, #NEG, #PTST
-        jmp #3, #1, pneg
+        ptst p1, s0, #LE12, #PTST ; dd >= 0
+        jmp #IF_NOT, #1, pneg
         x19.xrd s13, #11        ; (delay slot) c
         alu s2, s3, s9, #OP_SUB ; (delay slot) dd - h
-        ptst p1, s12, #NEG, #PTST ; dd > 0
+        ptst p1, s0, #LT12, #PTST ; dd > 0
         jmp #IF_NOT, #1, pput   ; dd == 0: m = 0, c kept
-        x19.alu s12, s2, s10, #SHIFT ; (delay slot) m = floor(dd / 2^ds)
+        x19.alu s3, s2, s10, #SHIFT ; (delay slot) m = floor(dd / 2^ds)
         nop()
         alu s13, s13, s14, #OP_SUB ; c -= 1
-        alu s3, s13, s6, #OP_ADD
-        alu s3, s3, s14, #OP_ADD ; c + 2^15 < 0: c = 2^15 - 1
-        ptst p1, s3, #NEG, #PTST
+        alu s12, s13, s6, #OP_ADD
+        alu s12, s12, s14, #OP_ADD ; c + 2^15 < 0: c = 2^15 - 1
+        ptst p1, s0, #LT12, #PTST
         jmp #IF_NOT, #1, pput
         nop()
         nop()
         alu s13, s6, s0, #OP_ADD
 pput:   stx A11, s13
         x02.ainc #11, #11       ; (overwrites s2)
-        x19.alu s12, s12, s11, #SHIFT ; m << 5
-        x02.mpy s12, s4, s12    ; w * m, exact
-        alu s5, s5, s12, #OP_SUB
-        alu s4, s4, s1, #OP_ADD ; w += 1
+        x19.alu s12, s3, s11, #SHIFT ; m << 5
+        x02.mpy s12, s5, s12    ; w * m, exact
+        alu s4, s4, s12, #OP_SUB
+        alu s5, s5, s1, #OP_ADD ; w += 1
         alu s8, s8, s14, #OP_SUB
-        alu s3, s5, s14, #OP_SUB
-        ptst p1, s3, #NEG, #PTST ; D <= 0: stop
+        ptst p1, s0, #LE4, #PTST ; D <= 0: stop
         jmp #3, #1, adone
         x19.xrd s3, #9          ; (delay slot) next out
         x02.ainc #9, #9         ; (delay slot)
-        alu s2, s8, s14, #OP_SUB
-        ptst p1, s2, #NEG, #PTST ; every coefficient visited
+        ptst p1, s0, #LE8, #PTST ; every coefficient visited
         jmp #IF_NOT, #1, pstep
         nop()
         nop()
@@ -311,10 +308,10 @@ pput:   stx A11, s13
         nop()
         nop()
 pneg:   alu s12, s12, s9, #OP_SUB
-        x19.alu s12, s12, s10, #SHIFT ; m = floor(-dd / 2^ds)
+        x19.alu s3, s12, s10, #SHIFT ; m = floor(-dd / 2^ds)
         alu s13, s13, s14, #OP_ADD ; c += 1
-        alu s3, s6, s13, #OP_SUB ; 2^15 - 1 - c < 0: c = -2^15
-        ptst p1, s3, #NEG, #PTST
+        alu s12, s6, s13, #OP_SUB ; 2^15 - 1 - c < 0: c = -2^15
+        ptst p1, s0, #LT12, #PTST
         jmp #IF_NOT, #1, pput
         nop()
         nop()
@@ -326,17 +323,17 @@ pneg:   alu s12, s12, s9, #OP_SUB
 adn:    adapt_init()
 nstep:  alu s3, s7, s3, #OP_SUB ; dd = top - out
         alu s12, s0, s3, #OP_SUB ; -dd
-        ptst p1, s3, #NEG, #PTST
-        jmp #3, #1, nneg
+        ptst p1, s0, #LE12, #PTST ; dd >= 0
+        jmp #IF_NOT, #1, nneg
         x19.xrd s13, #11        ; (delay slot) c
         alu s2, s12, s9, #OP_SUB ; (delay slot) -dd - h
-        ptst p1, s12, #NEG, #PTST ; dd > 0
+        ptst p1, s0, #LT12, #PTST ; dd > 0
         jmp #IF_NOT, #1, nput   ; dd == 0: m = 0, c kept
-        x19.alu s12, s2, s10, #SHIFT ; (delay slot) m = floor(-dd / 2^ds)
+        x19.alu s3, s2, s10, #SHIFT ; (delay slot) m = floor(-dd / 2^ds)
         nop()
         alu s13, s13, s14, #OP_ADD ; c += 1
-        alu s3, s6, s13, #OP_SUB ; 2^15 - 1 - c < 0: c = -2^15
-        ptst p1, s3, #NEG, #PTST
+        alu s12, s6, s13, #OP_SUB ; 2^15 - 1 - c < 0: c = -2^15
+        ptst p1, s0, #LT12, #PTST
         jmp #IF_NOT, #1, nput
         nop()
         nop()
@@ -344,18 +341,16 @@ nstep:  alu s3, s7, s3, #OP_SUB ; dd = top - out
         alu s13, s13, s14, #OP_SUB
 nput:   stx A11, s13
         x02.ainc #11, #11       ; (overwrites s2)
-        x19.alu s12, s12, s11, #SHIFT ; m << 5
-        x02.mpy s12, s4, s12    ; w * m, exact
-        alu s5, s5, s12, #OP_ADD
-        alu s4, s4, s1, #OP_ADD ; w += 1
+        x19.alu s12, s3, s11, #SHIFT ; m << 5
+        x02.mpy s12, s5, s12    ; w * m, exact
+        alu s4, s4, s12, #OP_ADD
+        alu s5, s5, s1, #OP_ADD ; w += 1
         alu s8, s8, s14, #OP_SUB
-        alu s3, s5, s14, #OP_SUB
-        ptst p1, s3, #NEG, #PTST ; D <= 0: stop
+        ptst p1, s0, #LE4, #PTST ; D <= 0: stop
         jmp #3, #1, adone
         x19.xrd s3, #9          ; (delay slot) next out
         x02.ainc #9, #9         ; (delay slot)
-        alu s2, s8, s14, #OP_SUB
-        ptst p1, s2, #NEG, #PTST ; every coefficient visited
+        ptst p1, s0, #LE8, #PTST ; every coefficient visited
         jmp #IF_NOT, #1, nstep
         nop()
         nop()
@@ -363,11 +358,11 @@ nput:   stx A11, s13
         nop()
         nop()
 nneg:   alu s12, s3, s9, #OP_SUB
-        x19.alu s12, s12, s10, #SHIFT ; m = floor(dd / 2^ds)
+        x19.alu s3, s12, s10, #SHIFT ; m = floor(dd / 2^ds)
         alu s13, s13, s14, #OP_SUB ; c -= 1
-        alu s3, s13, s6, #OP_ADD
-        alu s3, s3, s14, #OP_ADD ; c + 2^15 < 0: c = 2^15 - 1
-        ptst p1, s3, #NEG, #PTST
+        alu s12, s13, s6, #OP_ADD
+        alu s12, s12, s14, #OP_ADD ; c + 2^15 < 0: c = 2^15 - 1
+        ptst p1, s0, #LT12, #PTST
         jmp #IF_NOT, #1, nput
         nop()
         nop()

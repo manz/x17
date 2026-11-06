@@ -368,6 +368,149 @@ const GATES = [_]Gate{
         .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
     },
     .{
+        .name = "own-ptst-c1-0-0",
+        // fact 387 probe: ptst 4420296D, p1 <- s5 <= -s4 with s5 = 0, s4 = 0.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x000000 },
+            .{ .bank = .s, .index = 4, .value = 0x000000 },
+        },
+        .src =
+        \\ptst p1, s5, #1, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-ptst-c1-m1-5",
+        // fact 387 probe: ptst 4420296D, p1 <- s5 <= -s4 with s5 = -1, s4 = 5.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0xFFFFFF },
+            .{ .bank = .s, .index = 4, .value = 0x000005 },
+        },
+        .src =
+        \\ptst p1, s5, #1, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
+    },
+    .{
+        .name = "own-ptst-c1-1-m5",
+        // fact 387 probe: ptst 4420296D, p1 <- s5 <= -s4 with s5 = 1, s4 = -5.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x000001 },
+            .{ .bank = .s, .index = 4, .value = 0xFFFFFB },
+        },
+        .src =
+        \\ptst p1, s5, #1, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-ptst-c1-m5-5",
+        // fact 387 probe: ptst 4420296D, p1 <- s5 <= -s4 with s5 = -5, s4 = 5.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0xFFFFFB },
+            .{ .bank = .s, .index = 4, .value = 0x000005 },
+        },
+        .src =
+        \\ptst p1, s5, #1, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-ptst-c1-m6-5",
+        // fact 387 probe: ptst 4420296D, p1 <- s5 <= -s4 with s5 = -6, s4 = 5.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0xFFFFFA },
+            .{ .bank = .s, .index = 4, .value = 0x000005 },
+        },
+        .src =
+        \\ptst p1, s5, #1, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-ptst-c1-m1-0",
+        // fact 387 probe: ptst 4420296D, p1 <- s5 <= -s4 with s5 = -1, s4 = 0.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0xFFFFFF },
+            .{ .bank = .s, .index = 4, .value = 0x000000 },
+        },
+        .src =
+        \\ptst p1, s5, #1, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-ptst-c1-0-5",
+        // fact 387 probe: ptst 4420296D, p1 <- s5 <= -s4 with s5 = 0, s4 = 5.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x000000 },
+            .{ .bank = .s, .index = 4, .value = 0x000005 },
+        },
+        .src =
+        \\ptst p1, s5, #1, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
+    },
+    .{
+        .name = "own-ptst-eq",
+        // fact 377: c7, s5 = 0x300, s12 = 0x300.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x300 },
+            .{ .bank = .s, .index = 12, .value = 0x300 },
+        },
+        .src =
+        \\ptst p1, s5, #7, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-ptst-eq-false",
+        // fact 377: c7, s5 = 0x300, s12 = 0x301.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x300 },
+            .{ .bank = .s, .index = 12, .value = 0x301 },
+        },
+        .src =
+        \\ptst p1, s5, #7, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
+    },
+    .{
+        .name = "own-ptst-b0",
+        // fact 377: c9, s5 = 0x300, s4 = 0x0.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x300 },
+            .{ .bank = .s, .index = 4, .value = 0x0 },
+        },
+        .src =
+        \\ptst p1, s5, #9, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-ptst-b0-false",
+        // fact 377: c9, s5 = 0x300, s4 = 0x1.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x300 },
+            .{ .bank = .s, .index = 4, .value = 0x1 },
+        },
+        .src =
+        \\ptst p1, s5, #9, #0x0B
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
+    },
+    .{
         .name = "own-plog-and",
         // Pre p1 = 1, p2 = 0; p4 <- p1 AND p2 = 0.
         .pre = &.{

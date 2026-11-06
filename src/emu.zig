@@ -3194,13 +3194,23 @@ fn execPtst(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         @as(i32, @bitCast(a_val | 0xFF000000))
     else
         @as(i32, @bitCast(a_val));
-    const v: u8 = switch (cond) {
-        0, 2 => if (signed <= 0) 1 else 0, // c0 / c2: <= 0
-        1 => if (signed < 0) 1 else 0, // c1: < 0
-        4, 6 => if (signed >= 0) 1 else 0, // c4 / c6: >= 0
-        7 => 1, // c7: always true
-        else => return RunError.UnknownForm,
+    // fact 376/377: row c[4:2], b = s<4 * c[1:0]> (s0, s4, s8, s12).  Silicon
+    // probe 2026-11-06: c1 is a <= -s4 (7 of 7 rows), not a < 0.  own-ptst-eq is c7 = row 001
+    // (a >= b, b = s12); row 111 is b == 0 per the 377 sweep fit.
+    const b_s: u32 = (cond & 3) * 4;
+    const b_raw: u32 = state.s[b_s] & M24;
+    const b: i32 = if (b_raw & 0x800000 != 0) @as(i32, @bitCast(b_raw | 0xFF000000)) else @as(i32, @bitCast(b_raw));
+    const t: bool = switch (@as(u3, @intCast(cond >> 2))) {
+        0 => signed <= -b,
+        1 => signed >= b,
+        2 => b <= 0,
+        3 => b < 0,
+        4 => b <= 1,
+        5 => signed <= b,
+        6 => b >= 0,
+        7 => b == 0,
     };
+    const v: u8 = @intFromBool(t);
     if (p_dest != 0) state.p[p_dest] = v;
 }
 
@@ -3832,10 +3842,10 @@ test "ldi sign-extends its 16-bit immediate" {
 test "profile counts the bundles run at each syllable, jump delay slots included" {
     const gpa = std.testing.allocator;
     const prog = switch (try asm_mod.assembleFile(gpa,
-        \\        ldi s1, #2
+        \\        ldi s4, #2
         \\        ldi s2, #1
-        \\loop:   alu s1, s1, s2, #0x10
-        \\        ptst p1, s1, #1, #0x0B
+        \\loop:   alu s4, s4, s2, #0x10
+        \\        ptst p1, s0, #13, #0x0B
         \\        jmp #2, #1, loop
         \\        alu s0, s0, s0, #0
         \\        alu s0, s0, s0, #0

@@ -91,7 +91,7 @@ name = "ptst"
 mask = "0xE000001F"
 value = "0x4000000D"
 evidence = "MEASURED"
-ref = "fact 95 pass 121: p<[29:26]> <- cond[25:21](s<[14:11]>); with op [10:5] = 0x0B: c1 < 0, c0/c2 <= 0, c4/c6 >= 0, c7 true; c3/c5 and c8-31 OPEN; [18:15] inert for op 0x0B.  own-ptst, own-ptst-pos"
+ref = "fact 376/377/387: p<[29:26]> <- row c[25:23](a = s<[14:11]>, b = s<4 * c[22:21]>), op [10:5] = 0x0B: 000 a <= -b, 001 a >= b, 010 b <= 0, 011 b < 0, 100 b <= 1, 101 a <= b, 110 b >= 0, 111 b == 0 (signed 24-bit). Supersedes 95 pass 121 (one operand: only right with s4 = s8 = s12 = 0).  own-ptst-c1-*, own-ptst-eq, own-ptst-b0"
 
 [[form]]
 name = "plog"
