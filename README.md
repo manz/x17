@@ -52,7 +52,9 @@ Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
   parameter block, packet staging, the output ring drain and its owned-buffer
   rule.  Interface facts from sosumi's specs/questions.md; packet reads and
   clobbered regions are still named stubs.
-- To come: cycle costs, the bit-exact harness.
+- `zig build bench`: bundles per ALAC packet by stage, from the emulator's
+  per-syllable profile (`State.profile`) between marker bundles.
+- To come: cycles (the clock and the cycles per bundle form are unmeasured).
 
 ## Mnemonics
 

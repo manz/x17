@@ -20,6 +20,8 @@ const std = @import("std");
 const isa = @import("isa");
 
 pub const State = struct {
+    /// When set, profile[i] counts the bundles run that start at syllable i.
+    profile: ?[]u64 = null,
     /// Scalar registers s0..s15.  Default zero.
     s: [16]u32 = @splat(0),
     /// Element registers e0..e15.  Default zero.
@@ -3128,6 +3130,7 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         const slice = syllables[i .. i + len];
         const pc_at_bundle = i;
         state.pc = i;
+        if (state.profile) |p| p[i] += 1;
         try executeBundle(gpa, state, slice);
         i += len;
         // The stop has a shadow (fact 72): an ldi and a st + wr after it
@@ -3822,4 +3825,33 @@ test "ldi sign-extends its 16-bit immediate" {
     const pos = try asm_mod.assembleOne("ldi s5, #0x7FFF");
     try executeBundle(testing.allocator, &state, pos.slice());
     try testing.expectEqual(@as(u32, 0x7FFF), state.s[5]);
+}
+
+test "profile counts the bundles run at each syllable, jump delay slots included" {
+    const gpa = std.testing.allocator;
+    const prog = switch (try asm_mod.assembleFile(gpa,
+        \\        ldi s1, #2
+        \\        ldi s2, #1
+        \\loop:   alu s1, s1, s2, #0x10
+        \\        ptst p1, s1, #1, #0x0B
+        \\        jmp #2, #1, loop
+        \\        alu s0, s0, s0, #0
+        \\        alu s0, s0, s0, #0
+        \\        x17.halt
+        \\
+    )) {
+        .ok => |p| p,
+        .err => return error.Assemble,
+    };
+    defer gpa.free(prog);
+    const profile = try gpa.alloc(u64, prog.len);
+    defer gpa.free(profile);
+    @memset(profile, 0);
+    var state = State{ .profile = profile };
+    defer state.deinit(gpa);
+    const n = try runFrom(gpa, &state, prog, 0, 100);
+    var sum: u64 = 0;
+    for (profile) |c| sum += c;
+    try std.testing.expectEqual(@as(u64, n), sum);
+    try std.testing.expectEqual(@as(u64, 3), profile[2]); // the loop body, three passes
 }

@@ -125,6 +125,22 @@ pub fn build(b: *std.Build) void {
         lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/alac/{s}.pkts", .{f})) });
     }
     const lib_t = b.addTest(.{ .root_module = lib_mod });
+
+    const bench_mod = b.createModule(.{
+        .root_source_file = b.path("src/bench.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    bench_mod.addImport("asm", asm_mod);
+    bench_mod.addImport("emu", emu_mod);
+    for ([_][]const u8{ "bits", "rice", "predictor", "unmix", "alac" }) |l| {
+        bench_mod.addAnonymousImport(b.fmt("{s}.sm", .{l}), .{ .root_source_file = b.path(b.fmt("examples/lib/{s}.sm", .{l})) });
+    }
+    for ([_][]const u8{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |f| {
+        bench_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/alac/{s}.pkts", .{f})) });
+    }
+    const bench = b.addExecutable(.{ .name = "bench", .root_module = bench_mod });
+    b.step("bench", "Bundles per ALAC packet, by stage").dependOn(&b.addRunArtifact(bench).step);
     test_step.dependOn(&b.addRunArtifact(lib_t).step);
     const disasm_t = b.addTest(.{ .root_module = disasm_mod });
     test_step.dependOn(&b.addRunArtifact(disasm_t).step);
