@@ -5,21 +5,58 @@
 ;   A prefix of 9 ones is an escape: the next s3 bits, raw.
 ;   Otherwise, pre ones then a zero; hi = the next k - 1 bits; with base = pre * m,
 ;   hi == 0 gives base, else base + 2 * hi + bit - 1.
-; Uses s4 (as dst), s5, s7, s8; s1..s3 survive. pre * m is pre additions (pre <= 8).
+; Uses s4 (as dst), s5, s7, s8; s1..s3 survive.
+;
+; The prefix bits come straight off the cache (subtract 2^(avail - 1), test the sign). hi
+; and its bit are read as one k-bit v = 2 * hi + bit: v >= 2 gives base + v - 1, and v < 2
+; (hi == 0) gives base with v's bit handed back to the cache. base is one exact multiply,
+; round((m << 8) * (pre << 15) / 2^23), m < 2^15, pre <= 8.
 
 .const MAX_PREFIX = 9
 
+; dst = the next n bits, n in s7 (1..16), read as at most two getbits_s. Uses s5, s11.
+.macro readk(dst) {
+        ldi s11, #8
+        alu s5, s7, s11, #OP_SUB ; n - 8
+        ptst p1, s5, #NEG, #PTST ; n < 8
+        jmp #3, #1, short
+        nop()
+        nop()
+        getbits_s(dst)          ; the top 8
+        alu s11, s5, s0, #OP_ADD
+        getbits_s(s5)           ; the other n - 8
+        x19.alu dst, dst, s11, #SHIFT
+        alu dst, dst, s5, #OP_ADD
+        jmp #IF_NOT, #2, done
+        nop()
+        nop()
+short:  alu s11, s7, s0, #OP_ADD
+        getbits_s(dst)
+done:
+}
+
 .macro rice_get(dst) {
-        alu s8, s0, s0, #OP_ADD ; pre = 0
-pfx:    getbits(s5, 1)
-        alu s7, s5, s14, #OP_SUB ; bit - 1
-        ptst p1, s7, #NEG, #PTST ; p1 = bit is 0
+        alu s8, s0, s14, #OP_SUB ; pre = -1: the delay slot counts each bit
+pfx:    alu s12, s10, s14, #OP_SUB ; sh = avail - 1
+        ptst p1, s12, #NEG, #PTST ; cache empty
+        jmp #IF_NOT, #1, pbit
+        ldy s13, e5             ; (delay slot) next word
+        nop()
+        x19.alu s9, s9, s15, #SHIFT ; refill
+        alu s9, s9, s13, #OP_ADD
+        x18.eagu e5, e5, #AGU_INC
+        alu s10, s10, s15, #OP_ADD
+        alu s12, s10, s14, #OP_SUB
+pbit:   x19.alu s13, s14, s12, #SHIFT ; 2^sh
+        alu s13, s9, s13, #OP_SUB
+        alu s10, s12, s0, #OP_ADD ; avail -= 1
+        ptst p1, s13, #NEG, #PTST ; the bit is 0
         jmp #3, #1, gotpre
-        ldi s7, #MAX_PREFIX     ; (delay slot)
-        alu s5, s8, s14, #OP_ADD ; (delay slot) pre + 1
-        alu s8, s5, s0, #OP_ADD ; pre += 1
+        alu s8, s8, s14, #OP_ADD ; (delay slot) pre += 1
+        ldi s7, #MAX_PREFIX - 1 ; (delay slot)
+        alu s9, s13, s0, #OP_ADD ; the 1 leaves the cache
         alu s7, s8, s7, #OP_SUB
-        ptst p1, s7, #NEG, #PTST ; p1 = pre < 9
+        ptst p1, s7, #NEG, #PTST ; fewer than 9 ones so far
         jmp #3, #1, pfx
         nop()
         nop()
@@ -28,33 +65,27 @@ pfx:    getbits(s5, 1)
         jmp #IF_NOT, #2, done
         nop()
         nop()
-gotpre: alu s7, s2, s14, #OP_SUB ; n = k - 1
-        readn(dst)              ; hi
-        alu s7, s0, s0, #OP_ADD ; base = 0
-mul:    alu s5, s8, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; p1 = pre == 0
-        jmp #3, #1, muldone
-        nop()
-        nop()
-        alu s7, s7, s1, #OP_ADD ; base += m
-        alu s8, s8, s14, #OP_SUB ; pre -= 1
-        jmp #IF_NOT, #2, mul
-        nop()
-        nop()
-muldone: alu s5, dst, s14, #OP_SUB
-        ptst p1, s5, #NEG, #PTST ; p1 = hi == 0
-        jmp #3, #1, zero
-        nop()
-        nop()
-        getbits(s5, 1)
-        alu dst, dst, dst, #OP_ADD ; 2 * hi
-        alu dst, dst, s5, #OP_ADD ; + bit
-        alu dst, dst, s7, #OP_ADD ; + base
-        alu dst, dst, s14, #OP_SUB ; - 1
+gotpre: ldi s5, #8
+        x19.alu s5, s1, s5, #SHIFT ; m << 8
+        ldi s7, #15
+        x19.alu s7, s8, s7, #SHIFT ; pre << 15
+        x02.mpy s8, s5, s7      ; base = pre * m
+        alu s7, s2, s0, #OP_ADD
+        readk(dst)              ; v
+        alu s5, dst, s14, #OP_SUB
+        alu s5, s5, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; v < 2: hi == 0
+        jmp #IF_NOT, #1, big
+        alu s7, dst, s8, #OP_ADD ; (delay slot) base + v
+        alu s7, s7, s14, #OP_SUB ; (delay slot) - 1
+        x19.alu s5, dst, s10, #SHIFT ; v's bit back on top of the cache
+        alu s9, s9, s5, #OP_ADD
+        alu s10, s10, s14, #OP_ADD
+        alu dst, s8, s0, #OP_ADD ; base
         jmp #IF_NOT, #2, done
         nop()
         nop()
-zero:   alu dst, s7, s0, #OP_ADD
+big:    alu dst, s7, s0, #OP_ADD
 done:
 }
 
@@ -166,19 +197,17 @@ lgdone: x17.sty e6, #2, #0      ; keep k
         rice_get(s4)            ; n
         ldy s5, e3
         alu s7, s4, s5, #OP_ADD ; nd = n + zmode
-        ; residual: mag = floor((nd + 1) / 2), negated when nd is odd
-        alu s5, s7, s14, #OP_SUB
+        ; residual: mag = floor((nd + 1) / 2) = rshr(nd, 1), negated when nd is odd
         alu s6, s0, s14, #OP_SUB
-        x19.alu s8, s5, s6, #SHIFT ; half = floor(nd / 2)
+        x19.alu s8, s7, s6, #SHIFT ; mag
         alu s5, s8, s8, #OP_ADD
-        alu s5, s7, s5, #OP_SUB ; odd = nd - 2 * half
-        alu s8, s8, s5, #OP_ADD ; mag = half + odd
-        alu s6, s5, s14, #OP_SUB
-        ptst p1, s6, #NEG, #PTST ; p1 = even
+        alu s5, s5, s7, #OP_SUB ; 2 mag - nd: 1 when odd
+        alu s5, s5, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; p1 = even
         jmp #3, #1, even
+        alu s6, s0, s8, #OP_SUB ; (delay slot) -mag
         nop()
-        nop()
-        alu s8, s0, s8, #OP_SUB
+        alu s8, s6, s0, #OP_ADD
 even:   stx A6, s8
         x02.ainc #6, #6
         ldy s5, e4
