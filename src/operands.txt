@@ -359,6 +359,11 @@ x02.agu	y_R	R	22	25	s5
 x02.agu	fn	imm	7	10	s1
 x02.agu	cin	imm	27	27	s5
 
+# x02.esrc (6 syllables): w4 mode 010 reads scalar e.
+# Grammar: x02.esrc <dest_s>, <src_e>
+x02.esrc	dest_s	s	3	6	s4
+x02.esrc	src_e	e	27	30	s3
+
 # x02.xrd (6 syllables): X-memory read at low5 0x02 w4 mode 5.
 # Grammar: x02.xrd <dest_s>, <src_A>
 x02.xrd	dest_s	s	3	6	s4

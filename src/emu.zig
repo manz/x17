@@ -173,6 +173,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         }
         if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
         if (w4_mode == 0) return execX02Agu(gpa, state, bundle);
+        if (w4_mode == 2) return execX02Xrd(gpa, state, bundle); // esrc path
     }
     if (low5 == 0x03 and bundle.len >= 6) {
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
@@ -420,10 +421,15 @@ fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (w4 >> 3) & 0xF;
     // Y-slot bit: w5[12] = 1 selects Y:[e<w3[30:27]>] instead of X:[A<w4[21:17]>].
     const is_y: bool = ((w5 >> 12) & 1) == 1;
+    // Mux bits at w4[13:11]: 101 = X-read (default), 010 = scalar e (esrc).
+    const mux: u32 = (w4 >> 11) & 0x7;
     const v: u32 = if (is_y) blk: {
         const src_e: u32 = (w3 >> 27) & 0xF;
         const addr: u32 = state.e[src_e];
         break :blk state.getY(addr) orelse 0;
+    } else if (mux == 0b010) blk: {
+        const src_e: u32 = (w3 >> 27) & 0xF;
+        break :blk if (src_e == 0) 0 else state.e[src_e];
     } else blk: {
         const src_a: u32 = (w4 >> 17) & 0xF;
         const addr: u32 = state.a[src_a];
