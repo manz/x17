@@ -2379,6 +2379,163 @@ const GATES = [_]Gate{
         .post = &.{.{ .y_mem = .{ .addr = 0x70D, .value = 0x555 } }},
     },
     .{
+        .name = "own-yagu",
+        // s1 <- Y:[e3] (old e) = 0x1357; e3 and R5 <- e3 + R4 = 0x802.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x702 },
+            .{ .bank = .r, .index = 4, .value = 0x100 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x702, .value = 0x1357 }},
+        .src =
+        \\yagu e3, R4, #6, s1, R5, #1, s0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 1, .value = 0x1357 } },
+            .{ .e_reg = .{ .index = 3, .value = 0x802 } },
+            .{ .r_reg = .{ .index = 5, .value = 0x802 } },
+        },
+    },
+    .{
+        .name = "own-ypair",
+        // s8 <- e3 = 0x702; yagu loads yd <- 0x0BEE; s2 <- yd.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x702 },
+            .{ .bank = .r, .index = 4, .value = 0x100 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x702, .value = 0x0BEE }},
+        .src =
+        \\ypair e3, #6, #2, #4
+        \\yagu e3, R4, #0, s1, R5, #1, s0
+        \\ypair e3, #7, #1, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 8, .value = 0x702 } },
+            .{ .s_reg = .{ .index = 2, .value = 0x0BEE } },
+        },
+    },
+    .{
+        .name = "own-ystm",
+        // Y:[e3] <- s6; e3 and R5 <- x+1 = 0x703.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x702 },
+            .{ .bank = .s, .index = 6, .value = 0x0BEE },
+        },
+        .src =
+        \\ystm e3, e3, R0, #2, #1, #2, s6, #3, R5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .y_mem = .{ .addr = 0x702, .value = 0x0BEE } },
+            .{ .e_reg = .{ .index = 3, .value = 0x703 } },
+            .{ .r_reg = .{ .index = 5, .value = 0x703 } },
+        },
+    },
+    .{
+        .name = "own-ystm-yd",
+        // head[26] = 0: R5 <- yd = 0x0BEE (yagu loaded it); no store.
+        .pre = &.{
+            .{ .bank = .e, .index = 3, .value = 0x702 },
+            .{ .bank = .r, .index = 4, .value = 0x100 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x702, .value = 0x0BEE }},
+        .src =
+        \\yagu e3, R4, #0, s1, R0, #1, s0
+        \\ystm e3, e0, R0, #0, #0, #2, s0, #0, R5
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 5, .value = 0x0BEE } }},
+    },
+    .{
+        .name = "own-tst-false",
+        // tst (8, 5) -> p2 false: br.c2 not taken, the add runs.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\tst #8, #5, #2
+        \\br #2, #4
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\alu s1, s1, s2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-tst-true",
+        // tst (8, 0x1D) -> p2 true: br.c2 jumps over the add.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\tst #8, #0x1D, #2
+        \\br #2, #4
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\alu s1, s1, s2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0 } }},
+    },
+    .{
+        .name = "own-tst-slot5",
+        // the second tst writes false into p5; p2 stays true.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0 },
+            .{ .bank = .s, .index = 2, .value = 1 },
+        },
+        .src =
+        \\tst #8, #0x1D, #2
+        \\tst #8, #5, #5
+        \\br #2, #4
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\alu s1, s1, s2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 1, .value = 0 } }},
+    },
+    .{
+        .name = "own-par",
+        // X:[A6] <- old s7 = 0xF77; s7 <- Y:[e5 = 0xA21] = 0x1357.
+        .pre = &.{
+            .{ .bank = .e, .index = 5, .value = 0xA21 },
+            .{ .bank = .s, .index = 7, .value = 0xF77 },
+            .{ .bank = .a, .index = 6, .value = 0x3A0 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0xA21, .value = 0x1357 }},
+        .src =
+        \\par s7, e5, A6, s7
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .x_mem = .{ .addr = 0x3A0, .value = 0xF77 } },
+            .{ .s_reg = .{ .index = 7, .value = 0x1357 } },
+        },
+    },
+    .{
+        .name = "own-mul13",
+        // s5 <- s1*s3 >> 23 = 0x3C, then s3 <- s1*s2 >> 23 = 0x54.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x6000 },
+            .{ .bank = .s, .index = 2, .value = 0x7000 },
+            .{ .bank = .s, .index = 3, .value = 0x5000 },
+        },
+        .src =
+        \\mul13 s5, s1, #1, #1
+        \\mul13 s3, s1, #1, #0
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 5, .value = 0x3C } },
+            .{ .s_reg = .{ .index = 3, .value = 0x54 } },
+        },
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},

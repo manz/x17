@@ -1117,3 +1117,46 @@ ldi2.st	en	imm	19	20	s1
 # stk <k_e>, <src_s>
 stk	k_e	e	5	8	head
 stk	src_s	s	22	25	head
+
+# yagu <x_e>, <y_R>, #<fn>, <s_dest>, <dest_R>, #<rd>, <head_s>
+yagu	x_e	e	21	24	s1
+yagu	y_R	R	13	16	s1
+yagu	fn	imm	17	20	s1
+yagu	s_dest	s	4	7	s1
+yagu	dest_R	R	0	3	s1
+yagu	rd	imm	30	30	head
+yagu	head_s	s	21	24	head
+
+# ypair <x_e>, #<cls>, #<m>, #<dest_k>
+ypair	x_e	e	5	8	head
+ypair	cls	imm	29	31	s1
+ypair	m	imm	27	28	s1
+ypair	dest_k	imm	0	2	s1
+
+# ystm <x_e>, <e_dest>, <y_R>, #<fn>, #<agu>, #<imm_lo>, <st_src>, #<st_en>, <dest_R>
+ystm	x_e	e	5	8	head
+ystm	e_dest	e	9	12	head
+ystm	y_R	R	13	16	head
+ystm	fn	imm	17	20	head
+ystm	agu	imm	26	26	head
+ystm	imm_lo	imm	28	31	head
+ystm	st_src	s	12	15	s1
+ystm	st_en	imm	16	17	s1
+ystm	dest_R	R	25	28	s1
+
+# tst #<hk>, #<sel>, #<slot>
+tst	hk	imm	26	29	head
+tst	sel	imm	21	25	head
+tst	slot	imm	25	28	s1
+
+# par <dest>, <src_e>, <x_A>, <x_src>
+par	dest	dest_ldi	26	30	head
+par	src_e	e	5	8	head
+par	x_A	A	11	15	head
+par	x_src	s	16	19	head
+
+# mul13 <dest_s>, <a_s>, #<b_lo>, #<b_hi>
+mul13	dest_s	s	11	14	s1
+mul13	a_s	s	3	6	s1
+mul13	b_lo	imm	0	2	s1
+mul13	b_hi	imm	31	31	head

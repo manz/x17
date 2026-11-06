@@ -202,7 +202,7 @@ const SubFormsParse = struct {
 };
 
 fn parseSubForms(src: []const u8) SubFormsParse {
-    @setEvalBranchQuota(200_000);
+    @setEvalBranchQuota(1_000_000);
     comptime var items: [MAX_SUBFORMS]SubForm = undefined;
     comptime var len: usize = 0;
 
@@ -232,7 +232,7 @@ fn parseSubForms(src: []const u8) SubFormsParse {
 }
 
 fn parseOperands(src: []const u8) OperandsParse {
-    @setEvalBranchQuota(400_000);
+    @setEvalBranchQuota(2_000_000);
     comptime var items: [MAX_OPERANDS]Operand = undefined;
     comptime var len: usize = 0;
 

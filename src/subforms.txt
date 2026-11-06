@@ -704,3 +704,21 @@ ldi2.st    2   0x00000010   0x20000000
 
 # stk: low5 0x08 class 010, Y:[e<k>] <- s, op = 0x30 + k (fact 61, 101).
 stk        1   0x40000608
+
+# yagu: low5 0x14 class-100 second with S[25] (fact 100, 103).
+yagu       2   0x10000014   0x82000000
+
+# ypair: low5 0x14 class-11x second with S[25] (fact 105).
+ypair      2   0x10000014   0x02000000
+
+# ystm: low5 0x10 class-010 second (fact 109, 110).
+ystm       2   0x00000010   0x40140000
+
+# tst: low5 0x12, p<S[28:25]> <- f(head[29:26], head[25:21]) (fact 84, 85).
+tst        2   0x00000012   0x20080000
+
+# par: class-0A parallel move, X store and Y load (fact 76).
+par        1   0x0030020A
+
+# mul13: low5 0x13 S class 101 with S[19] (fact 128).
+mul13      2   0x00000013   0xA0280000

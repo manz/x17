@@ -63,6 +63,8 @@ pub const State = struct {
     pc: usize = 0,
     /// The value the last X read left (fact 241).
     xd: u32 = 0,
+    /// The Y read latch yagu loads (fact 100, 105, 110).
+    yd: u32 = 0,
 
     pub fn deinit(self: *State, gpa: std.mem.Allocator) void {
         self.y_mem.deinit(gpa);
@@ -118,7 +120,16 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b110) return execEalu(gpa, state, bundle);
         if (s_class == 0b000) return execBcc(gpa, state, bundle);
         if (s_class == 0b100) return execX10Alu(state, bundle);
+        if (s_class == 0b010) return execYstm(gpa, state, bundle);
     }
+    if (low5 == 0x14 and bundle.len >= 2 and head & 0xA0000000 == 0 and (bundle[1] >> 25) & 1 == 1) {
+        if (bundle[1] >> 29 == 0b100) return execYagu(state, bundle);
+        if (bundle[1] >> 30 == 0b11) return execYpair(state, bundle);
+    }
+    if (low5 == 0x12 and bundle.len == 2 and bundle[1] & 0xE1F00000 == 0x20000000 and (bundle[1] >> 19) & 1 == 1) {
+        return execTst(state, bundle);
+    }
+    if (low5 == 0x0A and (head >> 30) & 1 == 1 and (head >> 20) & 3 == 3) return execPar(gpa, state, head);
     if (low5 == 0x14 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execXst(gpa, state, bundle);
@@ -191,6 +202,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b101) {
             const h13 = bundle[0];
             const code13: u32 = (h13 >> 5) & 0x3F;
+            if ((bundle[1] >> 19) & 1 == 1) return execMul13(state, bundle);
             if (code13 != 0) return execX13St(gpa, state, bundle);
             // mul13 dest field location still open; not yet modelled.
             return RunError.UnknownForm;
@@ -704,6 +716,127 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (alu_dest != 0) state.s[alu_dest] = alu_val;
     if (mac_dest != 0) state.s[mac_dest] = mac_val;
     if (mpy_dest != 0) state.s[mpy_dest] = mpy_val;
+}
+
+const AGU14_F = [16]?u8{ 0, 1, 2, null, 4, 5, 6, 7, 9, 9, 1, 1, 1, 6, 1, 1 };
+
+/// yagu, low5 0x14 with a class-100 second and S[25] (fact 100, 103):
+/// v = AGU14[S[20:17]](x = e<S[24:21]>, y = R<S[16:13]>); e<S[24:21]> and
+/// R<S[3:0]> <- v; s<S[7:4]> <- head[30] = 1: Y:[x] (and yd), else yd;
+/// head target s<head[24:21]> <- S[28:27] = 0: 0, 1-2: v.
+fn execYagu(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const sw = bundle[1];
+    const k: u32 = (sw >> 21) & 0xF;
+    const x: u32 = state.e[k];
+    const fn_ag = AGU14_F[(sw >> 17) & 0xF] orelse return RunError.UnknownForm;
+    const v = try agu10Eval(fn_ag, x, state.r[(sw >> 13) & 0xF]);
+    const s_dest: u32 = (sw >> 4) & 0xF;
+    if (s_dest != 0) {
+        if ((h >> 30) & 1 == 1) state.yd = (state.getY(x) orelse 0) & 0xFFFF;
+        state.s[s_dest] = state.yd;
+    }
+    const hd: u32 = (h >> 21) & 0xF;
+    if (hd != 0) {
+        const m: u32 = (sw >> 27) & 3;
+        if (m == 3) return RunError.UnknownForm;
+        state.s[hd] = if (m == 0) 0 else v;
+    }
+    state.e[k] = v;
+    if (sw & 0xF != 0) state.r[sw & 0xF] = v;
+}
+
+/// ypair, low5 0x14 with a class-11x second and S[25] (fact 105):
+/// s<2*S[2:0]> <- S[28:27] from class 110: 0 / e<head[8:5]> / e / 0xB600,
+/// class 111: 0x5B00 / yd / #head[20:5] / 0.
+fn execYpair(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const sw = bundle[1];
+    const dest: u32 = 2 * (sw & 7);
+    if (dest == 0) return;
+    const m: u32 = (sw >> 27) & 3;
+    state.s[dest] = if (sw >> 29 == 0b110)
+        (switch (m) {
+            0 => 0,
+            3 => 0xB600,
+            else => state.e[(h >> 5) & 0xF],
+        })
+    else
+        (switch (m) {
+            0 => 0x5B00,
+            1 => state.yd,
+            2 => (h >> 5) & 0xFFFF,
+            else => 0,
+        });
+}
+
+/// ystm, low5 0x10 with a class-010 second (fact 109, 110): Y:[e<head[8:5]>]
+/// <- s<S[15:12]> when S[17:16] = 11; v = head[26] = 1: AGU10[head[20:17]](x =
+/// e<head[8:5]>, y = R<head[16:13]>, i = {S[11:0], head[31:28]}), else yd;
+/// e<head[12:9]> and R<S[28:25]> <- v.  S[18] = 0 wedges.
+fn execYstm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const sw = bundle[1];
+    if ((sw >> 18) & 1 == 0) return RunError.UnknownForm;
+    const x: u32 = state.e[(h >> 5) & 0xF];
+    const y: u32 = state.r[(h >> 13) & 0xF];
+    if ((sw >> 16) & 3 == 3) {
+        state.y_mem.put(gpa, x, state.s[(sw >> 12) & 0xF] & 0xFFFF) catch return RunError.OutOfMemory;
+    }
+    const v: u32 = if ((h >> 26) & 1 == 0) state.yd else blk: {
+        const i: u32 = ((sw & 0xFFF) << 4) | (h >> 28);
+        break :blk switch ((h >> 17) & 0xF) {
+            8 => i & 0xFFFF,
+            10 => (y +% i) & 0xFFFF,
+            11 => (y -% i) & 0xFFFF,
+            else => |f| try agu10Eval(f, x, y),
+        };
+    };
+    if ((h >> 9) & 0xF != 0) state.e[(h >> 9) & 0xF] = v;
+    if ((sw >> 25) & 0xF != 0) state.r[(sw >> 25) & 0xF] = v;
+}
+
+/// tst (fact 84, 85): p<S[28:25]> <- f(head[29:26], head[25:21]); f is
+/// measured on hk 8 and on sel 0 / 1 only (what it compares is OPEN).
+fn execTst(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const hk: u32 = (h >> 26) & 0xF;
+    const sel: u32 = (h >> 21) & 0x1F;
+    const v: u8 = if (hk == 8)
+        (if (sel == 0 or sel == 6 or sel == 12 or sel == 16 or sel == 18 or sel == 24 or sel == 26 or sel == 29 or sel == 31) 1 else 0)
+    else if (sel == 0)
+        @intFromBool("TTTTnnnTTTTTTTTT"[hk] == 'T')
+    else if (sel == 1)
+        @intFromBool("nnnnnnnTnnTTTTTn"[hk] == 'T')
+    else
+        return RunError.UnknownForm;
+    state.p[(bundle[1] >> 25) & 0xF] = v;
+}
+
+/// class-0A parallel move (fact 68, 69, 76): X:[A<[15:11]>] <- s<[19:16]>
+/// with [21:20] = 11, and s<[30:26]> <- Y:[e<[8:5]>] (bit 9 set; without it
+/// the address lags, OPEN).  The store reads the old s.
+fn execPar(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
+    const k: u32 = (head >> 26) & 0x1F;
+    // Without bit 9 the load's address lags (OPEN): only an s0 target is let through.
+    if ((head >> 9) & 1 == 0 and k != 16) return RunError.UnknownForm;
+    const xv: u32 = state.s[(head >> 16) & 0xF] & M24;
+    state.x_mem.put(gpa, state.a[(head >> 11) & 0x1F], xv) catch return RunError.OutOfMemory;
+    if ((head >> 9) & 1 == 0) return;
+    if (k < 16) return RunError.UnknownForm;
+    state.s[k - 16] = (state.getY(state.e[(head >> 5) & 0xF]) orelse 0) & 0xFFFF;
+}
+
+/// mul13, low5 0x13, S class 101 with S[19] (fact 128):
+/// s<S[14:11]> <- round(s<S[6:3]> * s<2*S[2:0] + head[31]> / 2^23).
+fn execMul13(state: *State, bundle: []const u32) RunError!void {
+    const sw = bundle[1];
+    // S[18:17] (+-X), S[23:22], the side writes S[10:7] and head clears are unmodelled.
+    if ((sw >> 17) & 3 != 0 or (sw >> 22) & 3 != 0 or (sw >> 7) & 0xF != 0 or (bundle[0] >> 15) & 0xF != 0) return RunError.UnknownForm;
+    const b_idx: u32 = 2 * (sw & 7) + (bundle[0] >> 31);
+    const prod: i64 = sx16(state.s[(sw >> 3) & 0xF]) * sx16(state.s[b_idx]);
+    const dest: u32 = (sw >> 11) & 0xF;
+    if (dest != 0) state.s[dest] = @truncate(@as(u64, @bitCast((prod + (1 << 22)) >> 23)) & M24);
 }
 
 fn execX10Alu(state: *State, bundle: []const u32) RunError!void {
