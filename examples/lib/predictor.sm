@@ -130,8 +130,7 @@ done:
         stx A5, s9
         x02.ainc #5, #5
         stx A5, s10
-        ldi s9, #1 << 14        ; tap constants
-        ldi s10, #-15
+        ldi s10, #-16           ; tap constants
         ldi s11, #8
         ldy s7, e11
         alu s5, s7, s14, #OP_SUB
@@ -206,6 +205,7 @@ sample: ldy s7, e15
         alu s4, s0, s0, #OP_ADD ; sum hi
         alu s5, s0, s0, #OP_ADD ; sum lo
         ldy s8, e12
+        alu s8, s8, s14, #OP_SUB ; terms left - 1: the loop runs while it is >= 0
         x19.xrd s3, #9          ; out[j - 1 - k], one ahead
         x02.ainc #9, #9
         ; sum += coefs[k] * (out[j - 1 - k] - top), each product exact as hi * 2^15 + lo:
@@ -218,13 +218,11 @@ tap:    x19.xrd s1, #11         ; c
         x19.alu s13, s1, s11, #SHIFT ; c << 8
         x02.mpy s13, s13, s2    ; round((c << 8) * d / 2^23)
         alu s5, s5, s12, #OP_ADD ; 2 lo summed (< 31 * 2^16)
-        alu s12, s12, s9, #OP_SUB
-        x19.alu s12, s12, s10, #SHIFT ; lo[14] = floor(plo / 2^15)
+        x19.alu s12, s12, s10, #SHIFT ; lo[14] = rshr(plo, 16): plo < 2^16
         alu s13, s13, s12, #OP_SUB
         alu s4, s4, s13, #OP_ADD
         alu s8, s8, s14, #OP_SUB
-        alu s6, s8, s14, #OP_SUB
-        ptst p1, s6, #NEG, #PTST ; last term done
+        ptst p1, s8, #NEG, #PTST ; last term done
         jmp #IF_NOT, #1, tap
         x19.xrd s3, #9          ; (delay slot) next term
         x02.ainc #9, #9         ; (delay slot)
@@ -377,8 +375,7 @@ nneg:   alu s12, s3, s9, #OP_SUB
         jmp #IF_NOT, #2, nput
         nop()
         nop()
-adone:  ldi s9, #1 << 14        ; the tap constants back
-        ldi s10, #-15
+adone:  ldi s10, #-16           ; the tap constants back
         ldi s11, #8
 advance: x02.ainc #7, #7
         x02.ainc #8, #8
