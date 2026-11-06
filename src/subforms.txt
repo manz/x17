@@ -740,3 +740,6 @@ x16.sh     3   0x06000016   0x00000000   0x00001000
 
 # x02.mac: the w2 multiply with its mode and the w4 X read (fact 161).
 x02.mac    6   0x00000002   0x00000000   0x00020042   0x00000001   0x00002800   0x00004200
+
+# x18.e2nd17: the stock class-000 bundle with w2[17] = 0, phase T (fact 180).
+x18.e2nd17 4   0x80800018   0x00028024   0x0000A940   0x00048100

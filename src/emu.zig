@@ -69,6 +69,8 @@ pub const State = struct {
     yd: u32 = 0,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
     xa: ?u32 = null,
+    /// The 0x18 class-000 phase T, flipped by w2[17] = 0 (fact 180).
+    x18_t: bool = false,
 
     pub fn deinit(self: *State, gpa: std.mem.Allocator) void {
         self.y_mem.deinit(gpa);
@@ -1713,41 +1715,57 @@ fn execX18C5(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     }
 }
 
-/// Class 000 (fact 177, 205, 266): e AGU over x = e<w3[28:25]>,
-/// y = e<{w2[1:0], w1[31:30]}>, fn w1[29:26] from AGU10 when w2[15] = 1, or
-/// a second table (only fn 5 = y+1 measured) when 0, into e<w1[25:22]>; X
-/// slot mux w1[17:15] = 010 takes the AGU value into s<head[24:21]>; second
-/// e slot e<w2[5:2]> <- y - 1; Y store (w2[7], w2[16]) of
-/// s<{w3[2:0], w2[31]}> at Y:[e<w3[28:25]>].  Inputs latch before writes.
+/// Class 000 (fact 169, 177, 180, 205, 266), inputs latched before writes:
+/// one e AGU, fn w1[29:26], x = e<w3[28:25]>, y = e<{w2[1:0], w1[31:30]}>, w2[15]
+/// picking the table; e<w1[25:22]> <- it; s<head[24:21]> and s<w1[21:18]> <- X mux
+/// w1[17:15] (0 / - / the AGU / - / - / X:[A<w2[12:8]>] when w2[14:13] = 01, else
+/// xd / - / 0); Y store (w2[7], w2[16]) of s<{w3[2:0], w2[31]}> at Y:[x]; second e
+/// slot e<w2[5:2]> <- y - 1, where w2[17] = 0 reads y as 0 in phase T = 0 and
+/// flips T (T survives runs, reset to 0).
 fn execX18C0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const w1 = bundle[1];
     const w2 = bundle[2];
     const w3 = bundle[3];
-    const x_idx: u32 = (w3 >> 25) & 0xF;
-    const y_idx: u32 = ((w2 & 3) << 2) | ((w1 >> 30) & 3);
-    const x: u32 = state.e[x_idx];
-    const y: u32 = state.e[y_idx];
-    const fn_op: u32 = (w1 >> 26) & 0xF;
+    const x: u32 = state.e[(w3 >> 25) & 0xF];
+    const y: u32 = state.e[((w2 & 3) << 2) | ((w1 >> 30) & 3)];
+    const f: u32 = (w1 >> 26) & 0xF;
+    const eop: u32 = (if ((w2 >> 15) & 1 == 1) switch (f) {
+        0, 6, 7, 13 => x,
+        2 => x +% 1,
+        3 => 1,
+        4 => x -% 1,
+        5 => 0xFFFF,
+        else => 0,
+    } else switch (f) {
+        0, 6, 7 => x,
+        2 => y,
+        3 => 0 -% x,
+        5 => y +% 1,
+        14 => 1,
+        15 => y -% 1,
+        else => 0,
+    }) & 0xFFFF;
     const dest_e: u32 = (w1 >> 22) & 0xF;
     const dest_s: u32 = (h >> 21) & 0xF;
-    const dest_e2: u32 = (w2 >> 2) & 0xF;
-    const xmux: u32 = (w1 >> 15) & 7;
-    const need_agu = dest_e != 0 or (dest_s != 0 and xmux == 2);
-    const v: u32 = if (!need_agu) 0 else if ((w2 >> 15) & 1 == 1)
-        try agu10Eval(fn_op, x, y)
-    else switch (fn_op) {
-        5 => (y +% 1) & 0xFFFF,
+    const dest_s2: u32 = (w1 >> 18) & 0xF;
+    const src: u32 = if (dest_s == 0 and dest_s2 == 0) 0 else switch ((w1 >> 15) & 7) {
+        0, 7 => 0,
+        2 => eop,
+        5 => if ((w2 >> 13) & 3 == 1) state.readX(state.a[(w2 >> 8) & 0x1F]) orelse 0 else state.xd_pre,
         else => return RunError.UnknownForm,
     };
-    if (dest_s != 0 and xmux != 2) return RunError.UnknownForm;
     const st_val: u32 = state.s[((w3 & 7) << 1) | (w2 >> 31)] & 0xFFFF;
+    const dest_e2: u32 = (w2 >> 2) & 0xF;
+    const y2: u32 = if ((w2 >> 17) & 1 == 0 and !state.x18_t) 0 else y;
+    if ((w2 >> 17) & 1 == 0) state.x18_t = !state.x18_t;
     if ((w2 >> 7) & 1 == 1 and (w2 >> 16) & 1 == 1) {
         state.y_mem.put(gpa, x, st_val) catch return RunError.OutOfMemory;
     }
-    if (dest_e != 0) state.e[dest_e] = v;
-    if (dest_s != 0) state.s[dest_s] = v;
-    if (dest_e2 != 0) state.e[dest_e2] = (y -% 1) & 0xFFFF;
+    if (dest_e != 0) state.e[dest_e] = eop;
+    if (dest_s != 0) state.s[dest_s] = src;
+    if (dest_s2 != 0) state.s[dest_s2] = src;
+    if (dest_e2 != 0) state.e[dest_e2] = (y2 -% 1) & 0xFFFF;
 }
 
 /// Class 100 (fact 172, 196-198, 204), slots latched then written:

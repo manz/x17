@@ -1200,3 +1200,8 @@ x02.mac	mode	imm	11	13	s1
 x02.mac	sgn	imm	15	17	s1
 x02.mac	xrd_dest	s	3	6	s4
 x02.mac	x_A	A	17	21	s4
+
+# x18.e2nd17 <dest_e>, #<y_lo>, #<y_hi>
+x18.e2nd17	dest_e	e	2	5	s2
+x18.e2nd17	y_lo	imm	30	31	s1
+x18.e2nd17	y_hi	imm	0	1	s2
