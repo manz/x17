@@ -3095,14 +3095,19 @@ fn execX17Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 /// once per lane with that lane's stream.  Returns the number of bundles
 /// executed; `RunawayProgram` if no halt was seen within 256 bundles.
 pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) RunError!usize {
-    var i: usize = 0;
+    return runFrom(gpa, state, syllables, 0, 256);
+}
+
+/// runLinear from syllable `start`, with a bundle budget of `max_bundles`
+/// (a codec program runs far past runLinear's 256).
+pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, start: usize, max_bundles: usize) RunError!usize {
+    var i: usize = start;
     var bundles_run: usize = 0;
     var shadow: ?u8 = null;
     const lane0: usize = state.cur_lane;
     state.halted = false;
-    const MAX_BUNDLES: usize = 256;
     while (i < syllables.len) : (bundles_run += 1) {
-        if (bundles_run >= MAX_BUNDLES) return RunError.RunawayProgram;
+        if (bundles_run >= max_bundles) return RunError.RunawayProgram;
         const head = syllables[i];
         // Each syllable sits in lane (position mod 4) (fact 21).
         state.cur_lane = @intCast((lane0 + i) & 3);

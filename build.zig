@@ -81,7 +81,17 @@ pub fn build(b: *std.Build) void {
     gates_mod.addImport("asm", asm_mod);
     gates_mod.addImport("emu", emu_mod);
 
+    const host_mod = b.createModule(.{
+        .root_source_file = b.path("src/host.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    host_mod.addImport("emu", emu_mod);
+    host_mod.addImport("asm", asm_mod);
+
     const test_step = b.step("test", "Run unit tests");
+    const host_t = b.addTest(.{ .root_module = host_mod });
+    test_step.dependOn(&b.addRunArtifact(host_t).step);
     const isa_t = b.addTest(.{ .root_module = isa_mod });
     test_step.dependOn(&b.addRunArtifact(isa_t).step);
     const asm_t = b.addTest(.{ .root_module = asm_mod });
