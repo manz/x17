@@ -1,0 +1,310 @@
+; ALAC's adaptive predictor: the x17 twin of `unpredict` in sosumi's ref/dsp/alac/predictor.zig.
+; Needs lib/bits.sm (constants, nop, s14 = 1, p2 clear) and lib/rice.sm (floorshr) first.
+;
+; Arrays are 24-bit X words walked upward through A registers:
+;   A2   residuals pc[0..n)           (read)
+;   A3   samples out[0..n)            (written)
+;   A10  coefficients, REVERSED: X:[A10 + i] = coefs[order - 1 - i], adapted in place
+; Walking the coefficients reversed lets every access ascend: the sum over k does not
+; care about order, and the adaptation visits k = order - 1 down to 0, i.e. i upward.
+; A4, A7, A8, A9, A11 are scratch. A1 is avoided: the x02 multiply templates name A1 in
+; their A slot (isa.toml 157), and whether that slot runs in them is unmeasured.
+;
+; Y slots (pred_slots(base)), filled by the caller:
+;   e11 Y:base+0  n
+;   e12 Y:base+1  order (0..31)
+;   e13 Y:base+2  den_shift (0..15)
+;   e14 Y:base+3  chan_bits (8..23, with den_shift + chan_bits <= 32, chan_bits <= 18 + den_shift)
+;   e15 Y:base+4  scratch: samples left
+;
+; Keeps the bit reader (e5, s9, s10) and s14, s15. Uses every other s register.
+; Shifts by a runtime count wrap by doubling (alu add wraps; the 0x19 shift saturates).
+
+.macro pred_slots(base) {
+        ldi s5, #base - 1
+        x17.mve e11, s5
+        ldi s5, #base
+        x17.mve e12, s5
+        ldi s5, #base + 1
+        x17.mve e13, s5
+        ldi s5, #base + 2
+        x17.mve e14, s5
+        ldi s5, #base + 3
+        x17.mve e15, s5
+}
+
+; x <<= cnt, wrapping at 24 bits; cnt (>= 0) is consumed. Uses s6.
+.macro shlw(x, cnt) {
+again:  alu s6, cnt, s14, #OP_SUB
+        ptst p1, s6, #NEG, #PTST ; p1 = cnt == 0
+        jmp #3, #1, done
+        nop()
+        nop()
+        alu x, x, x, #OP_ADD
+        alu cnt, cnt, s14, #OP_SUB
+        jmp #IF_NOT, #2, again
+        nop()
+        nop()
+done:
+}
+
+; x = x sign-extended from its low chan_bits bits. Uses s6, s12, s13.
+; (x << s) is a multiple of 2^s, so the rounded right shift by s is exact.
+.macro sxcb(x) {
+        ldy s13, e14
+        ldi s12, #24
+        alu s13, s12, s13, #OP_SUB ; s = 24 - chan_bits
+        alu s12, s0, s13, #OP_SUB ; -s
+        shlw(x, s13)
+        x19.alu x, x, s12, #SHIFT
+}
+
+; dst = floor(v / 2^n), n (0..15) in a register: rshr(v - h, n), h = rshr(2^n - 1, 1).
+; v must leave room for the subtraction (|v| < 2^23 - 2^14). Uses s6.
+.macro floorn(dst, v, n) {
+        x19.alu s6, s14, n, #SHIFT ; 2^n
+        alu s6, s6, s14, #OP_SUB
+        alu dst, s0, s14, #OP_SUB ; -1 (dst is free until the end)
+        x19.alu s6, s6, dst, #SHIFT ; h
+        alu dst, v, s6, #OP_SUB
+        alu s6, s0, n, #OP_SUB
+        x19.alu dst, dst, s6, #SHIFT
+}
+
+.macro unpredict() {
+        ldy s7, e11
+        alu s5, s7, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; n == 0
+        jmp #3, #1, finish
+        x19.aagu5 A4, A3, #5, #0 ; (delay slot) A4 = out base
+        nop()
+        x19.xrd s1, #2          ; out[0] = pc[0]
+        x02.ainc #2, #2
+        stx A3, s1
+        x02.ainc #3, #3
+        alu s7, s7, s14, #OP_SUB ; left = n - 1
+        ldy s8, e12             ; warm-up count = order
+        ; out[j] = sx(pc[j] + out[j - 1]) for j = 1 .. min(order, n - 1)
+warm:   alu s5, s7, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; nothing left
+        jmp #3, #1, finish
+        nop()
+        nop()
+        alu s5, s8, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; warm-up done
+        jmp #3, #1, main
+        nop()
+        nop()
+        x19.xrd s3, #2
+        x02.ainc #2, #2
+        alu s1, s3, s1, #OP_ADD
+        sxcb(s1)
+        stx A3, s1
+        x02.ainc #3, #3
+        alu s7, s7, s14, #OP_SUB
+        alu s8, s8, s14, #OP_SUB
+        jmp #IF_NOT, #2, warm
+        nop()
+        nop()
+        ; order == 0 lands here with j = 1 and copies (the sum below is empty, so
+        ; out[j] = sx(pc[j] + top); handled apart to match the reference's plain copy)
+main:   x17.sty e15, #7, #0     ; left
+        ldy s8, e12
+        alu s5, s8, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; order == 0
+        jmp #IF_NOT, #1, window
+        nop()
+        nop()
+copy:   ldy s7, e15
+        alu s5, s7, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST
+        jmp #3, #1, finish
+        nop()
+        nop()
+        x19.xrd s1, #2
+        x02.ainc #2, #2
+        stx A3, s1
+        x02.ainc #3, #3
+        alu s7, s7, s14, #OP_SUB
+        x17.sty e15, #7, #0
+        jmp #IF_NOT, #2, copy
+        nop()
+        nop()
+window: x19.aagu5 A8, A4, #5, #0 ; top: out[j - order - 1]
+        x19.aagu5 A7, A4, #5, #0
+        x02.ainc #7, #7         ; history: out[j - order]
+sample: ldy s7, e15
+        alu s5, s7, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST
+        jmp #3, #1, finish
+        nop()
+        nop()
+        x19.xrd s7, #8          ; top
+        x19.aagu5 A9, A7, #5, #0
+        x19.aagu5 A11, A10, #5, #0
+        alu s4, s0, s0, #OP_ADD ; sum hi
+        alu s5, s0, s0, #OP_ADD ; sum lo
+        ldy s8, e12
+        ; sum += coefs[k] * (out[j - 1 - k] - top), each product exact as hi * 2^15 + lo:
+        ; lo = (2cd)[15:0] / 2, hi = round((c << 8) * d / 2^23) - lo[14]
+tap:    alu s3, s8, s14, #OP_SUB
+        ptst p1, s3, #NEG, #PTST
+        jmp #3, #1, sum
+        nop()
+        nop()
+        x19.xrd s3, #9
+        x02.ainc #9, #9         ; (overwrites s2)
+        x19.xrd s1, #11         ; c
+        x02.ainc #11, #11
+        alu s2, s3, s7, #OP_SUB ; d
+        x02.x3 #0, #0, s0, s0, #5, #0, s0, #1, s6 ; s6 = (2cd)[15:0]
+        ldi s12, #8
+        x19.alu s12, s1, s12, #SHIFT ; c << 8
+        x02.mpy s13, s12, s2    ; round((c << 8) * d / 2^23)
+        alu s3, s0, s14, #OP_SUB
+        x19.alu s6, s6, s3, #SHIFT ; lo (exact: even)
+        alu s5, s5, s6, #OP_ADD
+        alu s12, s6, s0, #OP_ADD
+        floorshr(s3, s12, 14)   ; lo[14]
+        alu s13, s13, s3, #OP_SUB
+        alu s4, s4, s13, #OP_ADD
+        alu s8, s8, s14, #OP_SUB
+        jmp #IF_NOT, #2, tap
+        nop()
+        nop()
+        ; normalise: lo < 31 * 2^15, carry it into hi
+sum:    floorshr(s3, s5, 15)
+        alu s4, s4, s3, #OP_ADD
+        ldi s12, #15
+        x19.alu s3, s3, s12, #SHIFT
+        alu s5, s5, s3, #OP_SUB
+        ; pred = hi << (15 - ds) (wrapping) + rshr(lo, ds)
+        ldy s8, e13
+        alu s3, s12, s8, #OP_SUB
+        shlw(s4, s3)
+        alu s3, s0, s8, #OP_SUB
+        x19.alu s5, s5, s3, #SHIFT
+        alu s4, s4, s5, #OP_ADD ; pred
+        x19.xrd s1, #2          ; res
+        x02.ainc #2, #2
+        alu s3, s1, s7, #OP_ADD
+        alu s3, s3, s4, #OP_ADD
+        sxcb(s3)
+        stx A3, s3              ; out[j]
+        x02.ainc #3, #3
+        ldy s5, e15
+        alu s5, s5, s14, #OP_SUB
+        x17.sty e15, #5, #0     ; left -= 1
+        alu s5, s1, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; res <= 0
+        jmp #IF_NOT, #1, adapt  ; res > 0
+        nop()
+        nop()
+        ptst p1, s1, #NEG, #PTST ; res < 0
+        jmp #3, #1, adapt
+        nop()
+        nop()
+        jmp #IF_NOT, #2, advance ; res == 0: no adaptation
+        nop()
+        nop()
+        ; adaptation: i = 0 .. order - 1 (k = order - 1 - i), weight w = i + 1
+adapt:  alu s5, s1, s0, #OP_ADD ; del0 = res
+        x19.aagu5 A9, A7, #5, #0
+        x19.aagu5 A11, A10, #5, #0
+        alu s4, s14, s0, #OP_ADD ; w = 1
+        ldy s8, e12
+step:   alu s3, s8, s14, #OP_SUB
+        ptst p1, s3, #NEG, #PTST
+        jmp #3, #1, advance
+        nop()
+        nop()
+        x19.xrd s3, #9
+        x02.ainc #9, #9
+        alu s3, s7, s3, #OP_SUB ; dd = top - out
+        alu s6, s0, s0, #OP_ADD ; sgn = 0
+        alu s12, s3, s0, #OP_ADD ; mag = dd
+        ptst p1, s3, #NEG, #PTST
+        jmp #IF_NOT, #1, nonneg
+        nop()
+        nop()
+        alu s6, s0, s14, #OP_SUB ; dd < 0: sgn = -1
+        alu s12, s0, s3, #OP_SUB ;         mag = -dd
+        jmp #IF_NOT, #2, signed
+        nop()
+        nop()
+nonneg: alu s13, s0, s3, #OP_SUB
+        ptst p1, s13, #NEG, #PTST ; dd > 0
+        jmp #IF_NOT, #1, signed
+        nop()
+        nop()
+        alu s6, s14, s0, #OP_ADD ; sgn = 1
+signed: x19.xrd s13, #11        ; c
+        ptst p1, s1, #NEG, #PTST ; res < 0
+        jmp #3, #1, negres
+        nop()
+        nop()
+        alu s13, s13, s6, #OP_SUB ; res > 0: c -= sgn
+        jmp #IF_NOT, #2, wrap16
+        alu s3, s12, s0, #OP_ADD ; (delay slot) v = mag
+        nop()
+negres: alu s13, s13, s6, #OP_ADD ; res < 0: c += sgn
+        alu s3, s0, s12, #OP_SUB ;          v = -mag
+        ; c back into 16 bits: c is in [-2^15 - 1, 2^15]
+wrap16: ldi s6, #0x7FFF
+        alu s6, s6, s13, #OP_SUB ; 0x7FFF - c < 0: c = 2^15
+        ptst p1, s6, #NEG, #PTST
+        jmp #IF_NOT, #1, lowc
+        nop()
+        nop()
+        ldi s6, #0x7FFF
+        alu s13, s0, s6, #OP_SUB
+        alu s13, s13, s14, #OP_SUB ; -2^15
+lowc:   ldi s6, #0x7FFF
+        alu s6, s13, s6, #OP_ADD
+        alu s6, s6, s14, #OP_ADD ; c + 2^15 < 0: c = -2^15 - 1
+        ptst p1, s6, #NEG, #PTST
+        jmp #IF_NOT, #1, putc
+        nop()
+        nop()
+        ldi s13, #0x7FFF
+putc:   stx A11, s13
+        x02.ainc #11, #11
+        ; del0 -= w * floor(v / 2^ds), exact: round((w << 18) * (m << 5) / 2^23)
+        ldy s8, e13
+        floorn(s12, s3, s8)
+        ldi s6, #5
+        x19.alu s12, s12, s6, #SHIFT
+        ldi s6, #18
+        x19.alu s6, s4, s6, #SHIFT
+        x02.mpy s12, s6, s12
+        alu s5, s5, s12, #OP_SUB
+        ptst p1, s1, #NEG, #PTST
+        jmp #3, #1, negstop
+        nop()
+        nop()
+        alu s3, s5, s14, #OP_SUB
+        ptst p1, s3, #NEG, #PTST ; res > 0: stop when del0 <= 0
+        jmp #3, #1, advance
+        nop()
+        nop()
+        jmp #IF_NOT, #2, next
+        nop()
+        nop()
+negstop: ptst p1, s5, #NEG, #PTST ; res < 0: stop when del0 >= 0
+        jmp #IF_NOT, #1, advance
+        nop()
+        nop()
+next:   alu s4, s4, s14, #OP_ADD
+        ldy s8, e12
+        alu s8, s8, s4, #OP_SUB
+        alu s8, s8, s14, #OP_ADD ; steps left = order - w + 1
+        jmp #IF_NOT, #2, step
+        nop()
+        nop()
+advance: x02.ainc #7, #7
+        x02.ainc #8, #8
+        jmp #IF_NOT, #2, sample
+        nop()
+        nop()
+finish:
+}

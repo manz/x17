@@ -8,6 +8,7 @@ const testing = std.testing;
 const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/bits.sm", .text = @embedFile("bits.sm") },
     .{ .path = "lib/rice.sm", .text = @embedFile("rice.sm") },
+    .{ .path = "lib/predictor.sm", .text = @embedFile("predictor.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -257,4 +258,126 @@ test "rice_decompress decodes what the reference decodes, means, zero runs and o
         }
     }
     try testing.expect(checked > 100 and overruns > 5 and runs > 100);
+}
+
+fn wrapCb(x: i32, cb: u6) i32 {
+    const s: u5 = @intCast(32 - @as(u32, cb));
+    return (x << s) >> s;
+}
+
+fn sign32(x: i32) i32 {
+    return @as(i32, @intFromBool(x > 0)) - @intFromBool(x < 0);
+}
+
+/// sosumi ref/alac/predictor.zig `unpredict`, 32-bit as Apple's reference computes it.
+fn refUnpredict(pc: []const i32, out: []i32, coefs: []i16, cb: u6, ds: u4) void {
+    const n = pc.len;
+    out[0] = pc[0];
+    const order = coefs.len;
+    if (order == 0) {
+        @memcpy(out[1..n], pc[1..n]);
+        return;
+    }
+    const half: i32 = if (ds == 0) 0 else @as(i32, 1) << (ds - 1);
+    var j: usize = 1;
+    while (j <= order and j < n) : (j += 1) out[j] = wrapCb(pc[j] +% out[j - 1], cb);
+    const lim = order + 1;
+    while (j < n) : (j += 1) {
+        const top = out[j - lim];
+        var sum: i32 = 0;
+        for (0..order) |k| sum +%= @as(i32, coefs[k]) *% (out[j - 1 - k] -% top);
+        var del = pc[j];
+        var del0 = del;
+        const sg = sign32(del);
+        del +%= top +% ((sum +% half) >> ds);
+        out[j] = wrapCb(del, cb);
+        if (sg == 0) continue;
+        var k = order;
+        while (k > 0) {
+            k -= 1;
+            const dd = top -% out[j - 1 - k];
+            const sgn = sign32(dd);
+            const w: i32 = @intCast(order - k);
+            if (sg > 0) {
+                coefs[k] -%= @intCast(sgn);
+                del0 -%= w *% ((sgn *% dd) >> ds);
+                if (del0 <= 0) break;
+            } else {
+                coefs[k] +%= @intCast(sgn);
+                del0 -%= w *% ((-sgn *% dd) >> ds);
+                if (del0 >= 0) break;
+            }
+        }
+    }
+}
+
+fn supportedPred(cb: u6, ds: u4) bool {
+    return cb <= 23 and @as(u32, ds) + cb <= 32 and cb <= 18 + @as(u32, ds);
+}
+
+test "unpredict matches the reference: samples and adapted coefficients" {
+    const gpa = testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x9ED1);
+    const rnd = prng.random();
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/rice.sm"
+        \\.include "lib/predictor.sm"
+        \\        bits_init(0x4000)
+        \\        pred_slots(0x3100)
+        \\        unpredict()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    const pc_base: u32 = 0x1000;
+    const out_base: u32 = 0x2000;
+    const c_base: u32 = 0x0F00;
+    var cases: usize = 0;
+    while (cases < 250) {
+        const cb = rnd.intRangeAtMost(u6, 8, 23);
+        const ds = rnd.int(u4);
+        if (!supportedPred(cb, ds)) continue;
+        cases += 1;
+        const order = if (cases < 10) cases - 1 else rnd.intRangeAtMost(usize, 0, 31);
+        const n = rnd.intRangeAtMost(usize, 1, 96);
+        const spread = rnd.intRangeAtMost(u5, 0, @intCast(cb - 1));
+        var pc: [96]i32 = undefined;
+        const lim: i32 = @as(i32, 1) << spread;
+        for (pc[0..n]) |*x| x.* = if (rnd.int(u8) < 40) 0 else rnd.intRangeAtMost(i32, -lim, lim);
+        var coefs: [31]i16 = undefined;
+        for (coefs[0..order]) |*c| c.* = rnd.int(i16) >> rnd.intRangeAtMost(u4, 0, 12);
+        // the 16-bit wrap of the adaptation: coefficients at the edges
+        for (coefs[0..order]) |*c| {
+            if (rnd.int(u8) < 40) c.* = if (rnd.boolean()) std.math.maxInt(i16) else std.math.minInt(i16);
+        }
+        const c_asm = coefs;
+
+        var want: [96]i32 = undefined;
+        refUnpredict(pc[0..n], want[0..n], coefs[0..order], cb, ds);
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (pc[0..n], 0..) |x, i| try state.x_mem.put(gpa, pc_base + @as(u32, @intCast(i)), @as(u32, @bitCast(x)) & 0xFFFFFF);
+        for (0..order) |i| try state.x_mem.put(gpa, c_base + @as(u32, @intCast(i)), @as(u32, @bitCast(@as(i32, c_asm[order - 1 - i]))) & 0xFFFFFF);
+        const init = [_]u32{ @intCast(n), @intCast(order), ds, cb, 0 };
+        for (init, 0..) |v, i| try state.y_mem.put(gpa, 0x3100 + @as(u32, @intCast(i)), v);
+        state.a[2] = pc_base;
+        state.a[3] = out_base;
+        state.a[10] = c_base;
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 26);
+        try testing.expect(state.halted);
+
+        for (want[0..n], 0..) |w, i| {
+            const got = state.x_mem.get(out_base + @as(u32, @intCast(i))) orelse return error.Missing;
+            if (got != @as(u32, @bitCast(w)) & 0xFFFFFF) {
+                std.debug.print("sample {d}: order={d} n={d} cb={d} ds={d}\n", .{ i, order, n, cb, ds });
+                try testing.expectEqual(@as(u32, @bitCast(w)) & 0xFFFFFF, got);
+            }
+        }
+        for (0..order) |i| {
+            const got = state.x_mem.get(c_base + @as(u32, @intCast(i))).?;
+            try testing.expectEqual(@as(u32, @bitCast(@as(i32, coefs[order - 1 - i]))) & 0xFFFFFF, got);
+        }
+    }
 }
