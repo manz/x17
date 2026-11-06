@@ -537,3 +537,29 @@ x16.aset   3   0x80000016   0x00045000   0x00000000
 # x16.ldi: S1[26:25] = 11 with mux 110, s<head[24:21]> <- #head[20:5]
 # (fact 217 / own-x16ldi).
 x16.ldi    3   0x00000016   0x07046000   0x000000A8
+
+# x16.mux: x16.agu with the S1[30:28] source mux and S2[12:11] = 10 Y data
+# (fact 207 / own-x16mux, own-x16mux-b).
+x16.mux    3   0x00000016   0x00004000   0x60003000
+
+# x16.xs: S2 class 010 with x18's X slot into s<head[24:21]>
+# (fact 208 / own-x16xs, own-x16xs-imm).
+x16.xs     3   0x00000016   0x04040000   0x40001000
+
+# x16.stx: S2 class 001 X store, S2[3:2] = 11 (fact 209 / own-x16stx).
+x16.stx    3   0x00000016   0x00000020   0x2000000C
+
+# x16.st2: S1 class 011, S2 class 111, X and Y stores (fact 214).
+x16.st2    3   0x00000016   0x00040000   0xE0056000
+
+# x16.agumul: S1 class 100, S2 class 101 multiply (fact 212).
+x16.agumul 3   0x10000016   0x80002000   0xA0000000
+
+# x16.agu2: S1 class 000, S2 class 101 AGU (fact 120 / own-x16agu2).
+x16.agu2   3   0x00000016   0x00002000   0xA0000000
+
+# x16.xld: S1 class 011, S2 class 000, X load (fact 216).
+x16.xld    3   0x00000016   0x68000000   0x00000008
+
+# x16.ldb: x16.ldi with mux 011, X:[A<xi>][7:0] << 8 (fact 217).
+x16.ldb    3   0x00000316   0x07043000   0x000000A8

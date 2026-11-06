@@ -135,7 +135,13 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s2_mode: u32 = (bundle[2] >> 16) & 0x1F;
         const s1_class16: u32 = (bundle[1] >> 29) & 0x7;
         if (s2_class == 0b110 and s1_class16 == 0 and s2_mode <= 7) return execX16Mul(gpa, state, bundle);
-        if (s1_class16 == 0 and s2_class == 0b010) return x16Alu(state, bundle[1], bundle[2]);
+        if (s1_class16 == 0 and s2_class == 0b010) return execX16Xs(state, bundle);
+        if (s1_class16 == 3 and s2_class == 0b000) return execX16Xld(state, bundle);
+        if (s1_class16 == 3 and s2_class == 0b111) return execX16St2(gpa, state, bundle);
+        if (s2_class == 0b101) {
+            if (s1_class16 == 0) return execX16Agu2(state, bundle);
+            return execX16AguMul(state, bundle);
+        }
         if (s1_class16 == 0 and s2_class == 0b111) return execX16AluX(state, bundle);
         if (s1_class16 == 0 and s2_class == 0b000) return execX16Ld(state, bundle);
         if (s2_class == 0b011) return execX16Agu(gpa, state, bundle);
@@ -829,7 +835,6 @@ fn execX16Hd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 }
 
 fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
     if (bundle.len < 3) return RunError.UnknownForm;
     const head = bundle[0];
     const s1 = bundle[1];
@@ -838,7 +843,16 @@ fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const a_s: u32 = (s1 >> 1) & 0xF;
     const b_s: u32 = (s1 >> 26) & 0xF;
     const half: bool = (s1 & 1) == 1;
+    // S2[3:2] = 11: X:[A<S2[8:4]>] <- s<S1[25:22]> (fact 209).
+    if ((s2 >> 2) & 3 == 3) {
+        try state.x_mem.put(gpa, state.a[(s2 >> 4) & 0xF], state.s[(s1 >> 22) & 0xF] & M24);
+    }
     if (dest_s == 0) return;
+    // head[28] = 0: the multiply slot writes 0 (fact 121).
+    if ((head >> 28) & 1 == 0) {
+        state.s[dest_s] = 0;
+        return;
+    }
     const av: u32 = if (a_s == 0) 0 else state.s[a_s] & 0xFFFF;
     const bv: u32 = if (b_s == 0) 0 else state.s[b_s] & 0xFFFF;
     const prod: u32 = av *% bv;
@@ -848,6 +862,111 @@ fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     state.s[dest_s] = v & M24;
 }
 
+/// S1 class != 000 with S2 class 101: head[28] runs the multiply,
+/// s<4*S2[1:0] + S1[31:30]> <- s<S1[4:1]> * s<S2[5:2]> >> 23 (fact 212).
+fn execX16AguMul(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    const dest: u32 = ((s2 & 3) << 2) | ((s1 >> 30) & 3);
+    if (dest == 0) return;
+    if ((h >> 28) & 1 == 0) {
+        state.s[dest] = 0;
+        return;
+    }
+    const a: i64 = sx16(state.s[(s1 >> 1) & 0xF]);
+    const b: i64 = sx16(state.s[(s2 >> 2) & 0xF]);
+    state.s[dest] = @truncate(@as(u64, @bitCast((a * b) >> 23)) & 0xFFFF);
+}
+
+const AGU10B_TAB = [16]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 2, 2, 1, 1, 1, 8, 9, 10 };
+
+/// AGU10B (fact 120, S2[8] = 0): x, y, 0, -x, -y, 1, x+y, x-y, 0, 0,
+/// y, y, y, -y, y+1, y-1.
+fn agu10bEval(fn_op: u32, x: u32, y: u32) u32 {
+    const r: u32 = switch (AGU10B_TAB[fn_op & 0xF]) {
+        0 => x,
+        1 => y,
+        2 => 0,
+        3 => 0 -% x,
+        4 => 0 -% y,
+        5 => 1,
+        6 => x +% y,
+        7 => x -% y,
+        8 => 0 -% y,
+        9 => y +% 1,
+        else => y -% 1,
+    };
+    return r & 0xFFFF;
+}
+
+/// S1 class 000, S2 class 101 (fact 120): mux S1[17:15] = 001 runs
+/// (S2[8] ? AGU10 : AGU10B)[S1[29:26]](e<S2[24:21]>, R<S1[21:18]>) into
+/// s<S1[12:9]>; mux 000 writes 0.
+fn execX16Agu2(state: *State, bundle: []const u32) RunError!void {
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    const mux: u32 = (s1 >> 15) & 7;
+    if ((s1 >> 13) & 1 == 0 or (s1 >> 30) & 1 == 1 or s2 & 3 != 0) return RunError.UnknownForm;
+    const fn_op: u32 = (s1 >> 26) & 0xF;
+    const x: u32 = state.e[(s2 >> 21) & 0xF];
+    const y: u32 = state.r[(s1 >> 18) & 0xF];
+    const v: u32 = switch (mux) {
+        0 => 0,
+        1 => if ((s2 >> 8) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y),
+        else => return RunError.UnknownForm,
+    };
+    const dest: u32 = (s1 >> 9) & 0xF;
+    if (dest != 0) state.s[dest] = v;
+}
+
+/// S1 class 011, S2 class 000: S2[3] latches xi <- S2[8:4], then
+/// s<S1[31:28]> <- X:[A<xi>][15:0] (fact 216).
+fn execX16Xld(state: *State, bundle: []const u32) RunError!void {
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    if ((s2 >> 3) & 1 == 1) state.x16_xi = (s2 >> 4) & 0x1F;
+    const xi = state.x16_xi orelse return RunError.UnknownForm;
+    const dest: u32 = (s1 >> 28) & 0xF;
+    const addr: u32 = if (xi == 0) 0 else state.a[xi & 0xF];
+    if (dest != 0) state.s[dest] = (state.getX(addr) orelse 0) & 0xFFFF;
+}
+
+/// S1 class 011, S2 class 111: X:[A<S2[12:8]>] <- s<S1[31:28]> when
+/// S2[14:13] = 11; Y:[e<S2[24:21]>] <- s<S2[3:0]> when S2[16] and S2[18]
+/// (fact 214).
+fn execX16St2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    const xv: u32 = state.s[(s1 >> 28) & 0xF] & M24;
+    const yv: u32 = state.s[s2 & 0xF] & 0xFFFF;
+    if ((s2 >> 13) & 3 == 3) try state.x_mem.put(gpa, state.a[(s2 >> 8) & 0xF], xv);
+    if ((s2 >> 16) & 1 == 1 and (s2 >> 18) & 1 == 1) {
+        state.y_mem.put(gpa, state.e[(s2 >> 21) & 0xF], yv) catch return RunError.OutOfMemory;
+    }
+}
+
+/// S1 class 000, S2 class 010 (fact 119, 208): the X16 ALU, plus x18's
+/// X slot into s<head[24:21]>: mux S1[14:12] = 101 with S2[12:11] = 10
+/// reads Y:[e<S2[24:21]>]; 001 takes #head[20:5].
+fn execX16Xs(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    try x16Alu(state, s1, s2);
+    const dest: u32 = (h >> 21) & 0xF;
+    if (dest == 0) return;
+    const v: u32 = switch ((s1 >> 12) & 7) {
+        5 => if ((s2 >> 11) & 3 == 2)
+            (state.getY(state.e[(s2 >> 21) & 0xF]) orelse 0) & 0xFFFF
+        else
+            return RunError.UnknownForm,
+        1 => (h >> 5) & 0xFFFF,
+        else => return RunError.UnknownForm,
+    };
+    state.s[dest] = v;
+}
+
 fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     const head = bundle[0];
@@ -855,16 +974,25 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const s2 = bundle[2];
     const fn_op: u32 = (s1 >> 7) & 0xF;
     const dest_s: u32 = (s2 >> 3) & 0xF;
-    const x_e: u32 = (2 * (s2 & 0x7)) & 0xF;
+    // x = e<{S2[2:0], S1[31]}> (fact 207 / own-x16agu-x1).
+    const x_e: u32 = ((2 * (s2 & 0x7)) | (s1 >> 31)) & 0xF;
     const y_r: u32 = (head >> 27) & 0xF;
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
-    const v: u32 = switch (fn_op) {
-        6 => (x_val +% y_val) & 0xFFFF,
-        10 => blk: {
-            const imm: u32 = (head >> 11) & 0xFFFF;
-            break :blk (y_val +% imm) & 0xFFFF;
+    // S1[30:28] is a source mux (fact 207): 001 = AGU10, 101 = Y:[x],
+    // 011 = Y:[x][7:0] << 8, 100 = (Y:[x] << 7)[15:0], 110 = head[26:11] << 6.
+    const mux: u32 = (s1 >> 28) & 7;
+    const yd: u32 = (state.getY(x_val) orelse 0) & 0xFFFF;
+    const v: u32 = switch (mux) {
+        1 => switch (fn_op) {
+            10 => (y_val +% ((head >> 11) & 0xFFFF)) & 0xFFFF,
+            8, 11 => return RunError.UnknownForm,
+            else => try agu10Eval(fn_op, x_val, y_val),
         },
+        5 => yd,
+        3 => (yd & 0xFF) << 8,
+        4 => (yd << 7) & 0xFFFF,
+        6 => (((head >> 11) & 0xFFFF) << 6) & 0xFFFF,
         else => return RunError.UnknownForm,
     };
     if (dest_s != 0) state.s[dest_s] = v;
@@ -952,6 +1080,12 @@ fn execX16Ld(state: *State, bundle: []const u32) RunError!void {
         },
         7 => 0,
         6 => if (imm_mux) (h >> 5) & 0xFFFF else return RunError.UnknownForm,
+        // S1[26:25] = 11 with mux 011: X:[A<xi>][7:0] << 8 (fact 217).
+        3 => if (imm_mux) blk: {
+            const xi = state.x16_xi orelse return RunError.UnknownForm;
+            const addr: u32 = if (xi == 0) 0 else state.a[xi & 0xF];
+            break :blk ((state.getX(addr) orelse 0) & 0xFF) << 8;
+        } else return RunError.UnknownForm,
         else => return RunError.UnknownForm,
     };
     state.s[dest] = v;

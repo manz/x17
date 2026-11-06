@@ -649,7 +649,7 @@ const GATES = [_]Gate{
             .{ .bank = .r, .index = 3, .value = 0x20 },
         },
         .src =
-        \\x16.agu s3, R3, #1, #6, #4
+        \\x16.agu s3, R3, #1, #6, #4, #0
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x120 } }},
@@ -1543,6 +1543,160 @@ const GATES = [_]Gate{
         \\x17.halt
         ,
         .post = &.{.{ .s_reg = .{ .index = 1, .value = 0x1ABC } }},
+    },
+    .{
+        .name = "own-x16agu-x1",
+        // S1[31] = 1: x = e3 = 0x20; s3 <- e3 + R3 = 0x40.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x100 },
+            .{ .bank = .e, .index = 3, .value = 0x20 },
+            .{ .bank = .r, .index = 3, .value = 0x20 },
+        },
+        .src =
+        \\x16.agu s3, R3, #1, #6, #4, #1
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x40 } }},
+    },
+    .{
+        .name = "own-x16mux",
+        // mux 101: s3 <- Y:[e2] = 0xABCD; mux 110: s5 <- 4 << 6 = 0x100.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x700 },
+            .{ .bank = .r, .index = 3, .value = 0x20 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0xABCD }},
+        .src =
+        \\x16.mux s3, R3, #1, #0, #6, #4, #5
+        \\x16.mux s5, R3, #1, #0, #10, #4, #6
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0xABCD } },
+            .{ .s_reg = .{ .index = 5, .value = 0x100 } },
+        },
+    },
+    .{
+        .name = "own-x16mux-b",
+        // mux 011: s3 <- 0xCD00; mux 100: s5 <- (0xABCD << 7)[15:0] = 0xE680.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x700 },
+            .{ .bank = .r, .index = 3, .value = 0x20 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0xABCD }},
+        .src =
+        \\x16.mux s3, R3, #1, #0, #6, #4, #3
+        \\x16.mux s5, R3, #1, #0, #10, #4, #4
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0xCD00 } },
+            .{ .s_reg = .{ .index = 5, .value = 0xE680 } },
+        },
+    },
+    .{
+        .name = "own-x16xs",
+        // s3 <- D = Y:[e2] = 0xABCD; the ALU writes nothing.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x700 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0xABCD }},
+        .src =
+        \\x16.xs s3, #5, e2, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0xABCD } }},
+    },
+    .{
+        .name = "own-x16xs-imm",
+        // mux 001: s3 <- #0x123.
+        .pre = &.{.{ .bank = .e, .index = 2, .value = 0x700 }},
+        .src =
+        \\x16.xs s3, #1, e2, #0x123
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 3, .value = 0x123 } }},
+    },
+    .{
+        .name = "own-x16stx",
+        // X:[A6 = 0x3A0] <- s7 = 0xF77.
+        .pre = &.{
+            .{ .bank = .s, .index = 7, .value = 0xF77 },
+            .{ .bank = .a, .index = 6, .value = 0x3A0 },
+        },
+        .src =
+        \\x16.stx s7, #6
+        \\x17.halt
+        ,
+        .post = &.{.{ .x_mem = .{ .addr = 0x3A0, .value = 0xF77 } }},
+    },
+    .{
+        .name = "own-x16st2",
+        // X:[A6 = 0x3A0] <- s7 = 0xF77; Y:[e4 = 0x300] <- s6 = 0x666.
+        .pre = &.{
+            .{ .bank = .s, .index = 7, .value = 0xF77 },
+            .{ .bank = .s, .index = 6, .value = 0x666 },
+            .{ .bank = .a, .index = 6, .value = 0x3A0 },
+            .{ .bank = .e, .index = 4, .value = 0x300 },
+        },
+        .src =
+        \\x16.st2 s7, #6, e4, s6
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .x_mem = .{ .addr = 0x3A0, .value = 0xF77 } },
+            .{ .y_mem = .{ .addr = 0x300, .value = 0x666 } },
+        },
+    },
+    .{
+        .name = "own-x16agumul",
+        // s2 <- s3 * s5 >> 23 = 0x4000 * 0x2000 >> 23 = 0x10.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x4000 },
+            .{ .bank = .s, .index = 5, .value = 0x2000 },
+        },
+        .src =
+        \\x16.agumul #2, #0, s3, s5
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x10 } }},
+    },
+    .{
+        .name = "own-x16agu2",
+        // AGU10[2] (x+1): s3 <- e2 + 1 = 0x101; AGU10B[3] (-x): s5 <- 0xFF00.
+        .pre = &.{
+            .{ .bank = .e, .index = 2, .value = 0x100 },
+            .{ .bank = .r, .index = 3, .value = 0x20 },
+        },
+        .src =
+        \\x16.agu2 s3, e2, R3, #2, #1, #1
+        \\x16.agu2 s5, e2, R3, #3, #0, #1
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 3, .value = 0x101 } },
+            .{ .s_reg = .{ .index = 5, .value = 0xFF00 } },
+        },
+    },
+    .{
+        .name = "own-x16xld",
+        // xi <- 10; s7 <- X:[A10 = 0x300] = 0x1234.
+        .pre = &.{.{ .bank = .a, .index = 10, .value = 0x300 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x300, .value = 0x1234 }},
+        .src =
+        \\x16.xld s7, #10
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 0x1234 } }},
+    },
+    .{
+        .name = "own-x16ldb",
+        // xi <- 10; s12 <- X:[A10][7:0] << 8 = 0x3400.
+        .pre = &.{.{ .bank = .a, .index = 10, .value = 0x300 }},
+        .pre_mem = &.{.{ .kind = .x, .addr = 0x300, .value = 0x1234 }},
+        .src =
+        \\x16.ldb s12
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 12, .value = 0x3400 } }},
     },
     .{
         .name = "own-x16mul-trunc",
