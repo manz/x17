@@ -2872,6 +2872,23 @@ const GATES = [_]Gate{
         .lane = 1,
     },
     .{
+        .name = "own-x03rep",
+        // p3 = 1: the store of s3 lands at X:0x300, the re-issue at X:0x301.
+        .pre = &.{
+            .{ .bank = .p, .index = 3, .value = 1 },
+            .{ .bank = .s, .index = 3, .value = 0x3303 },
+            .{ .bank = .a, .index = 8, .value = 0x300 },
+        },
+        .src =
+        \\x03.rep p3
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .x_mem = .{ .addr = 0x300, .value = 0x3303 } },
+            .{ .x_mem = .{ .addr = 0x301, .value = 0x3303 } },
+        },
+    },
+    .{
         .name = "own-x15pt",
         // Pre p13 = 1; LUT 1 (identity): s3 <- p13 = 1.
         .pre = &.{.{ .bank = .p, .index = 13, .value = 1 }},

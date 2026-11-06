@@ -264,10 +264,20 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return execX03Agu(gpa, state, bundle);
         }
         if (w4_mode == 0) {
-            try execX03XStore(gpa, state, bundle);
-            try execX03Alu(gpa, state, bundle);
-            try execX03Mpy(gpa, state, bundle);
-            return execX03RSlot(gpa, state, bundle);
+            try execX03Mode0(gpa, state, bundle);
+            // w3[31] re-issues the bundle while p<w5[17:14]> holds, the X
+            // address post-incrementing (fact 262-263).  p3 measured one
+            // re-issue; p5 ran away (7168 stores).  What ends p3's is OPEN.
+            if (bundle[3] >> 31 == 1) {
+                const pi: u32 = (bundle[5] >> 14) & 0xF;
+                if (state.p[pi] != 0) {
+                    if (pi != 3) return RunError.RunawayProgram;
+                    const ai = x03AIndex(bundle);
+                    state.a[ai] +%= 1;
+                    try execX03Mode0(gpa, state, bundle);
+                }
+            }
+            return;
         }
         // Y path (w5[21] = 1): the read enters the 24-bit lane as D << 8;
         // mux 011 takes lane[15:0], mux 100 lane[16:1] (fact 236).
@@ -529,6 +539,13 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // x03.plo: w4[10:7] carries a second dest that gets (2P)[15:0].
     const plo_dest: u32 = (w4 >> 7) & 0xF;
     if (plo_dest != 0) state.s[plo_dest] = @truncate(@as(u64, @bitCast(prod *% 2)) & 0xFFFF);
+}
+
+fn execX03Mode0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    try execX03XStore(gpa, state, bundle);
+    try execX03Alu(gpa, state, bundle);
+    try execX03Mpy(gpa, state, bundle);
+    return execX03RSlot(gpa, state, bundle);
 }
 
 fn x03AIndex(bundle: []const u32) u32 {

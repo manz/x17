@@ -1226,3 +1226,6 @@ x17.stopx	src	dest_ldi	24	28	s1
 x17.stopx	ea	e	15	16	s1
 x17.stopx	hj	imm	5	31	head
 x17.stopx	s2j	imm	0	28	s2
+
+# x03.rep p<pidx>
+x03.rep	pidx	p	14	17	s5
