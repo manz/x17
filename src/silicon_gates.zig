@@ -578,10 +578,21 @@ const GATES = [_]Gate{
         // Pre A5 = 0x100; i = 0x10 (from w4[31:17]); A9 <- A5 + 0x10 = 0x110.
         .pre = &.{.{ .bank = .a, .index = 5, .value = 0x100 }},
         .src =
-        \\x03.agu A9, A5, #16, #0
+        \\x03.agu A9, A5, #16, #0, A0
         \\x17.halt
         ,
         .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x110 } }},
+    },
+    .{
+        .name = "own-x03acp",
+        // Pre A5 = 0x100; A-slot writes A0 via dest_A=0 (noop).
+        // acp_dest = A9 also set to A5 = 0x100 (no +1).
+        .pre = &.{.{ .bank = .a, .index = 5, .value = 0x100 }},
+        .src =
+        \\x03.agu A0, A5, #0, #0, A9
+        \\x17.halt
+        ,
+        .post = &.{.{ .a_reg = .{ .index = 9, .value = 0x100 } }},
     },
     .{
         .name = "own-x02yrd",

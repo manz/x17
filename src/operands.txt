@@ -292,6 +292,7 @@ x03.agu	dest_A	A	10	14	s3
 x03.agu	src_A	A	0	4	s3
 x03.agu	i_hi	imm	17	31	s4
 x03.agu	i_lo	imm	0	0	s5
+x03.agu	acp_dest	A	17	21	s2
 
 # x04.agu (6 syllables): R-AGU10 write.
 # Grammar: x04.agu <dest_R>, <y_R>, #<fn>, #<imm>

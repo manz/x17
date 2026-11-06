@@ -403,6 +403,11 @@ fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         else => return,
     };
     state.a[dest_a & 0xF] = v;
+    // Second A dest (x03.acp): A<w2[21:17]> <- A<w3[4:0]>.
+    const acp_dest: u32 = (w2 >> 17) & 0x1F;
+    if (acp_dest != 0 and acp_dest != dest_a) {
+        state.a[acp_dest & 0xF] = x_val;
+    }
 }
 
 fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
