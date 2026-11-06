@@ -28,8 +28,10 @@ pub const State = struct {
     e: [16]u32 = @splat(0),
     /// R-file registers R0..R15.  R0 pinned to zero.
     r: [16]u32 = @splat(0),
-    /// Per-lane "V" data register: what `st.y` writes to memory.  sm1 runs
-    /// four lanes in parallel; our emu runs one lane at a time, picked by
+    /// Per-lane "V" data register: what `st.y` writes to memory.  A program is
+    /// one sequential stream laid across four lane images (seq word i in lane
+    /// (i // 2) % 4); no parallel execution has been seen, so lanes are storage
+    /// as far as anything measured shows.  The lane of the current syllable is
     /// `cur_lane`.  Default zero - tests seed the measured lane values.
     v: [4]u32 = @splat(0),
     /// Which lane the current bundle runs on (0..3).  The ref string calls
