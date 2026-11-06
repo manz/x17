@@ -3275,6 +3275,34 @@ const GATES = [_]Gate{
         .post = &.{.{ .x_mem = .{ .addr = 0x300, .value = 0x0ABCDE } }},
     },
     .{
+        .name = "own-x02mpy-a1",
+        // The x02 A slot always runs: own-x02mpy's bundle (w2[21:17] = 1, w3[4:0] = 1)
+        // also does A1 <- A1 + 1 (2 of 2, measured 2026-11-06).
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x4000 },
+            .{ .bank = .s, .index = 2, .value = 0x6000 },
+            .{ .bank = .a, .index = 1, .value = 0x100 },
+        },
+        .src =
+        \\x02.mpy s2, s1, s2
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 2, .value = 0x30 } },
+            .{ .a_reg = .{ .index = 1, .value = 0x101 } },
+        },
+    },
+    .{
+        .name = "own-x02ainc-a8",
+        // A + 1 with w3 bit 1 clear: A8 <- A8 + 1 (2 of 2, measured 2026-11-06).
+        .pre = &.{.{ .bank = .a, .index = 8, .value = 0x100 }},
+        .src =
+        \\x02.ainc #8, #8
+        \\x17.halt
+        ,
+        .post = &.{.{ .a_reg = .{ .index = 8, .value = 0x101 } }},
+    },
+    .{
         .name = "own-x19agu",
         // Pre e3 = 0x700, R1 = 2; fn 6 (x+y) → 0x702; R3 and e5 both get v.
         .pre = &.{

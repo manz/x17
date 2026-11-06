@@ -7,8 +7,8 @@
 ;   A10  coefficients, REVERSED: X:[A10 + i] = coefs[order - 1 - i], adapted in place
 ; Walking the coefficients reversed lets every access ascend: the sum over k does not
 ; care about order, and the adaptation visits k = order - 1 down to 0, i.e. i upward.
-; A4, A7, A8, A9, A11 are scratch. A1 is avoided: the x02 multiply templates name A1 in
-; their A slot (isa.toml 157), and whether that slot runs in them is unmeasured.
+; A4, A7, A8, A9, A11 are scratch. A1 is avoided: every x02 bundle runs its A slot, and the
+; multiply templates name A1 there, so each x02.mpy / x02.x3 also does A1 += 1 (own-x02mpy-a1).
 ;
 ; Y slots (pred_slots(base)), filled by the caller:
 ;   e11 Y:base+0  n

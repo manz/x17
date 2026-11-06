@@ -234,7 +234,8 @@ x13.agu	x_e	e	21	24	s1
 x13.agu	y_R	R	13	16	s1
 x13.agu	fn	imm	17	20	s1
 
-# x02.mpy (6 syllables): rounded multiply with 23-bit shift.
+# x02.mpy (6 syllables): rounded multiply with 23-bit shift.  The bundle's A
+# slot also runs: A1 <- A1 + 1 (own-x02mpy-a1).  Same for x02.x3.
 # Grammar: x02.mpy <dest_s>, <a_s>, <b_s>
 x02.mpy	dest_s	s	9	12	s2
 x02.mpy	a_s	s	1	4	s2
