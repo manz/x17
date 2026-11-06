@@ -10,6 +10,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/rice.sm", .text = @embedFile("rice.sm") },
     .{ .path = "lib/predictor.sm", .text = @embedFile("predictor.sm") },
     .{ .path = "lib/unmix.sm", .text = @embedFile("unmix.sm") },
+    .{ .path = "lib/alac.sm", .text = @embedFile("alac.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -468,5 +469,69 @@ test "unmix matches the reference: matrixing, low bytes, depth wrap, gaps" {
                 try testing.expectEqual(@as(u32, @bitCast(w)) & 0xFFFFFF, got);
             }
         }
+    }
+}
+
+fn le32(b: []const u8, at: usize) u32 {
+    return std.mem.readInt(u32, b[at..][0..4], .little);
+}
+
+/// Packets dumped by sosumi's `alacdec --dump` (the reference decoder's PCM alongside).
+fn checkPackets(gpa: std.mem.Allocator, prog: []const u32, dump: []const u8, name: []const u8) !void {
+    try testing.expectEqualSlices(u8, "ALPK", dump[0..4]);
+    const cfg = [6]u32{ le32(dump, 4), le32(dump, 8), le32(dump, 12), le32(dump, 16), le32(dump, 20), le32(dump, 24) };
+    const count = le32(dump, 28);
+    var p: usize = 32;
+    for (0..count) |k| {
+        const len = le32(dump, p);
+        const pkt = dump[p + 4 .. p + 4 + len];
+        p += 4 + len;
+        const n = le32(dump, p);
+        p += 4;
+        const nch = cfg[5];
+        const pcm = dump[p .. p + 4 * n * nch];
+        p += 4 * n * nch;
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const padded = try gpa.alloc(u8, len + (len & 1));
+        defer gpa.free(padded);
+        @memcpy(padded[0..len], pkt);
+        if (len & 1 != 0) padded[len] = 0;
+        try stage(gpa, &state, padded);
+        for (cfg, 0..) |v, i| try state.y_mem.put(gpa, 0x3300 + @as(u32, @intCast(i)), v);
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 30);
+        try testing.expect(state.halted);
+        const status = state.y_mem.get(0x3307).?;
+        if (status != 0) std.debug.print("{s} packet {d}: status {d}\n", .{ name, k, status });
+        try testing.expectEqual(@as(u32, 0), status);
+        try testing.expectEqual(n, state.y_mem.get(0x3306).?);
+        for (0..n * nch) |i| {
+            const want = le32(pcm, 4 * i) & 0xFFFFFF;
+            const got = state.x_mem.get(0x6000 + @as(u32, @intCast(i))) orelse 0xDEAD0000;
+            if (got != want) {
+                std.debug.print("{s} packet {d}: word {d} (frame {d} ch {d})\n", .{ name, k, i, i / nch, i % nch });
+                try testing.expectEqual(want, got);
+            }
+        }
+    }
+}
+
+test "alac_packet decodes fixture packets as the reference does" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/rice.sm"
+        \\.include "lib/predictor.sm"
+        \\.include "lib/unmix.sm"
+        \\.include "lib/alac.sm"
+        \\        bits_init(0x4000)
+        \\        alac_packet()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    inline for (.{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff" }) |name| {
+        try checkPackets(gpa, prog, @embedFile(name ++ ".pkts"), name);
     }
 }

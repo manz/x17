@@ -1,0 +1,468 @@
+; One ALAC packet: the x17 twin of `Decoder.decode` in sosumi's ref/dsp/alac/decoder.zig.
+; Needs lib/bits.sm, lib/rice.sm, lib/predictor.sm and lib/unmix.sm first; bits_init must
+; point the reader at the packet.
+;
+; Elements: SCE, LFE (one lane) and CPE (two), until END or every channel is filled. Valid
+; streams only: the header checks the reference makes (the 12 zero bits, n <= frame length,
+; a CPE past the last channel) are not repeated. The status slot reports what stops it.
+;
+; X layout (24-bit words; addresses stay below 0x8000, ldi sign-extends its immediate):
+;   PRED   residuals of the lane being decoded       MIX0, MIX1   the two lanes
+;   X_LOW  low bytes, lane-interleaved               OUT          samples, channel-interleaved
+;   COEF0  coefficients, reversed, 0x40 per lane
+;
+; Y slots at PK, filled by the host: +0 frame length, +1 depth, +2 pb, +3 mb, +4 kb,
+; +5 channels (<= 2 with this OUT). Written: +6 samples per channel, +7 status (0 ok,
+; 1 a zero run overran, 2 an unsupported element, 3 a sub-frame with mode != 0 (integrate),
+; 4 pb * pb_factor / 4 above the Rice loop's 127). The rest is scratch, see the .consts.
+;
+; Moves into A registers go s -> e (x17.mve, +1) -> R (x19.a3 AGU10 fn 2, +1) -> even A
+; (x12.aset) -> any A (x03.agu + 0): every step gated. They use s13, e6, R7 and A14.
+; Loops that advance with x02.ainc count in s1: its bundle's multiply slot overwrites s2.
+
+.const PRED  = 0x1000
+.const MIX0  = 0x2000
+.const MIX1  = 0x3000
+.const X_LOW = 0x4000
+.const OUT   = 0x6000
+.const COEF0 = 0x0100
+.const RICE  = 0x3000
+.const PREDY = 0x3100
+.const UNMIX = 0x3200
+
+.const PK     = 0x3300
+.const PK_FL  = PK + 0
+.const PK_DEP = PK + 1
+.const PK_PB  = PK + 2
+.const PK_MB  = PK + 3
+.const PK_KB  = PK + 4
+.const PK_NCH = PK + 5
+.const PK_N   = PK + 6
+.const PK_ST  = PK + 7
+.const PK_CH  = PK + 8
+.const PK_LN  = PK + 9
+.const PK_BS  = PK + 10
+.const PK_ESC = PK + 11
+.const PK_CB  = PK + 12
+.const PK_MXB = PK + 13
+.const PK_MXR = PK + 14
+.const PK_L   = PK + 15
+.const PK_CNT = PK + 16
+.const PK_SUB = PK + 20         ; per lane: mode, den_shift, pb_factor, order
+
+; e6 = addr.
+.macro yat(addr) {
+        ldi s13, #addr - 1
+        x17.mve e6, s13
+}
+
+.macro yld(dst, addr) {
+        yat(addr)
+        ldy dst, e6
+}
+
+; Y:[addr] = s3.
+.macro yst(addr) {
+        yat(addr)
+        x17.sty e6, #3, #0
+}
+
+; e6 = PK_SUB + 4 * lane + field. Uses s3, s4, s13.
+.macro ysub(field) {
+        yld(s3, PK_L)
+        alu s4, s3, s3, #OP_ADD
+        alu s4, s4, s4, #OP_ADD
+        ldi s13, #PK_SUB + field - 1
+        alu s13, s13, s4, #OP_ADD
+        x17.mve e6, s13
+}
+
+; A<an> = the value in `src` (not s13).
+.macro amov(an, src) {
+        ldi s13, #2
+        alu s13, src, s13, #OP_SUB
+        x17.mve e6, s13
+        x19.a3 s0, R7, e6, #25, #2, #0
+        x12.aset #7, R7
+        x03.agu an, A14, #0, #0, A0
+}
+
+.macro aimm(an, value) {
+        ldi s12, #value
+        amov(an, s12)
+}
+
+; s3 = base + 0x1000 * lane (lane in PK_L). Uses s4, s13.
+.macro lanebase(base, step) {
+        yld(s4, PK_L)
+        ldi s3, #base
+        alu s4, s4, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; lane 0
+        jmp #3, #1, l0
+        nop()
+        nop()
+        ldi s4, #step
+        alu s3, s3, s4, #OP_ADD
+l0:
+}
+
+.macro alac_packet() {
+        ldi s3, #0
+        yst(PK_ST)
+        yst(PK_CH)
+        yld(s3, PK_FL)
+        yst(PK_N)
+
+alac_elem:
+        yld(s3, PK_CH)
+        yld(s4, PK_NCH)
+        alu s4, s3, s4, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; ch < channels
+        jmp #IF_NOT, #1, alac_end
+        nop()
+        nop()
+        getbits(s3, 3)          ; tag
+        ldi s4, #7
+        alu s4, s3, s4, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #IF_NOT, #1, alac_end ; END
+        nop()
+        nop()
+        ldi s1, #1              ; lanes
+        alu s4, s3, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; SCE
+        jmp #3, #1, alac_one
+        nop()
+        nop()
+        alu s4, s4, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; CPE
+        jmp #3, #1, alac_two
+        nop()
+        nop()
+        ldi s4, #3
+        alu s4, s3, s4, #OP_SUB
+        alu s5, s4, s14, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; LFE
+        jmp #3, #1, alac_one
+        nop()
+        nop()
+        ldi s3, #2
+        jmp #IF_NOT, #2, alac_fail
+        nop()
+        nop()
+alac_two:
+        ldi s1, #2
+alac_one:
+        alu s3, s1, s0, #OP_ADD
+        yst(PK_LN)
+        getbits(s3, 4)          ; instance tag
+        getbits(s3, 8)          ; 12 unused bits
+        getbits(s3, 4)
+        getbits(s3, 1)          ; partial
+        alu s1, s3, s0, #OP_ADD
+        getbits(s3, 2)
+        yst(PK_BS)
+        getbits(s3, 1)
+        yst(PK_ESC)
+        alu s4, s1, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; not partial
+        jmp #3, #1, alac_full
+        nop()
+        nop()
+        getbits(s3, 8)          ; n's top byte (0 in a valid stream)
+        ldi s7, #24
+        readn(s3)
+        yst(PK_N)
+alac_full:
+        yld(s3, PK_ESC)
+        alu s4, s3, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; compressed
+        jmp #IF_NOT, #1, alac_verb
+        nop()
+        nop()
+
+        ; chan_bits = depth - 8 * bytes_shifted + lanes - 1
+        yld(s3, PK_BS)
+        ldi s4, #3
+        x19.alu s3, s3, s4, #SHIFT
+        yld(s1, PK_DEP)
+        alu s1, s1, s3, #OP_SUB
+        yld(s3, PK_LN)
+        alu s1, s1, s3, #OP_ADD
+        alu s3, s1, s14, #OP_SUB
+        yst(PK_CB)
+        getbits(s3, 8)
+        yst(PK_MXB)
+        getbits(s3, 8)
+        yst(PK_MXR)
+
+        ; sub-frame headers, coefficients reversed into COEF0 + 0x40 * lane
+        ldi s3, #0
+        yst(PK_L)
+alac_hdr:
+        ysub(0)
+        getbits(s3, 4)          ; mode
+        x17.sty e6, #3, #0
+        x18.eagu e6, e6, #AGU_INC
+        getbits(s3, 4)          ; den_shift
+        x17.sty e6, #3, #0
+        x18.eagu e6, e6, #AGU_INC
+        getbits(s3, 3)          ; pb_factor
+        x17.sty e6, #3, #0
+        x18.eagu e6, e6, #AGU_INC
+        getbits(s3, 5)          ; order
+        x17.sty e6, #3, #0
+        alu s2, s3, s0, #OP_ADD ; coefficients left
+        lanebase(COEF0, 0x40)
+        alu s1, s3, s2, #OP_ADD
+        alu s1, s1, s14, #OP_SUB ; address of coefs[0]: base + order - 1
+alac_coef:
+        alu s4, s2, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_coefs_done
+        nop()
+        nop()
+        ldi s7, #16
+        readn(s3)
+        ldi s4, #0x7FFF
+        alu s4, s4, s14, #OP_ADD ; 2^15
+        alu s5, s3, s4, #OP_SUB
+        ptst p1, s5, #NEG, #PTST ; below 2^15: positive
+        jmp #3, #1, alac_cpos
+        nop()
+        nop()
+        alu s3, s5, s4, #OP_SUB ; c - 2^16
+alac_cpos:
+        amov(A10, s1)
+        stx A10, s3
+        alu s1, s1, s14, #OP_SUB
+        alu s2, s2, s14, #OP_SUB
+        jmp #IF_NOT, #2, alac_coef
+        nop()
+        nop()
+alac_coefs_done:
+        yld(s3, PK_L)
+        alu s3, s3, s14, #OP_ADD
+        yst(PK_L)
+        yld(s4, PK_LN)
+        alu s4, s3, s4, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; another lane
+        jmp #3, #1, alac_hdr
+        nop()
+        nop()
+
+        ; the low bytes come before the residuals: n * lanes of them, 8 * bytes_shifted bits
+        yld(s3, PK_BS)
+        alu s4, s3, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_lanes
+        nop()
+        nop()
+        aimm(A4, X_LOW)
+        yld(s1, PK_N)
+        yld(s3, PK_LN)
+        alu s3, s3, s14, #OP_SUB
+        alu s4, s3, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; one lane
+        jmp #3, #1, alac_sb
+        nop()
+        nop()
+        alu s1, s1, s1, #OP_ADD
+alac_sb:
+        alu s4, s1, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_lanes
+        nop()
+        nop()
+        yld(s7, PK_BS)
+        ldi s4, #3
+        x19.alu s7, s7, s4, #SHIFT
+        readn(s3)
+        stx A4, s3
+        x02.ainc #4, #4
+        alu s1, s1, s14, #OP_SUB
+        jmp #IF_NOT, #2, alac_sb
+        nop()
+        nop()
+
+        ; each lane: Rice residuals into PRED, then the predictor into MIX0 / MIX1
+alac_lanes:
+        ldi s3, #0
+        yst(PK_L)
+alac_lane:
+        ysub(0)
+        ldy s3, e6              ; mode
+        alu s4, s3, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_mode0
+        nop()
+        nop()
+        ldi s3, #3
+        jmp #IF_NOT, #2, alac_fail
+        nop()
+        nop()
+alac_mode0:
+        ysub(2)
+        ldy s2, e6              ; pb_factor
+        yld(s1, PK_PB)
+        alu s3, s0, s0, #OP_ADD
+alac_pbm:
+        alu s4, s2, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_pbd
+        nop()
+        nop()
+        alu s3, s3, s1, #OP_ADD
+        alu s2, s2, s14, #OP_SUB
+        jmp #IF_NOT, #2, alac_pbm
+        nop()
+        nop()
+alac_pbd:
+        floorshr(s2, s3, 2)     ; pb = cfg.pb * pb_factor / 4
+        ldi s4, #128
+        alu s4, s2, s4, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_pbok
+        nop()
+        nop()
+        ldi s3, #4
+        jmp #IF_NOT, #2, alac_fail
+        nop()
+        nop()
+alac_pbok:
+        rice_slots(RICE)
+        ldi s3, #0
+        x17.sty e1, #3, #0      ; mean hi (cfg.mb < 2^15)
+        x17.sty e3, #3, #0      ; zmode
+        x17.sty e10, #3, #0     ; error
+        alu s3, s2, s0, #OP_ADD
+        x17.sty e7, #3, #0      ; pb
+        yld(s3, PK_MB)
+        x17.sty e2, #3, #0
+        yld(s3, PK_N)
+        x17.sty e4, #3, #0
+        yld(s3, PK_KB)
+        x17.sty e8, #3, #0
+        yld(s3, PK_CB)
+        x17.sty e9, #3, #0      ; max_bits = chan_bits
+        aimm(A6, PRED)
+        rice_decompress()
+        rice_slots(RICE)
+        ldy s3, e10
+        alu s4, s3, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_rok
+        nop()
+        nop()
+        ldi s3, #1
+        jmp #IF_NOT, #2, alac_fail
+        nop()
+        nop()
+alac_rok:
+        pred_slots(PREDY)
+        yld(s3, PK_N)
+        x17.sty e11, #3, #0
+        ysub(3)
+        ldy s3, e6
+        x17.sty e12, #3, #0     ; order
+        ysub(1)
+        ldy s3, e6
+        x17.sty e13, #3, #0     ; den_shift
+        yld(s3, PK_CB)
+        x17.sty e14, #3, #0
+        aimm(A2, PRED)
+        lanebase(MIX0, 0x1000)
+        amov(A3, s3)
+        lanebase(COEF0, 0x40)
+        amov(A10, s3)
+        unpredict()
+        yld(s3, PK_L)
+        alu s3, s3, s14, #OP_ADD
+        yst(PK_L)
+        yld(s4, PK_LN)
+        alu s4, s3, s4, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_lane
+        nop()
+        nop()
+        jmp #IF_NOT, #2, alac_out
+        nop()
+        nop()
+
+        ; escape: depth-bit samples, frame by frame, lanes interleaved; unmix sign-extends them
+alac_verb:
+        ldi s3, #0
+        yst(PK_BS)
+        yst(PK_MXR)
+        aimm(A2, MIX0)
+        aimm(A3, MIX1)
+        yld(s1, PK_N)
+alac_vs:
+        alu s4, s1, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_out
+        nop()
+        nop()
+        yld(s7, PK_DEP)
+        readn(s3)
+        stx A2, s3
+        x02.ainc #2, #2
+        yld(s4, PK_LN)
+        alu s4, s4, s14, #OP_SUB
+        alu s4, s4, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; one lane
+        jmp #3, #1, alac_vn
+        nop()
+        nop()
+        yld(s7, PK_DEP)
+        readn(s3)
+        stx A3, s3
+        x02.ainc #3, #3
+alac_vn:
+        alu s1, s1, s14, #OP_SUB
+        jmp #IF_NOT, #2, alac_vs
+        nop()
+        nop()
+
+        ; unmix into OUT + ch, one gap of channels - lanes per frame
+alac_out:
+        unmix_slots(UNMIX)
+        yld(s3, PK_N)
+        x17.sty e1, #3, #0
+        yld(s3, PK_MXB)
+        x17.sty e2, #3, #0
+        yld(s3, PK_MXR)
+        x17.sty e3, #3, #0
+        yld(s3, PK_BS)
+        ldi s4, #3
+        x19.alu s3, s3, s4, #SHIFT
+        x17.sty e4, #3, #0      ; shifted
+        yld(s3, PK_DEP)
+        x17.sty e7, #3, #0
+        yld(s3, PK_LN)
+        x17.sty e8, #3, #0
+        yld(s4, PK_NCH)
+        alu s3, s4, s3, #OP_SUB
+        x17.sty e10, #3, #0     ; gap
+        aimm(A2, MIX0)
+        aimm(A3, MIX1)
+        aimm(A4, X_LOW)
+        yld(s3, PK_CH)
+        ldi s4, #OUT
+        alu s3, s3, s4, #OP_ADD
+        amov(A7, s3)
+        unmix()
+        yld(s3, PK_CH)
+        yld(s4, PK_LN)
+        alu s3, s3, s4, #OP_ADD
+        yst(PK_CH)
+        jmp #IF_NOT, #2, alac_elem
+        nop()
+        nop()
+        jmp #IF_NOT, #2, alac_end
+        nop()
+        nop()
+alac_fail:
+        yst(PK_ST)
+alac_end:
+}
