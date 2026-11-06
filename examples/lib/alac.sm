@@ -13,8 +13,8 @@
 ;
 ; Y slots at PK, filled by the host: +0 frame length, +1 depth, +2 pb, +3 mb, +4 kb,
 ; +5 channels (<= 2 with this OUT). Written: +6 samples per channel, +7 status (0 ok,
-; 1 a zero run overran, 2 an unsupported element, 3 a sub-frame with mode != 0 (integrate),
-; 4 pb * pb_factor / 4 above the Rice loop's 127). The rest is scratch, see the .consts.
+; 1 a zero run overran, 2 an unsupported element, 3 pb * pb_factor / 4 above the Rice
+; loop's 127). The rest is scratch, see the .consts. Mode != 0 integrates PRED first.
 ;
 ; Moves into A registers go s -> e (x17.mve, +1) -> R (x19.a3 AGU10 fn 2, +1) -> even A
 ; (x12.aset) -> any A (x03.agu + 0): every step gated. They use s13, e6, R7 and A14.
@@ -290,18 +290,6 @@ alac_lanes:
         ldi s3, #0
         yst(PK_L)
 alac_lane:
-        ysub(0)
-        ldy s3, e6              ; mode
-        alu s4, s3, s14, #OP_SUB
-        ptst p1, s4, #NEG, #PTST
-        jmp #3, #1, alac_mode0
-        nop()
-        nop()
-        ldi s3, #3
-        jmp #IF_NOT, #2, alac_fail
-        nop()
-        nop()
-alac_mode0:
         ysub(2)
         ldy s2, e6              ; pb_factor
         yld(s1, PK_PB)
@@ -325,7 +313,7 @@ alac_pbd:
         jmp #3, #1, alac_pbok
         nop()
         nop()
-        ldi s3, #4
+        ldi s3, #3
         jmp #IF_NOT, #2, alac_fail
         nop()
         nop()
@@ -370,6 +358,16 @@ alac_rok:
         x17.sty e13, #3, #0     ; den_shift
         yld(s3, PK_CB)
         x17.sty e14, #3, #0
+        ysub(0)
+        ldy s3, e6              ; mode
+        alu s4, s3, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST
+        jmp #3, #1, alac_mode0
+        nop()
+        nop()
+        aimm(A2, PRED)
+        integrate()
+alac_mode0:
         aimm(A2, PRED)
         lanebase(MIX0, 0x1000)
         amov(A3, s3)

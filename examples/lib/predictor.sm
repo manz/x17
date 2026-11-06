@@ -76,6 +76,37 @@ done:
         x19.alu dst, dst, s6, #SHIFT
 }
 
+; buf[j] = buf[j] + buf[j - 1] sign-extended from chan_bits, in place over X:[A2..A2+n)
+; (mode != 0, the twin of `predictor.integrate`). Reads the pred_slots n and chan_bits; leaves
+; A2 past the buffer. Uses s1, s3, s4, s6, s12, s13; counts in s1 (x02.ainc writes s2).
+.macro integrate() {
+        ldy s1, e11
+        alu s4, s1, s14, #OP_SUB
+        ptst p1, s4, #NEG, #PTST ; n == 0
+        jmp #3, #1, done
+        nop()
+        nop()
+        x19.xrd s4, #2          ; prev = buf[0]
+        x02.ainc #2, #2
+        alu s1, s1, s14, #OP_SUB
+next:   alu s3, s1, s14, #OP_SUB
+        ptst p1, s3, #NEG, #PTST
+        jmp #3, #1, done
+        nop()
+        nop()
+        x19.xrd s3, #2
+        alu s3, s3, s4, #OP_ADD
+        sxcb(s3)
+        stx A2, s3
+        x02.ainc #2, #2
+        alu s4, s3, s0, #OP_ADD
+        alu s1, s1, s14, #OP_SUB
+        jmp #IF_NOT, #2, next
+        nop()
+        nop()
+done:
+}
+
 .macro unpredict() {
         ldy s7, e11
         alu s5, s7, s14, #OP_SUB

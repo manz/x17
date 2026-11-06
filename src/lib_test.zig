@@ -531,7 +531,41 @@ test "alac_packet decodes fixture packets as the reference does" {
         \\
     );
     defer gpa.free(prog);
-    inline for (.{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff" }) |name| {
+    inline for (.{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |name| {
         try checkPackets(gpa, prog, @embedFile(name ++ ".pkts"), name);
+    }
+}
+
+test "integrate matches the reference: running sum wrapped to chan_bits" {
+    const gpa = testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x1A7E);
+    const rnd = prng.random();
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/rice.sm"
+        \\.include "lib/predictor.sm"
+        \\        bits_init(0x4000)
+        \\        pred_slots(0x3100)
+        \\        integrate()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    for (0..200) |case| {
+        const cb = rnd.intRangeAtMost(u6, 8, 23);
+        const n: usize = if (case < 3) case else rnd.intRangeAtMost(usize, 1, 80);
+        var buf: [80]i32 = undefined;
+        for (buf[0..n]) |*x| x.* = wrapCb(rnd.int(i32), cb);
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (buf[0..n], 0..) |x, i| try state.x_mem.put(gpa, 0x1000 + @as(u32, @intCast(i)), @as(u32, @bitCast(x)) & 0xFFFFFF);
+        const init = [_]u32{ @intCast(n), 0, 0, cb, 0 };
+        for (init, 0..) |v, i| try state.y_mem.put(gpa, 0x3100 + @as(u32, @intCast(i)), v);
+        state.a[2] = 0x1000;
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 22);
+        try testing.expect(state.halted);
+        var j: usize = 1;
+        while (j < n) : (j += 1) buf[j] = wrapCb(buf[j] +% buf[j - 1], cb);
+        for (buf[0..n], 0..) |w, i| try testing.expectEqual(@as(u32, @bitCast(w)) & 0xFFFFFF, state.x_mem.get(0x1000 + @as(u32, @intCast(i))).?);
     }
 }
