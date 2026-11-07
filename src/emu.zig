@@ -362,10 +362,14 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         }
         // Y path (w5[21] = 1): the read enters the 24-bit lane as D << 8;
         // mux 011 takes lane[15:0], mux 100 lane[16:1] (fact 236).
-        if ((w4_mode == 3 or w4_mode == 4) and ((bundle[5] >> 21) & 1) == 1) {
+        // With w5[1] = 0 and w5[21] = 0 the lane takes yd instead of a fresh read (565).
+        const yd_lane = (bundle[5] >> 1) & 1 == 0 and (bundle[5] >> 21) & 1 == 0;
+        if ((w4_mode == 3 or w4_mode == 4) and ((bundle[5] >> 21) & 1 == 1 or yd_lane)) {
             const dest_s: u32 = (bundle[4] >> 3) & 0xF;
             const src_e: u32 = (bundle[3] >> 27) & 0xF;
-            const lane: u32 = ((state.getY(state.e[src_e]) orelse 0) << 8) & M24;
+            const d: u32 = (if (yd_lane) state.yd else state.getY(state.e[src_e]) orelse 0) & 0xFFFF;
+            state.yd = d;
+            const lane: u32 = (d << 8) & M24;
             const v: u32 = if (w4_mode == 3) lane & 0xFFFF else (lane >> 1) & 0xFFFF;
             if (dest_s != 0) state.s[dest_s] = v;
             return;
@@ -1341,12 +1345,17 @@ fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const a_hi: u32 = w1 & 0x7;
     const a_lo: u32 = (head >> 30) & 0x3;
     const a_idx: u32 = ((a_hi << 2) | a_lo) & 0xF;
-    // w5[21] = 1 turns the w4 slot into a Y read at e<w3[30:27]>
-    // (fact 190 / own-x03yrd).
-    const v: u32 = if ((bundle[5] >> 21) & 1 == 1) blk: {
-        const src_e: u32 = (bundle[3] >> 27) & 0xF;
-        break :blk state.getY(state.e[src_e]) orelse 0;
-    } else state.readX(state.a[a_idx]) orelse 0;
+    // w5[1] = 1: X:[A<4*w1[2:0] + h[31:30]>] whatever w5[21] says (565).  w5[1] = 0: w5[21] = 1
+    // reads Y:[e<w3[30:27]>] (190 / own-x03yrd), 0 delivers yd (565).
+    const w5 = bundle[5];
+    const fresh = (w5 >> 1) & 1 == 0 and (w5 >> 21) & 1 == 1;
+    const v: u32 = if ((w5 >> 1) & 1 == 1)
+        state.readX(state.a[a_idx]) orelse 0
+    else if (fresh)
+        (state.getY(state.e[(bundle[3] >> 27) & 0xF]) orelse 0) & 0xFFFF
+    else
+        state.yd;
+    if (fresh) state.yd = v;
     if (dest_s != 0) state.s[dest_s] = v;
 }
 

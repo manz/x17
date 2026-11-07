@@ -4394,3 +4394,44 @@ test "x16Post table cells" {
     try testing.expectEqual(@as(?i64, 0x3303), P(18, false, 0x3303, 0x5505, 0));
     try testing.expectEqual(@as(?i64, null), P(54, false, 0x3303, 0x5505, 0));
 }
+
+test "x03 with w5[1] = 0: w5[21] picks a fresh Y read or yd (fact 565)" {
+    // Y:0x710 = 0x1234, Y:0x720 = 0x0BEE: a read at 0x720, then w5[21] = 0 at e2 = 0x710 gives
+    // s5 = 0x0BEE.  Modes 3/4 lane yd the same way (yd[7:0] << 8).
+    const gpa = testing.allocator;
+    const rd = try assemble(gpa, "        x03.yrd s5, e3, #5, #0\n");
+    defer gpa.free(rd);
+    try testing.expectEqual(@as(u32, 0), (rd[5] >> 1) & 1);
+    try testing.expectEqual(@as(u32, 1), (rd[5] >> 21) & 1);
+    var b: [15]u32 = undefined;
+    @memcpy(b[0..6], rd[0..6]);
+    @memcpy(b[6..12], rd[0..6]);
+    b[6 + 3] = (b[6 + 3] & ~@as(u32, 0x78000000)) | (2 << 27); // e2
+    b[6 + 5] &= ~@as(u32, 1 << 21);
+    b[12] = 0x00000017;
+    b[13] = 0x31308000;
+    b[14] = 0xA0000000;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[3] = 0x720;
+    state.e[2] = 0x710;
+    try state.y_mem.put(gpa, 0x710, 0x1234);
+    try state.y_mem.put(gpa, 0x720, 0x0BEE);
+    _ = try emu.runFrom(gpa, &state, &b, 0, 16);
+    try testing.expectEqual(@as(u32, 0x0BEE), state.s[5]);
+    // With w5[1] = 1 the slot reads X whatever w5[21] says (own-x03xrd's shape).
+    var x = emu.State{};
+    defer x.deinit(gpa);
+    x.e[3] = 0x720;
+    x.a[0] = 0;
+    try x.y_mem.put(gpa, 0x720, 0x0BEE);
+    try x.x_mem.put(gpa, 0, 0x777);
+    var bx: [9]u32 = undefined;
+    @memcpy(bx[0..6], rd[0..6]);
+    bx[5] |= 2;
+    bx[6] = 0x00000017;
+    bx[7] = 0x31308000;
+    bx[8] = 0xA0000000;
+    _ = try emu.runFrom(gpa, &x, &bx, 0, 16);
+    try testing.expectEqual(@as(u32, 0x777), x.s[5]);
+}
