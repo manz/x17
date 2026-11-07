@@ -501,7 +501,10 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         return true;
     }
     if (w4_mode == 0) {
+        // The third slot runs here too (fact 549, own-x02t3).
+        const s_pre = state.s;
         try execX02Ainc(gpa, state, bundle);
+        try execX02X3Pre(gpa, state, bundle, s_pre);
         return true;
     }
     if (w4_mode == 2) {
@@ -1336,27 +1339,20 @@ fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
+/// x02's third slot (fact 182, 549): s<{w5[1:0], w4[31:30]}> <- alu_word over the head
+/// ALU code h[10:5] with m = w5[8:6] and #n = w5[5:2], a = s<w4[25:22]>, b = s<w4[29:26]>,
+/// read before the bundle's slots write (`s_pre`).  Only adder codes are measured: codes 0-2
+/// shift left, 3/5 right, 4 right rounded, the rest unshifted; non-adder codes are OPEN.
 fn execX02X3Pre(gpa: std.mem.Allocator, state: *State, bundle: []const u32, s_pre: [16]u32) RunError!void {
     _ = gpa;
-    if (bundle.len < 6) return;
     const w4 = bundle[4];
     const w5 = bundle[5];
-    const dest_lo: u32 = w5 & 0x3;
-    const dest_hi: u32 = (w4 >> 30) & 0x3;
-    const dest_s: u32 = (dest_lo << 2) | dest_hi;
+    const dest_s: u32 = ((w5 & 3) << 2) | (w4 >> 30);
     if (dest_s == 0) return;
-    const op: u32 = (w5 >> 6) & 0x7;
-    const a_s: u32 = (w4 >> 22) & 0xF;
-    const b_s: u32 = (w4 >> 26) & 0xF;
-    const shift: u5 = @intCast((w5 >> 2) & 0xF);
-    const av: u32 = if (a_s == 0) 0 else s_pre[a_s] & M24;
-    const bv: u32 = if (b_s == 0) 0 else s_pre[b_s] & M24;
-    const base: u32 = switch (op) {
-        0 => (av +% bv) & M24,
-        5 => (av -% bv) & M24,
-        else => return,
-    };
-    state.s[dest_s] = (base << shift) & M24;
+    const code: u32 = (bundle[0] >> 5) & 0x3F;
+    if (ALU05[code] != .add) return RunError.UnknownForm;
+    const word: u32 = (code << 5) | (((w5 >> 6) & 7) << 23) | (((w5 >> 2) & 0xF) << 19);
+    state.s[dest_s] = try aluWord(word, sx24(s_pre[(w4 >> 22) & 0xF]), sx24(s_pre[(w4 >> 26) & 0xF])) orelse return RunError.UnknownForm;
 }
 
 /// x02's w4 slot, s<w4[6:3]> <- by mode w4[13:11] (fact 186, 187, 191, 545, 548): 101

@@ -4026,3 +4026,24 @@ test "x03's R slot refuses the w5[27] carry (fresh state only, 547)" {
     _ = try runX02(gpa, &ok, .{ 0x00000003, 0x00000710, 0x00c00000, 0x105814a7, 0x00000000, 0x01800000 });
     try testing.expectEqual(@as(u32, 0x156), ok.r[11]);
 }
+
+test "x02's third slot shifts by the head ALU code" {
+    // fact 549: own-x02t3, s3 = 0x1230: m = 2 (b) with n = 4 under head code 3 (asr)
+    // gives 0x123; code 0 shifts left (0x12300); codes 6 and 0x16 (not adder codes) refuse.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, want: ?u32, w5: u32 = 0xc0020090 }{
+        .{ .h = 0x01065062, .want = 0x123 },
+        .{ .h = 0x01065002, .want = 0x12300 },
+        .{ .h = 0x010650c2, .want = null },
+        .{ .h = 0x010652c2, .want = null, .w5 = 0xc0020080 }, // 0x16 xor: alu_word has it, the slot does not
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0x1230;
+        const r = runX02(gpa, &state, .{ c.h, 0x00002048, 0x00001432, 0x00000000, 0xcc000480, c.w5 });
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[3]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
