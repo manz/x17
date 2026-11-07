@@ -3258,55 +3258,207 @@ fn execX16Sh(state: *State, bundle: []const u32) RunError!void {
     if (dest != 0 and n != 0) state.s[dest] = sh;
 }
 
-/// x16alu with its post-op code (fact 563): codes 11, 15, 63, and 3 with n = 0, keep
-/// the plain ALU; any other code is measured for ops 4 and 5 with S1[15] = 0 only.
+/// x16alu with its post-op code (fact 563, 564): codes 11, 15, 63, and 3 with n = 0, keep
+/// the plain ALU; any other code runs X16_POST's cell for (op, S1[15]), refused where unmeasured.
 fn x16AluPost(state: *State, code: u32, s1: u32, s2: u32) RunError!void {
     const n: u32 = (s2 >> 4) & 0xF;
     const plain = code == 11 or code == 15 or code == 63 or (code == 3 and n == 0);
     if (plain) return x16Alu(state, s1, s2);
-    const op: u32 = (s1 >> 16) & 7;
-    if ((s1 >> 15) & 1 == 1 or (op != 4 and op != 5)) return RunError.UnknownForm;
     const a: i64 = sx16(state.s[(s2 >> 25) & 0xF]);
     const b: i64 = sx16(state.s[(s1 >> 4) & 0xF]);
-    const v = x16Post(code, op == 4, a, b, @intCast(n)) orelse return RunError.UnknownForm;
+    const v = x16Post((s1 >> 16) & 7, (s1 >> 15) & 1, code, a, b, @intCast(n)) orelse return RunError.UnknownForm;
     const dest: u32 = (s1 >> 8) & 0xF;
     if (dest != 0) state.s[dest] = @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF;
 }
 
-/// The 563 post-op table on 16-bit signed operands; the shift sees the exact sum.  `add` is
-/// op 4 (base a + b, logic a ^ b), else op 5 (base a, logic a | b).  null: OPEN.
-fn x16Post(code: u32, add: bool, a: i64, b: i64, n: u6) ?i64 {
-    const base: i64 = if (add) a + b else a;
-    const logic: i64 = if (add) a ^ b else a | b;
-    return switch (code) {
-        0, 1, 2, 58 => base << n,
-        3, 5 => base >> n,
-        4 => asrRound(base, n),
-        11, 12, 13, 14, 15, 60, 61, 63 => base,
-        22, 23 => logic << n,
-        24, 25 => logic >> n,
-        29, 30, 31, 37 => logic,
-        32, 33, 34, 59 => 0,
-        35, 36, 38, 39, 42, 43 => b,
-        40, 41 => n,
-        44 => b << n,
-        45 => asrRound(b, n),
-        48, 49, 50 => if (add) a else a << n,
-        51, 53 => if (add) a else a >> n,
-        52 => if (add) a else asrRound(a, n),
-        9, 10 => if (add) a + n else a,
-        28 => if (add) a - n else a,
-        16, 17 => if (add) b - a else -a,
-        18, 19 => if (add) a - b else a,
-        20, 21 => -base - 2,
-        6, 7, 8, 26, 27, 46, 47, 57 => if (add) 0 else null,
-        54, 55, 56 => if (add) a else null,
-        62 => if (add) a + b else null,
-        else => unreachable,
+const PostShift = enum { none, shl, asr, asr_rnd, imm_n, b_is_n };
+const PostFn = enum { a, b, zero, neg1, add, sub, rsub, a_or_b, a_xor_b, a_and_b, xnor, neg_a, neg_a2, neg_ab2, a1, a_m1, not_a, not_ab, ab1 };
+const PostCell = struct { sh: PostShift, f: PostFn };
+const PostRow = [64]?PostCell;
+const PostTable = struct { o50: PostRow, o40: PostRow, o51: PostRow, o41: PostRow, o70: PostRow, o61: PostRow };
+
+fn postFn(f: PostFn, a: i64, b: i64) i64 {
+    return switch (f) {
+        .a => a,
+        .b => b,
+        .zero => 0,
+        .neg1 => -1,
+        .add => a + b,
+        .sub => a - b,
+        .rsub => b - a,
+        .a_or_b => a | b,
+        .a_xor_b => a ^ b,
+        .a_and_b => a & b,
+        .xnor => ~(a ^ b),
+        .neg_a => -a,
+        .neg_a2 => -a - 2,
+        .neg_ab2 => -a - b - 2,
+        .a1 => a + 1,
+        .a_m1 => a - 1,
+        .not_a => ~a,
+        .not_ab => ~(a + b),
+        .ab1 => a + b + 1,
+    };
+}
+
+/// The post-op on 16-bit signed operands; the shift sees the exact value (0x5505 + 0x4404 asr 4
+/// = 0x0990).  null: unmeasured.
+fn x16Post(op: u32, s15: u32, code: u32, a: i64, b: i64, n: u6) ?i64 {
+    const row: *const PostRow = switch (op << 1 | s15) {
+        5 << 1 => &X16_POST.o50,
+        4 << 1 => &X16_POST.o40,
+        5 << 1 | 1 => &X16_POST.o51,
+        4 << 1 | 1 => &X16_POST.o41,
+        7 << 1 => &X16_POST.o70,
+        6 << 1 | 1 => &X16_POST.o61,
+        else => return null,
+    };
+    const c = row[code] orelse return null;
+    return switch (c.sh) {
+        .none => postFn(c.f, a, b),
+        .shl => postFn(c.f, a, b) << n,
+        .asr => postFn(c.f, a, b) >> n,
+        .asr_rnd => asrRound(postFn(c.f, a, b), n),
+        .imm_n => n,
+        .b_is_n => postFn(c.f, a, n),
     };
 }
 
 pub const x16PostForTest = x16Post;
+
+/// fact 563/564, one row per (op, S1[15]) the sweeps covered; missing codes are OPEN.
+const X16_POST: PostTable = blk: {
+    @setEvalBranchQuota(20000);
+    const G = struct { codes: []const u6, sh: PostShift, f: PostFn };
+    const fill = struct {
+        fn row(groups: []const G) PostRow {
+            var r: PostRow = @splat(null);
+            for (groups) |g| for (g.codes) |c| {
+                r[c] = .{ .sh = g.sh, .f = g.f };
+            };
+            return r;
+        }
+        // The groups ops 4 and 5 share at S1[15] = 0, over (native, logic).
+        fn base0(nat: PostFn, lg: PostFn) [13]G {
+            return .{
+                .{ .codes = &.{ 0, 1, 2 }, .sh = .shl, .f = nat },
+                .{ .codes = &.{58}, .sh = .shl, .f = .a },
+                .{ .codes = &.{ 3, 5 }, .sh = .asr, .f = nat },
+                .{ .codes = &.{4}, .sh = .asr_rnd, .f = nat },
+                .{ .codes = &.{ 11, 12, 13, 14, 15, 60, 61, 63 }, .sh = .none, .f = nat },
+                .{ .codes = &.{ 22, 23 }, .sh = .shl, .f = lg },
+                .{ .codes = &.{ 24, 25 }, .sh = .asr, .f = lg },
+                .{ .codes = &.{ 29, 30, 31, 37 }, .sh = .none, .f = lg },
+                .{ .codes = &.{ 32, 33, 34, 59 }, .sh = .none, .f = .zero },
+                .{ .codes = &.{ 35, 36, 38, 39, 42, 43 }, .sh = .none, .f = .b },
+                .{ .codes = &.{ 40, 41 }, .sh = .imm_n, .f = .zero },
+                .{ .codes = &.{44}, .sh = .shl, .f = .b },
+                .{ .codes = &.{45}, .sh = .asr_rnd, .f = .b },
+            };
+        }
+        // The groups ops 4 and 5 share at S1[15] = 1.
+        fn base1(nat: PostFn, lg: PostFn) [12]G {
+            return .{
+                .{ .codes = &.{ 0, 1, 2 }, .sh = .shl, .f = nat },
+                .{ .codes = &.{ 3, 5 }, .sh = .asr, .f = nat },
+                .{ .codes = &.{4}, .sh = .asr_rnd, .f = nat },
+                .{ .codes = &.{ 11, 12, 13, 14, 15, 60, 61, 63 }, .sh = .none, .f = nat },
+                .{ .codes = &.{ 22, 23 }, .sh = .shl, .f = lg },
+                .{ .codes = &.{ 24, 25 }, .sh = .asr, .f = lg },
+                .{ .codes = &.{ 29, 30, 31, 37 }, .sh = .none, .f = lg },
+                .{ .codes = &.{ 6, 7, 8, 27, 32, 33, 34, 46, 47, 57, 59, 62 }, .sh = .none, .f = .zero },
+                .{ .codes = &.{ 35, 36 }, .sh = .none, .f = .b },
+                .{ .codes = &.{ 40, 41 }, .sh = .imm_n, .f = .zero },
+                .{ .codes = &.{ 48, 49, 50, 51, 52, 53 }, .sh = .none, .f = .a },
+                .{ .codes = &.{58}, .sh = .shl, .f = .a },
+            };
+        }
+        // The groups ops 7 (S1[15] = 0) and 6 (S1[15] = 1) share.
+        fn base67(nat: PostFn) [9]G {
+            return .{
+                .{ .codes = &.{ 0, 1, 2 }, .sh = .shl, .f = nat },
+                .{ .codes = &.{ 3, 5 }, .sh = .asr, .f = nat },
+                .{ .codes = &.{4}, .sh = .asr_rnd, .f = nat },
+                .{ .codes = &.{ 11, 12, 13, 14, 15, 60, 61, 63 }, .sh = .none, .f = nat },
+                .{ .codes = &.{6}, .sh = .none, .f = .neg1 },
+                .{ .codes = &.{ 7, 8, 26, 27, 32, 33, 34, 46, 47, 57 }, .sh = .none, .f = .zero },
+                .{ .codes = &.{ 35, 36 }, .sh = .none, .f = .b },
+                .{ .codes = &.{ 48, 49, 50 }, .sh = .shl, .f = .a },
+                .{ .codes = &.{ 51, 52, 53, 58, 62 }, .sh = .asr, .f = .a },
+            };
+        }
+    };
+    const t: PostTable = .{
+        .o50 = fill.row(&(fill.base0(.a, .a_or_b) ++ [_]G{
+            .{ .codes = &.{ 48, 49, 50 }, .sh = .shl, .f = .a },
+            .{ .codes = &.{ 51, 53 }, .sh = .asr, .f = .a },
+            .{ .codes = &.{52}, .sh = .asr_rnd, .f = .a },
+            .{ .codes = &.{ 9, 10, 18, 19 }, .sh = .none, .f = .a },
+            .{ .codes = &.{28}, .sh = .b_is_n, .f = .a_or_b },
+            .{ .codes = &.{ 16, 17 }, .sh = .none, .f = .neg_a },
+            .{ .codes = &.{ 20, 21 }, .sh = .none, .f = .neg_a2 },
+        })),
+        .o40 = fill.row(&(fill.base0(.add, .a_xor_b) ++ [_]G{
+            .{ .codes = &.{ 48, 49, 50, 51, 52, 53, 54, 55, 56 }, .sh = .none, .f = .a },
+            .{ .codes = &.{ 6, 7, 8, 26, 27, 46, 47, 57, 62 }, .sh = .none, .f = .zero },
+            .{ .codes = &.{ 9, 10 }, .sh = .b_is_n, .f = .add },
+            .{ .codes = &.{28}, .sh = .b_is_n, .f = .a_xor_b },
+            .{ .codes = &.{ 16, 17 }, .sh = .none, .f = .rsub },
+            .{ .codes = &.{ 18, 19 }, .sh = .none, .f = .sub },
+            .{ .codes = &.{ 20, 21 }, .sh = .none, .f = .neg_ab2 },
+        })),
+        .o51 = fill.row(&(fill.base1(.a1, .a_and_b) ++ [_]G{
+            .{ .codes = &.{ 9, 10 }, .sh = .none, .f = .a1 },
+            .{ .codes = &.{ 54, 55, 56 }, .sh = .none, .f = .a },
+            .{ .codes = &.{ 16, 17 }, .sh = .none, .f = .neg_a },
+            .{ .codes = &.{ 18, 19 }, .sh = .none, .f = .a_m1 },
+            .{ .codes = &.{ 20, 21 }, .sh = .none, .f = .not_a },
+            .{ .codes = &.{26}, .sh = .none, .f = .zero },
+            .{ .codes = &.{28}, .sh = .b_is_n, .f = .a_and_b },
+            .{ .codes = &.{ 38, 39, 42, 43 }, .sh = .none, .f = .b },
+            .{ .codes = &.{44}, .sh = .shl, .f = .b },
+            .{ .codes = &.{45}, .sh = .asr_rnd, .f = .b },
+        })),
+        // 38, 39, 42, 43 and 44 OPEN.
+        .o41 = fill.row(&(fill.base1(.sub, .xnor) ++ [_]G{
+            .{ .codes = &.{ 9, 10 }, .sh = .b_is_n, .f = .sub },
+            .{ .codes = &.{ 16, 17 }, .sh = .none, .f = .not_ab },
+            .{ .codes = &.{ 18, 19 }, .sh = .none, .f = .ab1 },
+            .{ .codes = &.{ 20, 21 }, .sh = .none, .f = .rsub },
+            .{ .codes = &.{ 26, 55 }, .sh = .none, .f = .neg1 },
+            .{ .codes = &.{28}, .sh = .b_is_n, .f = .xnor },
+            .{ .codes = &.{45}, .sh = .asr_rnd, .f = .a },
+            .{ .codes = &.{ 54, 56 }, .sh = .none, .f = .zero },
+        })),
+        .o70 = fill.row(&(fill.base67(.neg_a) ++ [_]G{
+            .{ .codes = &.{ 9, 10 }, .sh = .none, .f = .neg_a },
+            .{ .codes = &.{ 16, 17 }, .sh = .none, .f = .a1 },
+            .{ .codes = &.{ 18, 19 }, .sh = .none, .f = .not_a },
+            .{ .codes = &.{ 20, 21, 38, 39, 40, 41, 42, 43, 54, 55, 56 }, .sh = .none, .f = .a },
+            .{ .codes = &.{ 22, 23 }, .sh = .shl, .f = .b },
+            .{ .codes = &.{ 24, 25 }, .sh = .asr, .f = .b },
+            .{ .codes = &.{ 29, 30, 31, 37 }, .sh = .none, .f = .b },
+            .{ .codes = &.{28}, .sh = .imm_n, .f = .zero },
+            .{ .codes = &.{44}, .sh = .shl, .f = .a },
+            .{ .codes = &.{45}, .sh = .asr_rnd, .f = .a },
+            .{ .codes = &.{59}, .sh = .none, .f = .zero },
+        })),
+        // The logic codes (22-25, 28-31, 37) are OPEN.
+        .o61 = fill.row(&(fill.base67(.rsub) ++ [_]G{
+            .{ .codes = &.{ 9, 10 }, .sh = .b_is_n, .f = .rsub },
+            .{ .codes = &.{ 16, 17 }, .sh = .none, .f = .ab1 },
+            .{ .codes = &.{ 18, 19 }, .sh = .none, .f = .not_ab },
+            .{ .codes = &.{ 20, 21 }, .sh = .none, .f = .sub },
+            .{ .codes = &.{ 38, 39, 42, 43, 59 }, .sh = .none, .f = .b },
+            .{ .codes = &.{ 40, 41 }, .sh = .none, .f = .a },
+            .{ .codes = &.{44}, .sh = .shl, .f = .b },
+            .{ .codes = &.{45}, .sh = .asr_rnd, .f = .b },
+            .{ .codes = &.{ 54, 56 }, .sh = .none, .f = .zero },
+            .{ .codes = &.{55}, .sh = .none, .f = .neg1 },
+        })),
+    };
+    break :blk t;
+};
 
 /// x asr n rounded half up.
 fn asrRound(x: i64, n: u6) i64 {

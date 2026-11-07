@@ -4266,16 +4266,14 @@ test "own-b16R: the class-100 row's R write muxes on S1[24]" {
     }
 }
 
-test "wedge gates and post-op codes refused (fact 559, 563)" {
+test "wedge gates and post-op codes refused (fact 559, 564)" {
     const gpa = testing.allocator;
     for ([_][]const u32{
         // xld10 with S1[18] cleared (own-xld10's 80a17dd0 60640181).
         &.{ 0x80A17DD0, 0x60600181 },
-        // x16alu (S2 class 111) post-op codes 7, 19, and 3 with n = 4 on op 4 with S1[15] = 1:
-        // unmeasured (563).
-        &.{ 0x0e600016, 0x0284d550, 0xe708a200 },
-        &.{ 0x26600016, 0x0284d550, 0xe708a200 },
-        &.{ 0x06600016, 0x0284d550, 0xe708a240 },
+        // x16alu (S2 class 111) post-op codes 39 and 44 on op 4 with S1[15] = 1: OPEN (564).
+        &.{ 0x4E600016, 0x0284d550, 0xe708a200 },
+        &.{ 0x58600016, 0x0284d550, 0xe708a200 },
     }) |w| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -4337,10 +4335,22 @@ test "x16alu's post-op code (fact 563)" {
     miss.s[3] = 0x3303;
     _ = try emu.runFrom(gpa, &miss, &.{ 0x08c41076, 0x00455800, 0xe6960010, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0x1982), miss.s[8]);
+    // 564's own program: code 28, op 5 with S1[15] = 1: a & n = 0x330E & 11 = 0xA.
+    var and_n = emu.State{};
+    defer and_n.deinit(gpa);
+    and_n.s[3] = 0x330E;
+    _ = try emu.runFrom(gpa, &and_n, &.{ 0x38600016, 0x0285d550, 0xe708a2b0, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0xA), and_n.s[5]);
 }
 
 test "x16Post table cells" {
-    const P = emu.x16PostForTest;
+    // Ops 4 (add) and 5 at S1[15] = 0.
+    const P = struct {
+        fn f(code: u32, add: bool, a: i64, b: i64, n: u6) ?i64 {
+            return emu.x16PostForTest(if (add) 4 else 5, 0, code, a, b, n);
+        }
+    }.f;
+    const Q = emu.x16PostForTest;
     try testing.expectEqual(@as(?i64, 0x4404), P(3, true, 0x3303, 0x5505, 1)); // exact sum
     try testing.expectEqual(@as(?i64, -0x08F9), P(3, true, -0x77F8, 0x6606, 1)); // 0xF707
     try testing.expectEqual(@as(?i64, (0x3303 ^ 0x5505) << 1), P(22, true, 0x3303, 0x5505, 1));
@@ -4356,7 +4366,24 @@ test "x16Post table cells" {
     try testing.expectEqual(@as(?i64, 0), P(7, true, 0x3303, 2, 0));
     try testing.expectEqual(@as(?i64, null), P(7, false, 0x3303, 2, 0));
     try testing.expectEqual(@as(?i64, null), P(62, false, 0x3303, 2, 0));
-    try testing.expectEqual(@as(?i64, 0x3303 + 2), P(62, true, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, 0), P(62, true, 0x3303, 2, 0)); // 564 corrects 563
+    try testing.expectEqual(@as(?i64, 0x3303 << 2), P(58, true, 0x3303, 2, 2)); // a, not a + b
+    // 564's other rows, and n in place of b on 9, 10 and 28.
+    try testing.expectEqual(@as(?i64, 0x3303 + 5), P(9, true, 0x3303, 2, 5));
+    try testing.expectEqual(@as(?i64, 0x3303 + 1), Q(5, 1, 11, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, 0x3303 & 0xB), Q(5, 1, 28, 0x3303, 2, 11));
+    try testing.expectEqual(@as(?i64, 0x3303 - 2), Q(4, 1, 11, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, ~@as(i64, 0x3303 ^ 2)), Q(4, 1, 29, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, null), Q(4, 1, 39, 0x3303, 2, 0)); // x99 and own disagree
+    try testing.expectEqual(@as(?i64, null), Q(4, 1, 44, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, -0x3303), Q(7, 0, 11, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, 2), Q(7, 0, 29, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, 2 - 0x3303), Q(6, 1, 11, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, null), Q(6, 1, 29, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, 0x3303 >> 3), Q(6, 1, 58, 0x3303, 2, 3)); // 58/62 shift right
+    try testing.expectEqual(@as(?i64, 0x3303 >> 3), Q(7, 0, 62, 0x3303, 2, 3));
+    try testing.expectEqual(@as(?i64, null), Q(1, 0, 11, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, null), Q(6, 0, 0, 0x3303, 2, 0));
     try testing.expectEqual(@as(?i64, 3), P(45, true, 0, 5, 1)); // b asr n, rounded
     try testing.expectEqual(@as(?i64, 2), P(44, true, 0, 1, 1));
     try testing.expectEqual(@as(?i64, 0x3303 ^ 0x5505), P(29, true, 0x3303, 0x5505, 0));
