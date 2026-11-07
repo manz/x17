@@ -3163,9 +3163,13 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
         5 => 0xFFFF,
         else => if (X16_FN100[f]) |d| (x +% @as(u32, @bitCast(@as(i32, d)))) & 0xFFFF else 0,
     };
+    // R<S1[14:11]> muxes on S1[24] (558): 1 the head's #imm, 0 the cell's value (OPEN with no
+    // cell).
+    const rd: u32 = (s1 >> 11) & 0xF;
+    const rv: u32 = if ((s1 >> 24) & 1 == 1) (h >> 5) & 0xFFFF else if (rd != 0 and alu_dest == 0) return RunError.UnknownForm else alu_val & 0xFFFF;
     const hd: u32 = (h >> 21) & 0xF;
     if (hd != 0) state.s[hd] = v;
-    if ((s1 >> 11) & 0xF != 0) state.r[(s1 >> 11) & 0xF] = (h >> 5) & 0xFFFF;
+    if (rd != 0) state.r[rd] = rv;
     if (alu_dest != 0) state.s[alu_dest] = alu_val;
 }
 

@@ -388,6 +388,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x02 mux 001/010 override (187): w5[29:28] 10 = e<w3[30:27]>, 01 per-run count (OPEN), 11 Y:0x40 (OPEN).  own-x02esrc
 # x02 Y side (545): Y:[e<w3[30:27]>] when w5[12], else yd; the memory mode reads it when w5[14] = 0, the 11 override always ("Y:0x40" was yd).  own-x02yd
 # x02 10 override (548): x01's T[w1[10:7]] (a = e<w3[30:27]>, y = R<w5[25:22]>, b = e<w3[26:23]>), fns 0-2 seen, rest refused.  own-x02ov
+# x16 class-100 row R<S1[14:11]> (558): S1[24] = 1 #head[20:5], 0 the cell value (517); no cell OPEN.  own-b16R.
 # x19alu any w2 class (555); x19aagu w2 classes 001/101 (556) and its s<w2[30:27]> <- Y:[e<w3[28:25]>][7:0] << 8 with w2[12:11] = 2 (342; other mux values OPEN).  x19aagu's X store (335), R (341), A copy and e writes (342) are not yet modelled.
 # x17 S1 class 000 + S2 class 111 (554): S2[4:3] = 11 stores Y:[e<S2[24:21]>] <- s<2*S2[2:0]> (pre-move), beside the s<S1[27:24]> write; S2[4:3] = 01 and source 0 OPEN, refused.
 # x12.agu every head[31:29] (562, retracting 553): e<h[12:9]>, s<2*w1[2:0] + h[31]>, R<w1[24:21]> <- AGU10 all write; w1[28] unread.  own: cbe012d2 23780001 / 33780001, e6 = 0x760.

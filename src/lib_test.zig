@@ -4244,3 +4244,23 @@ test "own-x19al5 and own-x19aa5: x19alu and x19aagu with w2 class 001" {
     defer o.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x00000019, 0x06a30500, 0x28400800, 0x49508014, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "own-b16R: the class-100 row's R write muxes on S1[24]" {
+    // fact 558: s5 = 0x123; 0002a816 26005800 8a000000 gives R11 = 0x246 (the cell,
+    // s5 << 1); with S1[24] set, R11 = #head[20:5] = 0x1540.  S1[24] = 0 with no cell is OPEN.
+    const gpa = testing.allocator;
+    for ([_]struct { s1: u32, want: ?u32 }{
+        .{ .s1 = 0x26005800, .want = 0x246 },
+        .{ .s1 = 0x27005800, .want = 0x1540 },
+        .{ .s1 = 0x20005800, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[5] = 0x123;
+        const r = emu.runFrom(gpa, &state, &.{ 0x0002a816, c.s1, 0x8a000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.r[11]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
