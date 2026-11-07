@@ -1741,7 +1741,7 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         },
         5 => yd,
         // 488: mux 3 varies from run to run on silicon: refused.
-        4 => (yd << 7) & 0xFFFF,
+        4 => shl7(yd),
         6 => (((head >> 11) & 0xFFFF) << 6) & 0xFFFF,
         else => return RunError.UnknownForm,
     };
@@ -2069,7 +2069,7 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         break :blk switch ((w1 >> 12) & 7) {
             1, 2, 6 => (h >> 5) & 0xFFFF,
             3 => (y & 0xFF) << 8,
-            4 => (y << 7) & 0xFFFF,
+            4 => shl7(y),
             5 => y,
             else => return RunError.UnknownForm,
         };
@@ -2651,6 +2651,11 @@ fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
+/// (w << 7)[15:0], the load muxes' scaled source (fact 116, 221, 532, 533).
+fn shl7(w: u32) u32 {
+    return (w << 7) & 0xFFFF;
+}
+
 /// x >> n rounded half up (half up on negatives too), the multiplier's and the shifters'
 /// rounding (fact 147, 165); n = 0 is x.
 pub fn roundShr(x: i64, n: u6) i64 {
@@ -2685,24 +2690,42 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // w1[14:11] is the mode (fact 454): 0xB the table below (147), 8 ops on a + b, 0xA
     // ops on a, 9 writes nothing; w1[2:0] != 0 beside 8/9/0xA is OPEN.
     const mode: u32 = (w1 >> 11) & 0xF;
-    if (mode != 0xB) {
-        if (w1 & 7 != 0) return RunError.UnknownForm;
-        const r: ?i64 = switch (mode) {
+    const xw = try x19AluX(state, w2, dest_s);
+    const r: ?i64 = if (mode == 0xB) switch (code) {
+        23 => shift23(a_val, b_val),
+        else => return RunError.UnknownForm,
+    } else blk: {
+        // w1[2:0] != 0 beside 8/9/0xA is OPEN for the ALU result; with no ALU destination the
+        // X writes still land (533, own-x19alx's second bundle).
+        if (w1 & 7 != 0 and dest_s != 0) return RunError.UnknownForm;
+        break :blk switch (mode) {
             8 => x19ModeOp(code, a_val, b_val, false),
             0xA => x19ModeOp(code, a_val, 0, true),
             9 => null,
             else => return RunError.UnknownForm,
         };
-        if (r) |x| {
-            if (dest_s != 0) state.s[dest_s] = @truncate(@as(u64, @bitCast(x)) & M24);
-        }
-        return;
-    }
-    const v: u32 = switch (code) {
-        23 => @truncate(@as(u64, @bitCast(shift23(a_val, b_val))) & M24),
+    };
+    state.s[(w2 >> 4) & 0xF] = xw.x;
+    state.s[(w2 >> 27) & 0xF] = xw.muxed;
+    if (r) |x| state.s[dest_s] = @truncate(@as(u64, @bitCast(x)) & M24);
+}
+
+/// x19alu's two X writes (fact 533), both from X = X:[A<w2[26:22]>]: s<w2[7:4]> <- X and
+/// s<w2[30:27]> <- mux w2[3:1]: 5 X, 4 (X << 7)[15:0], 1 the stale yd, 0 zero (others OPEN).
+/// Two writes to one s are refused.
+fn x19AluX(state: *State, w2: u32, alu_dest: u32) RunError!struct { x: u32, muxed: u32 } {
+    const d1: u32 = (w2 >> 4) & 0xF;
+    const d2: u32 = (w2 >> 27) & 0xF;
+    if ((d1 != 0 and (d1 == d2 or d1 == alu_dest)) or (d2 != 0 and d2 == alu_dest)) return RunError.UnknownForm;
+    const x: u32 = if (d1 == 0 and d2 == 0) 0 else state.readX(state.a[(w2 >> 22) & 0x1F]) orelse 0;
+    const muxed: u32 = switch ((w2 >> 1) & 7) {
+        0 => 0,
+        1 => state.yd,
+        4 => shl7(x),
+        5 => x,
         else => return RunError.UnknownForm,
     };
-    if (dest_s != 0) state.s[dest_s] = v;
+    return .{ .x = x, .muxed = muxed };
 }
 
 /// The x19alu ops in modes 8 and 0xA (fact 454, one operand pair): mode 0xA is mode 8
@@ -2769,7 +2792,7 @@ fn x19AguS(state: *State, bundle: []const u32, agu: u32) RunError!u32 {
     if (mux == 1) return agu;
     if (mux != 4 and mux != 5) return RunError.UnknownForm;
     const x: u32 = if ((bundle[3] >> 1) & 1 == 0) state.yd else state.readX(state.a[(bundle[2] >> 17) & 0x1F]) orelse 0;
-    return if (mux == 4) (x << 7) & 0xFFFF else x;
+    return if (mux == 4) shl7(x) else x;
 }
 
 fn execX19Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -4080,7 +4103,7 @@ fn execX0E(state: *State, bundle: []const u32) RunError!void {
         },
         1, 2, 6 => imm,
         3 => (d & 0xFF) << 8,
-        4 => (d << 7) & 0xFFFF,
+        4 => shl7(d),
         5 => d,
         else => alu_val,
     };

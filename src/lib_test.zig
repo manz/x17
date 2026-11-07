@@ -3718,3 +3718,37 @@ test "x19agu writes s<head[24:21]> through its w1[14:12] mux" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x19alu's two X writes beside its ALU" {
+    // fact 533: own-x19alx.  X:[A6 = 0x310] = 0x567 lands in s<w2[7:4]> = s2;
+    // X:[A11 = 0x330] = 0x246 goes through mux w2[3:1] into s<w2[30:27]> = s3: 5 X, 4
+    // 0x2300, 1 yd, 0 zero; mux 2 refuses, and so does s2 targeted by both writes.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, w1: u32, w2: u32, dest: u32, want: ?u32, w3: u32 = 0x80000000 }{
+        .{ .h = 0x00000019, .w1 = 0x00004000, .w2 = 0x01821220, .dest = 2, .want = 0x567, .w3 = 0x84000000 },
+        .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac0220a, .dest = 3, .want = 0x246 },
+        .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac02208, .dest = 3, .want = 0x2300 },
+        .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac02202, .dest = 3, .want = 0xA050 },
+        .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac02200, .dest = 3, .want = 0 },
+        .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac02204, .dest = 3, .want = null },
+        .{ .h = 0x00000019, .w1 = 0x00004000, .w2 = 0x11821220, .dest = 2, .want = null },
+        .{ .h = 0x00000019, .w1 = 0x00004000, .w2 = 0x05821220, .dest = 2, .want = 0x777, .w3 = 0x84000000 }, // A22
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[6] = 0x310;
+        state.a[11] = 0x330;
+        state.yd = 0xA050;
+        state.s[2] = 0xABC;
+        state.s[3] = 0xABC;
+        try state.x_mem.put(gpa, 0x310, 0x567);
+        try state.x_mem.put(gpa, 0x330, 0x246);
+        state.a[22] = 0x320;
+        try state.x_mem.put(gpa, 0x320, 0x777);
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.w1, c.w2, c.w3, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[c.dest]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
