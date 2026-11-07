@@ -162,6 +162,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b000) return execYtst(gpa, state, bundle);
         if (s_class == 0b101) return execYrm(gpa, state, bundle);
         if (s_class == 0b010) return execPc14(gpa, state, bundle);
+        // 486: a class-011 second with S[28:27] = 10 writes the immediate unconditionally; its
+        // p write is not measured.
+        if (s_class == 0b011 and (bundle[1] >> 27) & 3 == 2 and (bundle[1] >> 4) & 0xF == 0) return execPc14(gpa, state, bundle);
     }
     if (low5 == 0x12 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
@@ -402,7 +405,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     return RunError.UnknownForm;
 }
 
-/// pc14, low5 0x14 with a class-010/011 second and S[25] (fact 107, 380, 381, 464):
+/// pc14, low5 0x14 with a class-010 second and S[25] (fact 107, 380, 381, 464), or a
+/// class-011 second with mux 10 and no p write (486):
 /// p<S[7:4]> <- cond(group h[28:25], code S[11:8]) of v = mode S[14:12] applied to
 /// a = s<S[22:19]> (read before the s write); s<h[24:21]> <- by S[28:27]: 00 the bundle's own
 /// condition negated (478, not 107's 0), 01/10 the immediate h[20:5], 11 refused.  Unmeasured

@@ -1825,3 +1825,20 @@ test "x18 class 111 X-slot muxes 3, 4 and 5 read lanes of Y:[e]" {
         try testing.expectEqual(c.want, state.s[2]);
     }
 }
+
+test "pc14 class-011 mux 10 writes the immediate; its p write is refused" {
+    // fact 486: 461's "0 after a st.y" was a readback artifact; the immediate is
+    // unconditional. The pair XXXXXXXX 72000060 also writes p6, which is not measured.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[1] = 5;
+    // h: g = 0, s3 <- #0x1234; second: class 011, mux 10, S[25], p0 dest, c 0
+    const h: u32 = 0x14 | (3 << 21) | (0x1234 << 5);
+    const sw: u32 = (0b011 << 29) | (0b10 << 27) | (1 << 25) | (1 << 19) | (5 << 12);
+    _ = try emu.runFrom(gpa, &state, &.{ h, sw, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1234), state.s[3]);
+    var img = emu.State{};
+    defer img.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &img, &.{ XXXXXXXX, 0x72000060, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
