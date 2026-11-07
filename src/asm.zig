@@ -1451,7 +1451,7 @@ test "assemble rli R3, s5, #0x1234" {
 }
 
 test "assemble ldi s0, #0x1234 maps dest to k=16" {
-    try testing.expectEqual(@as(u32, 0xC202_468B), try okWord("ldi s0, #0x1234"));
+    try testing.expectEqual(@as(u32, 0xCA02_468B), try okWord("ldi s0, #0x1234"));
 }
 
 test "assemble alu s7, s2, s9, #5" {
@@ -1612,7 +1612,7 @@ test "round-trip gate: own-st3 reassembles byte-exact" {
 
 test "comment to end of line is tolerated" {
     try testing.expectEqual(
-        @as(u32, 0xC000_000B) | (16 << 21),
+        @as(u32, 0xC800_000B) | (16 << 21),
         try okWord("ldi s0, #0 ; load zero into source k=16"),
     );
 }

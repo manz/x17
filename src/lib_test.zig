@@ -2149,3 +2149,26 @@ test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[2
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "ldi's head[29:27] picks the source: 0 and 7 load 0, 1/2/6 the immediate, 3-5 refused" {
+    // fact 501: ldi s5, #0xFFF8 with k = 0..7 loaded 0, FFF8, FFF8, D lanes, FFF8, 0.
+    const gpa = testing.allocator;
+    for ([_]struct { k: u32, want: ?u32 }{
+        .{ .k = 0, .want = 0 },        .{ .k = 1, .want = 0xFFFFF8 }, .{ .k = 2, .want = 0xFFFFF8 },
+        .{ .k = 3, .want = null },     .{ .k = 4, .want = null },     .{ .k = 5, .want = null },
+        .{ .k = 6, .want = 0xFFFFF8 }, .{ .k = 7, .want = 0 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[5] = 0x55;
+        const r = emu.runFrom(gpa, &state, &.{ 0xC2BFFF0B | (c.k << 27), 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+    // x17 assembles k = 1
+    const prog = try assemble(gpa, "ldi s5, #-8\n");
+    defer gpa.free(prog);
+    try testing.expectEqual(@as(u32, 0xCABFFF0B), prog[0]);
+}

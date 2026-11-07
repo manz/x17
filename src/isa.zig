@@ -78,7 +78,8 @@ pub const forms: []const Form = forms_parsed.items[0..forms_parsed.len];
 /// by convention; we trust that convention and do not score.
 pub fn classify(word: u32) ?*const Form {
     for (forms) |*f| {
-        if ((word & f.mask) == f.value) return f;
+        // value bits outside the mask are assembly defaults (ldi assembles head[29:27] = 1).
+        if ((word & f.mask) == (f.value & f.mask)) return f;
     }
     return null;
 }

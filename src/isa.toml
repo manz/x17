@@ -34,11 +34,11 @@ sel = "lane"
 [[form]]
 name = "ldi"
 mask = "0xC000001F"
-value = "0xC000000B"
+value = "0xC800000B"
 imm = true
 dest = true
 evidence = "MEASURED"
-ref = "fact 27-28: [20:5] is a 16-bit immediate, [25:21] the register: 16..31 = source k-16 (32 of 32), 0 = address entry 0, 1 = source 1; 2..15 OPEN.  87: [29:26] inert (2, 5, C measured).  own-ldi-y2/-y4/-s5, own-ldi-k"
+ref = "fact 27-28: [20:5] is a 16-bit immediate, [25:21] the register: 16..31 = source k-16 (32 of 32), 0 = address entry 0, 1 = source 1; 2..15 OPEN.  87: [29:26] inert (2, 5, C measured), but 501 shows [29:27] is a source mux k: 0 and 7 load 0, 1/2/6 the immediate, 3/4/5 D[7:0]<<8, (D<<7)[15:0], D; only [26] is inert (87's 2, 5, C were k = 1, 2, 6). x17 assembles k = 1.  own-ldi-y2/-y4/-s5, own-ldi-k"
 
 [[form]]
 name = "wr"

@@ -3948,9 +3948,13 @@ fn execLdi(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         return RunError.LdiDestOpen;
     }
     const s_idx: u32 = dest_k - 16;
+    // head[29:27] is a source mux (fact 501): 0 and 7 load 0, 1/2/6 the immediate,
+    // 3/4/5 lanes of D (source OPEN, refused).
+    const k: u32 = (head >> 27) & 7;
+    if (k >= 3 and k <= 5) return RunError.UnknownForm;
     // The immediate is sign-extended to 24 bits (own-x02u24's operands, built with ldi:
     // 0xC321 lands as 0xFFC321).
-    state.s[s_idx] = sx16To24(imm);
+    state.s[s_idx] = if (k == 0 or k == 7) 0 else sx16To24(imm);
     // e0 = the last instruction's [20:5] (fact 65).
     state.e[0] = imm;
 }
