@@ -107,6 +107,9 @@ fn writeFormLine(
         const field = (word >> @as(u5, @intCast(op.lo))) & ((@as(u32, 1) << @as(u5, @intCast(op.width()))) - 1);
         cur += formatOperand(out[cur..], op, field);
     }
+    // e0 as a Y address is no register (fact 466, 468): say so where it is read.
+    if (std.mem.eql(u8, name, "st.wr") and bundle.len >= 2 and (bundle[1] >> 17) & 0xF == 0)
+        cur += printTo(out[cur..], "{s}", .{" ; e0 = the previous word's h[20:5], not a register"});
     return cur;
 }
 
@@ -237,4 +240,19 @@ test "disasm unknown bundle" {
     const bytes = [_]u32{0x1234_5678}; // low5 = 0x18, not in any form
     var buf: [64]u8 = undefined;
     try testing.expectError(DisasmError.UnknownForm, disasmBundle(&buf, &bytes));
+}
+
+test "disasm st.wr through e0 says e0 is no register" {
+    const s = try roundTrip("st.wr #0x40, e0, s1");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("st.wr #0x40, e0, s1 ; e0 = the previous word's h[20:5], not a register", s);
+}
+
+test "disasm pc14 and x18.pnot round-trip Upstream's gate words" {
+    const a = try roundTrip("pc14 p13, s7, #0xb, #0xc, #0x2, s7, #0x0, #0x14a3");
+    defer testing.allocator.free(a);
+    try testing.expectEqualStrings("pc14 p13, s7, #0xb, #0xc, #0x2, s7, #0x0, #0x14a3", a);
+    const b = try roundTrip("x18.pnot p1, p5");
+    defer testing.allocator.free(b);
+    try testing.expectEqualStrings("x18.pnot p1, p5", b);
 }
