@@ -930,8 +930,13 @@ test "no test program puts a label inside the halt's two-bundle shadow" {
     var lines = std.mem.splitScalar(u8, @embedFile("lib_test.zig"), '\n');
     var since: ?usize = null;
     while (lines.next()) |line| {
+        // Only multiline-string program lines count; Zig code after a one-line program does not.
+        if (!std.mem.startsWith(u8, std.mem.trimStart(u8, line, " "), "\\\\")) {
+            since = null;
+            continue;
+        }
         const t = std.mem.trim(u8, line, " \\");
-        if (std.mem.indexOf(u8, t, "x17.halt") != null and std.mem.indexOf(u8, t, "indexOf") == null) {
+        if (std.mem.indexOf(u8, t, "x17.halt") != null) {
             since = 0;
             continue;
         }
@@ -1457,4 +1462,86 @@ test "lde e7 passes the e0 latch through" {
     defer state.deinit(gpa);
     _ = try emu.runFrom(gpa, &state, prog, 0, 64);
     try testing.expectEqual(@as(?u32, 0x1234), state.getY(0x1234));
+}
+
+fn pc14P(src: []const u8, a: u32) !u8 {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa, src);
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[3] = a & 0xFFFFFF;
+    state.p[2] = 7;
+    _ = try emu.runFrom(gpa, &state, prog, 0, 64);
+    return state.p[2];
+}
+
+test "pc14 conditions: g12 cycles by c mod 6, g11 c12 tests v even" {
+    // fact 380 (g12), 464 (g11 c12); m 5 passes a through, m 0 negates.
+    const vals = [_]i32{ -5, -1, 0, 1, 6 };
+    for (vals) |v| {
+        const a: u32 = @bitCast(v);
+        for (0..12) |c| {
+            var buf: [96]u8 = undefined;
+            const src = try std.fmt.bufPrint(&buf, "pc14 p2, s3, #12, #{d}, #5, s0, #0, #0\nx17.halt\n", .{c});
+            const want: bool = switch (c % 6) {
+                0 => v >= 0,
+                1 => v <= 0,
+                2 => v > 0,
+                3 => v < 0,
+                4 => v != 0,
+                else => v == 0,
+            };
+            try testing.expectEqual(@as(u8, @intFromBool(want)), try pc14P(src, a));
+        }
+        // m 0 is -a: v <= 0 flips to a >= 0
+        try testing.expectEqual(@as(u8, @intFromBool(-v <= 0)), try pc14P("pc14 p2, s3, #12, #1, #0, s0, #0, #0\nx17.halt\n", a));
+        try testing.expectEqual(@as(u8, @intFromBool(@mod(v, 2) == 0)), try pc14P("pc14 p2, s3, #11, #12, #2, s0, #0, #0\nx17.halt\n", a));
+    }
+}
+
+test "pc14 refuses a condition no measurement covers" {
+    try testing.expectError(error.UnknownForm, pc14P("pc14 p2, s3, #5, #0, #5, s0, #0, #0\nx17.halt\n", 0));
+    try testing.expectError(error.UnknownForm, pc14P("pc14 p2, s3, #12, #13, #5, s0, #0, #0\nx17.halt\n", 0));
+}
+
+fn pc14Sign(m: u32, a: u32) !u8 {
+    var buf: [96]u8 = undefined;
+    const zero = try pc14P(try std.fmt.bufPrint(&buf, "pc14 p2, s3, #12, #5, #{d}, s0, #0, #0\nx17.halt\n", .{m}), a);
+    if (zero == 1) return '0';
+    const neg = try pc14P(try std.fmt.bufPrint(&buf, "pc14 p2, s3, #12, #3, #{d}, s0, #0, #0\nx17.halt\n", .{m}), a);
+    return if (neg == 1) '-' else '+';
+}
+
+test "pc14 operand modes give fact 381's sign table" {
+    // a = -1, 0, 1, 0x7FFF per mode S[14:12].
+    const rows = [8]*const [4]u8{ "+0--", "+0--", "+0--", "0---", "++0-", "-0++", "-0++", "-0--" };
+    const as = [4]u32{ 0xFFFFFF, 0, 1, 0x7FFF };
+    for (rows, 0..) |row, m| for (as, 0..) |a, i| {
+        try testing.expectEqual(row[i], try pc14Sign(@intCast(m), a));
+    };
+}
+
+test "pc14's head target takes 0 under mux 0 and the immediate under mux 1 and 2" {
+    // fact 107, class 010.
+    const gpa = testing.allocator;
+    for ([_]u32{ 0, 1, 2 }) |mux| {
+        var buf: [96]u8 = undefined;
+        const prog = try assemble(gpa, try std.fmt.bufPrint(&buf, "pc14 p0, s0, #0, #0, #5, s6, #{d}, #0x1234\nx17.halt\n", .{mux}));
+        defer gpa.free(prog);
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[6] = 0x777;
+        _ = try emu.runFrom(gpa, &state, prog, 0, 64);
+        try testing.expectEqual(@as(u32, if (mux == 0) 0 else 0x1234), state.s[6]);
+    }
+}
+
+test "pc14 group 0 is measured for codes 0-7 and 9 only" {
+    try testing.expectEqual(@as(u8, 1), try pc14P("pc14 p2, s3, #0, #7, #5, s0, #0, #0\nx17.halt\n", 0));
+    try testing.expectError(error.UnknownForm, pc14P("pc14 p2, s3, #0, #8, #5, s0, #0, #0\nx17.halt\n", 0));
+}
+
+test "pc14 refuses head-target mux 3, untested on silicon" {
+    try testing.expectError(error.UnknownForm, pc14P("pc14 p2, s3, #0, #0, #5, s6, #3, #0\nx17.halt\n", 0));
 }

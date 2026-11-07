@@ -1524,6 +1524,18 @@ const GATES = [_]Gate{
         .post = &.{.{ .y_mem = .{ .addr = 0, .value = 0x55 } }},
     },
     .{
+        .name = "own-pc14-e0",
+        // Upstream, fact 468: a pc14 pair loading an immediate sets e0 to its [20:5].
+        .src =
+        \\ldi s1, #0x55
+        \\pc14 p13, s7, #11, #12, #2, s7, #0, #0x14A3
+        \\st.wr #0x40, e0, s1
+        \\alu s0, s0, s0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x14A3, .value = 0x55 } }},
+    },
+    .{
         .name = "own-sty0x19",
         // Upstream, fact 468 (3 of 3): an x19alu between (00000219 02014000 800C8101
         // 81E18008, its [20:5] = 0x10) leaves e0 at ldi s5's 0x730.

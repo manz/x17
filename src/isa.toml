@@ -154,6 +154,9 @@ mask = "0x0000001F"
 value = "0x00000014"
 evidence = "MEASURED"
 ref = "fact 107 pass 133: with a class-010/011 second S, S[25] = 1: p<S[7:4]> <- bit S[11:8] of a row picked by head[28:25] (0-10 0xFFFF, 11-13 0xF8E3, 14-15 0xFD1B; what it reads OPEN); s<head[24:21]> <- by S[28:27]: class 010 00 0, 01/10 head imm; class 011 00 0x2800? (0x680 with S[24]), 01 yd, 10 head imm; 11 untested.  own-p010-true, own-p010-false"
+# pc14 (fact 380, 381, 464): v = mode S[14:12] of s<S[22:19]> (0-2 -a, 3 ~a, 4 1-a, 5-6 a, 7 -|a|); g 0 c0-7, c9 -> 1;
+# g 11 c12 -> v even; g 12 c0-11 -> v >= 0, <= 0, > 0, < 0, != 0, == 0 by c mod 6, c15 -> 1; g 14 -> 0xFD1B; other cells refused.
+# own-pc14-e0
 
 [[form]]
 name = "xst"

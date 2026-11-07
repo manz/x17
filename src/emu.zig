@@ -159,7 +159,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b001) return execXst(gpa, state, bundle);
         if (s_class == 0b000) return execYtst(gpa, state, bundle);
         if (s_class == 0b101) return execYrm(gpa, state, bundle);
-        if (s_class == 0b010) return execP010(gpa, state, bundle);
+        if (s_class == 0b010) return execPc14(gpa, state, bundle);
     }
     if (low5 == 0x12 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
@@ -384,18 +384,61 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     return RunError.UnknownForm;
 }
 
-fn execP010(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+/// pc14, low5 0x14 with a class-010/011 second and S[25] (fact 107, 380, 381, 464):
+/// p<S[7:4]> <- cond(group h[28:25], code S[11:8]) of v = mode S[14:12] applied to
+/// a = s<S[22:19]> (read before the s write); s<h[24:21]> <- by S[28:27]: 00 0, 01/10 the
+/// immediate h[20:5], 11 refused.  Unmeasured (group, code) cells are refused.
+fn execPc14(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     if (bundle.len < 2) return RunError.UnknownForm;
-    const s1 = bundle[1];
-    const p_dest: u32 = (s1 >> 4) & 0xF;
-    const cond: u32 = (s1 >> 8) & 0xF;
-    // Bit c of the row is cond c; the row is picked by head[28:25] and what
-    // it reads is OPEN (fact 107).
-    const g: u32 = (bundle[0] >> 25) & 0xF;
-    const row: u32 = if (g <= 10) 0xFFFF else if (g <= 13) 0xF8E3 else 0xFD1B;
-    const v: u8 = @intCast((row >> @intCast(cond)) & 1);
-    if (p_dest != 0) state.p[p_dest] = v;
+    const h = bundle[0];
+    const sw = bundle[1];
+    const p_dest: u32 = (sw >> 4) & 0xF;
+    const c: u32 = (sw >> 8) & 0xF;
+    const g: u32 = (h >> 25) & 0xF;
+    const v = pc14Operand((sw >> 12) & 7, state.s[(sw >> 19) & 0xF]);
+    const bit = try pc14Cond(g, c, v);
+    const s_dest: u32 = (h >> 21) & 0xF;
+    if (s_dest != 0) {
+        const src: u32 = (sw >> 27) & 3;
+        if (src == 3) return RunError.UnknownForm;
+        state.s[s_dest] = if (src == 0) 0 else (h >> 5) & 0xFFFF;
+    }
+    if (p_dest != 0) state.p[p_dest] = bit;
+}
+
+/// pc14's operand transform (fact 380): 0-2 -a, 3 ~a, 4 1-a, 5-6 a, 7 -|a|.
+fn pc14Operand(m: u32, raw: u32) i32 {
+    const a: i32 = @as(i32, @bitCast(raw << 8)) >> 8;
+    return switch (m) {
+        0, 1, 2 => -%a,
+        3 => ~a,
+        4 => 1 -% a,
+        5, 6 => a,
+        else => -%@as(i32, @intCast(@abs(a))),
+    };
+}
+
+/// The measured pc14 conditions; every other (group, code) is refused.
+fn pc14Cond(g: u32, c: u32, v: i32) RunError!u8 {
+    switch (g) {
+        0 => if (c < 8 or c == 9) return 1,
+        11 => if (c == 12) return @intFromBool(v & 1 == 0),
+        12 => {
+            if (c == 15) return 1;
+            if (c < 12) return @intFromBool(switch (c % 6) {
+                0 => v >= 0,
+                1 => v <= 0,
+                2 => v > 0,
+                3 => v < 0,
+                4 => v != 0,
+                else => v == 0,
+            });
+        },
+        14 => return @intCast((@as(u32, 0xFD1B) >> @intCast(c)) & 1),
+        else => {},
+    }
+    return RunError.UnknownForm;
 }
 
 fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
