@@ -860,7 +860,17 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         const sub_val: u32 = switch (sub) {
             0 => imm,
             1 => 1,
-            2 => try x00Op(x01, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
+            // 0x01 rows 8, 10, 11 (508, 509): i, y + i, y - i with y = R<head[30:27]>, i =
+            // head[26:11].  509's other AGU10 rows contradict own-x01st (243: op 2 gave b, not
+            // x + 1) in another context; the table select is OPEN, so those keep 234's table.
+            2 => if (x01 and (op == 8 or op == 10 or op == 11)) blk2: {
+                const y: u32 = state.r[(h >> 27) & 0xF];
+                break :blk2 switch (op) {
+                    8 => imm,
+                    10 => (y +% imm) & 0xFFFF,
+                    else => (y -% imm) & 0xFFFF,
+                };
+            } else try x00Op(x01, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
             else => return RunError.UnknownForm,
         };
         break :blk switch (src) {
@@ -914,6 +924,14 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     };
     const mpy_dest: u32 = (w6 >> 16) & 0xF;
     const mpy_val: u32 = if (mpy_dest == 0) 0 else blk: {
+        // 0x01 mode 4 (496, 507): rnd(a * b >> 23), X ignored, w4[22] inert; measured with
+        // w1[17:14] = 0010 and operands inside 16 bits only.
+        if (x01 and mode == 4) {
+            if ((w1 >> 14) & 0xF != 0b0010) return RunError.UnknownForm;
+            if (sx24(state.s[(w6 >> 24) & 0xF]) != pa or sx24(state.s[(w6 >> 28) & 0xF]) != pb)
+                return RunError.UnknownForm;
+            break :blk @truncate(@as(u64, @bitCast((pa * pb + (1 << 22)) >> 23)) & M24);
+        }
         if ((w1 >> 14) & 1 == 0) return RunError.UnknownForm;
         const sh: u6 = if ((w1 >> 17) & 1 == 1) 24 else 23;
         const bias: i64 = if ((w1 >> 15) & 1 == 1) @as(i64, 1) << (sh - 1) else 0;

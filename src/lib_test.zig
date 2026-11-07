@@ -2263,3 +2263,50 @@ test "the 0x01 R slot's AGU10 form: R<w3[31:29]> <- fn(R<head[30:27]>, head[26:1
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "0x01 multiply mode 4 and the s slot's AGU10 rows" {
+    // fact 507: own-x01m4w22 (row, w4[22] = 1, s8 = s11 = 0x4000 gives s8 = 0x20);
+    // 508: own-x01ty (R7 = 0x100, head i = 3, op 11 gives s1 = 0xFD), op 10 the sum.
+    const gpa = testing.allocator;
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[8] = 0x4000;
+        state.s[11] = 0x4000;
+        _ = try emu.runFrom(gpa, &state, &(.{ 0x28001001, 0x0000A580, 0x2800C000, 0xA00100E0, XXXXXXXX, 0x40200900, 0xB8080000 } ++ halt), 0, 16);
+        try testing.expectEqual(@as(u32, 0x20), state.s[8]);
+        // rounded (496): 0x4000 * 0x4100 = 2^28 + 2^22 gives 0x21
+        state.s[8] = 0x4000;
+        state.s[11] = 0x4100;
+        state.pc = 0;
+        state.halted = false;
+        _ = try emu.runFrom(gpa, &state, &(.{ 0x28001001, 0x0000A580, 0x2800C000, 0xA00100E0, XXXXXXXX, 0x40200900, 0xB8080000 } ++ halt), 0, 16);
+        try testing.expectEqual(@as(u32, 0x21), state.s[8]);
+    }
+    for ([_]struct { w1: u32, want: u32 }{ .{ .w1 = 0x0002A585, .want = 0xFD }, .{ .w1 = 0x0002A505, .want = 0x103 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[7] = 0x100;
+        _ = try emu.runFrom(gpa, &state, &(.{ 0x38001801, c.w1, 0xE8010000, 0x00000020, 0x00000000, 0xC3000910, 0x35001002 } ++ halt), 0, 16);
+        try testing.expectEqual(c.want, state.s[1]);
+    }
+}
+
+test "the s slot's sub-mux 10: 0x01 rows 8 and 10, 0x00's own table" {
+    // fact 509 (R5 = 0x1000, i = 2: row 8 gives 2, row 10 0x1002); 510's own-x00tab
+    // (0x00, e1 = 0x100, t = 3 gives -a = 0xFF00).
+    const gpa = testing.allocator;
+    for ([_]struct { head: u32, f: u32, want: u32 }{
+        .{ .head = 0x28001001, .f = 8, .want = 0x0002 },
+        .{ .head = 0x28001001, .f = 10, .want = 0x1002 },
+        .{ .head = 0x28001000, .f = 3, .want = 0xFF00 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[5] = 0x1000;
+        state.e[1] = 0x100;
+        _ = try emu.runFrom(gpa, &state, &.{ c.head, 0x0002A005 | (c.f << 7), 0xE8010000, 0x00000020, 0x00000020, 0xC3000900, 0x35001002, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.s[1]);
+    }
+}
