@@ -803,6 +803,14 @@ fn execX03Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 /// i = head[26:11]), 10 = y+i, 11 = y-i; = 00: the Y read.  The Y read is
 /// Y:[e<w3[30:27]>] and also goes to s<w4[6:3]> when w5[27:26] = 00.  X store
 /// (w5[23:22] = 11) of sx24 s<{w2[0], w1[31:29]}> at X:[A<w4[21:17]>].
+/// The multiply's low half as an R slot reads it (fact 516, 522): (a * b)[15:0], the
+/// product doubled first unless w1[17].
+fn productLow(a: u32, b: u32, w1: u32) u32 {
+    const prod: u64 = @bitCast(@as(i64, sx24(a)) * sx24(b));
+    const sh: u6 = if ((w1 >> 17) & 1 == 1) 0 else 1;
+    return @truncate((prod << sh) & 0xFFFF);
+}
+
 fn execX04Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const head = bundle[0];
     const w1 = bundle[1];
@@ -819,9 +827,7 @@ fn execX04Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         0 => blk: {
             if ((w5 >> 30) & 1 == 0 or (w1 >> 11) & 7 != 4) break :blk yd;
             if ((w5 >> 25) & 1 == 1) return RunError.UnknownForm;
-            const prod: u64 = @bitCast(@as(i64, sx24(state.s[(w2 >> 5) & 0xF])) * sx24(state.s[(w2 >> 1) & 0xF]));
-            const sh: u6 = if ((w1 >> 17) & 1 == 1) 0 else 1;
-            break :blk @truncate((prod << sh) & 0xFFFF);
+            break :blk productLow(state.s[(w2 >> 5) & 0xF], state.s[(w2 >> 1) & 0xF], w1);
         },
         1 => blk: {
             const y: u32 = state.r[(head >> 27) & 0xF];
@@ -1061,9 +1067,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             if (sel == 3 and !x01) break :blk imm;
             if (sel == 2 and !x01) break :blk 0;
             if (sel == 1 and mode == 4) {
-                const prod: u64 = @bitCast(@as(i64, sx24(state.s[(w6 >> 24) & 0xF])) * sx24(state.s[(w6 >> 28) & 0xF]));
-                const sh: u6 = if ((w1 >> 17) & 1 == 1) 0 else 1;
-                break :blk @truncate((prod << sh) & 0xFFFF);
+                break :blk productLow(state.s[(w6 >> 24) & 0xF], state.s[(w6 >> 28) & 0xF], w1);
             }
         }
         if ((w5 >> 21) & 1 == 1) {
