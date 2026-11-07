@@ -286,7 +286,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b101) {
             const h13 = bundle[0];
             const code13: u32 = (h13 >> 5) & 0x3F;
-            if ((bundle[1] >> 19) & 1 == 1) return execMul13(state, bundle);
+            if ((bundle[1] >> 19) & 1 == 1) return execMul13(gpa, state, bundle);
             if (code13 != 0) return execX13St(gpa, state, bundle);
             // mul13 dest field location still open; not yet modelled.
             return RunError.UnknownForm;
@@ -1222,14 +1222,29 @@ fn execPar(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 
 /// mul13, low5 0x13, S class 101 with S[19] (fact 128):
 /// s<S[14:11]> <- round(s<S[6:3]> * s<2*S[2:0] + head[31]> / 2^23).
-fn execMul13(state: *State, bundle: []const u32) RunError!void {
+/// mul13, low5 0x13 with S class 101 and S[19] (fact 128, 535): s<S[14:11]> <-
+/// round(s<S[6:3]> * s<2*S[2:0] + head[31]> / 2^23) over 16-bit operands; the head ALU slot,
+/// s<h[18:15]> <- alu_word(h, a = s<h[14:11]>, b = s<h[22:19]>); and with S[16:15] = 11
+/// X:[A<h[30:26]>] <- s<S[28:25]>.  Everything reads before anything writes.  Refused:
+/// S[18:17], S[23:22], S[10:7] (unmodelled), S[16:15] = 01/10 and one s for both writes.
+fn execMul13(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
     const sw = bundle[1];
-    // S[18:17] (+-X), S[23:22], the side writes S[10:7] and head clears are unmodelled.
-    if ((sw >> 17) & 3 != 0 or (sw >> 22) & 3 != 0 or (sw >> 7) & 0xF != 0 or (bundle[0] >> 15) & 0xF != 0) return RunError.UnknownForm;
-    const b_idx: u32 = 2 * (sw & 7) + (bundle[0] >> 31);
-    const prod: i64 = sx16(state.s[(sw >> 3) & 0xF]) * sx16(state.s[b_idx]);
+    if ((sw >> 17) & 3 != 0 or (sw >> 22) & 3 != 0 or (sw >> 7) & 0xF != 0) return RunError.UnknownForm;
+    const store: bool = switch ((sw >> 15) & 3) {
+        0 => false,
+        3 => true,
+        else => return RunError.UnknownForm,
+    };
     const dest: u32 = (sw >> 11) & 0xF;
-    if (dest != 0) state.s[dest] = @truncate(@as(u64, @bitCast(roundShr(prod, 23))) & M24);
+    const alu_dest: u32 = (h >> 15) & 0xF;
+    if (dest != 0 and dest == alu_dest) return RunError.UnknownForm;
+    const prod: i64 = sx16(state.s[(sw >> 3) & 0xF]) * sx16(state.s[2 * (sw & 7) + (h >> 31)]);
+    const alu_v: ?u32 = if (alu_dest == 0) null else try aluWord(h, sx24(state.s[(h >> 11) & 0xF]), sx24(state.s[(h >> 19) & 0xF])) orelse
+        return RunError.UnknownForm;
+    if (store) state.x_mem.put(gpa, state.a[(h >> 26) & 0x1F], state.s[(sw >> 25) & 0xF] & M24) catch return RunError.OutOfMemory;
+    state.s[dest] = @truncate(@as(u64, @bitCast(roundShr(prod, 23))) & M24);
+    if (alu_v) |v| state.s[alu_dest] = v;
 }
 
 fn execX10Alu(state: *State, bundle: []const u32) RunError!void {

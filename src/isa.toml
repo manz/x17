@@ -121,7 +121,8 @@ ref = "fact 100 pass 126: with a class-100 second S, S[25] = 1: e<S[24:21]> <- F
 
 # alu11 (low5 0x11, S class 001).  fact 129 pass 155: the head is the 0x05 ALU word (s<[18:15]> <- ALU05[[10:5]](s<[14:11]>, s<[29:26]>) with the m/#shift modifiers; head[31:30] inert in the cases run); S: R<S[28:25]> and e<S[12:9]> <- (S[8] ? AGU10 : AGU10B)[S[20:17]](x = e<S[24:21]>, y = R<S[16:13]>); S[7:0] and S[30] inert, S[29] = 0 wedges.  own-agu11, own-alu11
 
-# mul13 (low5 0x13, S class 101).  fact 128 pass 154: s<S[14:11]> <- (s<S[6:3]> * s<2*S[2:0] + head[31]> + 2^22) >> 23, signed, when S[19]; head[18:15] zero s1/s2/s4/s8; S[18:17] add +-0x8A00/0x7600 (OPEN, as x16mul), S[23:22] OPEN, S[10:7] write a second value 0x4c46 to s<1<<b> (OPEN); head[30] inert; S[29] = 0 wedges.  own-mul13
+# mul13 (low5 0x13, S class 101).  fact 128 pass 154: s<S[14:11]> <- (s<S[6:3]> * s<2*S[2:0] + head[31]> + 2^22) >> 23, signed, when S[19]; head[18:15] is the head ALU's destination (535 revises the clears); S[18:17] add +-0x8A00/0x7600 (OPEN, as x16mul), S[23:22] OPEN, S[10:7] write a second value 0x4c46 to s<1<<b> (OPEN); head[30] inert; S[29] = 0 wedges.  own-mul13
+# mul13 (535): head ALU s<h[18:15]> <- alu_word(h, s<h[14:11]>, s<h[22:19]>), m = h[25:23]; S[16:15] = 11 stores X:[A<h[30:26]>] <- s<S[28:25]> (as x13st), 01/10 refused; reads before writes.  S[21], S[23:22] OPEN.  own-mul13a
 
 # st.x / rimm (low5 0x0F, S class 101).  fact 127 pass 153: with S[22] and S[20] both set, X:[A<4*S[2:0] + head[31:30]>] <- s<S[28:25]> for every head[31:30] (51 saw only head[31:30] = 01); otherwise rimm: R<S[14:11]> <- head[20:5] and s<head[24:21]> <- 0x5000 (source OPEN); S[29] = 0 wedges.  own-stx-a, own-rimm
 

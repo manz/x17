@@ -3752,3 +3752,31 @@ test "x19alu's two X writes beside its ALU" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "mul13's head ALU slot and X store" {
+    // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
+    // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
+    // read s6.  S[16:15] = 11 stores s<S[28:25]> = s5 to X:[A<h[30:26]>]; 01 refuses.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, sw: u32, s7: ?u32, stored: ?u32 = null }{
+        .{ .h = 0x80bbb1d3, .sw = 0xa0283051, .s7 = 0x200 },
+        .{ .h = 0x803bb1d3, .sw = 0xa0283051, .s7 = 0x400 },
+        .{ .h = 0x80bbb1d3 | 25 << 26, .sw = 0xaa29b051, .s7 = 0x200, .stored = 0x555 },
+        .{ .h = 0x80bbb1d3, .sw = 0xa028b051, .s7 = null },
+        .{ .h = 0x80bbb1d3, .sw = 0xa0283851, .s7 = null }, // S[14:11] = s7, the ALU's dest too
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[6] = 0x100;
+        state.s[7] = 0x300;
+        state.s[5] = 0x555;
+        state.a[25] = 0x340;
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.sw, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.s7) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[7]);
+            try testing.expectEqual(@as(u32, 0), state.s[6]);
+            try testing.expectEqual(c.stored, state.readX(0x340));
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
