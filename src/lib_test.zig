@@ -2460,3 +2460,27 @@ test "win_start, win_stop and win_short build the model's blocks" {
         }
     };
 }
+
+test "0x02's X store and immediate/yd R source" {
+    // fact 513: own-x02rimm (R2 <- head[26:11] = 0x109F with w5[31:30] = 11); 00 takes
+    // yd, 01 is refused; w5[10:9] = 11 stores s<{w2[0], w1[31:29]}> (s3 here) at X:[A11].
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, w5: u32, r2: ?u32, xst: bool }{
+        .{ .w1 = 0x00000008, .w5 = 0xC0024204, .r2 = 0x109F, .xst = false },
+        .{ .w1 = 0x00000008, .w5 = 0x00024204, .r2 = 0x4321, .xst = false },
+        .{ .w1 = 0x00000008, .w5 = 0x40024204, .r2 = null, .xst = false },
+        .{ .w1 = 0x60000008, .w5 = 0xC0024604, .r2 = 0x109F, .xst = true },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.yd = 0x4321;
+        state.a[11] = 0x300;
+        state.s[3] = 0x123456;
+        const r = emu.runFrom(gpa, &state, &.{ 0x0084FC42, c.w1, 0x00000000, 0x00100000, 0x02562848, c.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.r2) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.r[2]);
+            try testing.expectEqual(@as(?u32, if (c.xst) 0x123456 else null), state.readX(0x300));
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

@@ -274,29 +274,12 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w3_class == 0b001) return execX18C1(gpa, state, bundle);
     }
     if (low5 == 0x02 and bundle.len >= 6) {
-        const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
-        if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
-        if (w4_mode == 5) {
-            // Slots are VLIW; all slot inputs latch before any write
-            // commits (fact 182/184 / own-x02x3, own-x02coll).
-            // Snapshot s-regs so x3 reads pre-slot values.
-            const s_pre = state.s;
-            // The X read writes before the multiply reads here.  Whether silicon's
-            // multiply sees the old or the new s is OPEN (own-x02yrd overlaps them
-            // but observes only the read); code should not lean on either.
-            try execX02Xrd(gpa, state, bundle);
-            try execX02Mpy(gpa, state, bundle);
-            try execX02Ainc(gpa, state, bundle);
-            try execX02X3Pre(gpa, state, bundle, s_pre);
-            return;
-        }
-        if (w4_mode == 1) return execX02Imm(gpa, state, bundle);
-        if (w4_mode == 0) {
-            // The A slot reads R before the R slot writes it.
-            try execX02Ainc(gpa, state, bundle);
-            return execX02Agu(gpa, state, bundle);
-        }
-        if (w4_mode == 2) return execX02Xrd(gpa, state, bundle); // esrc path
+        // The X store and the immediate/yd R source (fact 513) latch before the mode's
+        // slots write and land after them.
+        const common = try x02Common(state, bundle);
+        const handled = try execX02Mode(gpa, state, bundle);
+        try common.apply(gpa, state);
+        if (handled) return;
     }
     if (low5 == 0x03 and bundle.len >= 6) {
         try x03CondJump(state, bundle);
@@ -482,6 +465,85 @@ fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const src_e: u32 = (s1 >> 21) & 0xF;
     if (dest_s != 0) state.s[dest_s] = imm;
     if (dest_r != 0) state.r[dest_r] = state.e[src_e];
+}
+
+/// The w4[13:11] modes' slots; false when no mode claims the bundle.
+fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!bool {
+    const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
+    if (w4_mode == 1) {
+        try execX02Imm(gpa, state, bundle);
+        return true;
+    }
+    if (w4_mode == 5) {
+        // Slots are VLIW; all slot inputs latch before any write
+        // commits (fact 182/184 / own-x02x3, own-x02coll).
+        // Snapshot s-regs so x3 reads pre-slot values.
+        const s_pre = state.s;
+        // The X read writes before the multiply reads here.  Whether silicon's
+        // multiply sees the old or the new s is OPEN (own-x02yrd overlaps them
+        // but observes only the read); code should not lean on either.
+        try execX02Xrd(gpa, state, bundle);
+        try execX02Mpy(gpa, state, bundle);
+        try execX02Ainc(gpa, state, bundle);
+        try execX02X3Pre(gpa, state, bundle, s_pre);
+        return true;
+    }
+    if (w4_mode == 1) {
+        try execX02Imm(gpa, state, bundle);
+        return true;
+    }
+    if (w4_mode == 0) {
+        // The A slot reads R before the R slot writes it.
+        try execX02Ainc(gpa, state, bundle);
+        try execX02Agu(gpa, state, bundle);
+        return true;
+    }
+    if (w4_mode == 2) {
+        try execX02Xrd(gpa, state, bundle); // esrc path
+        return true;
+    }
+    return false;
+}
+
+const X02Common = struct {
+    x_on: bool = false,
+    x_addr: u32 = 0,
+    x_val: u32 = 0,
+    r_dest: u32 = 0,
+    r_val: u32 = 0,
+
+    fn apply(c: X02Common, gpa: std.mem.Allocator, state: *State) RunError!void {
+        if (c.x_on) state.x_mem.put(gpa, c.x_addr, c.x_val) catch return RunError.OutOfMemory;
+        if (c.r_dest != 0) state.r[c.r_dest] = c.r_val;
+    }
+};
+
+/// 0x02 slots outside the w4 modes (fact 513): w5[10:9] = 11 stores sx24
+/// s<{w2[0], w1[31:29]}> at X:[A<w4[21:17]>]; with w5[27:26] = 00, R<w3[22:19]> <- w5[31:30] = 11:
+/// #head[26:11], 00: yd (01/10 refused).  Both read before the bundle writes.
+fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const w3 = bundle[3];
+    const w4 = bundle[4];
+    const w5 = bundle[5];
+    var c: X02Common = .{};
+    if ((w5 >> 9) & 3 == 3) {
+        c.x_on = true;
+        c.x_addr = state.a[(w4 >> 17) & 0x1F];
+        c.x_val = state.s[((w2 & 1) << 3) | (w1 >> 29)] & M24;
+    }
+    const r_dest: u32 = (w3 >> 19) & 0xF;
+    if (r_dest != 0 and (w5 >> 26) & 3 == 0) {
+        c.r_dest = r_dest;
+        c.r_val = switch (w5 >> 30) {
+            3 => (h >> 11) & 0xFFFF,
+            0 => state.yd & 0xFFFF,
+            else => return RunError.UnknownForm,
+        };
+    }
+    return c;
 }
 
 fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
