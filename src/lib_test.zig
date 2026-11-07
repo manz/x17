@@ -3064,3 +3064,47 @@ test "tns_channel filters every window as the model does" {
     try testing.expect(halvings > 0);
     try testing.expectEqual(@as(u32, 1), gave_up);
 }
+
+test "rop picks AGU10 by head[21]; x16alu mux 1/5 reads Y by S2[18]; x19mac takes w2 class 100" {
+    // fact 521: own-ropagu (e3 = 0x700, fn 2: AGU10 x + 1 = 0x701, AGU10B 0)
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, want: u32 }{ .{ .h = 0x40a40667, .want = 0x701 }, .{ .h = 0x40840667, .want = 0 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[3] = 0x700;
+        state.r[2] = 0x5555;
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.r[2]);
+    }
+    // x16alu (S1 class 000, S2 class 111): mux 1 and 5 with S2[18] read Y:[e2] into s<head[24:21]> = s5
+    for ([_]u32{ 1, 5 }) |mux| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[2] = 0x710;
+        state.yd = 0x1111;
+        try state.y_mem.put(gpa, 0x710, 0x2468);
+        const h: u32 = 0x00000016 | 5 << 21;
+        const s1: u32 = mux << 12 | 5 << 16; // op 5: no ALU write
+        const s2: u32 = 0xE0000000 | 2 << 21 | 1 << 18;
+        _ = try emu.runFrom(gpa, &state, &.{ h, s1, s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u32, 0x2468), state.s[5]);
+    }
+    // x19mac, w2 class 100 as 001: s5 = rnd(s3 * s4 / 2^23); with w3 class 101 refused
+    for ([_]struct { w2c: u32, w3c: u32, want: ?u32 }{
+        .{ .w2c = 1, .w3c = 6, .want = 0x100000 },
+        .{ .w2c = 4, .w3c = 6, .want = 0x100000 },
+        .{ .w2c = 4, .w3c = 5, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0x200000;
+        state.s[4] = 0x400000;
+        const w1: u32 = 4 << 11 | 1 << 15;
+        const w2: u32 = c.w2c << 29 | 5 << 9 | 3 << 5 | 4 << 1;
+        const r = emu.runFrom(gpa, &state, &.{ 0x00000019, w1, w2, c.w3c << 29, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

@@ -1768,6 +1768,12 @@ fn execX16AluX(state: *State, bundle: []const u32) RunError!void {
     if ((s2 >> 13) & 1 == 1) state.x16_xi = (s2 >> 8) & 0x1F;
     try x16Alu(state, s1, s2);
     const src: u32 = (s1 >> 12) & 7;
+    // mux 1 / 5 with S2[18] (and not S2[19]): Y:[e<S2[24:21]>] fresh, not yd (521, 15 of 15)
+    if ((src == 1 or src == 5) and (s2 >> 18) & 3 == 1) {
+        const dest_y: u32 = (bundle[0] >> 21) & 0xF;
+        if (dest_y != 0) state.s[dest_y] = (state.getY(state.e[(s2 >> 21) & 0xF]) orelse 0) & 0xFFFF;
+        return;
+    }
     if (src != 5 or (s2 >> 19) & 1 == 0) return RunError.UnknownForm;
     const xi = state.x16_xi orelse return RunError.UnknownForm;
     if (xi == 0) return RunError.UnknownForm;
@@ -2430,9 +2436,11 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         return execX19RAgua(gpa, state, bundle);
     }
     // x19mac: w1 class 000/001 plain, 010/101 with the head ALU (fact 312, 384-386).
-    if (w2_class == 1 and w3_class == 6 and (w1_class == 0 or w1_class == 1 or w1_class == 2 or w1_class == 5)) {
+    // w2 class 100 runs it as 001 (521, 7 of 7); with w3 class 101 it is OPEN.
+    if ((w2_class == 1 or w2_class == 4) and w3_class == 6 and (w1_class == 0 or w1_class == 1 or w1_class == 2 or w1_class == 5)) {
         return execX19Mac(gpa, state, bundle);
     }
+    if (w2_class == 4 and w3_class == 5) return RunError.UnknownForm;
     if (w1_class == 0 and w2_class == 0 and w3_class == 1) {
         return execX19Imm(gpa, state, bundle);
     }
@@ -4124,9 +4132,9 @@ fn execRop(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
 
-    // ROP07 table from upstream/tools/sm1isa/emu.py:
-    //   x, y, 0, -x, -y, 1, x+y, x-y, 0, 0, y, y, y, -y, y+1, y-1
-    const v: u32 = switch (fn_op & 0xF) {
+    // head[21] = 1 computes through AGU10 (fact 521, own-ropagu, 162 rows), 0
+    // through ROP07 = AGU10B:  x, y, 0, -x, -y, 1, x+y, x-y, 0, 0, y, y, y, -y, y+1, y-1
+    const v: u32 = if ((head >> 21) & 1 == 1) try agu10Eval(fn_op, x_val, y_val) else switch (fn_op & 0xF) {
         0 => x_val & M24,
         1, 10, 11, 12 => y_val & M24,
         2, 8, 9 => 0,
