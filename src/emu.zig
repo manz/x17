@@ -1427,14 +1427,6 @@ fn execX12Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const s_dest: u32 = (2 * s_low + s_hi) & 0xF;
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
-    // h[31:29] >= 2 (553): s<{w1[0], h[31]}> <- e<h[8:5]> itself, when w1[28] = 0 and not
-    // tst's shape.  The AGU's e and R writes there, and w1[28] = 1, are unmeasured.
-    if (head >> 30 != 0) {
-        if ((s1 >> 28) & 1 == 1 or s1 & 0xE1F00000 == 0x20000000 or dest_e != 0 or dest_r != 0) return RunError.UnknownForm;
-        const d: u32 = ((s1 & 1) << 1) | s_hi;
-        if (d != 0) state.s[d] = x_val;
-        return;
-    }
     const v = try agu10Eval(fn_op, x_val, y_val);
     if (dest_e != 0) state.e[dest_e] = v;
     if (s_dest != 0) state.s[s_dest] = v;
