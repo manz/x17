@@ -1765,20 +1765,33 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
 /// op = S2[20:16]: op & 1 multiplies 16-bit signed, op & 4 rounds; even
 /// ops give 0 (fact 118).
+/// x16mul, S1 class 000 + S2 class 110 (fact 118, 213, 538): s<S2[13:10]> <- the product
+/// of s<S2[4:1]> and s<S2[8:5]> (16-bit) >> 23, rounded with op S2[20:16] bit 2, 0 unless bit
+/// 0; s<h[24:21]> <- #h[20:5] when S1[14:13] is 00 or 11; with S1[28] and S2[9], Y:[e<S2[24:21]>]
+/// <- s<S1[27:24]>, read before the immediate lands.  Refused: S1[14:13] = 01/10, an s0 store
+/// source (0xA400, OPEN), S1[11:8] (a gated s write, source OPEN) and one s for both writes.
 fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
     if (bundle.len < 3) return RunError.UnknownForm;
+    const h = bundle[0];
+    const s1 = bundle[1];
     const s2 = bundle[2];
+    if ((s1 >> 8) & 0xF != 0) return RunError.UnknownForm;
+    switch ((s1 >> 13) & 3) {
+        0, 3 => {},
+        else => return RunError.UnknownForm,
+    }
+    const store: bool = (s1 >> 28) & 1 == 1 and (s2 >> 9) & 1 == 1;
+    const src: u32 = (s1 >> 24) & 0xF;
+    if (store and src == 0) return RunError.UnknownForm;
+    const mul_dest: u32 = (s2 >> 10) & 0xF;
+    const imm_dest: u32 = (h >> 21) & 0xF;
+    if (mul_dest != 0 and mul_dest == imm_dest) return RunError.UnknownForm;
     const op: u32 = (s2 >> 16) & 0x1F;
-    const dest_s: u32 = (s2 >> 10) & 0xF;
-    const a: i64 = sx16(state.s[(s2 >> 1) & 0xF]);
-    const b: i64 = sx16(state.s[(s2 >> 5) & 0xF]);
-    const bias: i64 = if (op & 4 != 0) 1 << 22 else 0;
-    const v: u32 = if (op & 1 != 0)
-        @truncate(@as(u64, @bitCast((a * b + bias) >> 23)) & 0xFFFF)
-    else
-        0;
-    if (dest_s != 0) state.s[dest_s] = v;
+    const prod: i64 = sx16(state.s[(s2 >> 1) & 0xF]) * sx16(state.s[(s2 >> 5) & 0xF]);
+    const v: u32 = if (op & 1 == 0) 0 else @truncate(@as(u64, @bitCast(if (op & 4 != 0) roundShr(prod, 23) else prod >> 23)) & 0xFFFF);
+    if (store) state.y_mem.put(gpa, try yAddrE(state, (s2 >> 21) & 0xF), state.s[src] & 0xFFFF) catch return RunError.OutOfMemory;
+    state.s[mul_dest] = v;
+    state.s[imm_dest] = (h >> 5) & 0xFFFF;
 }
 
 fn sx16(v: u32) i64 {

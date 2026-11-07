@@ -3859,3 +3859,32 @@ test "x17imm's ALU slot writes s<S1[27:24]> and R<S2[16:13]>" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x16mul's immediate write and Y store" {
+    // fact 538: own-x16imy, e1 = 0x700, s4 = 0xABC: 00500576 14046000 c0200200 gives
+    // Y:0x700 = 0xABC and s2 = 0x802B.  S1[14:13] = 00 also writes; 10 refuses; the store
+    // reads its source before the immediate lands (h[24:21] = s4); an s0 source refuses.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x00500576, s1: u32 = 0x14046000, s2: u32 = 0xc0200200, dest: u32 = 2, imm: ?u32 = 0x802B, y: ?u32 = 0xABC }{
+        .{},
+        .{ .s1 = 0x14040000 },
+        .{ .s1 = 0x14044000, .imm = null },
+        .{ .h = 0x00900576, .dest = 4, .imm = 0x802B },
+        .{ .s1 = 0x10046000, .imm = null },
+        .{ .s2 = 0xc0200000, .y = null },
+        .{ .s1 = 0x04046000, .y = null }, // S1[28] = 0: no store
+        .{ .s1 = 0x14046100, .imm = null }, // S1[11:8]: OPEN
+        .{ .s2 = 0xc0200800, .imm = null }, // mul into s2 as well
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0x700;
+        state.s[4] = 0xABC;
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.s1, c.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.imm) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[c.dest]);
+            try testing.expectEqual(c.y, state.getY(0x700));
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

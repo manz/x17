@@ -488,7 +488,8 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # S1[27:25] bit b zeroes s<2 << b>; S1[14] = 0 wedges; head[4:0] other than 0x16 wedges.  own-x16agu
 # x16mul (0x16 S1 class 000, S2 class 110; fact 118 pass 144): s<S2[13:10]> <- (s<S2[4:1]> * s<S2[8:5]> (signed 16) [+ 2^22 if S2[18]]) >> 23 when S2[16];
 # 0 when S2[16] = 0 (S2[20:16] < 8); S2[15:14] 01/10/11 give X + p, -X + p, X - p with X = 0x8A00 here (OPEN); S2[20:19] other modes OPEN;
-# head[24:22] and S1[11:9] bit b zero s<2 << b>; S1[18] = 0 wedges; S1[23:20] OPEN.  own-x16mul
+# S1[18] = 0 wedges; S1[23:20] OPEN.  own-x16mul
+# 538 revises 118's clears (never happen): s<h[24:21]> <- #h[20:5] when S1[14:13] = 00/11 (10 OPEN); Y:[e<S2[24:21]>] <- s<S1[27:24]> when S1[28] and S2[9], read first, s0 source OPEN; S1[11:8] a gated s write, source OPEN (refused).  own-x16imy
 # x16alu, S2 class 010 (fact 119 pass 145): the 116 ALU alone, s<S1[11:8]> <- by S1[15], S1[18:16]: 0: 4 a+b 5 a 6 a-1 7 -a; 1: 4 a-b 5 a+1 6 a 7 a
 # (a = s<S2[28:25]>, b = s<S1[7:4]>; the same table holds under class-111 S2); head[24:21] bit b zeroes s<1 << b>, S2[16:13] bit b zeroes R<1 << b>.  own-x16alu2
 # x16agu, S2 class 101 (fact 120 pass 146): s<S1[12:9]> and R<1 << b> for S2[16:13] bit b <- by S1[17:15] (001 value, 000 0, 011 0x5000?, 101 yd):
