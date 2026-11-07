@@ -1418,24 +1418,50 @@ const GATES = [_]Gate{
         .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0xFEDB } }},
     },
     .{
-        .name = "own-x17mswedge-0",
-        // Upstream, fact 457/463 (3 of 3): 00000017 75218000 A0000042, own-x17st's shape
-        // with S1[22:20] = 010. The slots run, then exactly one more bundle, then no halt: the
-        // store right after lands.
+        .name = "own-x17mswedge-2",
+        // Upstream, fact 457/463/465 (3 of 3): 00000017 75218000 A0000042, own-x17st's
+        // shape with S1[22:20] = 010. The slots run, then two shadow bundles, then no halt: a
+        // store two nops later never lands.
         .pre = &.{
             .{ .bank = .s, .index = 5, .value = 0x66 },
             .{ .bank = .s, .index = 1, .value = 0x55 },
             .{ .bank = .e, .index = 3, .value = 0x740 },
             .{ .bank = .e, .index = 6, .value = 0x700 },
         },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0x1234 }},
         .src =
         \\x17.mswedge s0, #0, s5, e3, #1, #3, #0, R2, #1
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
         \\x17.ms s0, #0, s1, e6, #0, #0, #0, R0, #0
         \\x17.halt
         ,
         .post = &.{
             .{ .y_mem = .{ .addr = 0x740, .value = 0x66 } },
-            .{ .y_mem = .{ .addr = 0x700, .value = 0x55 } },
+            .{ .y_mem = .{ .addr = 0x700, .value = 0x1234 } },
+        },
+        .wedge = true,
+    },
+    .{
+        .name = "own-x17mswedge-sh",
+        // fact 465: both shadow bundles run (an ldi s4 in the first set the address the
+        // second's store used), the third does not. Shown here with register writes, since a Y
+        // store in the shadow is lost or misaddressed.
+        .pre = &.{
+            .{ .bank = .s, .index = 5, .value = 0x66 },
+            .{ .bank = .e, .index = 3, .value = 0x740 },
+        },
+        .src =
+        \\x17.mswedge s0, #0, s5, e3, #1, #3, #0, R2, #1
+        \\ldi s4, #0x720
+        \\ldi s7, #0x77
+        \\ldi s9, #0x99
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .s_reg = .{ .index = 4, .value = 0x720 } },
+            .{ .s_reg = .{ .index = 7, .value = 0x77 } },
+            .{ .s_reg = .{ .index = 9, .value = 0 } },
         },
         .wedge = true,
     },

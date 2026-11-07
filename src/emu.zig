@@ -2551,7 +2551,7 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 /// 410-413, own-x17st/-r/-e/-y).  Y:[e<S1[18:15]>] <- s<S1[27:24]>; R<S2[8:5]> and
 /// e<{S2[0], S1[31:29]}> <- #h[20:5]; with S1[28], s<h[24:21]> <- mux S2[3:1] of the Y word at
 /// e<S1[18:15]>: 0 gives 0, 2 the word, 6 its low byte << 8.  S1[22:20] = 010 runs the slots,
-/// one more bundle and stops unhalted (457); S1[19], S1[22] and other S1[21] rows wedge;
+/// two more bundles and stops unhalted (457, 465); S1[19], S1[22] and other S1[21] rows wedge;
 /// mux 2 sign-extends (414), mux 4 is the same word (436); S1[28] = 0 with a load and muxes
 /// 1/3/5 are OPEN.
 fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -2572,7 +2572,11 @@ fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // S1[22:20] = 010 runs the slots, then one more bundle, then stops unhalted (457).
     const wedge_row = (s1 >> 20) & 7 == 0b010;
     if ((s1 >> 19) & 1 == 1 or (s1 >> 22) & 1 == 1 or ((s1 >> 21) & 1 == 1 and !wedge_row)) return RunError.UnknownForm;
-    if (wedge_row) state.wedge_pending = true;
+    if (wedge_row) {
+        // With S1[27:24] = 0 silicon stored s1, not nothing (465): refused.
+        if ((s1 >> 24) & 0xF == 0) return RunError.UnknownForm;
+        state.wedge_pending = true;
+    }
     const y_addr: u32 = state.e[(s1 >> 15) & 0xF];
     const yv: u32 = (state.getY(y_addr) orelse 0) & 0xFFFF;
     const imm: u32 = (h >> 5) & 0xFFFF;
@@ -3287,6 +3291,8 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
     var i: usize = start;
     var bundles_run: usize = 0;
     var shadow: ?u8 = null;
+    // Inside x17.ms 010's shadow a Y store is lost or misaddressed (fact 465): refused.
+    var wedge_shadow = false;
     const lane0: usize = state.cur_lane;
     state.halted = false;
     while (i < syllables.len) : (bundles_run += 1) {
@@ -3303,7 +3309,12 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         const pc_at_bundle = i;
         state.pc = i;
         if (state.profile) |p| p[i] += 1;
-        try executeBundle(gpa, state, slice);
+        if (wedge_shadow) {
+            var before = state.y_mem.clone(gpa) catch return RunError.OutOfMemory;
+            defer before.deinit(gpa);
+            try executeBundle(gpa, state, slice);
+            if (!sameY(&before, &state.y_mem)) return RunError.UnknownForm;
+        } else try executeBundle(gpa, state, slice);
         i += len;
         // The stop has a shadow (fact 72): an ldi and a st + wr after it
         // still run and the next pair does not; two bundles, exact count OPEN.
@@ -3318,9 +3329,10 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             continue;
         }
         if (state.wedge_pending) {
-            // S1[22:20] = 010: one more bundle, then a stop no poll sees (fact 457).
+            // S1[22:20] = 010: two more bundles, then a stop no poll sees (fact 457, 465).
             state.wedge_pending = false;
-            shadow = 0;
+            wedge_shadow = true;
+            shadow = 1;
             continue;
         }
         if (state.stop_pending) {
@@ -3353,6 +3365,15 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
 
 pub fn bundleLen(head: u32) ?u8 {
     return isa.bundleLen(head);
+}
+
+fn sameY(a: *const std.AutoHashMapUnmanaged(u32, u32), b: *const std.AutoHashMapUnmanaged(u32, u32)) bool {
+    if (a.count() != b.count()) return false;
+    var it = a.iterator();
+    while (it.next()) |kv| {
+        if ((b.get(kv.key_ptr.*) orelse return false) != kv.value_ptr.*) return false;
+    }
+    return true;
 }
 
 fn isHaltBundle(bundle: []const u32) bool {

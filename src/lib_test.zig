@@ -1154,3 +1154,35 @@ test "aac_sections and aac_scalefactors decode as the model does" {
     try testing.expect(grouped > 20);
     try testing.expect(sf_fails > 3);
 }
+
+test "a Y store in x17.mswedge's shadow is refused, not guessed" {
+    // fact 465: in shadow slot 1 it is lost; in slot 2 it reads address 0 unless slot 1
+    // wrote s4. Neither is modelled.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        x17.mswedge s0, #0, s5, e3, #1, #3, #0, R2, #1
+        \\        x17.ms s0, #0, s1, e6, #0, #0, #0, R0, #0
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[3] = 0x740;
+    state.e[6] = 0x700;
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, prog, 0, 64));
+}
+
+test "x17.mswedge with no store source is refused: silicon stored s1 there" {
+    // fact 465: with S1[27:24] = 0 the bundle's own store wrote s1, not nothing.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        x17.mswedge s0, #0, s0, e3, #1, #3, #0, R2, #1
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, prog, 0, 64));
+}
