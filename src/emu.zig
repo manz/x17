@@ -1109,10 +1109,15 @@ fn execYstm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     if ((sw >> 18) & 1 == 0) return RunError.UnknownForm;
     const x: u32 = state.e[(h >> 5) & 0xF];
     const y: u32 = state.r[(h >> 13) & 0xF];
-    if ((sw >> 16) & 3 == 3) {
-        state.y_mem.put(gpa, x, state.s[(sw >> 12) & 0xF] & 0xFFFF) catch return RunError.OutOfMemory;
-    }
-    const v: u32 = if ((h >> 26) & 1 == 0) state.yd else blk: {
+    // h[26] = 0 (514): s[17:16] = 10 reads Y:[e<h[8:5]>] fresh (and latches it); s[17] = 0
+    // gives the stale latch.  h[26] = 1 with the store on: s[20] = 0 is AGU10B, 1 AGU10.
+    const store_on = (sw >> 16) & 3 == 3;
+    const v: u32 = if ((h >> 26) & 1 == 0) blk0: {
+        if ((sw >> 16) & 3 == 2) {
+            state.yd = (state.getY(x) orelse 0) & 0xFFFF;
+        }
+        break :blk0 state.yd;
+    } else if (store_on and (sw >> 20) & 1 == 0) agu10bEval((h >> 17) & 0xF, x, y) else blk: {
         const i: u32 = ((sw & 0xFFF) << 4) | (h >> 28);
         break :blk switch ((h >> 17) & 0xF) {
             8 => i & 0xFFFF,
@@ -1121,6 +1126,10 @@ fn execYstm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
             else => |f| try agu10Eval(f, x, y),
         };
     };
+    // the fresh read only runs with the store off, so the order cannot show
+    if (store_on) {
+        state.y_mem.put(gpa, x, state.s[(sw >> 12) & 0xF] & 0xFFFF) catch return RunError.OutOfMemory;
+    }
     if ((h >> 9) & 0xF != 0) state.e[(h >> 9) & 0xF] = v;
     if ((sw >> 25) & 0xF != 0) state.r[(sw >> 25) & 0xF] = v;
 }

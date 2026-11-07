@@ -2721,3 +2721,23 @@ test "stereo_pair applies M/S and intensity as the model does" {
     try testing.expect(seen_ms > 200);
     try testing.expect(seen_is > 100);
 }
+
+test "ystm: AGU10B or AGU10 by s[20] with the store on, a fresh Y read at s[17:16] = 10" {
+    // fact 514: own-ystmB (e1 = 0x700, fn 3: AGU10B -x = 0xF900, AGU10 y + 1 = 1); with
+    // h[26] = 0, s[17:16] = 10 reads Y:[e1] and s[17] = 0 keeps the stale latch.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, sw: u32, want: u32 }{
+        .{ .h = 0x04060230, .sw = 0x44073000, .want = 0xF900 },
+        .{ .h = 0x04060230, .sw = 0x44173000, .want = 0x0001 },
+        .{ .h = 0x00060230, .sw = 0x44063000, .want = 0x1234 },
+        .{ .h = 0x00060230, .sw = 0x44053000, .want = 0x5555 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0x700;
+        state.yd = 0x5555;
+        try state.y_mem.put(gpa, 0x700, 0x1234);
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, c.sw, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.r[2]);
+    }
+}
