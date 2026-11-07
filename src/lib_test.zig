@@ -4518,18 +4518,25 @@ test "the Y read forms that set yd (fact 571)" {
     }
 }
 
-test "x00 control 3 jumps like 1, by sx13(w1[30:18]) (fact 572)" {
+test "x00's jump controls take sx8(w1[25:18]) (fact 572, 573)" {
     const gpa = testing.allocator;
-    for ([_]struct { ctl: u32, w1: u32, off: i32 }{
-        .{ .ctl = 3, .w1 = 0x1FFF << 18, .off = -1 },
-        .{ .ctl = 1, .w1 = 0x1FFF << 18, .off = -1 },
-        .{ .ctl = 3, .w1 = 0xFF << 18, .off = 0xFF }, // 8-bit 0xFF is not -1
-        .{ .ctl = 3, .w1 = 0x1000 << 18, .off = -0x1000 },
-        .{ .ctl = 1, .w1 = 0x0123 << 18, .off = 0x123 },
+    for ([_]struct { ctl: u32, w1: u32, off: ?i32 }{
+        .{ .ctl = 3, .w1 = 0xF8 << 18, .off = -8 },
+        .{ .ctl = 1, .w1 = 0xF8 << 18, .off = -8 },
+        .{ .ctl = 0xE, .w1 = 0xF8 << 18, .off = -8 },
+        .{ .ctl = 0x17, .w1 = 0x7F << 18, .off = 0x7F },
+        .{ .ctl = 1, .w1 = 0x0A << 18, .off = 10 },
+        .{ .ctl = 3, .w1 = 0x1F8 << 18, .off = null }, // w1[26] set: OPEN
+        .{ .ctl = 3, .w1 = 0x1FF8 << 18, .off = null }, // wedges
+        .{ .ctl = 1, .w1 = 0xFF << 18, .off = null }, // -1 over a short loop: OPEN
+        .{ .ctl = 1, .w1 = 0xFC << 18, .off = null }, // -4
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
-        try emu.executeBundle(gpa, &state, &.{ 0, c.w1, 0, c.ctl, 0, 0, 0 });
-        try testing.expectEqual(@as(?i32, c.off), state.pending_jmp_offset);
+        const r = emu.executeBundle(gpa, &state, &.{ 0, c.w1, 0, c.ctl, 0, 0, 0 });
+        if (c.off) |o| {
+            try r;
+            try testing.expectEqual(@as(?i32, o), state.pending_jmp_offset);
+        } else try testing.expectError(error.UnknownForm, r);
     }
 }
