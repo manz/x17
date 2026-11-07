@@ -1,0 +1,507 @@
+; AAC M/S and intensity stereo: the x17 twin of sosumi's ref/dsp/aac/stereo.zig `applyPair`.
+;
+; On the dequantiser's blocks (value = w * 2^E, |w| < 2^22.42). M/S moves both live channels
+; to max(EL, ER) + 1 (rounded right shifts, 0 from 24 on) and adds and subtracts; intensity
+; writes a right band as down(rnd(l * T[b] / 2^23), ER - (EL + 1 - q)), pos = 4q + b,
+; T[b] = 2^(22 - b/4), after the right block moves to the largest of its own exponent and its
+; intensity bands'. A channel is live when one of its books is 1..11; a block that is not live
+; holds zeros and just takes the new exponent.
+;
+; Needs lib/bits.sm (s0 = 0, s14 = 1) and lib/mem.sm. Loaded by the host, in Y:
+;   ST_NB bands (groups * max_sfb), ST_GRP groups, ST_MAX max_sfb, ST_WIN window length,
+;   ST_GLEN group lengths, ST_MSP ms_mask_present, ST_OFF swb_offset,
+;   per band in walk order: ST_LB left book, ST_RB right book, ST_RS right scale factor
+;   (intensity position), ST_MSU ms_used; ST_EL, ST_ER the exponents (rewritten).
+; X: the left words at ST_L, the right at ST_R (rewritten), T at ST_T (4 words).
+; Uses every s register but s0, s14, s15; e6 .. e11; A4, A6, A8 and mem.sm's.
+
+.const ST_L    = 0x0400
+.const ST_R    = 0x0800
+.const ST_T    = 0x1F00
+.const ST_Y    = 0x2600
+.const ST_NB   = ST_Y + 0
+.const ST_GRP  = ST_Y + 1
+.const ST_MAX  = ST_Y + 2
+.const ST_WIN  = ST_Y + 3
+.const ST_MSP  = ST_Y + 4
+.const ST_EL   = ST_Y + 5
+.const ST_ER   = ST_Y + 6
+.const ST_LL   = ST_Y + 7       ; left live
+.const ST_RL   = ST_Y + 8       ; right live
+.const ST_AMS  = ST_Y + 9       ; some band uses M/S
+.const ST_AIS  = ST_Y + 10      ; some band is intensity
+.const ST_TO   = ST_Y + 11      ; the exponent being found
+.const ST_GLEN = ST_Y + 0x10    ; 8 words
+.const ST_OFF  = ST_Y + 0x20    ; 64 words
+.const ST_LB   = ST_Y + 0x60    ; 128 words each
+.const ST_RB   = ST_Y + 0xE0
+.const ST_RS   = ST_Y + 0x160
+.const ST_MSU  = ST_Y + 0x1E0
+.const ST_KIND = ST_Y + 0x260   ; 0 none, 1 M/S, 2 intensity, 3 intensity negated
+.const ST_RUNS = ST_Y + 0x2E0   ; (start, len, band) triples, len 0 last
+.const ST_NONE = -32767
+
+; p1 = s<v> in 1..11. Uses s4.
+.macro st_spectral(v, no) {
+        alu s4, v, s14, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #3, #1, no
+        ldi s4, #11             ; (delay slot)
+        alu s4, s4, v, #OP_SUB  ; (delay slot)
+        ptst p1, s0, #LT4, #PTST
+        jmp #3, #1, no
+        nop()
+        nop()
+}
+
+; The kind of every band and the four flags.
+.macro st_kinds() {
+        ldi s13, #ST_LB - 1
+        x17.mve e7, s13
+        ldi s13, #ST_RB - 1
+        x17.mve e8, s13
+        ldi s13, #ST_MSU - 1
+        x17.mve e9, s13
+        ldi s13, #ST_KIND - 1
+        x17.mve e10, s13
+        ldi s10, #0             ; left live
+        ldi s11, #0             ; right live
+        ldi s12, #0             ; any M/S
+        ldi s1, #0              ; any intensity
+        yld(s9, ST_NB)
+        yld(s8, ST_MSP)
+kl:     alu s4, s9, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, kdone
+        nop()
+        nop()
+        ldy s5, e7              ; left book
+        ldy s6, e8              ; right book
+        ldy s7, e9              ; ms_used
+        st_spectral(s5, nl)
+        ldi s10, #1
+nl:     st_spectral(s6, nr)
+        ldi s11, #1
+nr:     ldi s3, #0
+        ldi s4, #14
+        alu s4, s6, s4, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #3, #1, notis       ; right book < 14
+        nop()
+        nop()
+        ldi s3, #2
+        ptst p1, s0, #EQ4, #PTST ; book 14 (INTENSITY_HCB2) is negative
+        jmp #IF_NOT, #1, isp
+        nop()
+        nop()
+        ldi s3, #3
+isp:    alu s4, s8, s14, #OP_SUB
+        ptst p1, s0, #EQ4, #PTST ; ms_mask_present 1 and the band used: flip
+        jmp #IF_NOT, #1, isd
+        nop()
+        nop()
+        alu s4, s7, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, isd
+        nop()
+        nop()
+        ldi s4, #5
+        alu s3, s4, s3, #OP_SUB ; 2 <-> 3
+isd:    jmp #IF_NOT, #2, kst
+        ldi s1, #1              ; (delay slot)
+        nop()
+notis:  alu s4, s8, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST ; no mask
+        jmp #3, #1, kst
+        nop()
+        nop()
+        alu s4, s7, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST ; band not used
+        jmp #3, #1, kst
+        ldi s4, #13             ; (delay slot)
+        alu s4, s5, s4, #OP_SUB ; (delay slot)
+        ptst p1, s0, #LT4, #PTST ; left noise or intensity
+        jmp #IF_NOT, #1, kst
+        ldi s4, #13             ; (delay slot)
+        alu s4, s6, s4, #OP_SUB ; (delay slot)
+        ptst p1, s0, #LT4, #PTST ; right noise
+        jmp #IF_NOT, #1, kst
+        nop()
+        nop()
+        ldi s3, #1
+        ldi s12, #1
+kst:    x17.sty e10, #3, #0
+        x18.eagu e7, e7, #AGU_INC
+        x18.eagu e8, e8, #AGU_INC
+        x18.eagu e9, e9, #AGU_INC
+        x18.eagu e10, e10, #AGU_INC
+        jmp #IF_NOT, #2, kl
+        alu s9, s9, s14, #OP_SUB ; (delay slot)
+        nop()
+kdone:  alu s3, s10, s0, #OP_ADD
+        yst(ST_LL)
+        alu s3, s11, s0, #OP_ADD
+        yst(ST_RL)
+        alu s3, s12, s0, #OP_ADD
+        yst(ST_AMS)
+        alu s3, s1, s0, #OP_ADD
+        yst(ST_AIS)
+}
+
+; The run list: for each group, band and window, (start, len, band index), then len 0.
+.macro st_runs() {
+        ldi s13, #ST_RUNS - 1
+        x17.mve e7, s13
+        ldi s13, #ST_GLEN - 1
+        x17.mve e10, s13
+        yld(s11, ST_WIN)
+        ldi s10, #0             ; the group's first window * window length
+        ldi s12, #0             ; band index
+        yld(s9, ST_GRP)
+rg:     ldy s8, e10             ; group length
+        ldi s13, #ST_OFF - 1
+        x17.mve e9, s13
+        ldi s13, #ST_OFF
+        x17.mve e11, s13
+        yld(s7, ST_MAX)
+rb:     alu s4, s7, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, rgend
+        nop()
+        nop()
+        ldy s5, e9
+        ldy s6, e11
+        alu s6, s6, s5, #OP_SUB ; len
+        alu s13, s10, s5, #OP_ADD ; start
+        alu s1, s8, s0, #OP_ADD ; windows left
+rw:     alu s4, s1, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, rwend
+        nop()
+        nop()
+        x17.sty e7, #5, #1      ; s13
+        x18.eagu e7, e7, #AGU_INC
+        x17.sty e7, #6, #0
+        x18.eagu e7, e7, #AGU_INC
+        x17.sty e7, #4, #1      ; s12
+        x18.eagu e7, e7, #AGU_INC
+        alu s13, s13, s11, #OP_ADD
+        jmp #IF_NOT, #2, rw
+        alu s1, s1, s14, #OP_SUB ; (delay slot)
+        nop()
+rwend:  alu s12, s12, s14, #OP_ADD
+        x18.eagu e9, e9, #AGU_INC
+        x18.eagu e11, e11, #AGU_INC
+        jmp #IF_NOT, #2, rb
+        alu s7, s7, s14, #OP_SUB ; (delay slot)
+        nop()
+rgend:  alu s4, s8, s0, #OP_ADD
+rgw:    ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, rgw2
+        nop()
+        nop()
+        alu s10, s10, s11, #OP_ADD
+        alu s8, s8, s14, #OP_SUB
+        jmp #IF_NOT, #2, rgw
+        alu s4, s8, s0, #OP_ADD ; (delay slot)
+        nop()
+rgw2:   x18.eagu e10, e10, #AGU_INC
+        alu s9, s9, s14, #OP_SUB
+        alu s4, s9, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, rg
+        nop()
+        nop()
+        ldi s4, #0
+        x17.sty e7, #4, #0      ; start (any)
+        x18.eagu e7, e7, #AGU_INC
+        x17.sty e7, #4, #0      ; len 0
+}
+
+; X[BUF ..] moved down by n = s6 >= 0 over 1024 words, rounded, 0 from 24 on. Uses s1, s4,
+; s11, s12, A4.
+.macro st_move(BUF) {
+        aimm(A4, BUF)
+        ldi s11, #1024
+        ldi s4, #24
+        alu s4, s6, s4, #OP_SUB
+        ptst p1, s0, #LT4, #PTST ; n < 24
+        jmp #3, #1, mshift
+        alu s12, s0, s6, #OP_SUB ; (delay slot) -n
+        nop()
+mz:     stx A4, s0
+        x02.ainc #4, #4
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, mz
+        nop()
+        nop()
+        jmp #IF_NOT, #2, mdone
+        nop()
+        nop()
+mshift: x19.xrd s1, #4
+        x19.alu s1, s1, s12, #SHIFT
+        stx A4, s1
+        x02.ainc #4, #4
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, mshift
+        nop()
+        nop()
+mdone:
+}
+
+; The channel at BUF with exponent slot ESLOT and live flag LIVE moved to the exponent in s5.
+; Uses st_move's registers and s6.
+.macro st_moveto(BUF, ESLOT, LIVE) {
+        yld(s4, LIVE)
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, mset        ; not live: zeros, just take the exponent
+        nop()
+        nop()
+        yld(s6, ESLOT)
+        alu s6, s5, s6, #OP_SUB
+        st_move(BUF)
+mset:   alu s3, s5, s0, #OP_ADD
+        yst(ESLOT)
+}
+
+; M/S: both live channels to max(EL, ER) + 1, then l + r, l - r over the M/S runs.
+.macro st_ms() {
+        yld(s4, ST_AMS)
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, msdone
+        nop()
+        nop()
+        yld(s1, ST_LL)
+        yld(s2, ST_RL)
+        alu s4, s1, s2, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST ; neither live
+        jmp #3, #1, msdone
+        nop()
+        nop()
+        yld(s5, ST_EL)
+        alu s4, s1, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, mshave
+        nop()
+        nop()
+        yld(s5, ST_ER)          ; only the right is live
+mshave: alu s4, s2, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, msto
+        nop()
+        nop()
+        yld(s6, ST_ER)
+        alu s4, s5, s6, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #IF_NOT, #1, msto
+        nop()
+        nop()
+        alu s5, s6, s0, #OP_ADD
+msto:   alu s5, s5, s14, #OP_ADD
+        alu s3, s5, s0, #OP_ADD
+        yst(ST_TO)
+        st_moveto(ST_L, ST_EL, ST_LL)
+        yld(s5, ST_TO)
+        st_moveto(ST_R, ST_ER, ST_RL)
+        ; the right is live once M/S has written it from a live left
+        yld(s3, ST_LL)
+        yld(s4, ST_RL)
+        alu s3, s3, s4, #OP_ADD
+        yst(ST_RL)
+        ldi s13, #ST_RUNS - 1
+        x17.mve e7, s13
+msrun:  ldy s9, e7              ; start
+        x18.eagu e7, e7, #AGU_INC
+        ldy s10, e7             ; len
+        alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, msdone
+        x18.eagu e7, e7, #AGU_INC ; (delay slot)
+        nop()
+        ldy s13, e7             ; band
+        x18.eagu e7, e7, #AGU_INC
+        ldi s4, #ST_KIND - 1
+        alu s13, s13, s4, #OP_ADD
+        x17.mve e6, s13
+        ldy s4, e6
+        alu s4, s4, s14, #OP_SUB
+        ptst p1, s0, #EQ4, #PTST ; kind 1
+        jmp #IF_NOT, #1, msrun
+        nop()
+        nop()
+        ldi s4, #ST_L
+        alu s4, s4, s9, #OP_ADD
+        amov(A4, s4)
+        ldi s4, #ST_R
+        alu s4, s4, s9, #OP_ADD
+        amov(A6, s4)
+msw:    x19.xrd s1, #4
+        x19.xrd s5, #6
+        alu s7, s1, s5, #OP_ADD
+        alu s8, s1, s5, #OP_SUB
+        stx A4, s7
+        stx A6, s8
+        x02.ainc #4, #4
+        x02.ainc #6, #6
+        alu s10, s10, s14, #OP_SUB
+        alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, msw
+        nop()
+        nop()
+        jmp #IF_NOT, #2, msrun
+        nop()
+        nop()
+msdone:
+}
+
+; s5 = floor(pos / 4), s6 = pos - 4 floor(pos / 4) for pos in s<p>. Uses s4, s12.
+.macro st_qb(p) {
+        ldi s4, #2
+        alu s5, p, s4, #OP_SUB
+        ldi s12, #-2
+        x19.alu s5, s5, s12, #SHIFT ; rshr(pos - 2, 2) = floor(pos / 4)
+        x19.alu s12, s5, s4, #SHIFT
+        alu s6, p, s12, #OP_SUB
+}
+
+; Intensity: the right block to the largest of its exponent and EL + 1 - q over the intensity
+; bands, then each intensity run from the left.
+.macro st_is() {
+        yld(s4, ST_LL)
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, isdone
+        nop()
+        nop()
+        yld(s4, ST_AIS)
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, isdone
+        nop()
+        nop()
+        ldi s10, #ST_NONE
+        yld(s4, ST_RL)
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, isfind
+        nop()
+        nop()
+        yld(s10, ST_ER)
+isfind: ldi s13, #ST_KIND - 1
+        x17.mve e9, s13
+        ldi s13, #ST_RS - 1
+        x17.mve e10, s13
+        yld(s9, ST_NB)
+        yld(s11, ST_EL)
+        alu s11, s11, s14, #OP_ADD ; EL + 1
+isf:    alu s4, s9, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, isfd
+        nop()
+        nop()
+        ldy s4, e9
+        ldy s7, e10
+        x18.eagu e9, e9, #AGU_INC
+        x18.eagu e10, e10, #AGU_INC
+        alu s9, s9, s14, #OP_SUB
+        ldi s1, #2
+        alu s4, s4, s1, #OP_SUB
+        ptst p1, s0, #LT4, #PTST ; not intensity
+        jmp #3, #1, isf
+        nop()
+        nop()
+        st_qb(s7)
+        alu s5, s11, s5, #OP_SUB ; EL + 1 - q
+        alu s4, s10, s5, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #IF_NOT, #1, isf
+        nop()
+        nop()
+        jmp #IF_NOT, #2, isf
+        alu s10, s5, s0, #OP_ADD ; (delay slot)
+        nop()
+isfd:   alu s5, s10, s0, #OP_ADD
+        st_moveto(ST_R, ST_ER, ST_RL)
+        ldi s13, #ST_RUNS - 1
+        x17.mve e7, s13
+isrun:  ldy s9, e7              ; start
+        x18.eagu e7, e7, #AGU_INC
+        ldy s10, e7             ; len
+        alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, isdone
+        x18.eagu e7, e7, #AGU_INC ; (delay slot)
+        nop()
+        ldy s1, e7              ; band
+        x18.eagu e7, e7, #AGU_INC
+        ldi s4, #ST_KIND - 1
+        alu s13, s1, s4, #OP_ADD
+        x17.mve e6, s13
+        ldy s8, e6              ; kind
+        ldi s4, #2
+        alu s4, s8, s4, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #3, #1, isrun
+        ldi s4, #ST_RS - 1      ; (delay slot)
+        alu s13, s1, s4, #OP_ADD ; (delay slot)
+        x17.mve e6, s13
+        ldy s7, e6              ; pos
+        st_qb(s7)
+        yld(s11, ST_EL)
+        alu s11, s11, s14, #OP_ADD
+        alu s11, s11, s5, #OP_SUB ; EL + 1 - q
+        yld(s12, ST_ER)
+        alu s11, s12, s11, #OP_SUB ; n
+        ldi s4, #ST_T
+        alu s4, s4, s6, #OP_ADD
+        amov(A8, s4)
+        x19.xrd s6, #8          ; T[b]
+        ldi s4, #ST_L
+        alu s4, s4, s9, #OP_ADD
+        amov(A4, s4)
+        ldi s4, #ST_R
+        alu s4, s4, s9, #OP_ADD
+        amov(A6, s4)
+        alu s12, s0, s11, #OP_SUB ; -n
+        ldi s4, #24
+        alu s4, s11, s4, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #3, #1, isw
+        nop()
+        nop()
+        ldi s6, #0              ; n >= 24: every word is 0
+        ldi s12, #0
+isw:    x19.xrd s1, #4
+        x02.ainc #4, #4
+        x02.mpy s5, s1, s6
+        x19.alu s5, s5, s12, #SHIFT
+        ldi s4, #3
+        alu s4, s8, s4, #OP_SUB
+        ptst p1, s0, #EQ4, #PTST ; kind 3: negated
+        jmp #IF_NOT, #1, isput
+        nop()
+        nop()
+        alu s5, s0, s5, #OP_SUB
+isput:  stx A6, s5
+        x02.ainc #6, #6
+        alu s10, s10, s14, #OP_SUB
+        alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, isw
+        nop()
+        nop()
+        jmp #IF_NOT, #2, isrun
+        nop()
+        nop()
+isdone:
+}
+
+; stereo_pair(): M/S, then intensity, in place.
+.macro stereo_pair() {
+        st_kinds()
+        st_runs()
+        st_ms()
+        st_is()
+}

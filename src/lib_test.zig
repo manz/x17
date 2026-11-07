@@ -17,6 +17,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/dequant.sm", .text = @embedFile("dequant.sm") },
     .{ .path = "lib/imdct.sm", .text = @embedFile("imdct.sm") },
     .{ .path = "lib/window.sm", .text = @embedFile("window.sm") },
+    .{ .path = "lib/stereo.sm", .text = @embedFile("stereo.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -2483,4 +2484,240 @@ test "0x02's X store and immediate/yd R source" {
             try testing.expectEqual(@as(?u32, if (c.xst) 0x123456 else null), state.readX(0x300));
         } else try testing.expectError(error.UnknownForm, r);
     }
+}
+
+fn stDown(w: i64, n: i64) i64 {
+    return if (n >= 24) 0 else rshr(w, @intCast(n));
+}
+
+fn stSpectral(b: i64) bool {
+    return b >= 1 and b <= 11;
+}
+
+/// sosumi ref/dsp/aac/stereo.zig `applyPair` over the same Y lists the routine reads.
+const StPair = struct {
+    groups: usize,
+    max_sfb: usize,
+    win: usize,
+    glen: [8]usize,
+    msp: i64,
+    off: [64]i64,
+    lb: [128]i64,
+    rb: [128]i64,
+    rs: [128]i64,
+    msu: [128]i64,
+    l: [1024]i64,
+    r: [1024]i64,
+    el: i64,
+    er: i64,
+
+    fn kind(p: *const StPair, i: usize) u2 {
+        if (p.rb[i] >= 14) {
+            var neg = p.rb[i] == 14;
+            if (p.msp == 1 and p.msu[i] != 0) neg = !neg;
+            return if (neg) 3 else 2;
+        }
+        if (p.msp != 0 and p.msu[i] != 0 and p.lb[i] < 13 and p.rb[i] < 13) return 1;
+        return 0;
+    }
+
+    fn eachRun(p: *const StPair, ctx: anytype, comptime f: anytype) void {
+        var wb: usize = 0;
+        for (0..p.groups) |g| {
+            for (0..p.max_sfb) |sfb| {
+                for (0..p.glen[g]) |w| {
+                    const start = wb + w * p.win + @as(usize, @intCast(p.off[sfb]));
+                    const len: usize = @intCast(p.off[sfb + 1] - p.off[sfb]);
+                    f(ctx, start, len, g * p.max_sfb + sfb);
+                }
+            }
+            wb += p.glen[g] * p.win;
+        }
+    }
+
+    fn move(w: *[1024]i64, e: *i64, to: i64, live: bool) void {
+        if (live) for (w) |*x| {
+            x.* = stDown(x.*, to - e.*);
+        };
+        e.* = to;
+    }
+
+    fn apply(p: *StPair) void {
+        const nb = p.groups * p.max_sfb;
+        var ll = false;
+        var rl = false;
+        var ams = false;
+        var ais = false;
+        for (0..nb) |i| {
+            ll = ll or stSpectral(p.lb[i]);
+            rl = rl or stSpectral(p.rb[i]);
+            ams = ams or p.kind(i) == 1;
+            ais = ais or p.kind(i) >= 2;
+        }
+        if (ams and (ll or rl)) {
+            var to: i64 = if (ll) p.el else p.er;
+            if (rl and p.er > to) to = p.er;
+            to += 1;
+            move(&p.l, &p.el, to, ll);
+            move(&p.r, &p.er, to, rl);
+            rl = rl or ll;
+            const Ms = struct {
+                fn f(q: *StPair, start: usize, len: usize, band: usize) void {
+                    if (q.kind(band) != 1) return;
+                    for (start..start + len) |k| {
+                        const m = q.l[k];
+                        q.l[k] = m + q.r[k];
+                        q.r[k] = m - q.r[k];
+                    }
+                }
+            };
+            p.eachRun(p, Ms.f);
+        }
+        if (ll and ais) {
+            var to: ?i64 = if (rl) p.er else null;
+            for (0..nb) |i| {
+                if (p.kind(i) < 2) continue;
+                const e = p.el + 1 - (p.rs[i] >> 2);
+                if (to == null or e > to.?) to = e;
+            }
+            move(&p.r, &p.er, to.?, rl);
+            const Is = struct {
+                fn f(q: *StPair, start: usize, len: usize, band: usize) void {
+                    const kd = q.kind(band);
+                    if (kd < 2) return;
+                    const pos = q.rs[band];
+                    const qq = pos >> 2;
+                    const t: i64 = @intFromFloat(@round(std.math.pow(f64, 2.0, 22.0 - @as(f64, @floatFromInt(pos - 4 * qq)) / 4.0)));
+                    const n = q.er - (q.el + 1 - qq);
+                    for (start..start + len) |k| {
+                        const v = stDown(imMul(q.l[k], t), n);
+                        q.r[k] = if (kd == 3) -v else v;
+                    }
+                }
+            };
+            p.eachRun(p, Is.f);
+        }
+    }
+};
+
+test "stereo_pair applies M/S and intensity as the model does" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/mem.sm"
+        \\.include "lib/stereo.sm"
+        \\        bits_init(0x4000)
+        \\        stereo_pair()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var prng = std.Random.DefaultPrng.init(0x57E2);
+    const rnd = prng.random();
+    var seen_ms: usize = 0;
+    var seen_is: usize = 0;
+    for (0..40) |_| {
+        var p: StPair = undefined;
+        const short = rnd.boolean();
+        p.win = if (short) 128 else 1024;
+        p.glen = @splat(0);
+        if (short) {
+            var left: usize = 8;
+            p.groups = 0;
+            while (left > 0) {
+                const l = rnd.intRangeAtMost(usize, 1, left);
+                p.glen[p.groups] = l;
+                p.groups += 1;
+                left -= l;
+            }
+            p.max_sfb = rnd.intRangeAtMost(usize, 1, 15);
+        } else {
+            p.groups = 1;
+            p.glen[0] = 1;
+            p.max_sfb = rnd.intRangeAtMost(usize, 1, 49);
+        }
+        for (&p.off, 0..) |*o, k| o.* = @intCast(k * @as(usize, if (short) 8 else 20));
+        p.msp = rnd.intRangeAtMost(i64, 0, 2);
+        // books: mostly spectral, some zero, intensity on the right; sometimes a silent side
+        const quiet_l = rnd.uintLessThan(u8, 8) == 0;
+        const quiet_r = rnd.uintLessThan(u8, 6) == 0;
+        for (0..128) |i| {
+            const a = rnd.intRangeAtMost(i64, 0, 11);
+            p.lb[i] = if (quiet_l) 0 else a;
+            const c = rnd.uintLessThan(u8, 10);
+            p.rb[i] = if (c < 2) 14 + @as(i64, rnd.intRangeAtMost(u1, 0, 1)) else if (quiet_r) 0 else rnd.intRangeAtMost(i64, 0, 11);
+            p.rs[i] = rnd.intRangeAtMost(i64, -24, 60);
+            p.msu[i] = if (p.msp == 2) 1 else rnd.intRangeAtMost(i64, 0, 1);
+        }
+        p.l = @splat(0);
+        p.r = @splat(0);
+        const Fill = struct {
+            q: *StPair,
+            rnd: std.Random,
+            fn f(c: *@This(), start: usize, len: usize, band: usize) void {
+                for (start..start + len) |k| {
+                    if (stSpectral(c.q.lb[band])) c.q.l[k] = c.rnd.intRangeAtMost(i64, -5600000, 5600000);
+                    if (stSpectral(c.q.rb[band])) c.q.r[k] = c.rnd.intRangeAtMost(i64, -5600000, 5600000);
+                }
+            }
+        };
+        var fill: Fill = .{ .q = &p, .rnd = rnd };
+        p.eachRun(&fill, Fill.f);
+        p.el = rnd.intRangeAtMost(i64, -20, 20);
+        p.er = p.el + rnd.intRangeAtMost(i64, -30, 30);
+        for (0..p.groups * p.max_sfb) |i| {
+            if (p.kind(i) == 1) seen_ms += 1;
+            if (p.kind(i) >= 2) seen_is += 1;
+        }
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const py = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.y_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF);
+            }
+        }.f;
+        const px = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.x_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF);
+            }
+        }.f;
+        const Y = 0x2600;
+        try py(&state, gpa, Y + 0, @intCast(p.groups * p.max_sfb));
+        try py(&state, gpa, Y + 1, @intCast(p.groups));
+        try py(&state, gpa, Y + 2, @intCast(p.max_sfb));
+        try py(&state, gpa, Y + 3, @intCast(p.win));
+        try py(&state, gpa, Y + 4, p.msp);
+        try py(&state, gpa, Y + 5, p.el);
+        try py(&state, gpa, Y + 6, p.er);
+        for (0..8) |g| try py(&state, gpa, Y + 0x10 + g, @intCast(p.glen[g]));
+        for (p.off, 0..) |o, k| try py(&state, gpa, Y + 0x20 + k, o);
+        for (0..128) |i| {
+            try py(&state, gpa, Y + 0x60 + i, p.lb[i]);
+            try py(&state, gpa, Y + 0xE0 + i, p.rb[i]);
+            try py(&state, gpa, Y + 0x160 + i, p.rs[i]);
+            try py(&state, gpa, Y + 0x1E0 + i, p.msu[i]);
+        }
+        for (0..4) |b| try px(&state, gpa, 0x1F00 + b, @intFromFloat(@round(std.math.pow(f64, 2.0, 22.0 - @as(f64, @floatFromInt(b)) / 4.0))));
+        for (p.l, p.r, 0..) |a, b, k| {
+            try px(&state, gpa, 0x400 + k, a);
+            try px(&state, gpa, 0x800 + k, b);
+        }
+        p.apply();
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 24);
+        try testing.expect(state.halted);
+        const sx16 = struct {
+            fn f(v: ?u32) i64 {
+                return @as(i16, @bitCast(@as(u16, @truncate(v orelse 0xDEAD))));
+            }
+        }.f;
+        try testing.expectEqual(p.el, sx16(state.getY(Y + 5)));
+        try testing.expectEqual(p.er, sx16(state.getY(Y + 6)));
+        for (0..1024) |k| {
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(p.l[k])))) & 0xFFFFFF, state.readX(0x400 + @as(u32, @intCast(k))) orelse 0xDEAD);
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(p.r[k])))) & 0xFFFFFF, state.readX(0x800 + @as(u32, @intCast(k))) orelse 0xDEAD);
+        }
+    }
+    try testing.expect(seen_ms > 200);
+    try testing.expect(seen_is > 100);
 }
