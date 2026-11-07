@@ -2979,6 +2979,9 @@ fn execX17E(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     const s1 = bundle[1];
     const s2 = bundle[2];
 
+    // S1[23:20] != 0: of 17 rows 9 run, 4 arm the halt deadline and 4 stop, and no
+    // field predicts which (fact 481): refused.
+    if ((s1 >> 20) & 0xF != 0) return RunError.UnknownForm;
     const dest_s: u32 = (head >> 21) & 0xF;
     const imm: u32 = (head >> 5) & 0xFFFF;
     // S2[3:0] = 4 stops the program one bundle later and loads s<h[24:21]> from a counter that

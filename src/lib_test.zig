@@ -1736,3 +1736,11 @@ test "lde.arm passes the e0 latch through" {
     _ = try emu.runFrom(gpa, &state, prog, 0, 64);
     try testing.expectEqual(@as(?u32, 0x700), state.getY(0x700));
 }
+
+test "x17e with S1[23:20] set is refused: it may run, arm or stop" {
+    // fact 481: no field predicts which.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x00000017, 0x00160200, 0x80000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
