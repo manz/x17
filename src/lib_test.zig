@@ -871,6 +871,8 @@ test "the spectral macros unpack, sign and escape as the model does" {
             try src.appendSlice(gpa,
                 \\        getbits(s8, 8)
                 \\        x17.halt
+                \\        nop()
+                \\        nop()
                 \\fail:   ldi s1, #0x777
                 \\        stx A6, s1
                 \\        x17.halt
@@ -911,4 +913,25 @@ test "the spectral macros unpack, sign and escape as the model does" {
     try testing.expect(escapes > 10);
     try testing.expect(fails > 2);
     try testing.expect(exact9 > 0); // N = 9 itself fails, not only N >= 10
+}
+
+test "no test program puts a label inside the halt's two-bundle shadow" {
+    // fact 72: two bundles after x17.halt still run, so code placed there (a fail
+    // marker, say) runs on the success path too.
+    var lines = std.mem.splitScalar(u8, @embedFile("lib_test.zig"), '\n');
+    var since: ?usize = null;
+    while (lines.next()) |line| {
+        const t = std.mem.trim(u8, line, " \\");
+        if (std.mem.indexOf(u8, t, "x17.halt") != null and std.mem.indexOf(u8, t, "indexOf") == null) {
+            since = 0;
+            continue;
+        }
+        const n = since orelse continue;
+        if (n >= 2 or t.len == 0) {
+            if (n >= 2) since = null;
+            continue;
+        }
+        if (std.mem.indexOfScalar(u8, t, ':') != null and std.mem.indexOf(u8, t, "nop()") == null) return error.LabelInHaltShadow;
+        since = n + 1;
+    }
 }
