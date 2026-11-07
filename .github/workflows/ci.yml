@@ -21,6 +21,8 @@ jobs:
         run: zig-out/bin/x17 fmt --check examples/*.sm examples/lib/*.sm
       - name: Zig is formatted
         run: zig fmt --check src build.zig
+      - name: Instruction reference is current
+        run: zig-out/bin/x17 doc --check docs/sm1/reference.md
 
   action-selftest:
     runs-on: ubuntu-latest

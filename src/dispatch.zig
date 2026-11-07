@@ -9,6 +9,7 @@ const asm_mod = @import("asm");
 const emu = @import("emu");
 const disasm = @import("disasm");
 const fmt_mod = @import("fmt");
+const doc = @import("doc");
 
 const Writer = std.Io.Writer;
 const Handler = *const fn (gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) anyerror!void;
@@ -30,6 +31,7 @@ pub const top = [_]Verb{
     .{ .name = "fmt", .help = "format .sm files in place (--check: report only)", .run = &cmdFmt },
     .{ .name = "disasm", .help = "decode syllables (hex arg or .bin file) to .sm", .run = &cmdDisasm },
     .{ .name = "forms", .help = "list known forms", .run = &cmdForms },
+    .{ .name = "doc", .help = "print the SM1 instruction reference (--check <file>: diff only)", .run = &cmdDoc },
 };
 
 // ---------------------------------------------------------------------------
@@ -511,5 +513,34 @@ fn cmdForms(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !voi
     try out.print("\nsub-forms ({d}):\n", .{isa.subforms.len});
     for (isa.subforms) |sf| {
         try out.print("  {s: <10}  {d}sy  base[0]=0x{x:0>8}\n", .{ sf.name, sf.syllables, sf.base[0] });
+    }
+}
+
+const doc_params = clap.parseParamsComptime(
+    \\-h, --help               show this help
+    \\    --check <str>        compare with a checked-in reference; change nothing
+    \\
+);
+
+fn cmdDoc(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void {
+    var iter: SliceIter = .{};
+    var parsed = try parseVerb(&doc_params, gpa, args, "doc", out, &iter);
+    defer parsed.deinit();
+    if (parsed.args.help != 0) {
+        try out.writeAll("usage: x17 doc [--check docs/sm1/reference.md]\n");
+        return;
+    }
+    const path = parsed.args.check orelse return doc.render(out);
+    var buf: Writer.Allocating = .init(gpa);
+    defer buf.deinit();
+    try doc.render(&buf.writer);
+    const have = readSource(gpa, path) catch |e| {
+        try out.print("doc: cannot read '{s}': {s}\n", .{ path, @errorName(e) });
+        return error.MissingFile;
+    };
+    defer gpa.free(have);
+    if (!std.mem.eql(u8, have, buf.written())) {
+        try out.print("doc: {s} is stale; regenerate with `x17 doc > {s}`\n", .{ path, path });
+        return error.Unformatted;
     }
 }

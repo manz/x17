@@ -79,6 +79,14 @@ pub fn build(b: *std.Build) void {
     });
     dispatch_mod.addImport("fmt", fmt_mod);
 
+    const doc_mod = b.createModule(.{
+        .root_source_file = b.path("src/doc.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    doc_mod.addImport("isa", isa_mod);
+    dispatch_mod.addImport("doc", doc_mod);
+
     const gates_mod = b.createModule(.{
         .root_source_file = b.path("src/silicon_gates.zig"),
         .target = target,
@@ -99,6 +107,8 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     const fmt_t = b.addTest(.{ .root_module = fmt_mod });
     test_step.dependOn(&b.addRunArtifact(fmt_t).step);
+    const doc_t = b.addTest(.{ .root_module = doc_mod });
+    test_step.dependOn(&b.addRunArtifact(doc_t).step);
     const host_t = b.addTest(.{ .root_module = host_mod });
     test_step.dependOn(&b.addRunArtifact(host_t).step);
     const isa_t = b.addTest(.{ .root_module = isa_mod });
