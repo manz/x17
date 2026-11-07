@@ -2765,3 +2765,36 @@ test "the 0x00 R slot: AGU10, the immediate, zero, the product's low half, or Y"
         try testing.expectEqual(c.want, state.r[2]);
     }
 }
+
+test "the 0x16 class-100 row's s ALU: shifts, masked shift, add and subtract by n" {
+    // fact 517: own-b16shl (s3 = 0x101, n = 7: s5 = 0x8080), then cells of the grid at
+    // a = 0x3303, n = 7 by (head[29:27], S2[2:0]); unmeasured cells refuse.
+    const gpa = testing.allocator;
+    for ([_]struct { s3: u32, mux: u32, code: u32, want: ?u32 }{
+        .{ .s3 = 0x101, .mux = 0, .code = 0, .want = 0x8080 },
+        .{ .s3 = 0x3303, .mux = 0, .code = 4, .want = 0x3303 << 7 },
+        .{ .s3 = 0x3303, .mux = 0, .code = 1, .want = 0x300 << 7 },
+        .{ .s3 = 0x3303, .mux = 1, .code = 2, .want = 0x3303 >> 7 },
+        .{ .s3 = 0x3303, .mux = 2, .code = 1, .want = 0x3303 + 7 },
+        .{ .s3 = 0x3303, .mux = 2, .code = 2, .want = 0x3303 - 7 },
+        .{ .s3 = 0x3303, .mux = 2, .code = 5, .want = 0x3303 },
+        .{ .s3 = 0x3303, .mux = 2, .code = 6, .want = 0x3304 },
+        .{ .s3 = 0x3303, .mux = 0, .code = 6, .want = null },
+        .{ .s3 = 0x3303, .mux = 1, .code = 1, .want = null },
+        .{ .s3 = 0x3303, .mux = 3, .code = 0, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = c.s3;
+        const h: u32 = (0x801211d6 & ~@as(u32, 7 << 27)) | c.mux << 27;
+        const r = emu.runFrom(gpa, &state, &.{ h, 0xeb000007, 0x86000000 | c.code, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+    // S2[6] set breaks the rule: refused
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x801211d6, 0xeb000007, 0x86000040, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}

@@ -2993,7 +2993,8 @@ const X16_FN100 = [16]?i8{ 0, null, 1, null, -1, null, 0, 0, null, null, null, n
 fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const s1 = bundle[1];
-    if ((s1 >> 25) & 0xF != 0) return RunError.UnknownForm;
+    const alu_dest: u32 = (s1 >> 25) & 0xF;
+    const alu_val: u32 = if (alu_dest == 0) 0 else try x16Agu100Alu(state, h, s1, bundle[2]);
     const f: u32 = (s1 >> 7) & 0xF;
     const x: u32 = state.e[(s1 >> 15) & 0xF];
     const v: u32 = switch (f) {
@@ -3004,6 +3005,33 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
     const hd: u32 = (h >> 21) & 0xF;
     if (hd != 0) state.s[hd] = v;
     if ((s1 >> 11) & 0xF != 0) state.r[(s1 >> 11) & 0xF] = (h >> 5) & 0xFFFF;
+    if (alu_dest != 0) state.s[alu_dest] = alu_val;
+}
+
+/// The class-100 row's s ALU (fact 517), head[31] = 1 with S2 & 0x01FFFFF8 = 0 only:
+/// s<S1[28:25]> <- cell (head[29:27], S2[2:0]) of (a = s<S2[28:25]>, n = S1[31:29]).  Mux 0
+/// even codes but 6 give a << n, odd but 7 (a & 0xF00) << n; mux 1 even codes a >> n; mux 2
+/// a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN; measured on a positive a with
+/// results inside 23 bits, so anything else is refused too.
+fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
+    if (h >> 31 == 0 or s2 & 0x01FFFFF8 != 0) return RunError.UnknownForm;
+    const a: i64 = sx24(state.s[(s2 >> 25) & 0xF]);
+    if (a < 0) return RunError.UnknownForm;
+    const n: u6 = @intCast(s1 >> 29);
+    const code: u32 = s2 & 7;
+    const r: i64 = switch ((h >> 27) & 7) {
+        0 => if (code == 6 or code == 7) return RunError.UnknownForm else if (code & 1 == 0) a << n else (a & 0xF00) << n,
+        1 => if (code & 1 == 0) a >> n else return RunError.UnknownForm,
+        2 => switch (code >> 1) {
+            0 => a + n,
+            1 => a - n,
+            2 => a,
+            else => a + 1,
+        },
+        else => return RunError.UnknownForm,
+    };
+    if (r < 0 or r > 0x7FFFFF) return RunError.UnknownForm;
+    return @intCast(r);
 }
 
 /// x16 S1 class 001 / S2 class 111 (fact 90): Y load s<head[24:21]> <-

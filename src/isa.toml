@@ -450,7 +450,10 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 #   The shift result lands late: a register write by the 3rd-5th instruction after the bundle is lost.
 # Address-unit 0x16 bundle (fact 92, MEASURED, one stock shape): S2 [31:29] = 100 (S2's other bits inert);
 #   s<head[24:21]> <- FN[S1 10:7](x = e<S1[18:15]>), table in disasm AGU16; R<S1[14:11]> <- head [20:5]
-#   when != 0; s<S1[28:25]> <- 0 when != 0; S1 [19], [21], [22] flipped wedge.  own-b16agu
+#   when != 0; S1 [19], [21], [22] flipped wedge.  own-b16agu
+#   517 corrects "s<S1[28:25]> <- 0": with head[31] = 1 and S2 & 0x01FFFFF8 = 0 it is an s ALU, cell (head[29:27], S2[2:0])
+#   of (a = s<S2[28:25]>, n = S1[31:29]): mux 0 even (not 6) a << n, odd (not 7) (a & 0xF00) << n; mux 1 even a >> n;
+#   mux 2 a+n, a-n, a, a+1 by code pairs; the rest OPEN (refused, and so are negative a and results past 23 bits).  own-b16shl
 # x16alu (0x16 S1 class 000, S2 class 111; fact 116 pass 142): S2[13] = 1 latches xi <- S2[12:8] (xi persists; 0 with S2[13] reads 0x38A?);
 # s<S1[11:8]> <- OP[S1[18:16]](a = s<S2[28:25]>, b = s<S1[7:4]>): 4 a+b, 5 none, 6 a-1, 7 -a, 0-3 wedge;
 # s<head[24:21]> <- by S1[14:12]: 101 X:[A<xi>] if S2[19] else yd, 001 yd, 100 0x4A00?, 111 0x8808?.  own-x16alu
