@@ -3526,7 +3526,8 @@ fn sameY(a: *const std.AutoHashMapUnmanaged(u32, u32), b: *const std.AutoHashMap
 }
 
 /// Bundles that arm the halt deadline: an x17 with S1[15] = 1 that does not halt, S2 class
-/// 000, 101 or 111 (fact 98) and an x02/x03 with w2[30] = 1 (477).  Measured: six bundles between armer and halt
+/// 000, 101 or 111 (fact 98), an x02 with w2[30] = 1 (477), and an x03 with w2[31:29] =
+/// 010, an lde with h[30] = 0 and an rop with h[31] = 1 (479).  Measured: six bundles between armer and halt
 /// complete, seven or more park.
 fn isDeadlineArmer(bundle: []const u32) bool {
     const low5 = bundle[0] & 0x1F;
@@ -3536,7 +3537,12 @@ fn isDeadlineArmer(bundle: []const u32) bool {
         const cls = bundle[2] >> 29;
         return (cls == 0 or cls == 5 or cls == 7) and (bundle[1] >> 15) & 1 == 1;
     }
-    if ((low5 == 0x02 or low5 == 0x03) and bundle.len >= 6) return (bundle[2] >> 30) & 1 == 1;
+    if (low5 == 0x02 and bundle.len >= 6) return (bundle[2] >> 30) & 1 == 1;
+    if (low5 == 0x03 and bundle.len >= 6) return bundle[2] >> 29 == 0b010; // 479
+    // 479: lde with h[30] = 0 (A0000026, which x17's 1-word `stop` also claims) and rop with
+    // h[31] = 1 (882000E7).  x17 executes neither word yet; the rule waits for them.
+    if (bundle.len == 1 and low5 == 0x06 and (bundle[0] >> 30) & 1 == 0) return true;
+    if (bundle.len == 1 and low5 == 0x07 and bundle[0] >> 31 == 1) return true;
     return false;
 }
 

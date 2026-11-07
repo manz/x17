@@ -1668,3 +1668,19 @@ test "x17.sty.stop stores, runs two shadow bundles and stops unhalted" {
     try testing.expectEqual(@as(u32, 0), state.s[4]);
     try testing.expect(!state.halted);
 }
+
+test "x03 with w2[31:29] = 010 arms the halt deadline" {
+    // fact 479; the word is x03.agu's template with w2[30] set.
+    const gpa = testing.allocator;
+    for ([_]usize{ 6, 8 }) |g| {
+        var prog: std.ArrayList(u32) = .empty;
+        defer prog.deinit(gpa);
+        try prog.appendSlice(gpa, &.{ 0x00000003, 0x00000002, 0x4140E000, 0x04000C0E, 0x0000683C, 0x00140102 });
+        for (0..g) |_| try prog.append(gpa, 0x40000005);
+        try prog.appendSlice(gpa, &.{ 0x00000017, 0x31308000, 0xA0000000 });
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const r = emu.runFrom(gpa, &state, prog.items, 0, 64);
+        if (g == 6) _ = try r else try testing.expectError(error.HaltDeadline, r);
+    }
+}
