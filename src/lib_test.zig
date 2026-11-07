@@ -12,6 +12,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/unmix.sm", .text = @embedFile("unmix.sm") },
     .{ .path = "lib/alac.sm", .text = @embedFile("alac.sm") },
     .{ .path = "lib/huffman.sm", .text = @embedFile("huffman.sm") },
+    .{ .path = "lib/sections.sm", .text = @embedFile("sections.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -667,7 +668,11 @@ const HCode = struct { code: u32, len: u5, v: u16 };
 
 /// A random complete prefix code: split random leaves of a binary tree, lengths up to 19.
 fn randomCode(rnd: std.Random, out: []HCode) []HCode {
-    const n = rnd.intRangeAtMost(usize, 2, out.len);
+    return randomCodeN(rnd, out, rnd.intRangeAtMost(usize, 2, out.len));
+}
+
+/// randomCode with exactly n codewords.
+fn randomCodeN(rnd: std.Random, out: []HCode, n: usize) []HCode {
     var lens: [400]u5 = undefined;
     lens[0] = 1;
     lens[1] = 1;
@@ -934,4 +939,218 @@ test "no test program puts a label inside the halt's two-bundle shadow" {
         if (std.mem.indexOfScalar(u8, t, ':') != null and std.mem.indexOf(u8, t, "nop()") == null) return error.LabelInHaltShadow;
         since = n + 1;
     }
+}
+
+const BitWriter = struct {
+    buf: [1024]u8 = @splat(0),
+    n: usize = 0,
+
+    fn put(self: *BitWriter, value: u32, len: u5) void {
+        var k = len;
+        while (k > 0) {
+            k -= 1;
+            if ((value >> k) & 1 == 1) self.buf[self.n >> 3] |= @as(u8, 0x80) >> @intCast(self.n & 7);
+            self.n += 1;
+        }
+    }
+};
+
+const SecShape = struct { short: bool, groups: u4, max_sfb: u6, gain: u8 };
+
+/// sosumi ref/dsp/aac/sections.zig, plain integers, and where it fails: section data (0x777)
+/// or a scale factor (0x778).
+fn refSections(data: []const u8, pos: *usize, s: SecShape, syms: []const HCode, books: []i32, sf: []i32) u32 {
+    const sb: u5 = if (s.short) 3 else 5;
+    const esc: u32 = if (s.short) 7 else 31;
+    var n: usize = 0;
+    for (0..s.groups) |_| {
+        var left: i32 = s.max_sfb;
+        while (left != 0) {
+            const cb: i32 = @intCast(refRead(data, pos, 4));
+            if (cb == 12) return 0x777;
+            var len: i32 = 0;
+            while (true) {
+                const incr = refRead(data, pos, sb);
+                len += @intCast(incr);
+                if (incr != esc) break;
+            }
+            left -= len;
+            if (left < 0) return 0x777;
+            for (0..@intCast(len)) |_| {
+                books[n] = cb;
+                n += 1;
+            }
+        }
+    }
+    books[n] = -1;
+    var fac: i32 = s.gain;
+    var noise: i32 = @as(i32, s.gain) - 90;
+    var is_pos: i32 = 0;
+    var pcm = true;
+    for (books[0..n], sf[0..n]) |cb, *out| {
+        if (cb == 0) {
+            out.* = 0;
+        } else if (cb == 13 and pcm) {
+            pcm = false;
+            noise += @as(i32, @intCast(refRead(data, pos, 9))) - 256;
+            out.* = noise;
+        } else {
+            const d = @as(i32, @intCast(refHuff(data, pos, syms))) - 60;
+            if (cb < 13) {
+                fac += d;
+                if (fac < 0 or fac > 255) return 0x778;
+                out.* = fac;
+            } else if (cb == 13) {
+                noise += d;
+                out.* = noise;
+            } else {
+                is_pos += d;
+                out.* = is_pos;
+            }
+        }
+    }
+    return 0;
+}
+
+/// A plausible stream: sections, then scale factor codewords, now and then a reserved book, an
+/// overrun or a scale factor outside 0..255; random bytes after.
+fn writeSections(w: *BitWriter, rnd: std.Random, s: SecShape, code_of: []const HCode) void {
+    const sb: u5 = if (s.short) 3 else 5;
+    const esc: u32 = if (s.short) 7 else 31;
+    var books: [121]u4 = undefined;
+    var n: usize = 0;
+    for (0..s.groups) |_| {
+        var left: u32 = s.max_sfb;
+        while (left > 0) {
+            var cb = rnd.intRangeAtMost(u4, 0, 15);
+            if (cb == 12 and rnd.uintLessThan(u8, 8) != 0) cb = 1;
+            var len = rnd.intRangeAtMost(u32, 0, left);
+            if (rnd.uintLessThan(u8, 60) == 0) len = left + 1 + rnd.uintLessThan(u32, 40);
+            w.put(cb, 4);
+            var l = len;
+            while (l >= esc) : (l -= esc) w.put(esc, sb);
+            w.put(l, sb);
+            for (0..@min(len, left)) |_| {
+                books[n] = cb;
+                n += 1;
+            }
+            left -|= len;
+        }
+    }
+    var fac: i32 = s.gain;
+    var pcm = true;
+    for (books[0..n]) |cb| {
+        var d: i32 = rnd.intRangeAtMost(i32, -60, 60);
+        switch (cb) {
+            0 => continue,
+            13 => if (pcm) {
+                pcm = false;
+                w.put(rnd.int(u9), 9);
+                continue;
+            },
+            14, 15 => {},
+            else => {
+                d = rnd.intRangeAtMost(i32, -10, 10);
+                if (rnd.uintLessThan(u8, 100) == 0) d = if (fac > 127) 60 else -60;
+                if ((fac + d < 0 or fac + d > 255) and rnd.boolean()) d = -d;
+                fac += d;
+            },
+        }
+        const c = code_of[@intCast(d + 60)];
+        w.put(c.code, c.len);
+    }
+    for (0..32) |_| w.put(rnd.int(u8), 8);
+}
+
+test "aac_sections and aac_scalefactors decode as the model does" {
+    const gpa = testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x5EC5);
+    const rnd = prng.random();
+    var ok: usize = 0;
+    var failed: usize = 0;
+    var grouped: usize = 0;
+    var sf_fails: usize = 0;
+    var runs: usize = 0;
+    while (runs < 150) {
+        var cbuf: [121]HCode = undefined;
+        const syms = randomCodeN(rnd, &cbuf, 121);
+        var code_of: [121]HCode = undefined;
+        for (syms, 0..) |*c, i| {
+            c.v = @intCast(i);
+            code_of[i] = c.*;
+        }
+        var t: [8192]u16 = undefined;
+        var n: usize = 0;
+        _ = buildTables(&t, &n, syms, 0, 8);
+        if (n > 1024) continue;
+        runs += 1;
+        const short = rnd.boolean();
+        const s: SecShape = .{
+            .short = short,
+            .groups = if (short) rnd.intRangeAtMost(u4, 1, 8) else 1,
+            .max_sfb = if (short) rnd.intRangeAtMost(u6, 0, 15) else rnd.intRangeAtMost(u6, 0, 51),
+            .gain = rnd.int(u8),
+        };
+        var w: BitWriter = .{};
+        writeSections(&w, rnd, s, &code_of);
+
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(gpa);
+        try src.print(gpa,
+            \\.include "lib/bits.sm"
+            \\.include "lib/huffman.sm"
+            \\.include "lib/sections.sm"
+            \\        bits_init(0x4000)
+            \\        ldi s1, #{d}
+            \\        ldi s2, #{d}
+            \\        aac_sections({d}, {d}, fail1)
+            \\        ldi s1, #{d}
+            \\        aac_scalefactors(0x1000, fail)
+            \\        getbits(s8, 8)
+            \\        x17.halt
+            \\        nop()
+            \\        nop()
+            \\fail1:  ldi s8, #0x777
+            \\        x17.halt
+            \\        nop()
+            \\        nop()
+            \\fail:   ldi s8, #0x778
+            \\        x17.halt
+            \\
+        , .{ s.groups, s.max_sfb, @as(u32, if (short) 3 else 5), @as(u32, if (short) 7 else 31), s.gain });
+        const prog = try assemble(gpa, src.items);
+        defer gpa.free(prog);
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try stage(gpa, &state, &w.buf);
+        for (t[0..n], 0..) |x, i| try state.y_mem.put(gpa, 0x1000 + @as(u32, @intCast(i)), x);
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 22);
+        try testing.expect(state.halted);
+
+        var pos: usize = 0;
+        var books: [121]i32 = undefined;
+        var sf: [120]i32 = undefined;
+        const fail = refSections(&w.buf, &pos, s, syms, &books, &sf);
+        if (fail != 0) {
+            if (fail == 0x778) sf_fails += 1;
+            failed += 1;
+            try testing.expectEqual(fail, state.s[8]);
+            continue;
+        }
+        ok += 1;
+        if (short and s.groups > 1) grouped += 1;
+        const bands = @as(usize, s.groups) * s.max_sfb;
+        for (books[0 .. bands + 1], 0..) |b, i| {
+            try testing.expectEqual(@as(u32, @bitCast(b)) & 0xFFFF, state.getY(0x2000 + @as(u32, @intCast(i))) orelse 0xDEAD);
+        }
+        for (sf[0..bands], 0..) |v, i| {
+            try testing.expectEqual(@as(u32, @bitCast(v)) & 0xFFFF, state.getY(0x2080 + @as(u32, @intCast(i))) orelse 0xDEAD);
+        }
+        try testing.expectEqual(refRead(&w.buf, &pos, 8), state.s[8]);
+    }
+    try testing.expect(ok > 90);
+    try testing.expect(failed > 10);
+    try testing.expect(grouped > 20);
+    try testing.expect(sf_fails > 3);
 }
