@@ -65,7 +65,9 @@ configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2, �
 
 **Latches**, readable through slot muxes:
 
-- **yd**: the last Y *read*, 16 bits. Y stores don't set it (§110, §550, §565).
+- **yd**: a 16-bit Y-read latch. x03's fresh Y read sets it (§565), and Y stores don't (§550).
+  Whether every other Y read form sets it, and when within a bundle, is not measured yet: until
+  then, read yd only right after an x03 Y read.
 - **xd**: the last X read (§161).
 - **xa**: the X-store address, used before its own bundle updates it (§90).
 - **ax**: the dual-load X address (§58).
