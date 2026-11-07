@@ -120,6 +120,51 @@ pub const RunError = error{
 /// Execute one bundle (1..7 syllables) against `state`.  Dispatches by
 /// classifying the HEAD syllable with `isa.classify`.  Unknown or
 /// not-yet-modelled forms return `UnknownForm` so the caller can tell.
+/// isa.toml forms executeBundle serves by bit pattern before classify, or refuses (unmodelled).
+const pattern_forms = [_][]const u8{ "bcc", "br", "jmp", "loop", "mv", "param", "pc14", "st1", "win32", "wr", "xst", "yagu", "ypair", "yrm", "ystm", "ytst", "zero" };
+
+const Handler = *const fn (std.mem.Allocator, *State, []const u32) RunError!void;
+
+/// A handler that reads only the head syllable.
+fn onHead(comptime f: fn (std.mem.Allocator, *State, u32) RunError!void) Handler {
+    return struct {
+        fn run(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+            return f(gpa, state, bundle[0]);
+        }
+    }.run;
+}
+
+/// A head-only handler with no memory writes.
+fn onHeadNoAlloc(comptime f: fn (*State, u32) RunError!void) Handler {
+    return struct {
+        fn run(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+            _ = gpa;
+            return f(state, bundle[0]);
+        }
+    }.run;
+}
+
+/// The forms isa.classify names, after the bit-pattern rows in executeBundle.
+const named_forms = std.StaticStringMap(Handler).initComptime(.{
+    .{ "ldi", onHead(execLdi) },
+    .{ "rli", onHead(execRli) },
+    .{ "rop", onHead(execRop) },
+    .{ "lde", onHead(execLde) },
+    .{ "ld0e", @as(Handler, execLd0e) },
+    .{ "stx", onHead(execStx) },
+    .{ "dld", onHeadNoAlloc(execDld) },
+    .{ "ldy", onHead(execLdy) },
+    .{ "ldy.r", onHead(execLdy) },
+    .{ "ptst", onHead(execPtst) },
+    .{ "plog", onHead(execPlog) },
+    .{ "st.y", @as(Handler, execStY) },
+    .{ "alu", onHead(execAlu) },
+    .{ "x17", @as(Handler, execX17) },
+    .{ "x19", @as(Handler, execX19) },
+    .{ "alu11", @as(Handler, execAlu11) },
+    .{ "agu10r", @as(Handler, execAgu10r) },
+});
+
 pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len == 0) return;
     // A0 reads 0 and writes to it have no visible effect, like R0 (Upstream probe
@@ -342,57 +387,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
 
     const f = isa.classify(head) orelse return RunError.UnknownForm;
 
-    if (std.mem.eql(u8, f.name, "ldi")) {
-        return execLdi(gpa, state, head);
-    }
-    if (std.mem.eql(u8, f.name, "rli")) {
-        return execRli(gpa, state, head);
-    }
-    if (std.mem.eql(u8, f.name, "rop")) {
-        return execRop(gpa, state, head);
-    }
-    if (std.mem.eql(u8, f.name, "lde")) {
-        return execLde(gpa, state, head);
-    }
-    if (std.mem.eql(u8, f.name, "ld0e")) {
-        return execLd0e(gpa, state, bundle);
-    }
-    if (std.mem.eql(u8, f.name, "stx")) {
-        return execStx(gpa, state, head);
-    }
-    if (std.mem.eql(u8, f.name, "dld")) {
-        return execDld(state, head);
-    }
-    if (std.mem.eql(u8, f.name, "ldy") or std.mem.eql(u8, f.name, "ldy.r")) {
-        return execLdy(gpa, state, head);
-    }
-    if (std.mem.eql(u8, f.name, "ptst")) {
-        return execPtst(gpa, state, head);
-    }
-    if (std.mem.eql(u8, f.name, "plog")) {
-        return execPlog(gpa, state, head);
-    }
-    if (std.mem.eql(u8, f.name, "st.y")) {
-        return execStY(gpa, state, bundle);
-    }
-    if (std.mem.eql(u8, f.name, "alu")) {
-        return execAlu(gpa, state, head);
-    }
-    if (std.mem.eql(u8, f.name, "x17")) {
-        return execX17(gpa, state, bundle);
-    }
-    if (std.mem.eql(u8, f.name, "x19")) {
-        return execX19(gpa, state, bundle);
-    }
-    // Low5 0x18 isn't a classify-registered top-level form; handle by low5.
-    if (std.mem.eql(u8, f.name, "alu11")) {
-        return execAlu11(gpa, state, bundle);
-    }
-    if (std.mem.eql(u8, f.name, "agu10r")) {
-        return execAgu10r(gpa, state, bundle);
-    }
-
-    return RunError.UnknownForm;
+    const run = named_forms.get(f.name) orelse return RunError.UnknownForm;
+    return run(gpa, state, bundle);
 }
 
 /// pc14, low5 0x14 with a class-010 second and S[25] (fact 107, 380, 381, 464), or a
@@ -4665,4 +4661,16 @@ test "profile counts the bundles run at each syllable, jump delay slots included
     for (profile) |c| sum += c;
     try std.testing.expectEqual(@as(u64, n), sum);
     try std.testing.expectEqual(@as(u64, 3), profile[2]); // the loop body, three passes
+}
+
+test "every isa.toml form has a handler or a bit-pattern row" {
+    for (isa.forms) |f| {
+        const listed = for (pattern_forms) |n| {
+            if (std.mem.eql(u8, n, f.name)) break true;
+        } else false;
+        if (named_forms.get(f.name) == null and !listed) {
+            std.debug.print("form {s} has no handler\n", .{f.name});
+            return error.TestUnexpectedResult;
+        }
+    }
 }
