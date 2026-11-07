@@ -1,0 +1,595 @@
+; AAC perceptual noise substitution: the x17 twin of sosumi's ref/dsp/aac/pns.zig (`channel`
+; and `right`).
+;
+; Noise is the model's 24-bit LCG, x = a x + c mod 2^24 with a = 0x7655: a x exactly as
+; hi 2^15 + lo, lo from x03.mpy's low half (own-x03plo) and hi from the rounded product of
+; (a << 8) x less lo's bit 14; hi 2^15 mod 2^24 is hi's low 9 bits, sign-extended, shifted (the
+; shift then cannot saturate). A sample is rshr(x, 1). A band is scaled to energy 2^(nrg / 2) by
+; its own sum of squares (samples first scaled up until the largest is >= 2^21), normalised by
+; comparisons, and 1 / sqrt by a seed and three Newton steps; correlated right noise is the left
+; band times T[b] at eL + q + 1. The block then moves to the largest exponent, as in intensity.
+;
+; Needs lib/bits.sm (s0 = 0, s14 = 1) and lib/mem.sm. Loaded by the host:
+;   X PN_W this channel's words (rewritten), PN_L the left channel's (mode 1), PN_T T[0..3],
+;     PN_SEED the six z seeds, PN_RNG the generator state (rewritten)
+;   Y PN_NB bands, PN_GRP, PN_MAX, PN_WIN, PN_GLEN as stereo.sm; PN_MODE 0 a channel, 1 a pair's
+;     right; PN_MSP ms_mask_present; PN_E the exponent (rewritten), PN_EL the left's; PN_OFF;
+;     per band in walk order PN_BOOK, PN_SF (nrg for noise), and in mode 1 PN_LBOOK, PN_LSF,
+;     PN_MSU
+; Uses every s register but s0, s14, s15; e6 .. e10; A4, A6, A8 and mem.sm's.
+
+.const PN_W     = 0x0400
+.const PN_L     = 0x0800
+.const PN_S     = 0x0C00        ; scratch: the noise words at their positions
+.const PN_T     = 0x1F00
+.const PN_SEED  = 0x1F04
+.const PN_RNG   = 0x1F10
+.const PN_Y     = 0x2600
+.const PN_NB    = PN_Y + 0
+.const PN_GRP   = PN_Y + 1
+.const PN_MAX   = PN_Y + 2
+.const PN_WIN   = PN_Y + 3
+.const PN_MODE  = PN_Y + 4
+.const PN_MSP   = PN_Y + 5
+.const PN_E     = PN_Y + 6
+.const PN_EL    = PN_Y + 7
+.const PN_TOP   = PN_Y + 8      ; the largest noise exponent so far
+.const PN_ST    = PN_Y + 9      ; the run being filled
+.const PN_LEN   = PN_Y + 10
+.const PN_NRG   = PN_Y + 11
+.const PN_SH    = PN_Y + 12     ; s
+.const PN_RI    = PN_Y + 13     ; run pointer
+.const PN_TO    = PN_Y + 14
+.const PN_GLEN  = PN_Y + 0x10
+.const PN_OFF   = PN_Y + 0x20
+.const PN_BOOK  = PN_Y + 0x60
+.const PN_SF    = PN_Y + 0xE0
+.const PN_LBOOK = PN_Y + 0x160
+.const PN_LSF   = PN_Y + 0x1E0
+.const PN_MSU   = PN_Y + 0x260
+.const PN_RUNS  = PN_Y + 0x2E0  ; (start, len, band) triples, len 0 last
+.const PN_PE    = PN_Y + 0x470  ; each run's exponent, PN_NONE when it brings nothing
+.const PN_NONE  = -32767
+
+; Y:[addr] = s<lo + 8 hi>.
+.macro pn_yst(addr, lo, hi) {
+        yat(addr)
+        x17.sty e6, #lo, #hi
+}
+
+; The run list, as stereo.sm's st_runs.
+.macro pn_runs() {
+        ldi s13, #PN_RUNS - 1
+        x17.mve e7, s13
+        ldi s13, #PN_GLEN - 1
+        x17.mve e10, s13
+        yld(s11, PN_WIN)
+        ldi s10, #0
+        ldi s12, #0
+        yld(s9, PN_GRP)
+rg:     ldy s8, e10
+        ldi s13, #PN_OFF - 1
+        x17.mve e9, s13
+        ldi s13, #PN_OFF
+        x17.mve e8, s13
+        yld(s7, PN_MAX)
+rb:     alu s4, s7, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, rgend
+        nop()
+        nop()
+        ldy s5, e9
+        ldy s6, e8
+        alu s6, s6, s5, #OP_SUB
+        alu s13, s10, s5, #OP_ADD
+        alu s1, s8, s0, #OP_ADD
+rw:     alu s4, s1, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, rwend
+        nop()
+        nop()
+        x17.sty e7, #5, #1      ; s13
+        x18.eagu e7, e7, #AGU_INC
+        x17.sty e7, #6, #0
+        x18.eagu e7, e7, #AGU_INC
+        x17.sty e7, #4, #1      ; s12
+        x18.eagu e7, e7, #AGU_INC
+        alu s13, s13, s11, #OP_ADD
+        jmp #IF_NOT, #2, rw
+        alu s1, s1, s14, #OP_SUB ; (delay slot)
+        nop()
+rwend:  alu s12, s12, s14, #OP_ADD
+        x18.eagu e9, e9, #AGU_INC
+        x18.eagu e8, e8, #AGU_INC
+        jmp #IF_NOT, #2, rb
+        alu s7, s7, s14, #OP_SUB ; (delay slot)
+        nop()
+rgend:  alu s4, s8, s0, #OP_ADD
+rgw:    ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, rgw2
+        nop()
+        nop()
+        alu s10, s10, s11, #OP_ADD
+        alu s8, s8, s14, #OP_SUB
+        jmp #IF_NOT, #2, rgw
+        alu s4, s8, s0, #OP_ADD ; (delay slot)
+        nop()
+rgw2:   x18.eagu e10, e10, #AGU_INC
+        alu s9, s9, s14, #OP_SUB
+        alu s4, s9, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, rg
+        nop()
+        nop()
+        ldi s4, #0
+        x17.sty e7, #4, #0
+        x18.eagu e7, e7, #AGU_INC
+        x17.sty e7, #4, #0
+}
+
+; s1 = the next LCG state, s3 = its sample. s7 = a, s13 = a << 8, s8 = c. Uses s4, s5, s6, s12.
+.macro pn_next() {
+        x03.mpy s0, s7, s1, s4, #4, #1, #0, #0 ; s4 = (2 a x)[15:0]
+        ldi s12, #-1
+        x19.alu s4, s4, s12, #SHIFT ; lo = (a x)[14:0] (exact on an even word)
+        ldi s12, #8192
+        alu s5, s4, s12, #OP_SUB
+        ldi s12, #-14
+        x19.alu s5, s5, s12, #SHIFT ; lo's bit 14 (a floor shift)
+        x02.mpy s6, s13, s1     ; round(a x / 2^15)
+        alu s6, s6, s5, #OP_SUB ; hi = floor(a x / 2^15)
+        ldi s12, #-9
+        x19.alu s5, s6, s12, #SHIFT
+        ldi s12, #8
+        x19.alu s5, s5, s12, #SHIFT
+        alu s6, s6, s5, #OP_SUB
+        alu s6, s6, s5, #OP_SUB ; hi's low 9 bits, sign-extended
+        ldi s12, #15
+        x19.alu s6, s6, s12, #SHIFT
+        alu s1, s6, s4, #OP_ADD ; a x mod 2^24
+        alu s1, s1, s8, #OP_ADD ; + c
+        ldi s12, #-1
+        x19.alu s3, s1, s12, #SHIFT
+}
+
+; The noise band at X PN_S + PN_ST, PN_LEN words, energy 2^(PN_NRG / 2): its words in place and
+; its exponent in s3 (PN_NONE when the energy rounds to 0).
+.macro pn_noise() {
+        ; s = the smallest even shift with len < 4 * 4^(s/2)
+        yld(s10, PN_LEN)
+        ldi s9, #0
+        ldi s11, #4
+sl:     alu s4, s10, s11, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #3, #1, sdone
+        ldi s12, #2             ; (delay slot)
+        nop()
+        x19.alu s11, s11, s12, #SHIFT
+        jmp #IF_NOT, #2, sl
+        alu s9, s9, s12, #OP_ADD ; (delay slot)
+        nop()
+sdone:  pn_yst(PN_SH, 1, 1)     ; s9
+        ; pass 1: the samples and the largest |v|
+        ldi s4, #PN_S
+        yld(s5, PN_ST)
+        alu s4, s4, s5, #OP_ADD
+        amov(A4, s4)
+        aimm(A6, PN_RNG)
+        x19.xrd s1, #6          ; x
+        ldi s7, #0x7655
+        ldi s12, #8
+        x19.alu s13, s7, s12, #SHIFT ; a << 8
+        ldi s8, #0x3C6E
+        x19.alu s8, s8, s12, #SHIFT
+        ldi s12, #0xF3
+        alu s8, s8, s12, #OP_ADD ; c = 0x3C6EF3
+        ldi s11, #0             ; big
+gen:    alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, gdone
+        nop()
+        nop()
+        pn_next()
+        stx A4, s3
+        x02.ainc #4, #4
+        alu s4, s3, s0, #OP_ADD ; |v|
+        ptst p1, s0, #LT4, #PTST
+        alu s5, s0, s3, #OP_SUB
+        alu s5, s5, s3, #OP_SUB
+        psel s3, s5, s3, p1, #1, #4 ; v < 0: v + (-2v)
+        alu s4, s11, s3, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        alu s5, s0, s4, #OP_SUB
+        psel s11, s5, s11, p1, #1, #4 ; big < |v|: big + (|v| - big)
+        jmp #IF_NOT, #2, gen
+        alu s10, s10, s14, #OP_SUB ; (delay slot)
+        nop()
+gdone:  stx A6, s1              ; the state back
+        ldi s3, #PN_NONE
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, ndone
+        nop()
+        nop()
+        ; k: the largest scaled up to >= 2^21
+        ldi s12, #21
+        x19.alu s12, s14, s12, #SHIFT
+        ldi s6, #0
+kl:     alu s4, s11, s12, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #IF_NOT, #1, kdone
+        nop()
+        nop()
+        alu s11, s11, s11, #OP_ADD
+        jmp #IF_NOT, #2, kl
+        alu s6, s6, s14, #OP_ADD ; (delay slot)
+        nop()
+kdone:                          ; pass 2: scale, and acc = sum rshr(rnd(v^2 / 2^23), s)
+        ldi s4, #PN_S
+        yld(s5, PN_ST)
+        alu s4, s4, s5, #OP_ADD
+        amov(A4, s4)
+        yld(s10, PN_LEN)
+        yld(s9, PN_SH)
+        alu s9, s0, s9, #OP_SUB ; -s
+        ldi s11, #0
+sq:     alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, sqdone
+        nop()
+        nop()
+        x19.xrd s1, #4
+        x19.alu s1, s1, s6, #SHIFT
+        stx A4, s1
+        x02.ainc #4, #4
+        x02.mpy s5, s1, s1
+        x19.alu s5, s5, s9, #SHIFT
+        alu s11, s11, s5, #OP_ADD
+        jmp #IF_NOT, #2, sq
+        alu s10, s10, s14, #OP_SUB ; (delay slot)
+        nop()
+sqdone: ldi s3, #PN_NONE
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, ndone
+        nop()
+        nop()
+        ; p: acc * 4^p in [2^21, 2^23)
+        ldi s12, #21
+        x19.alu s12, s14, s12, #SHIFT
+        ldi s10, #0
+        ldi s5, #2
+pl:     alu s4, s11, s12, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #IF_NOT, #1, pdone
+        nop()
+        nop()
+        x19.alu s11, s11, s5, #SHIFT
+        jmp #IF_NOT, #2, pl
+        alu s10, s10, s14, #OP_ADD ; (delay slot)
+        nop()
+pdone:                          ; z = seed[floor(m / 2^20) - 2], then three Newton steps
+        ldi s12, #19
+        x19.alu s5, s14, s12, #SHIFT ; 2^19
+        ldi s12, #-20
+        alu s5, s11, s5, #OP_SUB
+        x19.alu s5, s5, s12, #SHIFT
+        ldi s12, #PN_SEED - 2
+        alu s5, s5, s12, #OP_ADD
+        amov(A8, s5)
+        x19.xrd s1, #8          ; z
+        ldi s12, #48
+        ldi s5, #16
+        x19.alu s12, s12, s5, #SHIFT ; 3 << 20
+        ldi s9, #3
+nw:     x02.mpy s5, s1, s1
+        x02.mpy s5, s11, s5     ; u = m z^2
+        alu s5, s5, s5, #OP_ADD
+        alu s5, s12, s5, #OP_SUB ; 3/8 - 2u
+        x02.mpy s1, s1, s5
+        ldi s5, #2
+        x19.alu s1, s1, s5, #SHIFT
+        alu s9, s9, s14, #OP_SUB
+        alu s4, s9, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, nw
+        nop()
+        nop()
+        ; nrg = 4q + b: g = rnd(z T[b]); the exponent p + q - 20 - s/2
+        yld(s6, PN_NRG)
+        ldi s5, #2
+        alu s11, s6, s5, #OP_SUB
+        ldi s5, #-2
+        x19.alu s11, s11, s5, #SHIFT ; q (s11: amov clobbers s7)
+        ldi s5, #2
+        x19.alu s5, s11, s5, #SHIFT
+        alu s6, s6, s5, #OP_SUB ; b
+        ldi s5, #PN_T
+        alu s5, s5, s6, #OP_ADD
+        amov(A8, s5)
+        x19.xrd s6, #8
+        x02.mpy s6, s1, s6      ; g
+        yld(s9, PN_SH)
+        ldi s5, #-1
+        x19.alu s9, s9, s5, #SHIFT ; s/2
+        ldi s5, #20
+        alu s9, s9, s5, #OP_ADD
+        alu s3, s10, s11, #OP_ADD
+        alu s3, s3, s9, #OP_SUB
+        pn_yst(PN_TO, 3, 0)     ; held while the words are scaled
+        ldi s4, #PN_S
+        yld(s5, PN_ST)
+        alu s4, s4, s5, #OP_ADD
+        amov(A4, s4)
+        yld(s10, PN_LEN)
+sc:     alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, scdone
+        nop()
+        nop()
+        x19.xrd s1, #4
+        x02.mpy s1, s1, s6
+        stx A4, s1
+        x02.ainc #4, #4
+        jmp #IF_NOT, #2, sc
+        alu s10, s10, s14, #OP_SUB ; (delay slot)
+        nop()
+scdone: yld(s3, PN_TO)
+ndone:
+}
+
+; The correlated copy: X PN_S + PN_ST = rnd(L * T[b]) over PN_LEN words, d = s6 = sfR - sfL;
+; s3 = eL + q + 1.
+.macro pn_copy() {
+        ldi s5, #2
+        alu s11, s6, s5, #OP_SUB
+        ldi s5, #-2
+        x19.alu s11, s11, s5, #SHIFT ; q (s11: amov clobbers s7)
+        ldi s5, #2
+        x19.alu s5, s11, s5, #SHIFT
+        alu s6, s6, s5, #OP_SUB ; b
+        ldi s5, #PN_T
+        alu s5, s5, s6, #OP_ADD
+        amov(A8, s5)
+        x19.xrd s6, #8          ; T[b]
+        yld(s5, PN_ST)
+        ldi s4, #PN_S
+        alu s4, s4, s5, #OP_ADD
+        amov(A4, s4)
+        ldi s4, #PN_L
+        alu s4, s4, s5, #OP_ADD
+        amov(A6, s4)
+        yld(s10, PN_LEN)
+cp:     alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, cpdone
+        nop()
+        nop()
+        x19.xrd s1, #6
+        x02.ainc #6, #6
+        x02.mpy s1, s1, s6
+        stx A4, s1
+        x02.ainc #4, #4
+        jmp #IF_NOT, #2, cp
+        alu s10, s10, s14, #OP_SUB ; (delay slot)
+        nop()
+cpdone: yld(s3, PN_EL)
+        alu s3, s3, s11, #OP_ADD
+        alu s3, s3, s14, #OP_ADD
+}
+
+; X[BUF + start ..] = rshr(X[SRC + start ..], n) over len words, n = s9 clipped to 24 (0 then).
+; s2 = start, s10 = len. Uses s1, s4, s12, A4, A6 and amov's.
+.macro pn_down(BUF, SRC) {
+        ldi s12, #24
+        alu s4, s12, s9, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        psel s9, s4, s9, p1, #1, #4 ; min(n, 24)
+        alu s9, s0, s9, #OP_SUB ; -n
+        ldi s4, #SRC
+        alu s4, s4, s2, #OP_ADD
+        amov(A6, s4)
+        ldi s4, #BUF
+        alu s4, s4, s2, #OP_ADD
+        amov(A4, s4)
+dl:     alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, ddone
+        nop()
+        nop()
+        x19.xrd s1, #6
+        x02.ainc #6, #6
+        x19.alu s1, s1, s9, #SHIFT
+        stx A4, s1
+        x02.ainc #4, #4
+        jmp #IF_NOT, #2, dl
+        alu s10, s10, s14, #OP_SUB ; (delay slot)
+        nop()
+ddone:
+}
+
+; pns_channel(): every noise band of the channel (PN_MODE 0) or of a pair's right (PN_MODE 1).
+.macro pns_channel() {
+        pn_runs()
+        ldi s3, #PN_NONE
+        yst(PN_TOP)
+        ldi s3, #PN_RUNS
+        yst(PN_RI)
+        ldi s13, #PN_PE - 1
+        x17.mve e9, s13
+        ; pass A: each run's noise words in the scratch, and its exponent
+ra:     yld(s13, PN_RI)
+        alu s13, s13, s14, #OP_SUB
+        x17.mve e7, s13
+        ldy s2, e7              ; start
+        x18.eagu e7, e7, #AGU_INC
+        ldy s10, e7             ; len
+        x18.eagu e7, e7, #AGU_INC
+        ldy s11, e7             ; band
+        alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, adone
+        nop()
+        nop()
+        yld(s3, PN_RI)
+        ldi s4, #3
+        alu s3, s3, s4, #OP_ADD
+        yst(PN_RI)
+        pn_yst(PN_ST, 2, 0)
+        pn_yst(PN_LEN, 2, 1)    ; s10
+        ldi s13, #PN_BOOK - 1
+        alu s13, s13, s11, #OP_ADD
+        x17.mve e6, s13
+        ldy s4, e6
+        ldi s5, #13
+        alu s4, s4, s5, #OP_SUB
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, anone  ; not a noise band
+        ldi s13, #PN_SF - 1     ; (delay slot)
+        alu s13, s13, s11, #OP_ADD ; (delay slot)
+        x17.mve e6, s13
+        ldy s6, e6              ; sf (nrg)
+        pn_yst(PN_NRG, 6, 0)
+        ; correlated: mode 1, ms_mask_present != 0, ms_used, the left band noise too
+        yld(s4, PN_MODE)
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, anoise
+        nop()
+        nop()
+        yld(s4, PN_MSP)
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, anoise
+        ldi s13, #PN_MSU - 1    ; (delay slot)
+        alu s13, s13, s11, #OP_ADD ; (delay slot)
+        x17.mve e6, s13
+        ldy s4, e6
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, anoise
+        ldi s13, #PN_LBOOK - 1  ; (delay slot)
+        alu s13, s13, s11, #OP_ADD ; (delay slot)
+        x17.mve e6, s13
+        ldy s4, e6
+        ldi s5, #13
+        alu s4, s4, s5, #OP_SUB
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, anoise
+        ldi s13, #PN_LSF - 1    ; (delay slot)
+        alu s13, s13, s11, #OP_ADD ; (delay slot)
+        x17.mve e6, s13
+        ldy s5, e6
+        alu s6, s6, s5, #OP_SUB ; d = sfR - sfL
+        pn_copy()
+        jmp #IF_NOT, #2, aput
+        nop()
+        nop()
+anoise: pn_noise()
+        jmp #IF_NOT, #2, aput
+        nop()
+        nop()
+anone:  ldi s3, #PN_NONE
+aput:   x18.eagu e9, e9, #AGU_INC ; e9 steps once per run: PE in run order
+        x17.sty e9, #3, #0
+        ; top = max(top, s3); PN_NONE never wins
+        yld(s5, PN_TOP)
+        alu s4, s5, s3, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #IF_NOT, #1, ra
+        nop()
+        nop()
+        yst(PN_TOP)
+        jmp #IF_NOT, #2, ra
+        nop()
+        nop()
+adone:  yld(s3, PN_TOP)
+        ldi s4, #PN_NONE
+        alu s4, s3, s4, #OP_SUB
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, done        ; no noise
+        nop()
+        nop()
+        ; live: some book in 1..11
+        ldi s13, #PN_BOOK - 1
+        x17.mve e7, s13
+        yld(s9, PN_NB)
+        ldi s11, #0
+lv:     alu s4, s9, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, lvdone
+        nop()
+        nop()
+        ldy s5, e7
+        x18.eagu e7, e7, #AGU_INC
+        alu s9, s9, s14, #OP_SUB
+        alu s4, s5, s14, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #3, #1, lv
+        ldi s4, #11             ; (delay slot)
+        alu s4, s4, s5, #OP_SUB ; (delay slot)
+        ptst p1, s0, #LT4, #PTST
+        jmp #3, #1, lv
+        nop()
+        nop()
+        ldi s11, #1
+lvdone: yld(s3, PN_TOP)         ; to = top, or E when live and larger
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, toput
+        nop()
+        nop()
+        yld(s5, PN_E)
+        alu s4, s3, s5, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        jmp #IF_NOT, #1, toput
+        nop()
+        nop()
+        alu s3, s5, s0, #OP_ADD
+toput:  yst(PN_TO)
+        ; the block down to it when live
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, moved
+        nop()
+        nop()
+        yld(s5, PN_E)
+        alu s9, s3, s5, #OP_SUB
+        ldi s2, #0
+        ldi s10, #1024
+        pn_down(PN_W, PN_W)
+moved:  yld(s3, PN_TO)
+        yst(PN_E)
+        ; pass B: each noise run shifted into the block
+        ldi s3, #PN_RUNS
+        yst(PN_RI)
+        ldi s13, #PN_PE - 1
+        x17.mve e9, s13
+rbk:    yld(s13, PN_RI)
+        alu s13, s13, s14, #OP_SUB
+        x17.mve e7, s13
+        ldy s2, e7
+        x18.eagu e7, e7, #AGU_INC
+        ldy s10, e7
+        alu s4, s10, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, done
+        nop()
+        nop()
+        yld(s3, PN_RI)
+        ldi s4, #3
+        alu s3, s3, s4, #OP_ADD
+        yst(PN_RI)
+        x18.eagu e9, e9, #AGU_INC
+        ldy s5, e9              ; its exponent
+        ldi s4, #PN_NONE
+        alu s4, s5, s4, #OP_SUB
+        ptst p1, s0, #EQ4, #PTST
+        jmp #3, #1, rbk
+        nop()
+        nop()
+        yld(s9, PN_TO)
+        alu s9, s9, s5, #OP_SUB
+        pn_down(PN_W, PN_S)
+        jmp #IF_NOT, #2, rbk
+        nop()
+        nop()
+done:
+}

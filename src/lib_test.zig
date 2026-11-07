@@ -19,6 +19,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/window.sm", .text = @embedFile("window.sm") },
     .{ .path = "lib/stereo.sm", .text = @embedFile("stereo.sm") },
     .{ .path = "lib/tns.sm", .text = @embedFile("tns.sm") },
+    .{ .path = "lib/pns.sm", .text = @embedFile("pns.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -3113,4 +3114,259 @@ test "rop picks AGU10 by head[21]; x16alu mux 1/5 reads Y by S2[18]; x19mac take
         defer state.deinit(gpa);
         try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ w[0], w[1], w[2], w[3], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
     }
+}
+
+fn pnWrap(v: i64) i64 {
+    return @as(i64, @as(i24, @truncate(v)));
+}
+
+fn pnT(b: usize) i64 {
+    return @intFromFloat(@round(std.math.pow(f64, 2.0, 22.0 + @as(f64, @floatFromInt(b)) / 4.0)));
+}
+
+fn pnSeed(i: usize) i64 {
+    return @intFromFloat(@round(0x1p23 / (4.0 * @sqrt((@as(f64, @floatFromInt(i)) + 2.5) / 8.0))));
+}
+
+/// sosumi ref/dsp/aac/pns.zig noiseBand.
+fn pnNoise(x: *i64, out: []i64, nrg: i64) ?i64 {
+    var s: i64 = 0;
+    var cap: i64 = 4;
+    while (@as(i64, @intCast(out.len)) >= cap) {
+        cap <<= 2;
+        s += 2;
+    }
+    var big: i64 = 0;
+    for (out) |*o| {
+        x.* = pnWrap(0x7655 * x.* + 0x3C6EF3);
+        o.* = rshr(x.*, 1);
+        big = @max(big, @as(i64, @intCast(@abs(o.*))));
+    }
+    if (big == 0) return null;
+    var k: u6 = 0;
+    while (big < 1 << 21) {
+        big <<= 1;
+        k += 1;
+    }
+    var acc: i64 = 0;
+    for (out) |*o| {
+        o.* <<= k;
+        acc += rshr(imMul(o.*, o.*), @intCast(s));
+    }
+    if (acc == 0) {
+        @memset(out, 0);
+        return null;
+    }
+    var p: i64 = 0;
+    while (acc < 1 << 21) {
+        acc <<= 2;
+        p += 1;
+    }
+    var z = pnSeed(@intCast((acc >> 20) - 2));
+    for (0..3) |_| {
+        const u = imMul(acc, imMul(z, z));
+        z = imMul(z, (3 << 20) - 2 * u) << 2;
+    }
+    const q = nrg >> 2;
+    const g = imMul(z, pnT(@intCast(nrg - 4 * q)));
+    for (out) |*o| o.* = imMul(o.*, g);
+    return p + q - 20 - @divExact(s, 2);
+}
+
+fn pnDown(w: i64, n: i64) i64 {
+    return if (n >= 24) 0 else rshr(w, @intCast(n));
+}
+
+const PnCase = struct {
+    mode: i64,
+    groups: usize,
+    max_sfb: usize,
+    win: usize,
+    glen: [8]usize,
+    msp: i64,
+    off: [64]i64,
+    book: [128]i64,
+    sf: [128]i64,
+    lbook: [128]i64,
+    lsf: [128]i64,
+    msu: [128]i64,
+    w: [1024]i64,
+    l: [1024]i64,
+    e: i64,
+    el: i64,
+    x: i64,
+
+    fn apply(c: *PnCase) void {
+        var scr: [1024]i64 = @splat(0);
+        var runs: [256]struct { a: usize, n: usize, e: ?i64 } = undefined;
+        var nr: usize = 0;
+        var top: ?i64 = null;
+        var wb: usize = 0;
+        for (0..c.groups) |g| {
+            for (0..c.max_sfb) |sfb| {
+                const band = g * c.max_sfb + sfb;
+                for (0..c.glen[g]) |w| {
+                    const a = wb + w * c.win + @as(usize, @intCast(c.off[sfb]));
+                    const n: usize = @intCast(c.off[sfb + 1] - c.off[sfb]);
+                    var e: ?i64 = null;
+                    if (c.book[band] == 13) {
+                        if (c.mode == 1 and c.msp != 0 and c.msu[band] != 0 and c.lbook[band] == 13) {
+                            const d = c.sf[band] - c.lsf[band];
+                            const q = d >> 2;
+                            const t = pnT(@intCast(d - 4 * q));
+                            for (a..a + n) |k| scr[k] = imMul(c.l[k], t);
+                            e = c.el + q + 1;
+                        } else e = pnNoise(&c.x, scr[a .. a + n], c.sf[band]);
+                    }
+                    runs[nr] = .{ .a = a, .n = n, .e = e };
+                    nr += 1;
+                    if (e) |x| top = if (top) |t| @max(t, x) else x;
+                }
+            }
+            wb += c.glen[g] * c.win;
+        }
+        const t = top orelse return;
+        var live = false;
+        for (c.book[0 .. c.groups * c.max_sfb]) |b| live = live or (b >= 1 and b <= 11);
+        var to = t;
+        if (live and to < c.e) to = c.e;
+        if (live) for (&c.w) |*x| {
+            x.* = pnDown(x.*, to - c.e);
+        };
+        c.e = to;
+        for (runs[0..nr]) |r| if (r.e) |e| {
+            for (r.a..r.a + r.n) |k| c.w[k] = pnDown(scr[k], to - e);
+        };
+    }
+};
+
+test "pns_channel fills noise bands as the model does, both modes" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/mem.sm"
+        \\.include "lib/pns.sm"
+        \\        bits_init(0x4000)
+        \\        pns_channel()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var prng = std.Random.DefaultPrng.init(0x9E5C);
+    const rnd = prng.random();
+    var noisy: usize = 0;
+    var corr: usize = 0;
+    for (0..40) |trial| {
+        var c: PnCase = undefined;
+        const short = trial % 3 == 0;
+        c.mode = @intCast(trial % 2);
+        c.win = if (short) 128 else 1024;
+        c.glen = @splat(0);
+        if (short) {
+            var left: usize = 8;
+            c.groups = 0;
+            while (left > 0) {
+                const l = rnd.intRangeAtMost(usize, 1, left);
+                c.glen[c.groups] = l;
+                c.groups += 1;
+                left -= l;
+            }
+            c.max_sfb = rnd.intRangeAtMost(usize, 1, 14);
+        } else {
+            c.groups = 1;
+            c.glen[0] = 1;
+            c.max_sfb = rnd.intRangeAtMost(usize, 1, 49);
+        }
+        // widths of 1 to 31 so the band lengths cross every shift step
+        c.off[0] = 0;
+        for (1..64) |k| c.off[k] = @min(c.off[k - 1] + rnd.intRangeAtMost(i64, 1, if (short) 9 else 31), @as(i64, @intCast(c.win)));
+        if (!short and trial % 7 == 2) {
+            // one band of the whole window: the largest shift
+            c.max_sfb = 1;
+            c.off[1] = 1024;
+        }
+        c.msp = rnd.intRangeAtMost(i64, 0, 2);
+        const quiet = rnd.uintLessThan(u8, 5) == 0;
+        for (0..128) |i| {
+            const r = rnd.uintLessThan(u8, 3);
+            c.book[i] = if (r == 0) 13 else if (r == 1 or quiet) 0 else rnd.intRangeAtMost(i64, 1, 11);
+            c.sf[i] = rnd.intRangeAtMost(i64, -60, 120);
+            c.lbook[i] = if (rnd.boolean()) 13 else rnd.intRangeAtMost(i64, 0, 11);
+            c.lsf[i] = rnd.intRangeAtMost(i64, -60, 120);
+            c.msu[i] = if (c.msp == 2) 1 else rnd.intRangeAtMost(i64, 0, 1);
+            if (c.book[i] == 13 and i < c.groups * c.max_sfb) {
+                noisy += 1;
+                if (c.mode == 1 and c.msp != 0 and c.msu[i] != 0 and c.lbook[i] == 13) corr += 1;
+            }
+        }
+        c.w = @splat(0);
+        for (&c.l) |*x| x.* = rnd.intRangeAtMost(i64, -5600000, 5600000);
+        var wb: usize = 0;
+        for (0..c.groups) |g| {
+            for (0..c.max_sfb) |sfb| {
+                const b = c.book[g * c.max_sfb + sfb];
+                if (b < 1 or b > 11) continue;
+                for (0..c.glen[g]) |w| {
+                    for (@as(usize, @intCast(c.off[sfb]))..@as(usize, @intCast(c.off[sfb + 1]))) |k| c.w[wb + w * c.win + k] = rnd.intRangeAtMost(i64, -5600000, 5600000);
+                }
+            }
+            wb += c.glen[g] * c.win;
+        }
+        c.e = rnd.intRangeAtMost(i64, -40, 30);
+        c.el = rnd.intRangeAtMost(i64, -40, 30);
+        c.x = pnWrap(@intCast(rnd.int(u24)));
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const py = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.y_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF);
+            }
+        }.f;
+        const px = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.x_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF);
+            }
+        }.f;
+        const Y = 0x2600;
+        try py(&state, gpa, Y + 0, @intCast(c.groups * c.max_sfb));
+        try py(&state, gpa, Y + 1, @intCast(c.groups));
+        try py(&state, gpa, Y + 2, @intCast(c.max_sfb));
+        try py(&state, gpa, Y + 3, @intCast(c.win));
+        try py(&state, gpa, Y + 4, c.mode);
+        try py(&state, gpa, Y + 5, c.msp);
+        try py(&state, gpa, Y + 6, c.e);
+        try py(&state, gpa, Y + 7, c.el);
+        for (0..8) |g| try py(&state, gpa, Y + 0x10 + g, @intCast(c.glen[g]));
+        for (c.off, 0..) |o, k| try py(&state, gpa, Y + 0x20 + k, o);
+        for (0..128) |i| {
+            try py(&state, gpa, Y + 0x60 + i, c.book[i]);
+            try py(&state, gpa, Y + 0xE0 + i, c.sf[i]);
+            try py(&state, gpa, Y + 0x160 + i, c.lbook[i]);
+            try py(&state, gpa, Y + 0x1E0 + i, c.lsf[i]);
+            try py(&state, gpa, Y + 0x260 + i, c.msu[i]);
+        }
+        for (0..4) |b| try px(&state, gpa, 0x1F00 + b, pnT(b));
+        for (0..6) |i| try px(&state, gpa, 0x1F04 + i, pnSeed(i));
+        try px(&state, gpa, 0x1F10, c.x);
+        for (c.w, c.l, 0..) |a, b, k| {
+            try px(&state, gpa, 0x400 + k, a);
+            try px(&state, gpa, 0x800 + k, b);
+        }
+        c.apply();
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 28);
+        try testing.expect(state.halted);
+        const sx16 = struct {
+            fn f(v: ?u32) i64 {
+                return @as(i16, @bitCast(@as(u16, @truncate(v orelse 0xDEAD))));
+            }
+        }.f;
+        try testing.expectEqual(c.e, sx16(state.getY(Y + 6)));
+        try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(c.x)))) & 0xFFFFFF, state.readX(0x1F10) orelse 0xDEAD);
+        for (0..1024) |k| {
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(c.w[k])))) & 0xFFFFFF, state.readX(0x400 + @as(u32, @intCast(k))) orelse 0xDEAD);
+        }
+    }
+    try testing.expect(noisy > 200);
+    try testing.expect(corr > 15);
 }
