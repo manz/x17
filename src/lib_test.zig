@@ -2105,3 +2105,25 @@ test "imdct transforms a long block as the model does" {
         }
     }
 }
+
+test "x02.ainc's template writes s2 and x18.rag's steps e7" {
+    // Side writes of two image-row templates (subforms.txt); x18.rag101 has none.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\ldi s1, #0x4000
+        \\ldi s2, #0x6000
+        \\x02.ainc #8, #8
+        \\ldi s13, #0x23FF
+        \\x17.mve e7, s13
+        \\x18.rag R3, A6, R2, #2
+        \\x18.rag101 s0, R3, A6, R2, #2
+        \\x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    _ = try emu.runFrom(gpa, &state, prog, 0, 64);
+    try testing.expectEqual(@as(u32, 0x30), state.s[2]);
+    try testing.expectEqual(@as(u32, 0x2401), state.e[7]);
+}

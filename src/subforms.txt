@@ -135,7 +135,8 @@ x02.mpy    6   0x00000002   0x0000A000   0x00020000   0x00000001   0x00042800   
 
 # x02.ainc: 6-syllable VLIW at low5 0x02 with the A-increment slot active
 # (w3[1] = 1).  A<w2[21:17]> <- A<w3[4:0]> + 1 (fact 157 /
-# own-x02ainc).
+# own-x02ainc).  The template's w2 multiply slot also writes s2 <- rnd(s1 * s2 >> 23)
+# (w2[12:9] = 2, mode 4): nothing may live in s2 across it.
 x02.ainc   6   0x00000002   0x0000A000   0x00020442   0x00000002   0x00042800   0x00004200
 
 # x18.eagu: 4-syllable low5 0x18, w3 class 000 (fact 169 /
@@ -601,7 +602,8 @@ x18.c2x    4   0x00000018   0x20040001   0x00000000   0x40510001
 # x18.eagu2: class 010 e AGU, w1[29] = 1 picks AGU10 (fact 267).
 x18.eagu2  4   0x00000018   0x00040000   0x00000000   0x40000000
 
-# x18.rag: class 010 R slot, AGU3 over A and R (fact 194).
+# x18.rag: class 010 R slot, AGU3 over A and R (fact 194).  The template's e AGU also
+# steps e7 (w1[29] = 1, w1[23:20] = 7, source e7); x18.rag101 has no side writes.
 x18.rag    4   0x9C0238B8   0xA2750102   0x00000400   0x4E000008
 
 # x18.rag101: class 101 R slot and the mux-001 X slot (fact 195).
