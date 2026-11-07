@@ -1744,3 +1744,23 @@ test "x17e with S1[23:20] set is refused: it may run, arm or stop" {
     defer state.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x00000017, 0x00160200, 0x80000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "x18 class 000 with w2[18] = 1 and w2[17] = 0 arms the halt deadline" {
+    // fact 483 on x18.eagu's template (class 000); w2[17] = 1 cancels the arm.
+    const gpa = testing.allocator;
+    for ([_]struct { w2: u32, g: usize, ok: bool }{
+        .{ .w2 = 0x0004AC00, .g = 6, .ok = true },
+        .{ .w2 = 0x0004AC00, .g = 7, .ok = false },
+        .{ .w2 = 0x0006AC00, .g = 12, .ok = true },
+    }) |c| {
+        var prog: std.ArrayList(u32) = .empty;
+        defer prog.deinit(gpa);
+        try prog.appendSlice(gpa, &.{ 0x00000018, 0x00000004, c.w2, 0x00040000 });
+        for (0..c.g) |_| try prog.append(gpa, 0x40000005);
+        try prog.appendSlice(gpa, &.{ 0x00000017, 0x31308000, 0xA0000000 });
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const r = emu.runFrom(gpa, &state, prog.items, 0, 64);
+        if (c.ok) _ = try r else try testing.expectError(error.HaltDeadline, r);
+    }
+}

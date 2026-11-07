@@ -3535,7 +3535,8 @@ fn sameY(a: *const std.AutoHashMapUnmanaged(u32, u32), b: *const std.AutoHashMap
 
 /// Bundles that arm the halt deadline: an x17 with S1[15] = 1 that does not halt, S2 class
 /// 000, 101 or 111 (fact 98), an x02 with w2[30] = 1 (477), and an x03 with w2[31:29] =
-/// 010, an lde with h[30] = 0 and an rop with h[31] = 1 (479).  Measured: six bundles between armer and halt
+/// 010, an lde with h[30] = 0 and an rop with h[31] = 1 (479), and an x18 class 000 with
+/// w2[18:17] = 10 (483).  Measured: six bundles between armer and halt
 /// complete, seven or more park.
 fn isDeadlineArmer(bundle: []const u32) bool {
     const low5 = bundle[0] & 0x1F;
@@ -3546,6 +3547,8 @@ fn isDeadlineArmer(bundle: []const u32) bool {
         return (cls == 0 or cls == 5 or cls == 7) and (bundle[1] >> 15) & 1 == 1;
     }
     if (low5 == 0x02 and bundle.len >= 6) return (bundle[2] >> 30) & 1 == 1;
+    // 483: x18 class 000 with w2[18] = 1 arms, and w2[17] = 1 cancels it.
+    if (low5 == 0x18 and bundle.len >= 4 and bundle[3] >> 29 == 0) return bundle[2] & 0x60000 == 0x40000;
     if (low5 == 0x03 and bundle.len >= 6) return bundle[2] >> 29 == 0b010; // 479
     // 479: lde with h[30] = 0 (lde.arm, A0000026) and rop with h[31] = 1 (882000E7, which x17
     // does not execute yet).
