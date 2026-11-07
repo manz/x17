@@ -840,6 +840,17 @@ fn x01Asr(m: u32, b: i64, i: i64, a: i32) RunError!u32 {
     return @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
 }
 
+fn x01Table(state: *const State, h: u32, w4: u32, w5: u32, op: u32, imm: u32) RunError!u32 {
+    const y: u32 = state.r[(h >> 27) & 0xF];
+    if (op == 10) return (y +% imm) & 0xFFFF;
+    if (op == 11) return (y -% imm) & 0xFFFF;
+    return switch (w5 & 0x30200900) {
+        0x30200900 => if (op == 8) imm else try agu10Eval(op, state.e[(w4 >> 5) & 0xF], y),
+        0 => try x00Op(true, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
+        else => RunError.UnknownForm,
+    };
+}
+
 fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const w1 = bundle[1];
@@ -860,17 +871,11 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         const sub_val: u32 = switch (sub) {
             0 => imm,
             1 => 1,
-            // 0x01 rows 8, 10, 11 (508, 509): i, y + i, y - i with y = R<head[30:27]>, i =
-            // head[26:11].  509's other AGU10 rows contradict own-x01st (243: op 2 gave b, not
-            // x + 1) in another context; the table select is OPEN, so those keep 234's table.
-            2 => if (x01 and (op == 8 or op == 10 or op == 11)) blk2: {
-                const y: u32 = state.r[(h >> 27) & 0xF];
-                break :blk2 switch (op) {
-                    8 => imm,
-                    10 => (y +% imm) & 0xFFFF,
-                    else => (y -% imm) & 0xFFFF,
-                };
-            } else try x00Op(x01, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
+            // 0x01 (508, 509): rows 10/11 are y + i, y - i (y = R<head[30:27]>, i = head[26:11]).
+            // The rest is AGU10 (x = e<w4[8:5]>) or 234's table, picked by a w5 bit among
+            // 0x30200900 (OPEN): all set (509's base) is AGU10, none (own-x01st, own-x01eop) is
+            // 234, a mix is refused.
+            2 => if (x01) try x01Table(state, h, w4, w5, op, imm) else try x00Op(x01, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
             else => return RunError.UnknownForm,
         };
         break :blk switch (src) {

@@ -2293,20 +2293,35 @@ test "0x01 multiply mode 4 and the s slot's AGU10 rows" {
     }
 }
 
-test "the s slot's sub-mux 10: 0x01 rows 8 and 10, 0x00's own table" {
-    // fact 509 (R5 = 0x1000, i = 2: row 8 gives 2, row 10 0x1002); 510's own-x00tab
-    // (0x00, e1 = 0x100, t = 3 gives -a = 0xFF00).
+test "the 0x01 s slot's sub-mux 10: AGU10 under 509's w5, 234's table under own-x01st's" {
+    // fact 509 base (R5 = 0x1000, e1 = 0x100, e2 = 0x10, i = 2), 16 of 16 (own-x01agu:
+    // t = 7 gives 0xF100); with own-x01st's w5 01003600, t = 2 gives b = 0x10.  w3's R slot
+    // (dest R5, same fn field) is cleared: its fns past 8/10/11/14 are unmodelled.
     const gpa = testing.allocator;
-    for ([_]struct { head: u32, f: u32, want: u32 }{
-        .{ .head = 0x28001001, .f = 8, .want = 0x0002 },
-        .{ .head = 0x28001001, .f = 10, .want = 0x1002 },
-        .{ .head = 0x28001000, .f = 3, .want = 0xFF00 },
-    }) |c| {
+    const want = [16]u32{ 0x0100, 0x1000, 0x0101, 0x1001, 0x00FF, 0x0FFF, 0x1100, 0xF100, 0x0002, 0x0000, 0x1002, 0x0FFE, 0x1000, 0x1100, 0x1000, 0x1000 };
+    for (0..17) |k| {
         var state = emu.State{};
         defer state.deinit(gpa);
         state.r[5] = 0x1000;
         state.e[1] = 0x100;
-        _ = try emu.runFrom(gpa, &state, &.{ c.head, 0x0002A005 | (c.f << 7), 0xE8010000, 0x00000020, 0x00000020, 0xC3000900, 0x35001002, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
-        try testing.expectEqual(c.want, state.s[1]);
+        state.e[2] = 0x10;
+        const t: u32 = if (k == 16) 2 else @intCast(k);
+        const w5: u32 = if (k == 16) 0x01003600 else 0x31200F00;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x280011E1, t << 7, 0xA8080804, 0x00300060, 0x00800024, w5, 0x00002012, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(if (k == 16) 0x10 else want[k], state.s[2]);
     }
+    // another w5 on the candidate bits is refused
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x280011E1, 2 << 7, 0xA8080804, 0x00300060, 0x00800024, 0x01200F00, 0x00002012, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
+
+test "0x00's s-slot sub-mux 10 is 234's table" {
+    // fact 510: own-x00tab (e1 = 0x100, t = 3 gives -a = 0xFF00).
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[1] = 0x100;
+    _ = try emu.runFrom(gpa, &state, &.{ 0x28001000, 0x0002A005 | (3 << 7), 0xE8010000, 0x00000020, 0x00000020, 0xC3000900, 0x35001002, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0xFF00), state.s[1]);
 }
