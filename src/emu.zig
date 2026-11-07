@@ -3493,8 +3493,10 @@ fn updateE0(state: *State, b: []const u32) void {
     const low5 = h & 0x1F;
     const name: []const u8 = if (isa.classify(h)) |f| f.name else "";
     const lde = b.len == 1 and ((low5 == 0x06 and h >> 30 == 3) or std.mem.eql(u8, name, "lde"));
-    // lde e<k != 0> passes the latch through (470, measured with k = 7).
+    // lde e<k != 0> passes the latch through (470, measured with k = 7), as does lde.arm,
+    // lde class 101 (480).
     if (lde and (h >> 26) & 0xF != 0) return;
+    if (b.len == 1 and low5 == 0x06 and h >> 29 == 0b101) return;
     // pc14 (fact 107, 380): measured only when the pair loads an immediate, s<h[24:21]> != s0.
     const pc14 = low5 == 0x14 and b.len == 2 and (b[1] >> 29 == 2 or b[1] >> 29 == 3) and
         (b[1] >> 25) & 1 == 1 and (h >> 21) & 0xF != 0;

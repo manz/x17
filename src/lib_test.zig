@@ -1719,3 +1719,20 @@ test "lde.arm loads e8..e15 and arms the halt deadline" {
         } else try testing.expectError(error.HaltDeadline, r);
     }
 }
+
+test "lde.arm passes the e0 latch through" {
+    // fact 480: ldi s4 <- 0x700, AC00E806, st pair: Y:0x700.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        ldi s4, #0x700
+        \\        lde.arm e11, #0x740
+        \\        st.wr #0x40, e0, s4
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    _ = try emu.runFrom(gpa, &state, prog, 0, 64);
+    try testing.expectEqual(@as(?u32, 0x700), state.getY(0x700));
+}
