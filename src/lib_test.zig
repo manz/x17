@@ -1712,8 +1712,9 @@ test "the deadline counts words: a two-word st pair takes two" {
 }
 
 test "x18 class 000 with w2[17], w2[18] and w3[7] clear is refused: it may stop" {
-    // fact 485: x18.eagu's template with w2[17] cleared stops; w3[7] set runs on; w3[8]
-    // set is own-x18e2nd-w17's shape (180), which runs.
+    // fact 485, 487: x18.eagu's template with w2[17] cleared stops, with w3[8] set too;
+    // w3[7] set runs on. own-x18e2nd-w17 (180: 80800018 80028024 0000A97B 00048100) runs on
+    // silicon yet no field separates it, so it is refused as well.
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
@@ -1724,6 +1725,11 @@ test "x18 class 000 with w2[17], w2[18] and w3[7] clear is refused: it may stop"
     var img = emu.State{};
     defer img.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &img, &.{ 0x80800018, XXXXXXXX, 0x0000A97B, 0x00048200, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    for ([_][4]u32{ .{ 0x00000018, 0x00000004, 0x0000AC00, 0x00040100 }, .{ 0x80800018, 0x80028024, 0x0000A97B, 0x00048100 } }) |b| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st, &(b ++ [_]u32{ 0x00000017, 0x31308000, 0xA0000000 }), 0, 16));
+    }
 }
 
 test "an x17 store with an odd e does not arm the halt deadline" {

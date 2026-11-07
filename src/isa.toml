@@ -348,8 +348,8 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x18 class 000 second e slot (177): e<w2[5:2]> <- e<{w2[1:0], w1[31:30]}> - 1.  own-x18e2nd
 # x18 class 110/011, w3[0] = 0 (178): if p<w2[31:28]> jump q + sext(w1[28:18]) (110) / sext({w2[0], w1[31:18]}) (011), 2 delay slots; p<w2[16:13]> (110) / p<w2[17:14]> (011) <- condition OPEN, both w3[0] forms.  own-x18br, own-x18br-back
 # x18 class 011 p write (179): p<w2[17:14]> <- cond head[28:25] of the unary slot (operand, result) and s<w1[7:4]>; the same bundle's branch reads the old p.  own-x18pw-false, own-x18pw-true
-# x18 class 000 with w2[17], w2[18] and w3[7] clear may stop two slots later (485): x18.eagu's template with w2[17] cleared stops (g0 halts, g2 wedges), as does the row 80800018 XXXXXXXX 0000A97B XXXXXXXX with w3[7] cleared; w3[7] = 1 runs on. own-x18e2nd-w17 (180) has all three clear and w3[8] = 1, and runs; emu refuses the w3[8] = 0 ones (UnknownForm). The decider is OPEN.
-# x18 class 000 w2[17] = 0 (180): T ^= 1 per execution, persistent across runs; second e slot = (T ? e_src : 0) - 1.  own-x18e2nd-w17
+# x18 class 000 with w2[17], w2[18] and w3[7] clear may stop two slots later (485): x18.eagu's template with w2[17] cleared stops (g0 halts, g2 wedges), as does the row 80800018 XXXXXXXX 0000A97B XXXXXXXX with w3[7] cleared; w3[7] = 1 runs on. The template with w3[8] set wedges too (487), while own-x18e2nd-w17 (180) has all three clear and runs; emu refuses them all (UnknownForm), and own-x18e2nd-w17 left the gates for a refusal test. The decider is OPEN.
+# x18 class 000 w2[17] = 0 (180): T ^= 1 per execution, persistent across runs; second e slot = (T ? e_src : 0) - 1.  own-x18e2nd-w17 measured it; emu now refuses that word (485, 487)
 # x18 class 010 R slot (194): R<w3[10:7]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w3[14:11]>).  own-x18rag
 # x18 class 101 (195): the same R slot; X slot s<head[24:21]> <- w1[14:12] (001 R value, 011/101 yd).  own-x18rag101, own-x18rmux
 # x18 class 100 (196): R<{w3[2:0], w2[31]}> <- (w2[20] ? AGU10 : AGU10B)[w1[10:7]](x = e<w3[28:25]>, y = R<w2[26:23]>).  own-x18rcl100

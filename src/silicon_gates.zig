@@ -3852,22 +3852,6 @@ const GATES = [_]Gate{
         },
     },
     .{
-        .name = "own-x18e2nd-w17",
-        // from T = 0: e14 <- 0 - 1 = 0xFFFF, T = 1; then e14 <- e14 - 1 = 0x705, T = 0.
-        .src =
-        \\lde e14, #0x706
-        \\x18.e2nd17 e14, #2, #3
-        \\rop s5, R0, e14, R0, #0
-        \\lde e14, #0x706
-        \\x18.e2nd17 e14, #2, #3
-        \\x17.halt
-        ,
-        .post = &.{
-            .{ .s_reg = .{ .index = 5, .value = 0xFFFF } },
-            .{ .e_reg = .{ .index = 14, .value = 0x705 } },
-        },
-    },
-    .{
         .name = "own-all",
         // st sets e1 = 2; the stop's S2[1] write stores s1 = 0x123 at Y:[e1].
         .src =
