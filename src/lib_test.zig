@@ -4518,22 +4518,21 @@ test "the Y read forms that set yd (fact 571)" {
     }
 }
 
-test "x00's jump controls take sx8(w1[25:18]) (fact 572, 573)" {
+test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 576)" {
     const gpa = testing.allocator;
-    for ([_]struct { ctl: u32, w1: u32, off: ?i32 }{
-        .{ .ctl = 3, .w1 = 0xF8 << 18, .off = -8 },
-        .{ .ctl = 1, .w1 = 0xF8 << 18, .off = -8 },
-        .{ .ctl = 0xE, .w1 = 0xF8 << 18, .off = -8 },
-        .{ .ctl = 0x17, .w1 = 0x7F << 18, .off = 0x7F },
-        .{ .ctl = 1, .w1 = 0x0A << 18, .off = 10 },
-        .{ .ctl = 3, .w1 = 0x1F8 << 18, .off = null }, // w1[26] set: OPEN
-        .{ .ctl = 3, .w1 = 0x1FF8 << 18, .off = null }, // wedges
-        .{ .ctl = 1, .w1 = 0xFF << 18, .off = null }, // -1 over a short loop: OPEN
-        .{ .ctl = 1, .w1 = 0xFC << 18, .off = null }, // -4
+    for ([_]struct { ctl: u32, w1: u32, w2: u32 = 0, w4: u32 = 0, off: ?i32 }{
+        .{ .ctl = 3, .w1 = 0xFFD80000, .w2 = 1, .off = -10 }, // the measured q - 10
+        .{ .ctl = 3, .w1 = 0xFFD80000, .off = 16374 }, // without the sign: far forward
+        .{ .ctl = 1, .w1 = 0x0C << 18, .off = 12 },
+        .{ .ctl = 0xE, .w1 = (1 << 26) | (4 << 18), .off = 260 }, // +256 per w1[26]
+        .{ .ctl = 0x17, .w1 = 0x3FFF << 18, .w2 = 1, .off = -1 },
+        .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 1 << 28, .off = null }, // condition 1: OPEN
+        .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 0xA << 28, .off = null },
+        .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 2 << 28, .off = null }, // state-dependent
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
-        const r = emu.executeBundle(gpa, &state, &.{ 0, c.w1, 0, c.ctl, 0, 0, 0 });
+        const r = emu.executeBundle(gpa, &state, &.{ 0, c.w1, c.w2, c.ctl, c.w4, 0, 0 });
         if (c.off) |o| {
             try r;
             try testing.expectEqual(@as(?i32, o), state.pending_jmp_offset);

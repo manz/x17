@@ -181,6 +181,8 @@ unknown.
   the engine (+0xA98 = 0x04C00002), and the next run wedges until a reset. Whether the deadline is
   counted in words or cycles is undefined.
 - **Jumps:** relative on a predicate (§83, §94), or absolute (mode 4, §310). Two delay slots.
+  The wide-bundle jump's offset is sx15({w2[0], w1[31:18]}) from q (§575); its condition
+  field w4[31:28] reacts to writes of p<c>, not their values, and only 0 is defined (§576).
 - **Loops:** "repeat this bundle while p" (§263, §452). DO-style hardware loops were disproved
   (§71, §449).
 - **Calls and returns:** undefined (§230, §310).

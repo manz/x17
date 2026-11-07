@@ -1106,12 +1106,13 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const ctl: u32 = w3 & 0x1F;
     const target: u32 = (w1 >> 18) & 0xFF;
     switch (ctl) {
-        // q + sx8(w1[25:18]), unconditional, two delay slots, no link (572, 573).  w1[30:26] set
-        // wedges or misbehaves, and offsets -4..-1 over a short loop are OPEN.
+        // q + sx15({w2[0], w1[31:18]}), two delay slots, no link (575, retracting 572-574).
+        // Condition w4[31:28] (576): 0 is taken in every state seen; the others follow a write
+        // to p<c>, semantics OPEN, so they are refused.
         1, 3, 0xE, 0x11, 0x13, 0x16, 0x17 => {
-            const off: i32 = @as(i8, @bitCast(@as(u8, @truncate(target))));
-            if ((w1 >> 26) & 0x1F != 0 or (off < 0 and off >= -4)) return RunError.UnknownForm;
-            state.pending_jmp_offset = off;
+            if (bundle[4] >> 28 != 0) return RunError.UnknownForm;
+            const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
+            state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
         4 => state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc)),
         0, 2, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
