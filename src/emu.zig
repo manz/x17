@@ -844,11 +844,8 @@ fn x01Table(state: *const State, h: u32, w4: u32, w5: u32, op: u32, imm: u32) Ru
     const y: u32 = state.r[(h >> 27) & 0xF];
     if (op == 10) return (y +% imm) & 0xFFFF;
     if (op == 11) return (y -% imm) & 0xFFFF;
-    return switch (w5 & 0x30200900) {
-        0x30200900 => if (op == 8) imm else try agu10Eval(op, state.e[(w4 >> 5) & 0xF], y),
-        0 => try x00Op(true, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
-        else => RunError.UnknownForm,
-    };
+    if ((w5 >> 11) & 1 == 1) return if (op == 8) imm else try agu10Eval(op, state.e[(w4 >> 5) & 0xF], y);
+    return x00Op(true, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]);
 }
 
 fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -872,9 +869,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             0 => imm,
             1 => 1,
             // 0x01 (508, 509): rows 10/11 are y + i, y - i (y = R<head[30:27]>, i = head[26:11]).
-            // The rest is AGU10 (x = e<w4[8:5]>) or 234's table, picked by a w5 bit among
-            // 0x30200900 (OPEN): all set (509's base) is AGU10, none (own-x01st, own-x01eop) is
-            // 234, a mix is refused.
+            // The rest is w5[11] = 1: AGU10 (x = e<w4[8:5]>), 0: 234's table (512).
             2 => if (x01) try x01Table(state, h, w4, w5, op, imm) else try x00Op(x01, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
             else => return RunError.UnknownForm,
         };

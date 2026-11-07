@@ -2310,10 +2310,19 @@ test "the 0x01 s slot's sub-mux 10: AGU10 under 509's w5, 234's table under own-
         _ = try emu.runFrom(gpa, &state, &.{ 0x280011E1, t << 7, 0xA8080804, 0x00300060, 0x00800024, w5, 0x00002012, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(if (k == 16) 0x10 else want[k], state.s[2]);
     }
-    // another w5 on the candidate bits is refused
-    var state = emu.State{};
-    defer state.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x280011E1, 2 << 7, 0xA8080804, 0x00300060, 0x00800024, 0x01200F00, 0x00002012, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    // 512 (own-x01tabsel): w5[11] alone picks; clearing 29/28/21/8 keeps AGU10, 11 gives b
+    for ([_]struct { w5: u32, want: u32 }{
+        .{ .w5 = 0x01000F00, .want = 0x0101 },
+        .{ .w5 = 0x31200700, .want = 0x0010 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[5] = 0x1000;
+        state.e[1] = 0x100;
+        state.e[2] = 0x10;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x280011E1, 2 << 7, 0xA8080804, 0x00300060, 0x00800024, c.w5, 0x00002012, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.s[2]);
+    }
 }
 
 test "0x00's s-slot sub-mux 10 is 234's table" {
