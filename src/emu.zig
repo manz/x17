@@ -113,7 +113,7 @@ pub const RunError = error{
     OutOfMemory,
     UnknownBundleLength,
     RunawayProgram,
-    /// A halt more than six bundles after the latest armer never completes (fact 98, 477).
+    /// A halt too far after the latest armer never completes (fact 98, 477, 484).
     HaltDeadline,
 };
 
@@ -3403,8 +3403,8 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
     var shadow: ?u8 = null;
     // Inside x17.ms 010's shadow a Y store is lost or misaddressed (fact 465): refused.
     var wedge_shadow = false;
-    // Bundles since the latest halt-deadline armer (fact 98, 477), null when none ran.
-    var since_armer: ?usize = null;
+    // The gap since the latest halt-deadline armer (fact 98, 477, 484), null when none ran.
+    var since_armer: ?DeadlineGap = null;
     const lane0: usize = state.cur_lane;
     state.halted = false;
     while (i < syllables.len) : (bundles_run += 1) {
@@ -3430,10 +3430,14 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         updateE0(state, slice);
         if (shadow == null) {
             if (isHaltBundle(slice)) {
-                if (since_armer) |n| if (n > 6) return RunError.HaltDeadline;
-            } else if (isDeadlineArmer(slice)) {
-                since_armer = 0;
-            } else if (since_armer) |*n| n.* += 1;
+                if (since_armer) |g| if (!g.completes()) return RunError.HaltDeadline;
+            } else if (deadlineLimit(slice)) |limit| {
+                since_armer = .{ .limit = limit };
+            } else if (since_armer) |*g| {
+                g.bundles += 1;
+                g.words += slice.len;
+                if (slice.len > 1) g.mixed = true;
+            }
         }
         i += len;
         // The stop has a shadow (fact 72): an ldi and a st + wr after it
@@ -3533,11 +3537,31 @@ fn sameY(a: *const std.AutoHashMapUnmanaged(u32, u32), b: *const std.AutoHashMap
     return true;
 }
 
-/// Bundles that arm the halt deadline: an x17 with S1[15] = 1 that does not halt, S2 class
-/// 000, 101 or 111 (fact 98), an x02 with w2[30] = 1 (477), and an x03 with w2[31:29] =
-/// 010, an lde with h[30] = 0 and an rop with h[31] = 1 (479), and an x18 class 000 with
-/// w2[18:17] = 10 (483).  Measured: six bundles between armer and halt
-/// complete, seven or more park.
+/// What lies between an armer and the halt.
+const DeadlineGap = struct {
+    limit: usize,
+    bundles: usize = 0,
+    words: usize = 0,
+    mixed: bool = false,
+
+    /// Measured (fact 484): one-word bundles complete up to the armer's limit and park
+    /// one past it. 98's gap of four nops, an ldi and a two-word st pair (7 words) completed
+    /// after an x17 and parked one nop later, so a gap holding a longer bundle completes while
+    /// its words stay below the limit. The window's unit is OPEN (cycles, probably).
+    fn completes(g: DeadlineGap) bool {
+        return if (g.mixed) g.words < g.limit else g.bundles <= g.limit;
+    }
+};
+
+/// Bundles that arm the halt deadline, with their limit: an x17 with S1[15] = 1 that does not
+/// halt, S2 class 000, 101 or 111 (fact 98), limit 8; an x02 with w2[30] = 1 (477) and an
+/// x18 class 000 with w2[18:17] = 10 (483), limit 7 (484); an x03 with w2[31:29] = 010, an lde
+/// with h[30] = 0 and an rop with h[31] = 1 (479), limit 7 by analogy.
+fn deadlineLimit(bundle: []const u32) ?usize {
+    if (bundle[0] & 0x1F == 0x17) return if (isDeadlineArmer(bundle)) 8 else null;
+    return if (isDeadlineArmer(bundle)) 7 else null;
+}
+
 fn isDeadlineArmer(bundle: []const u32) bool {
     const low5 = bundle[0] & 0x1F;
     // S2 classes 000, 101 and 111 are the measured ones; a class-011 store's S1[15] is its e

@@ -1620,19 +1620,19 @@ fn deadlineRun(armers: []const usize, gap_after: []const usize) !void {
     _ = try emu.runFrom(gpa, &state, prog, 0, 256);
 }
 
-test "a halt within six bundles of a continuing x17 completes; seven parks" {
-    // fact 98: six instructions between complete, seven do not; the latest x17 restarts it.
-    try deadlineRun(&.{0}, &.{6});
-    try testing.expectError(error.HaltDeadline, deadlineRun(&.{0}, &.{7}));
-    try deadlineRun(&.{ 0, 0 }, &.{ 8, 3 });
-    try testing.expectError(error.HaltDeadline, deadlineRun(&.{ 0, 0 }, &.{ 8, 8 }));
+test "a bare continuing x17 lets eight nops through; nine park" {
+    // fact 484 (98's six counted a two-word st pair); the latest x17 restarts it.
+    try deadlineRun(&.{0}, &.{8});
+    try testing.expectError(error.HaltDeadline, deadlineRun(&.{0}, &.{9}));
+    try deadlineRun(&.{ 0, 0 }, &.{ 12, 2 });
+    try testing.expectError(error.HaltDeadline, deadlineRun(&.{ 0, 0 }, &.{ 8, 9 }));
 }
 
 test "x02 w2[30] arms the halt deadline" {
-    // fact 477: 00100002 0000A008 40000224 00000000 00022810 C0024200, g nops, halt:
-    // g = 6 halts, g = 8 does not.
+    // fact 477, 484: 00100002 0000A008 40000224 00000000 00022810 C0024200, g nops,
+    // halt: g = 7 halts, g = 8 does not.
     const gpa = testing.allocator;
-    for ([_]usize{ 6, 8 }) |g| {
+    for ([_]usize{ 7, 8 }) |g| {
         var prog: std.ArrayList(u32) = .empty;
         defer prog.deinit(gpa);
         try prog.appendSlice(gpa, &.{ 0x00100002, 0x0000A008, 0x40000224, 0x00000000, 0x00022810, 0xC0024200 });
@@ -1641,7 +1641,7 @@ test "x02 w2[30] arms the halt deadline" {
         var state = emu.State{};
         defer state.deinit(gpa);
         const r = emu.runFrom(gpa, &state, prog.items, 0, 64);
-        if (g == 6) _ = try r else try testing.expectError(error.HaltDeadline, r);
+        if (g == 7) _ = try r else try testing.expectError(error.HaltDeadline, r);
     }
 }
 
@@ -1670,9 +1670,10 @@ test "x17.sty.stop stores, runs two shadow bundles and stops unhalted" {
 }
 
 test "x03 with w2[31:29] = 010 arms the halt deadline" {
-    // fact 479; the word is x03.agu's template with w2[30] set.
+    // fact 479; the word is x03.agu's template with w2[30] set. The 7/8 boundary is
+    // x02's and x18's (484), not measured on this armer.
     const gpa = testing.allocator;
-    for ([_]usize{ 6, 8 }) |g| {
+    for ([_]usize{ 7, 8 }) |g| {
         var prog: std.ArrayList(u32) = .empty;
         defer prog.deinit(gpa);
         try prog.appendSlice(gpa, &.{ 0x00000003, 0x00000002, 0x4140E000, 0x04000C0E, 0x0000683C, 0x00140102 });
@@ -1681,7 +1682,25 @@ test "x03 with w2[31:29] = 010 arms the halt deadline" {
         var state = emu.State{};
         defer state.deinit(gpa);
         const r = emu.runFrom(gpa, &state, prog.items, 0, 64);
-        if (g == 6) _ = try r else try testing.expectError(error.HaltDeadline, r);
+        if (g == 7) _ = try r else try testing.expectError(error.HaltDeadline, r);
+    }
+}
+
+test "a gap holding a two-word bundle completes while its words stay below the limit" {
+    // fact 98: continuing x17, 4 nops, ldi, st pair, halt completes; one more nop parks.
+    const gpa = testing.allocator;
+    for ([_]usize{ 4, 5 }) |g| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(gpa);
+        try src.appendSlice(gpa, "x17.cont\n");
+        for (0..g) |_| try src.appendSlice(gpa, "alu s0, s0, s0, #0\n");
+        try src.appendSlice(gpa, "ldi s4, #0x700\nst.wr #0x40, e0, s4\nx17.halt\n");
+        const prog = try assemble(gpa, src.items);
+        defer gpa.free(prog);
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const r = emu.runFrom(gpa, &state, prog, 0, 64);
+        if (g == 4) _ = try r else try testing.expectError(error.HaltDeadline, r);
     }
 }
 
@@ -1700,9 +1719,10 @@ test "an x17 store with an odd e does not arm the halt deadline" {
 }
 
 test "lde.arm loads e8..e15 and arms the halt deadline" {
-    // fact 479: lde class 101 is a plain lde plus the arm.
+    // fact 479: lde class 101 is a plain lde plus the arm; the 7/8 boundary is x02's
+    // and x18's (484), not measured on this armer.
     const gpa = testing.allocator;
-    for ([_]usize{ 6, 7 }) |g| {
+    for ([_]usize{ 7, 8 }) |g| {
         var src: std.ArrayList(u8) = .empty;
         defer src.deinit(gpa);
         try src.appendSlice(gpa, "lde.arm e9, #0x123\n");
@@ -1713,7 +1733,7 @@ test "lde.arm loads e8..e15 and arms the halt deadline" {
         var state = emu.State{};
         defer state.deinit(gpa);
         const r = emu.runFrom(gpa, &state, prog, 0, 64);
-        if (g == 6) {
+        if (g == 7) {
             _ = try r;
             try testing.expectEqual(@as(u32, 0x123), state.e[9]);
         } else try testing.expectError(error.HaltDeadline, r);
@@ -1746,11 +1766,12 @@ test "x17e with S1[23:20] set is refused: it may run, arm or stop" {
 }
 
 test "x18 class 000 with w2[18] = 1 and w2[17] = 0 arms the halt deadline" {
-    // fact 483 on x18.eagu's template (class 000); w2[17] = 1 cancels the arm.
+    // fact 483, measured on these words in 484: 7 nops complete, 8 park; w2[17] = 1
+    // cancels the arm (12 complete).
     const gpa = testing.allocator;
     for ([_]struct { w2: u32, g: usize, ok: bool }{
-        .{ .w2 = 0x0004AC00, .g = 6, .ok = true },
-        .{ .w2 = 0x0004AC00, .g = 7, .ok = false },
+        .{ .w2 = 0x0004AC00, .g = 7, .ok = true },
+        .{ .w2 = 0x0004AC00, .g = 8, .ok = false },
         .{ .w2 = 0x0006AC00, .g = 12, .ok = true },
     }) |c| {
         var prog: std.ArrayList(u32) = .empty;
