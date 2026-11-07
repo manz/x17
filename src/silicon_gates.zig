@@ -1524,6 +1524,19 @@ const GATES = [_]Gate{
         .post = &.{.{ .y_mem = .{ .addr = 0, .value = 0x55 } }},
     },
     .{
+        .name = "own-lde101",
+        // Upstream, fact 479: e11 = 0x760, then lde class 101 e11 <- 0x740: the store lands
+        // at Y:0x740.
+        .pre = &.{.{ .bank = .e, .index = 11, .value = 0x760 }},
+        .src =
+        \\ldi s3, #0x55
+        \\lde.arm e11, #0x740
+        \\x17.sty e11, #3, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x740, .value = 0x55 } }},
+    },
+    .{
         .name = "own-pc14not",
         // Upstream, fact 478: mux 00 loads s7 <- !(v even); s7 = 0x77 gives 1.
         .pre = &.{.{ .bank = .s, .index = 7, .value = 0x77 }},

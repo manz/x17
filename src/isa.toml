@@ -216,8 +216,8 @@ ref = "fact 22, 28: ONE member measured - [28:24] a 5-bit register number (16..3
 regs = true
 
 # The 1-word `stop` (fact 18, 32: [31:29] = 101 with bit 1) is retired: A0000026 continues past
-# itself (479); that key is the lde class-101 word (low5 0x06, h[30] = 0), a halt-deadline armer whose
-# own effect is OPEN, so x17 refuses it.
+# itself (479).  That key is lde class 101, `lde.arm` (subforms.txt): e<h[29:26]> <- #h[20:5], e8..e15
+# since h[29] = 1, plus the halt-deadline arm.  own-lde101
 
 [[form]]
 name = "agu10r"

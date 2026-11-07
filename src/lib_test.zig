@@ -1699,10 +1699,23 @@ test "an x17 store with an odd e does not arm the halt deadline" {
     try testing.expect(state.halted);
 }
 
-test "A0000026 is no stop: x17 refuses it until its effect is known" {
-    // fact 479 retires 18/32's 1-word stop reading.
+test "lde.arm loads e8..e15 and arms the halt deadline" {
+    // fact 479: lde class 101 is a plain lde plus the arm.
     const gpa = testing.allocator;
-    var state = emu.State{};
-    defer state.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0xA0000026, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    for ([_]usize{ 6, 7 }) |g| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(gpa);
+        try src.appendSlice(gpa, "lde.arm e9, #0x123\n");
+        for (0..g) |_| try src.appendSlice(gpa, "alu s0, s0, s0, #0\n");
+        try src.appendSlice(gpa, "x17.halt\n");
+        const prog = try assemble(gpa, src.items);
+        defer gpa.free(prog);
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const r = emu.runFrom(gpa, &state, prog, 0, 64);
+        if (g == 6) {
+            _ = try r;
+            try testing.expectEqual(@as(u32, 0x123), state.e[9]);
+        } else try testing.expectError(error.HaltDeadline, r);
+    }
 }

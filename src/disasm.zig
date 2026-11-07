@@ -94,6 +94,7 @@ fn formatOperand(out: []u8, op: isa.Operand, field: u32) usize {
     return switch (op.kind) {
         .s => printTo(out, "s{d}", .{field}),
         .e => printTo(out, "e{d}", .{field}),
+        .e8 => printTo(out, "e{d}", .{field + 8}),
         .r_reg => printTo(out, "R{d}", .{field}),
         .a_reg => printTo(out, "A{d}", .{field}),
         .p => printTo(out, "p{d}", .{field}),
@@ -251,4 +252,10 @@ test "disasm one-word sub-forms" {
     const s = try roundTrip("lde.hi e2, #0x300");
     defer testing.allocator.free(s);
     try testing.expectEqualStrings("lde.hi e2, #0x300", s);
+}
+
+test "disasm lde.arm prints e8..e15" {
+    const s = try roundTrip("lde.arm e11, #0x740");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("lde.arm e11, #0x740", s);
 }

@@ -180,6 +180,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x0D and (head >> 29) == 0b011) return execPtst(gpa, state, head);
     // lde with [31] = 1 (fact 280): same fields as class 01x.
     if (low5 == 0x06 and (head >> 30) == 0b11) return execLde(gpa, state, head);
+    // lde class 101 (fact 479): e<h[29:26]> <- #h[20:5]; h[29] = 1 makes it e8..e15.
+    // The halt-deadline arm is the runner's.
+    if (low5 == 0x06 and (head >> 29) == 0b101) return execLde(gpa, state, head);
     // rop at classes 011 and 100 (fact 281, 285): s<[29:26]>.
     if (low5 == 0x07 and ((head >> 29) == 0b011 or (head >> 29) == 0b100)) return execRop(gpa, state, head);
     if (low5 == 0x0C and (head >> 31) == 1) return execRagu0c(state, head);
@@ -3539,8 +3542,8 @@ fn isDeadlineArmer(bundle: []const u32) bool {
     }
     if (low5 == 0x02 and bundle.len >= 6) return (bundle[2] >> 30) & 1 == 1;
     if (low5 == 0x03 and bundle.len >= 6) return bundle[2] >> 29 == 0b010; // 479
-    // 479: lde with h[30] = 0 (A0000026) and rop with h[31] = 1 (882000E7).  x17 executes
-    // neither word yet; the rule waits for them.
+    // 479: lde with h[30] = 0 (lde.arm, A0000026) and rop with h[31] = 1 (882000E7, which x17
+    // does not execute yet).
     if (bundle.len == 1 and low5 == 0x06 and (bundle[0] >> 30) & 1 == 0) return true;
     if (bundle.len == 1 and low5 == 0x07 and bundle[0] >> 31 == 1) return true;
     return false;

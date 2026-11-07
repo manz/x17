@@ -976,6 +976,10 @@ x18.rcl001	st_src	s	22	25	head
 lde.hi	dest_e	e	26	29	head
 lde.hi	imm16	imm	5	20	head
 
+# lde.arm <dest_e8..15>, #<imm>   (lde class 101; arms the halt deadline)
+lde.arm	dest_e	e8	26	28	head
+lde.arm	imm16	imm	5	20	head
+
 # rop.c4 <dest_s>, <dest_R>, <x_e>, <y_R>, #<fn>   (rop at class 100)
 rop.c4	dest_s	s	26	29	head
 rop.c4	dest_R	R	22	25	head

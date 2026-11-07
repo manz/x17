@@ -479,6 +479,21 @@ fn matchOperand(op: isa.Operand, tok: Token, d: *Diagnostic) ?u32 {
             }
             return tok.value;
         },
+        .e8 => {
+            if (tok.kind != .e_reg) {
+                d.* = .{ .code = .e0009_expected_element_reg, .span = tokSpan(tok) };
+                setExpected(d, "element register e8..e15", tok);
+                d.setHint("this form's e field has its top bit fixed: only e8..e15 fit");
+                return null;
+            }
+            if (tok.value < 8 or tok.value > 15) {
+                d.* = .{ .code = .e0014_reg_index_out_of_range, .span = tokSpan(tok) };
+                d.setMsg("this form takes e8..e15 only");
+                d.setHint("the form's key fixes the e field's top bit at 1");
+                return null;
+            }
+            return tok.value - 8;
+        },
         .r_reg => {
             if (tok.kind != .r_reg) {
                 d.* = .{ .code = .e0010_expected_r_reg, .span = tokSpan(tok) };
