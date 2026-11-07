@@ -395,8 +395,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
 
 /// pc14, low5 0x14 with a class-010/011 second and S[25] (fact 107, 380, 381, 464):
 /// p<S[7:4]> <- cond(group h[28:25], code S[11:8]) of v = mode S[14:12] applied to
-/// a = s<S[22:19]> (read before the s write); s<h[24:21]> <- by S[28:27]: 00 0, 01/10 the
-/// immediate h[20:5], 11 refused.  Unmeasured (group, code) cells are refused.
+/// a = s<S[22:19]> (read before the s write); s<h[24:21]> <- by S[28:27]: 00 the bundle's own
+/// condition negated (478, not 107's 0), 01/10 the immediate h[20:5], 11 refused.  Unmeasured
+/// (group, code) cells are refused.
 fn execPc14(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     if (bundle.len < 2) return RunError.UnknownForm;
@@ -411,7 +412,7 @@ fn execPc14(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     if (s_dest != 0) {
         const src: u32 = (sw >> 27) & 3;
         if (src == 3) return RunError.UnknownForm;
-        state.s[s_dest] = if (src == 0) 0 else (h >> 5) & 0xFFFF;
+        state.s[s_dest] = if (src == 0) @intFromBool(bit == 0) else (h >> 5) & 0xFFFF;
     }
     if (p_dest != 0) state.p[p_dest] = bit;
 }

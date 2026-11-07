@@ -1524,6 +1524,16 @@ const GATES = [_]Gate{
         .post = &.{.{ .y_mem = .{ .addr = 0, .value = 0x55 } }},
     },
     .{
+        .name = "own-pc14not",
+        // Upstream, fact 478: mux 00 loads s7 <- !(v even); s7 = 0x77 gives 1.
+        .pre = &.{.{ .bank = .s, .index = 7, .value = 0x77 }},
+        .src =
+        \\pc14 p13, s7, #11, #12, #2, s7, #0, #0x14A3
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 7, .value = 1 } }},
+    },
+    .{
         .name = "own-pc14-e0",
         // Upstream, fact 468: a pc14 pair loading an immediate sets e0 to its [20:5].
         .src =

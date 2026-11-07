@@ -1522,18 +1522,33 @@ test "pc14 operand modes give fact 381's sign table" {
     };
 }
 
-test "pc14's head target takes 0 under mux 0 and the immediate under mux 1 and 2" {
-    // fact 107, class 010.
+test "pc14's head target takes !cond under mux 0 and the immediate under mux 1 and 2" {
+    // fact 478 (mux 0, own-pc14not), 107 (mux 1, 2).
     const gpa = testing.allocator;
-    for ([_]u32{ 0, 1, 2 }) |mux| {
+    for ([_]u32{ 0, 1, 2 }) |mux| for ([_]u32{ 0x77, 0x76 }) |a| {
         var buf: [96]u8 = undefined;
-        const prog = try assemble(gpa, try std.fmt.bufPrint(&buf, "pc14 p0, s0, #0, #0, #5, s6, #{d}, #0x1234\nx17.halt\n", .{mux}));
+        const prog = try assemble(gpa, try std.fmt.bufPrint(&buf, "pc14 p13, s7, #11, #12, #2, s7, #{d}, #0x14A3\nx17.halt\n", .{mux}));
         defer gpa.free(prog);
         var state = emu.State{};
         defer state.deinit(gpa);
-        state.s[6] = 0x777;
+        state.s[7] = a;
         _ = try emu.runFrom(gpa, &state, prog, 0, 64);
-        try testing.expectEqual(@as(u32, if (mux == 0) 0 else 0x1234), state.s[6]);
+        const even: u32 = @intFromBool(a & 1 == 0);
+        try testing.expectEqual(@as(u32, if (mux == 0) 1 - even else 0x14A3), state.s[7]);
+        try testing.expectEqual(@as(u8, @intCast(even)), state.p[13]);
+    };
+}
+
+test "an x18 branch word writes its p slot beside the branch" {
+    // fact, Upstream: 00000018 00000000 70006000 C0000100, branch on p7 = 0: p3 <- 1.
+    for ([_]u8{ 0, 1 }) |pre| {
+        const gpa = testing.allocator;
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[3] = pre;
+        const prog = [_]u32{ 0x00000018, 0x00000000, 0x70006000, 0xC0000100, 0x00000017, 0x31308000, 0xA0000000 };
+        _ = try emu.runFrom(gpa, &state, &prog, 0, 16);
+        try testing.expectEqual(@as(u8, 1), state.p[3]);
     }
 }
 

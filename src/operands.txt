@@ -591,7 +591,7 @@ condset	p_dest	p	4	7	s1
 condset	cond	imm	8	11	s1
 condset	group	imm	25	28	head
 
-# pc14 <p_dest>, <a_s>, #<g>, #<c>, #<m>, <s_dest>, #<mux>, #<imm>  (mux S[28:27]: 0 loads 0, 1/2 the imm)
+# pc14 <p_dest>, <a_s>, #<g>, #<c>, #<m>, <s_dest>, #<mux>, #<imm>  (mux S[28:27]: 0 loads !cond, 1/2 the imm)
 pc14	p_dest	p	4	7	s1
 pc14	a_s	s	19	22	s1
 pc14	g	imm	25	28	head

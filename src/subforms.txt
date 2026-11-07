@@ -348,7 +348,7 @@ condset    2   0x00000014   0x42000000
 
 # pc14: the same bundle with its operand and s write spelled (fact 107, 380, 381, 464):
 #   p<S[7:4]> <- cond(g = h[28:25], c = S[11:8]) of v = mode S[14:12] of s<S[22:19]>
-#   s<h[24:21]> <- mux S[28:27]: 00 0, 01/10 h[20:5], 11 refused (107).  S[3:0] = 8 is as measured
+#   s<h[24:21]> <- mux S[28:27]: 00 !cond (478), 01/10 h[20:5], 11 refused.  S[3:0] = 8 is as measured
 #   (16E29474 42382CD8); what it does is OPEN.
 pc14       2   0x00000014   0x42000008
 
