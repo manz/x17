@@ -2035,22 +2035,15 @@ fn refImdct(comptime n2: usize, t: *const ImTables(n2), w: []const i64, e: i64, 
     }
 }
 
-test "imdct transforms a long block as the model does" {
+fn imdctRuns(comptime n2: usize, call: []const u8, seed: u64) !void {
     const gpa = testing.allocator;
-    const n2 = 1024;
     const T = ImTables(n2);
     const t = T.init();
-    const prog = try assemble(gpa,
-        \\.include "lib/bits.sm"
-        \\.include "lib/mem.sm"
-        \\.include "lib/imdct.sm"
-        \\        bits_init(0x4000)
-        \\        imdct(1024, 512, 10, 9, 0x0400, 0x0000, 0x0800, 0x1000, 0x1400, 0x1A00, 0x2400, 0x2390)
-        \\        x17.halt
-        \\
-    );
+    const src = try std.fmt.allocPrint(gpa, ".include \"lib/bits.sm\"\n.include \"lib/mem.sm\"\n.include \"lib/imdct.sm\"\n        bits_init(0x4000)\n        {s}\n        x17.halt\n", .{call});
+    defer gpa.free(src);
+    const prog = try assemble(gpa, src);
     defer gpa.free(prog);
-    var prng = std.Random.DefaultPrng.init(0x1DC7);
+    var prng = std.Random.DefaultPrng.init(seed);
     const rnd = prng.random();
     for (0..6) |run| {
         var w: [n2]i64 = undefined;
@@ -2110,6 +2103,15 @@ test "imdct transforms a long block as the model does" {
             try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF, state.readX(0x800 + @as(u32, @intCast(k))) orelse 0xDEAD);
         }
     }
+}
+
+test "imdct transforms a long block as the model does" {
+    try imdctRuns(1024, "imdct(1024, 512, 10, 9, 0x0400, 0x0000, 0x0800, 0x1000, 0x1400, 0x1A00, 0x2400, 0x2390)", 0x1DC7);
+}
+
+test "imdct transforms a short block as the model does" {
+    // the same layout; tables and buffers only use their first n2 / 4 .. 2 n2 words
+    try imdctRuns(128, "imdct(128, 64, 7, 6, 0x0400, 0x0000, 0x0800, 0x1000, 0x1400, 0x1A00, 0x2400, 0x2390)", 0x5B7);
 }
 
 test "x02.ainc's template writes s2 and x18.rag's steps e7" {

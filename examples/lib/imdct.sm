@@ -9,7 +9,9 @@
 ; scaled + E' - log2 n2 + 7 is one 0x19 op-23 shift, which saturates as the model's comparisons
 ; do.
 ;
-; imdct(N2, N4, LOGN2, IN, Z, OUT, PRE, POST, TW, REV, ESLOT):
+; imdct(N2, N4, LOGN2, STAGES, IN, Z, OUT, PRE, POST, TW, REV, ESLOT), N4 = n2 / 2 (the FFT's
+; points, not a quarter), LOGN2 = log2 n2, STAGES = log2 N4: long (1024, 512, 10, 9), short
+; (128, 64, 7, 6).
 ;   X IN   n2 words in, rewritten (normalised words, then the DCT-IV result u)
 ;   X Z    n2 words: n4 = n2/2 complex points, re then im
 ;   X OUT  2 n2 samples out
