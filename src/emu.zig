@@ -3531,16 +3531,16 @@ fn sameY(a: *const std.AutoHashMapUnmanaged(u32, u32), b: *const std.AutoHashMap
 /// complete, seven or more park.
 fn isDeadlineArmer(bundle: []const u32) bool {
     const low5 = bundle[0] & 0x1F;
-    // S2 classes 000, 101 and 111 are the measured ones; in a class-011 store S1[18:15] is the
-    // e field, and whether an odd e arms the deadline is OPEN.
+    // S2 classes 000, 101 and 111 are the measured ones; a class-011 store's S1[15] is its e
+    // field's low bit and does not arm (479).
     if (low5 == 0x17 and bundle.len >= 3) {
         const cls = bundle[2] >> 29;
         return (cls == 0 or cls == 5 or cls == 7) and (bundle[1] >> 15) & 1 == 1;
     }
     if (low5 == 0x02 and bundle.len >= 6) return (bundle[2] >> 30) & 1 == 1;
     if (low5 == 0x03 and bundle.len >= 6) return bundle[2] >> 29 == 0b010; // 479
-    // 479: lde with h[30] = 0 (A0000026, which x17's 1-word `stop` also claims) and rop with
-    // h[31] = 1 (882000E7).  x17 executes neither word yet; the rule waits for them.
+    // 479: lde with h[30] = 0 (A0000026) and rop with h[31] = 1 (882000E7).  x17 executes
+    // neither word yet; the rule waits for them.
     if (bundle.len == 1 and low5 == 0x06 and (bundle[0] >> 30) & 1 == 0) return true;
     if (bundle.len == 1 and low5 == 0x07 and bundle[0] >> 31 == 1) return true;
     return false;

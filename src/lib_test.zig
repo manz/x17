@@ -1684,3 +1684,25 @@ test "x03 with w2[31:29] = 010 arms the halt deadline" {
         if (g == 6) _ = try r else try testing.expectError(error.HaltDeadline, r);
     }
 }
+
+test "an x17 store with an odd e does not arm the halt deadline" {
+    // fact 479: x17sty 00000017 A902C800 66001202 (S1[15] = 1) halts 12 words out.
+    const gpa = testing.allocator;
+    var prog: std.ArrayList(u32) = .empty;
+    defer prog.deinit(gpa);
+    try prog.appendSlice(gpa, &.{ 0x00000017, 0xA902C800, 0x66001202 });
+    for (0..12) |_| try prog.append(gpa, 0x40000005);
+    try prog.appendSlice(gpa, &.{ 0x00000017, 0x31308000, 0xA0000000 });
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    _ = try emu.runFrom(gpa, &state, prog.items, 0, 64);
+    try testing.expect(state.halted);
+}
+
+test "A0000026 is no stop: x17 refuses it until its effect is known" {
+    // fact 479 retires 18/32's 1-word stop reading.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0xA0000026, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
