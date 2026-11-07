@@ -2596,27 +2596,27 @@ fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     if (dest_s != 0) state.s[dest_s] = s_val;
 }
 
+/// x19a3, classes (0,0,3) (fact 149, 529): with x = A<w3[19:15]>, y = R<w1[21:18]>, i =
+/// 2*w3[14:0], A<head[29:25]> <- AGU3[w3[24:20]] and s<head[24:21]> <- mux w1[17:15]: 1/2 the
+/// AGU3 value, 0 zero (5 and 6 OPEN, the rest unmeasured: refused).  R<w1[14:11]> <-
+/// AGU10[w1[10:7]](e<w3[28:25]>, y).  All read before any writes.
 fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     const head = bundle[0];
     const w1 = bundle[1];
     const w3 = bundle[3];
-    // s<head[24:21]> <- AGU3[w3[24:20]](i = 2*w3[14:0]).  Only fn 25
-    // measured, which returns i.
-    const dest_s: u32 = (head >> 21) & 0xF;
-    const agu3_fn: u32 = (w3 >> 20) & 0x1F;
-    const i_raw: u32 = w3 & 0x7FFF;
-    const s_val: u32 = switch (agu3_fn) {
-        25 => (2 * i_raw) & 0xFFFF,
+    const y: u32 = state.r[(w1 >> 18) & 0xF];
+    const agu = agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], y, 2 * (w3 & 0x7FFF));
+    const s_val: u32 = switch ((w1 >> 15) & 7) {
+        1, 2 => agu,
+        0 => 0,
         else => return RunError.UnknownForm,
     };
-    if (dest_s != 0) state.s[dest_s] = s_val;
-    // R<w1[14:11]> <- AGU10[w1[10:7]](x = e<w3[28:25]>, y = 0)
+    const r_val = try agu10Eval((w1 >> 7) & 0xF, state.e[(w3 >> 25) & 0xF], y);
+    const dest_a: u32 = (head >> 25) & 0x1F;
+    if (dest_a != 0) state.a[dest_a] = agu;
+    state.s[(head >> 21) & 0xF] = s_val;
     const dest_r: u32 = (w1 >> 11) & 0xF;
-    const agu10_fn: u32 = (w1 >> 7) & 0xF;
-    const x_e: u32 = (w3 >> 25) & 0xF;
-    const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
-    const r_val = try agu10Eval(agu10_fn, x_val, 0);
     if (dest_r != 0) state.r[dest_r] = r_val;
 }
 

@@ -3635,3 +3635,29 @@ test "x17xld runs x17a05's head ALU slot beside its load" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x19a3's s write goes through the w1[17:15] mux; A always takes AGU3" {
+    // fact 529: own-x19a3m, A14 = 0x300: s3 <- A14 - 0x100 = 0x200 (mux 1); mux 0
+    // gives 0; A5 takes the AGU3 value either way; muxes 5 and 6 refuse.
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, s3: ?u32 }{
+        .{ .w1 = 0x0814bb00, .s3 = 0x200 },
+        .{ .w1 = 0x08143b00, .s3 = 0 },
+        .{ .w1 = 0x08153b00, .s3 = 0x200 }, // mux 2
+        .{ .w1 = 0x0816bb00, .s3 = null }, // mux 5
+        .{ .w1 = 0x08173b00, .s3 = null }, // mux 6
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[14] = 0x300;
+        state.s[3] = 0xABC;
+        state.r[5] = 0x10; // y = R<w1[21:18]>, read by AGU10 fn 6 (x + y) into R7
+        const r = emu.runFrom(gpa, &state, &.{ 0x0a600019, c.w1, 0x00002008, 0x7b570080, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.s3) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[3]);
+            try testing.expectEqual(@as(u32, 0x200), state.a[5]);
+            try testing.expectEqual(@as(u32, 0x10), state.r[7]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

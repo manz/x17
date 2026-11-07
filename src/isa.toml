@@ -324,6 +324,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # 000 0, 011 0x5000?, 110 head[20:5]; an X store (OPEN).  144's (7,0,3) e <- I + (I & 0x7F) was the Y 0x2E80 map: it is I.  own-x19e
 # x19a3 (fact 149): classes (0,0,3)/(7,0,3): s<head[24:21]>, A<head[29:25]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w1[21:18]>,
 # i = 2*w3[14:0]); (0,0,3) R<w1[14:11]> <- AGU10[w1[10:7]](x = e<w3[28:25]>, y); its e<w1[6:3]> write is OPEN.  own-x19a3
+# x19a3 s mux (529): s<head[24:21]> <- by w1[17:15]: 1/2 the AGU3 value, 0 zero; 5 and 6 OPEN, refused (as are 3, 4, 7); A<head[29:25]> always takes AGU3.  own-x19a3m
 # Hidden sources (fact 150): x19e w1[14:12] 011/100/101 read H[15:0]/[16:1]/[23:8], H = H3 0x038A00 if w3[1], else H2
 # 0x920D00 if w2[26], else H1 0xA05000 (origin OPEN); they are the OPEN 0x8A00/0x38A/0xC500/0xA050/0x5000 of 97-149.
 # H1 is yd at [23:8] (150).  x19a43 (fact 151): (0,4,3): s<head[24:21]> <- by w1[17:15]: 001 AGU3(x = A<w3[19:15]>,
