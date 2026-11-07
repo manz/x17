@@ -2741,3 +2741,27 @@ test "ystm: AGU10B or AGU10 by s[20] with the store on, a fresh Y read at s[17:1
         try testing.expectEqual(c.want, state.r[2]);
     }
 }
+
+test "the 0x00 R slot: AGU10, the immediate, zero, the product's low half, or Y" {
+    // fact 516: own-x00rimm (R2 = 0x280) and the other sources of the same slot.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, w1: u32, w4: u32, w5: u32, w6: u32, want: u32 }{
+        .{ .h = 0x00140000, .w1 = 0, .w4 = 0, .w5 = 0x06000000, .w6 = 0, .want = 0x280 },
+        .{ .h = 0x00140000, .w1 = 0, .w4 = 0, .w5 = 0x04000000, .w6 = 0, .want = 0 },
+        .{ .h = 0x00140000, .w1 = 0x2000, .w4 = 0, .w5 = 0x02000000, .w6 = 0x43000000, .want = (0x1234 * 0x0567 * 2) & 0xFFFF },
+        .{ .h = 0x00140000, .w1 = 0x22000, .w4 = 0, .w5 = 0x02000000, .w6 = 0x43000000, .want = (0x1234 * 0x0567) & 0xFFFF },
+        .{ .h = 0x00140000, .w1 = 0, .w4 = 0x000000A0, .w5 = 0x02000000, .w6 = 0x43000000, .want = 0x2468 },
+        .{ .h = 0x00140000, .w1 = 0, .w4 = 0x000000A0, .w5 = 0, .w6 = 0, .want = 0x2468 },
+        .{ .h = 0x08140000, .w1 = 0x500, .w4 = 0, .w5 = 0x00200000, .w6 = 0, .want = 0x380 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[5] = 0x710;
+        state.r[1] = 0x100;
+        state.s[3] = 0x1234;
+        state.s[4] = 0x0567;
+        try state.y_mem.put(gpa, 0x710, 0x2468);
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, c.w1, 0, 0x40000000, c.w4, c.w5, c.w6, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.r[2]);
+    }
+}

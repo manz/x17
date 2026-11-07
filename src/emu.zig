@@ -1020,10 +1020,21 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     // The 0x01 R slot (fact 320, 321, 425, 505): R<{w4[0], w3[31:29]}> <- w5[21] = 1:
     // AGU10[w1[10:7]](y = R<head[30:27]>, i = head[26:11]), fns 8 (i), 10 (y+i), 11 (y-i) and
     // 14 (y) measured; w5[21] = 0: Y:[e<w4[8:5]>], Y:[0] at index 0.  Reads before this
-    // bundle's writes.  0x00 has no such slot measured.
+    // bundle's writes.  0x00 has the same slot (516) and three more sources: w5[26:25] = 11 the
+    // immediate, 10 zero, and w5[25] = 1 in mode 4 the low 16 bits of s<w6[27:24]> *
+    // s<w6[31:28]>, doubled unless w1[17].  On 0x01 those bits read Y (505; OPEN).
     const r_dest: u32 = ((w4 & 1) << 3) | (w3 >> 29);
     const r_val: u32 = if (r_dest == 0) 0 else blk: {
-        if (!x01) return RunError.UnknownForm;
+        if ((w5 >> 21) & 1 == 0 and !x01) {
+            const sel: u32 = (w5 >> 25) & 3;
+            if (sel == 3) break :blk imm;
+            if (sel == 2) break :blk 0;
+            if (sel == 1 and mode == 4) {
+                const prod: u64 = @bitCast(@as(i64, sx24(state.s[(w6 >> 24) & 0xF])) * sx24(state.s[(w6 >> 28) & 0xF]));
+                const sh: u6 = if ((w1 >> 17) & 1 == 1) 0 else 1;
+                break :blk @truncate((prod << sh) & 0xFFFF);
+            }
+        }
         if ((w5 >> 21) & 1 == 1) {
             const y: u32 = state.r[(h >> 27) & 0xF];
             break :blk switch ((w1 >> 7) & 0xF) {
