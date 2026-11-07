@@ -18,6 +18,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/imdct.sm", .text = @embedFile("imdct.sm") },
     .{ .path = "lib/window.sm", .text = @embedFile("window.sm") },
     .{ .path = "lib/stereo.sm", .text = @embedFile("stereo.sm") },
+    .{ .path = "lib/tns.sm", .text = @embedFile("tns.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -2850,4 +2851,216 @@ test "the 0x03 R slot's Y read, and the mux-2 e source by w1[8]" {
     var state = emu.State{};
     defer state.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x00000003, 0x100, 0, 0x08000000, 0x00001028, 0x20000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
+
+/// sosumi ref/dsp/aac/tns.zig over the same parsed fields the routine reads.
+const TnsCase = struct {
+    nwin: usize,
+    wlen: usize,
+    nswb: u32,
+    top: u32,
+    maxo: u32,
+    off: [64]i64,
+    rec: std.ArrayList(i64),
+    w: [1024]i64,
+    e: i64,
+    halvings: u32 = 0,
+    gave_up: u32 = 0,
+
+    fn small(v: i64) bool {
+        return v > -(1 << 22) and v < (1 << 22);
+    }
+
+    fn lattice(w: []i64, k: []const i64, backwards: bool) bool {
+        var b: [12]i64 = @splat(0);
+        for (0..w.len) |step| {
+            const n = if (backwards) w.len - 1 - step else step;
+            var f = w[n];
+            if (!small(f)) return false;
+            var m = k.len;
+            while (m > 0) : (m -= 1) {
+                f -= imMul(k[m - 1], b[m - 1]);
+                if (!small(f)) return false;
+                if (m < k.len) {
+                    b[m] = imMul(k[m - 1], f) + b[m - 1];
+                    if (!small(b[m])) return false;
+                }
+            }
+            b[0] = f;
+            w[n] = f;
+        }
+        return true;
+    }
+
+    fn apply(c: *TnsCase, refl: *const [24]i64) void {
+        var r: usize = 0;
+        const rec = c.rec.items;
+        for (0..c.nwin) |wi| {
+            const nf: usize = @intCast(rec[r]);
+            r += 1;
+            if (nf == 0) continue;
+            const res = rec[r];
+            r += 1;
+            var top: u32 = c.nswb;
+            for (0..nf) |_| {
+                const len: u32 = @intCast(rec[r]);
+                const order: usize = @intCast(rec[r + 1]);
+                r += 2;
+                const bottom = top -| len;
+                defer top = bottom;
+                var k: [12]i64 = undefined;
+                var dir = false;
+                const ord = @min(order, c.maxo);
+                if (order > 0) {
+                    dir = rec[r] != 0;
+                    r += 1;
+                    for (0..order) |i| {
+                        if (i < ord) k[i] = refl[@intCast(rec[r] + (if (res == 1) @as(i64, 16) else 4))];
+                        r += 1;
+                    }
+                }
+                if (ord == 0) continue;
+                const start: usize = wi * c.wlen + @as(usize, @intCast(c.off[@min(bottom, c.top)]));
+                const end: usize = wi * c.wlen + @as(usize, @intCast(c.off[@min(top, c.top)]));
+                if (end <= start) continue;
+                const run = c.w[start..end];
+                var saved: [1024]i64 = undefined;
+                @memcpy(saved[0..run.len], run);
+                var tries: u32 = 0;
+                while (!lattice(run, k[0..ord], dir)) : (tries += 1) {
+                    @memcpy(run, saved[0..run.len]);
+                    if (tries == 48) {
+                        @memset(run, 0);
+                        c.gave_up += 1;
+                        break;
+                    }
+                    for (&c.w) |*x| x.* = rshr(x.*, 1);
+                    for (saved[0..run.len]) |*x| x.* = rshr(x.*, 1);
+                    c.e += 1;
+                    c.halvings += 1;
+                }
+            }
+        }
+    }
+};
+
+fn tnsRefl() [24]i64 {
+    var t: [24]i64 = @splat(0);
+    for (0..2) |res| {
+        const bits: u32 = @as(u32, @intCast(res)) + 3;
+        const half: i32 = @as(i32, 1) << @intCast(bits - 1);
+        var c: i32 = -half;
+        while (c < half) : (c += 1) {
+            const p: f64 = std.math.pow(f64, 2, @floatFromInt(bits));
+            const denom: f64 = if (c >= 0) p - 1 else p + 1;
+            const at: i32 = if (res == 1) 16 + c else 4 + c;
+            t[@intCast(at)] = @intFromFloat(@round(@sin(@as(f64, @floatFromInt(c)) * std.math.pi / denom) * 0x1p23));
+        }
+    }
+    return t;
+}
+
+test "tns_channel filters every window as the model does" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/mem.sm"
+        \\.include "lib/tns.sm"
+        \\        bits_init(0x4000)
+        \\        tns_channel()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    const refl = tnsRefl();
+    var prng = std.Random.DefaultPrng.init(0x7E5C);
+    const rnd = prng.random();
+    var halvings: u32 = 0;
+    var gave_up: u32 = 0;
+    for (0..31) |trial| {
+        const short = trial % 3 == 0 and trial != 30;
+        var c: TnsCase = .{
+            .nwin = if (short) 8 else 1,
+            .wlen = if (short) 128 else 1024,
+            .nswb = if (short) 14 else 49,
+            .top = 0,
+            .maxo = if (short) 7 else 12,
+            .off = undefined,
+            .rec = .empty,
+            .w = undefined,
+            .e = rnd.intRangeAtMost(i64, -30, 10),
+        };
+        defer c.rec.deinit(gpa);
+        for (&c.off, 0..) |*o, k| o.* = @intCast(@min(k * @as(usize, if (short) 9 else 21), c.wlen));
+        c.top = rnd.intRangeAtMost(u32, 1, c.nswb);
+        const amp: i64 = rnd.intRangeAtMost(i64, 1 << 10, 5600000);
+        for (&c.w) |*x| x.* = rnd.intRangeAtMost(i64, -amp, amp);
+        if (trial == 30) {
+            // twelve stages at the largest code on a constant run: past TN_MAXH, the run zeroed
+            c.top = 49;
+            c.w = @splat(1 << 21);
+            try c.rec.appendSlice(gpa, &.{ 1, 1, 49, 12, 0 });
+            for (0..12) |_| try c.rec.append(gpa, -8);
+        } else for (0..c.nwin) |_| {
+            const nf: usize = rnd.intRangeAtMost(usize, 0, if (short) 1 else 3);
+            try c.rec.append(gpa, @intCast(nf));
+            if (nf == 0) continue;
+            const res = rnd.intRangeAtMost(i64, 0, 1);
+            try c.rec.append(gpa, res);
+            for (0..nf) |_| {
+                const order = rnd.intRangeAtMost(i64, 0, if (short) 7 else 31);
+                try c.rec.append(gpa, rnd.intRangeAtMost(i64, 0, if (short) 15 else 63));
+                try c.rec.append(gpa, order);
+                if (order == 0) continue;
+                try c.rec.append(gpa, rnd.intRangeAtMost(i64, 0, 1));
+                const lo: i64 = if (res == 1) -8 else -4;
+                const wide = trial % 5 == 4;
+                for (0..@intCast(order)) |_| try c.rec.append(gpa, if (wide) rnd.intRangeAtMost(i64, lo, -lo - 1) else rnd.intRangeAtMost(i64, -2, 2));
+            }
+        }
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const py = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.y_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF);
+            }
+        }.f;
+        const px = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.x_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF);
+            }
+        }.f;
+        const Y = 0x2600;
+        try py(&state, gpa, Y + 0, c.e);
+        try py(&state, gpa, Y + 1, @intCast(c.nwin));
+        try py(&state, gpa, Y + 2, @intCast(c.wlen));
+        try py(&state, gpa, Y + 3, c.nswb);
+        try py(&state, gpa, Y + 4, c.top);
+        try py(&state, gpa, Y + 5, c.maxo);
+        for (c.off, 0..) |o, k| try py(&state, gpa, Y + 0x20 + k, o);
+        for (c.rec.items, 0..) |v, k| try py(&state, gpa, Y + 0x60 + k, v);
+        for (refl, 0..) |v, k| try px(&state, gpa, 0x1F00 + k, v);
+        for (c.w, 0..) |v, k| try px(&state, gpa, 0x400 + k, v);
+        c.apply(&refl);
+        halvings += c.halvings;
+        gave_up += c.gave_up;
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 28);
+        try testing.expect(state.halted);
+        const sx16 = struct {
+            fn f(v: ?u32) i64 {
+                return @as(i16, @bitCast(@as(u16, @truncate(v orelse 0xDEAD))));
+            }
+        }.f;
+        try testing.expectEqual(c.e, sx16(state.getY(Y + 0)));
+        try testing.expectEqual(@as(i64, c.halvings), sx16(state.getY(Y + 6)));
+        try testing.expectEqual(@as(i64, c.gave_up), sx16(state.getY(Y + 7)));
+        for (0..1024) |k| {
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(c.w[k])))) & 0xFFFFFF, state.readX(0x400 + @as(u32, @intCast(k))) orelse 0xDEAD);
+        }
+        // codes past TNS_MAX_ORDER are skipped: the table and the words below K' untouched
+        for (0..0x20) |k| try testing.expectEqual(if (k < 24) @as(?u32, @as(u32, @truncate(@as(u64, @bitCast(refl[k])))) & 0xFFFFFF) else null, state.readX(0x1F00 + @as(u32, @intCast(k))));
+    }
+    try testing.expect(halvings > 0);
+    try testing.expectEqual(@as(u32, 1), gave_up);
 }
