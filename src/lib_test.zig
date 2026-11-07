@@ -3491,3 +3491,50 @@ test "the class-0A parallel move writes R<[25:22]> too" {
     // an s0 target without bit 9 is let through, but not beside an R destination
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st2, &.{ 0x433000AA, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "dld loads s from X:[A] and s from Y:[e]" {
+    // fact 524: own-dldx (40918009: s2 = X:[A3] = 0x3333), the Y half with [13], and
+    // the refused cases.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        dld s2, A3, s0, e0
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    try testing.expectEqual(@as(u32, 0x40918009 | 1 << 13), prog[0]);
+    for ([_]struct { w: u32, s2: ?u32, s5: u32 }{
+        .{ .w = 0x40918009, .s2 = 0x3333, .s5 = 0 },
+        .{ .w = 0x40918009 | 1 << 13 | 5 << 26 | 4 << 5, .s2 = 0x3333, .s5 = 0x1357 },
+        .{ .w = 0x40918009 | 1 << 12 | 0xF << 9, .s2 = 0x3333, .s5 = 0 }, // [12:9] inert
+        .{ .w = (0x40918009 & ~@as(u32, 0x1F << 15)) | 17 << 15, .s2 = 0x7777, .s5 = 0 }, // A17
+        .{ .w = 0x40118009 | 1 << 13 | 5 << 26 | 4 << 5, .s2 = 0x0ABC, .s5 = 0x1357 }, // no X destination
+        .{ .w = 0x40918009 | 1 << 13 | 5 << 26 | 4 << 5 | 1 << 9, .s2 = 0x3333, .s5 = 0x1357 },
+        .{ .w = 0x40918009 & ~@as(u32, 1 << 20), .s2 = null, .s5 = 0 },
+        .{ .w = 0x40918009 | 5 << 26 | 4 << 5, .s2 = null, .s5 = 0 }, // [13] = 0: the stale latch
+        .{ .w = 0x40918009 | 1 << 13 | 2 << 26 | 4 << 5, .s2 = null, .s5 = 0 }, // one s for both
+        .{ .w = 0x40918009 | 1 << 13 | 5 << 26 | 6 << 5, .s2 = null, .s5 = 0 }, // Y bit 15 set
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[2] = 0x0ABC;
+        state.s[0] = 0x55;
+        for ([_]u32{ 1, 2, 3, 4, 12 }, 0..) |a, i| {
+            state.a[a] = 0x300 + @as(u32, @intCast(i));
+            try state.x_mem.put(gpa, 0x300 + @as(u32, @intCast(i)), 0x1111 * a);
+        }
+        state.a[17] = 0x320;
+        try state.x_mem.put(gpa, 0x320, 0x7777);
+        state.e[4] = 0x700;
+        state.e[6] = 0x704;
+        try state.y_mem.put(gpa, 0x700, 0x1357);
+        try state.y_mem.put(gpa, 0x704, 0x9357);
+        const r = emu.runFrom(gpa, &state, &.{ c.w, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.s2) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[2]);
+            try testing.expectEqual(c.s5, state.s[5]);
+            try testing.expectEqual(@as(u32, 0x55), state.s[0]); // destination 0 writes nothing
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

@@ -561,8 +561,8 @@ test "length table carries the sixteen known head widths" {
     }
 }
 
-test "forms table has the 31 known entries" {
-    try testing.expectEqual(@as(usize, 31), forms.len);
+test "forms table has the 32 known entries" {
+    try testing.expectEqual(@as(usize, 32), forms.len);
 }
 
 test "first form is st.y" {

@@ -360,6 +360,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "stx")) {
         return execStx(gpa, state, head);
     }
+    if (std.mem.eql(u8, f.name, "dld")) {
+        return execDld(state, head);
+    }
     if (std.mem.eql(u8, f.name, "ldy") or std.mem.eql(u8, f.name, "ldy.r")) {
         return execLdy(gpa, state, head);
     }
@@ -3935,6 +3938,29 @@ fn execPlog(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         else => 1,
     };
     if (dest != 0) state.p[dest] = v;
+}
+
+/// dld, low5 0x09 with [31] = 0 (fact 524): s<[25:22]> <- X:[A<[19:15]>] when [20] = 1;
+/// s<[29:26]> <- Y:[e<[8:5]>] when [13] = 1; destination 0 writes nothing.  Refused: [20] = 0
+/// beside an X destination (another word, OPEN), [13] = 0 beside a Y one (the stale latch), a
+/// Y word with bit 15 set (its extension is unstated) and one s for both halves.
+fn execDld(state: *State, head: u32) RunError!void {
+    const xd: u32 = (head >> 22) & 0xF;
+    const yd: u32 = (head >> 26) & 0xF;
+    if (xd != 0 and yd == xd) return RunError.UnknownForm;
+    var xv: u32 = 0;
+    if (xd != 0) {
+        if ((head >> 20) & 1 == 0) return RunError.UnknownForm;
+        xv = (state.readX(state.a[(head >> 15) & 0x1F]) orelse 0) & M24;
+    }
+    var yv: u32 = 0;
+    if (yd != 0) {
+        if ((head >> 13) & 1 == 0) return RunError.UnknownForm;
+        yv = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
+        if (yv & 0x8000 != 0) return RunError.UnknownForm;
+    }
+    if (xd != 0) state.s[xd] = xv;
+    if (yd != 0) state.s[yd] = yv;
 }
 
 fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

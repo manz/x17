@@ -397,6 +397,13 @@ evidence = "MEASURED"
 ref = "fact 68 pass 94: s<[30:26]> (ldi numbering) <- Y:[e<[8:5]>]; bit 9 = 1 enables.  own-ldy."
 
 [[form]]
+name = "dld"
+mask = "0x8000001F"
+value = "0x40102009"
+evidence = "MEASURED"
+ref = "fact 524: s<[25:22]> <- X:[A<[19:15]>] when [20] = 1 (58's ax <- e0 latch was this read; [20] = 0 reads another word, OPEN); s<[29:26]> <- Y:[e<[8:5]>] when [13] = 1 ([13] = 0 the stale latch); destination 0 writes nothing.  14 of 14 rows on the Y half; [12:9] inert.  own-dldx."
+
+[[form]]
 name = "ldy.r"
 mask = "0x803FFE1F"
 value = "0x0000020A"

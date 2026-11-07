@@ -552,6 +552,13 @@ plog	op	imm	5	10	head
 ldy	dest	dest_ldi	26	30	head
 ldy	src_e	e	5	8	head
 
+# dld (1 syllable): X and Y loads in one word (fact 524).
+# Grammar: dld <x_dest>, <x_A>, <y_dest>, <y_e>
+dld	x_dest	s	22	25	head
+dld	x_A	A	15	19	head
+dld	y_dest	s	26	29	head
+dld	y_e	e	5	8	head
+
 # ldy.r (1 syllable): ldy that also writes R (fact 523).
 # Grammar: ldy.r <dest_s>, <src_e>, <dest_R>
 ldy.r	dest	dest_ldi	26	30	head
