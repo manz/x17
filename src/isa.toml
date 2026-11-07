@@ -454,3 +454,5 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # head[31:30]; measured with S[22:20] = 111 only.  own-st0fe
 # x17.styr, x17sty (S1 class != 0, S2 class 011) with S2[3:1] = 1 or 5 (fact 439): R<S1[14:11]> <- X17LD_OP[h[10:5]](s<S2[28:25]>,
 # S1[26:23]), S1[27] = 1 (0 wedges); row 0 (a << n) only, with S2[12:11] = 10 and no Y store seen.  own-x17styr
+# x17.ldr, x17ld (S1 class 000, S2 class 011) with S1[27] = 0 (fact 443, 460): with S2[2], R<S1[14:11]> <- AGU10[S1[10:7]](y = R<h[30:27]>,
+# i = #h[26:11]), fn 10 = y + i measured, fn 11 wedges; no S2[2], no R write.  The asr and Y slots beside it are unmeasured.  own-x17ldsyn

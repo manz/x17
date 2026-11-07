@@ -1347,6 +1347,17 @@ const GATES = [_]Gate{
         .post = &.{.{ .r_reg = .{ .index = 9, .value = 0x48C } }},
     },
     .{
+        .name = "own-x17ldsyn",
+        // Upstream, fact 443/460 (3 of 3): 10040017 00001528 60000004, R2 <- R2 + 0x80
+        // (AGU10 fn 10); silicon set R2 = 0x1000 with an agu10r first.
+        .pre = &.{.{ .bank = .r, .index = 2, .value = 0x1000 }},
+        .src =
+        \\x17.ldr R2, #10, R2, #0x80
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 2, .value = 0x1080 } }},
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},

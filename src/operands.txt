@@ -694,6 +694,10 @@ x17.ld	src_s	s	25	28	s2
 x17.ld	dest_e_half	imm	0	2	s1
 x17.ld	src_e_mem	e	15	18	s1
 x17.ld	shift	imm	23	26	s1
+x17.ldr	dest_R	R	11	14	s1
+x17.ldr	fn	imm	7	10	s1
+x17.ldr	y_R	R	27	30	head
+x17.ldr	imm	imm	11	26	head
 
 # x17.e (3 syllables): dual element write.
 # Grammar: x17.e <dest_e_a>, <dest_s>, <dest_e_b>, <src_e>, #<imm>

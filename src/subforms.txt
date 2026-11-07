@@ -483,6 +483,10 @@ x17.alu05  3   0x00000017   0x00002000   0xC0000000
 # (bit 27 enable); S2 base = 0x60001208 (class 011 + measured enables).
 x17.ld     3   0x00000077   0x08000000   0x60001208
 
+# x17.ldr: x17ld with S1[27] = 0 and S2[2] (fact 443, 460): R<S1[14:11]> <- AGU10[S1[10:7]]
+# (y = R<h[30:27]>, i = #h[26:11]); fn 10 = y + i is the measured row.
+x17.ldr    3   0x00000017   0x00000028   0x60000004
+
 # x17.e: dual element write in a continuing bundle.  S1 class 000 + S2
 # class 100.  Semantics from fact 135 / own-x17e:
 #   e<S2[11:8]>, s<head[24:21]> <- head[20:5]   (gated by S1[18])

@@ -2794,6 +2794,20 @@ fn execX17Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const s1 = bundle[1];
     const s2 = bundle[2];
 
+    // S1[27] = 0 (fact 443, 460): with S2[2], R<S1[14:11]> <- AGU10[S1[10:7]](y =
+    // R<h[30:27]>, i = #h[26:11]); without it no R write. Only fn 10 (y + i) is measured (fn 11
+    // wedges), and only with S1[22:15] and S1[2:0] zero, so whether the asr and Y slots still run
+    // beside it is unmeasured: anything else is refused.
+    if ((s1 >> 27) & 1 == 0) {
+        if ((s1 >> 15) & 0xFF != 0 or s1 & 7 != 0) return RunError.UnknownForm;
+        if ((s2 >> 2) & 1 == 0) return;
+        if ((s1 >> 7) & 0xF != 10) return RunError.UnknownForm;
+        const h = bundle[0];
+        const r_dest: u32 = (s1 >> 11) & 0xF;
+        if (r_dest != 0) state.r[r_dest] = (state.r[(h >> 27) & 0xF] +% ((h >> 11) & 0xFFFF)) & 0xFFFF;
+        return;
+    }
+
     const dest_s: u32 = (s1 >> 19) & 0xF;
     const src_s: u32 = (s2 >> 25) & 0xF;
     const shift: u32 = (s1 >> 23) & 0xF;
