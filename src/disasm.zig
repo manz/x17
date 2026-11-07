@@ -51,7 +51,12 @@ pub fn disasmBundle(out: []u8, bundle: []const u32) DisasmError!usize {
     const low5: u8 = @intCast(bundle[0] & 0x1F);
     if (low5 == 0x17 or low5 == 0x19 or low5 == 0x11) return DisasmError.UnknownForm;
 
-    const f = isa.classify(bundle[0]) orelse return DisasmError.UnknownForm;
+    const f = isa.classify(bundle[0]) orelse {
+        // One-word sub-forms (lde.hi, lde.arm) live in subforms.txt, not the form table.
+        if (isa.matchSubForm(bundle[0..1])) |sf| if (sf.syllables == 1)
+            return writeFormLine(out, sf.name, isa.operandsFor(sf.name), bundle[0..1]);
+        return DisasmError.UnknownForm;
+    };
     const ops = isa.operandsFor(f.name);
     return writeFormLine(out, f.name, ops, bundle);
 }
@@ -240,4 +245,10 @@ test "disasm prints the generic .stop suffix" {
 
 test "a form with an operand on S1[22:20] takes no .stop" {
     try testing.expectError(error.AssemblyFailed, asm_mod.assembleOne("x17.ld.stop s1, e2"));
+}
+
+test "disasm one-word sub-forms" {
+    const s = try roundTrip("lde.hi e2, #0x300");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("lde.hi e2, #0x300", s);
 }
