@@ -3089,8 +3089,16 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         return;
     }
     if ((s2 >> 11) & 3 != 3) return RunError.UnknownForm;
+    // Mux 7: R<S1[14:11]> <- AGU10[S1[10:7]](x = e<S1[18:15]>, the store's own address
+    // register, y = R<h[30:27]>, i = #h[26:11]) (fact 543, own-x17styr).
+    const h = bundle[0];
+    const r_val: ?u32 = if (r_mode == 7) try agu10ImmEval((s1 >> 7) & 0xF, state.e[(s1 >> 15) & 0xF], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF) else null;
     const v: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
     state.y_mem.put(gpa, state.e[(s1 >> 15) & 0xF], v) catch return RunError.OutOfMemory;
+    if (r_val) |r| {
+        const dest: u32 = (s1 >> 11) & 0xF;
+        if (dest != 0) state.r[dest] = r;
+    }
 }
 
 /// (S1 class 100, S2 class 100) with S2[3:0] = 10 (fact 273):
@@ -3320,11 +3328,9 @@ fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const dest_s: u32 = (s2 >> 10) & 0xF;
     const dest_e: u32 = (2 * (s1 & 0x7)) & 0xF;
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
-    // AGU10[10] = "y+i" (the imm lives in head[26:11], not an s/e reg).
-    const result: u32 = switch (fn_op) {
-        10 => (y_val +% imm) & 0xFFFF,
-        else => return RunError.UnknownForm,
-    };
+    // Only fn 10 (y + i) is measured here.
+    if (fn_op != 10) return RunError.UnknownForm;
+    const result = try agu10ImmEval(fn_op, 0, y_val, imm);
     if (dest_s != 0) state.s[dest_s] = result;
     if (dest_e != 0) state.e[dest_e] = result;
     // R<S1[14:11]> takes it too, x17ld's R field (fact 540, own-x17a2r).  The
@@ -3365,7 +3371,7 @@ fn execX17Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         if ((s1 >> 7) & 0xF != 10) return RunError.UnknownForm;
         const h = bundle[0];
         const r_dest: u32 = (s1 >> 11) & 0xF;
-        if (r_dest != 0) state.r[r_dest] = (state.r[(h >> 27) & 0xF] +% ((h >> 11) & 0xFFFF)) & 0xFFFF;
+        if (r_dest != 0) state.r[r_dest] = try agu10ImmEval(10, 0, state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF);
         return;
     }
 
@@ -3712,6 +3718,13 @@ fn aguaEval(fn_op: u32, x: u32, i: u32) ?u32 {
         else => return null,
     };
     return r & 0xFFFF;
+}
+
+/// AGU10 in the forms that carry an immediate i = #h[26:11] (fact 443, 540, 543): fn 10 is
+/// y + i; the rest as agu10Eval, which refuses fn 8 (i, unmeasured) and fn 11 (y - i, wedges).
+fn agu10ImmEval(fn_op: u32, x: u32, y: u32, i: u32) RunError!u32 {
+    if (fn_op & 0xF == 10) return (y +% i) & 0xFFFF;
+    return agu10Eval(fn_op, x, y);
 }
 
 fn agu10Eval(fn_op: u32, x: u32, y: u32) RunError!u32 {
