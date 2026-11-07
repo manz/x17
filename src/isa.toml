@@ -111,7 +111,7 @@ ref = "fact 100 pass 126: with a class-100 second S, S[25] = 1: e<S[24:21]> <- F
 
 # x17agu (no form of its own: it is an x17 [head, S1, S2]).  fact 112 pass 138: x17 [head, S1, S2] with S1[28] = 1 (any S1[31:29], 113) and S2 class 010 does not halt: R<S2[8:5]> <- AGU10[S1[27:24]](x = e<S1[8:5]>, y = R<S2[4:1]>); S1[28] = 0 gives 0, head[20] = 1 gives 1 (OPEN), no imm field found; the halt deadline of 98 applies.  own-x17agu
 
-# x17 halt rule.  fact 133 pass 159: with S2 class 101 the bundle halts iff S1[22:20] = 011, whatever the head, S1 class, S1[19:0] or S1[31:23]; 010 runs the x17.ms slots, two more bundles, then stops with no halt visible (457, 465, x17.mswedge); 111 wedges; 000, 001, 100, 101, 110 continue (100 leaves cross-run state: alternate run.py runs wedge, OPEN).  S2 classes other than 101 never halt (97).  own-x17ctl
+# x17 halt rule.  fact 133 pass 159: with S2 class 101 the bundle halts iff S1[22:20] = 011, whatever the head, S1 class, S1[19:0] or S1[31:23]; 010 runs the x17.ms slots, two more bundles, then stops with no halt visible (457, 465, x17.ms.stop); 111 wedges; 000, 001, 100, 101, 110 continue (100 leaves cross-run state: alternate run.py runs wedge, OPEN).  S2 classes other than 101 never halt (97).  own-x17ctl
 
 # ealu10 (low5 0x10, S class 110).  fact 132 pass 158: e<S[6:3]> <- X16_ALU[S[11]][S[14:12]](a = s<S[21:18]>, b = 0 in every run, its field OPEN); op 0-3 wedge; head[9] = 1 is a further modifier (-a, ~a; OPEN); S[10:7] write 0 to s1/s2/s4/s8 (OPEN); S[30] = 0 gives R1 <- 0.  own-ealu
 
@@ -469,7 +469,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # x19.alum, x19alu w1[14:11] mode (fact 454, 462): 0xB is the op-23 table (147); 8 ops on a + b: 0-5, 11-15 a + b; 9, 10, 28 a;
 # 6-8, 26, 27 0; 16, 17 b - a; 20, 21 -(a + b) - 2; the rest no write.  0xA is 8 with b = 0, the no-write rows giving a.  9 writes
 # nothing.  Pass-through rows may be shifts by an amount that was 0 (OPEN); w1[2:0] != 0 OPEN.  own-x19syn, own-x19m8add, own-x19maon, own-x19m8neg
-# x17.mswedge, x17.ms with S1[22:20] = 010 (fact 457, 463, 465): the four slots, two shadow bundles, then a stop with no halt for
+# x17.ms.stop, x17.ms with S1[22:20] = 010 (fact 457, 463, 465): the four slots, two shadow bundles, then a stop with no halt for
 # the poll.  A Y store in shadow slot 1 is lost, one in slot 2 took e0 from slot 1's word (466; slot-1 loss OPEN, x17 refuses
 # shadow stores); S1[27:24] = 0 stored s1 (refused).  own-x17mswedge-2, own-x17mswedge-sh, own-x17mswedge-8
 # e0 as an address entry (fact 65, 466, 468, 470, 473): not a register.  ldi, lde e0, a 0x05 alu/movb (a nop with

@@ -107,6 +107,12 @@ test to every form, x17 gets a namespace (`x17.alu`, `x17.agu`,
 isa.toml ALREADY describes them: "x17 S1 class 011 + S2 class 111: imm
 load" reads as `x17.imm` without further ceremony.
 
+`.stop` suffix: any x17 sub-form whose base has S1[22:20] = 000 and no operand on those bits
+takes `.stop`, the same operands with S1[22:20] = 010 (`x17.ms.stop`, `x17.sty.stop`).  The
+slots run, two more bundles run, then the engine stops without a visible halt (fact 457,
+465, 478).  disasm prints the suffix back; a form like `x17.ld`, whose operands cover those
+bits, has none.
+
 ## Placement and layout
 
 - Default: `main_row = 0x40` (from isa.toml); bundles pack sequentially.

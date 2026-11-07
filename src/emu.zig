@@ -2623,6 +2623,17 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     // S2 class 101: S2[1] stores Y:[e<S1[16:15]>] <- reg<S1[28:24]> (fact
     // 22, 32, 47; [16:15] = 10 hits the drifting pointer a2).
     if (s2_class == 0b101) return execX17Ms(gpa, state, bundle);
+    // S1[22:20] = 010 on any other continue-shape form: its fields, then the stop
+    // (fact 478: all 20 rows stopped; the two-bundle shadow is the synthetic's).
+    if (s1 & (7 << 20) == isa.STOP_ROW) {
+        const b3 = [3]u32{ bundle[0], s1 & ~isa.STOP_ROW, s2 };
+        // Forms with an operand on those bits (x17.ld, ...) read 010 as a field: not a stop.
+        if (isa.matchSubForm(&b3)) |sf| if (isa.stopCapable(sf)) {
+            try execX17(gpa, state, &b3);
+            state.wedge_pending = true;
+            return;
+        };
+    }
     if (s1_class == 0b011 and s2_class == 0b111) return execX17Imm(gpa, state, bundle);
     if (s2_class == 0b111) return execX17Alu(gpa, state, bundle);
     if (s1_class == 0b001 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);

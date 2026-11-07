@@ -30,9 +30,18 @@ pub fn disasmBundle(out: []u8, bundle: []const u32) DisasmError!usize {
     // when no sub-form claims the bundle AND the low5 is known to carry a
     // single-syllable form.
     if (bundle.len >= 2) {
-        if (matchSubForm(bundle)) |sf| {
+        if (isa.matchSubForm(bundle)) |sf| {
             const ops = isa.operandsFor(sf.name);
             return writeFormLine(out, sf.name, ops, bundle);
+        }
+        // S1[22:20] = 010 on a continue-shape x17: the 000 form plus `.stop`.
+        if (bundle.len >= 3 and bundle[0] & 0x1F == 0x17 and bundle[1] & (7 << 20) == isa.STOP_ROW) {
+            var b3 = [3]u32{ bundle[0], bundle[1] & ~isa.STOP_ROW, bundle[2] };
+            if (isa.matchSubForm(&b3)) |sf| if (isa.stopCapable(sf)) {
+                var name_buf: [64]u8 = undefined;
+                const name = std.fmt.bufPrint(&name_buf, "{s}.stop", .{sf.name}) catch return DisasmError.BufferTooSmall;
+                return writeFormLine(out, name, isa.operandsFor(sf.name), &b3);
+            };
         }
     }
 
@@ -49,46 +58,9 @@ pub fn disasmBundle(out: []u8, bundle: []const u32) DisasmError!usize {
 
 fn disasmX17(out: []u8, bundle: []const u32) DisasmError!usize {
     if (bundle.len < 3) return DisasmError.BundleTooShort;
-    const sf = matchSubForm(bundle) orelse return DisasmError.UnknownForm;
+    const sf = isa.matchSubForm(bundle) orelse return DisasmError.UnknownForm;
     const ops = isa.operandsFor(sf.name);
     return writeFormLine(out, sf.name, ops, bundle);
-}
-
-/// Pick a sub-form whose base matches the bundle on every bit the sub-form
-/// treats as a constant (i.e. not an operand field).  This is strict enough
-/// to tell apart sub-forms that share class bits but differ on an enable or
-/// mode marker - e.g. x17.halt vs x17.cont (both S2 class 101, split by
-/// S1[22:20]).
-fn matchSubForm(bundle: []const u32) ?*const isa.SubForm {
-    for (isa.subforms) |*sf| {
-        if (sf.syllables > bundle.len) continue;
-        const ops = isa.operandsFor(sf.name);
-        var ok = true;
-        var i: usize = 0;
-        while (i < sf.syllables) : (i += 1) {
-            const mask: u32 = nonOperandMask(ops, @intCast(i));
-            if ((bundle[i] & mask) != (sf.base[i] & mask)) {
-                ok = false;
-                break;
-            }
-        }
-        if (ok) return sf;
-    }
-    return null;
-}
-
-/// Build the "constant bits" mask for syllable `syll`: all 32 bits minus
-/// every operand field that lives in that syllable.  The result marks the
-/// bits the sub-form asserts about verbatim.
-fn nonOperandMask(ops: []const isa.Operand, syll: u8) u32 {
-    var mask: u32 = 0xFFFF_FFFF;
-    for (ops) |op| {
-        if (op.syll != syll) continue;
-        const width: u5 = @intCast(op.width());
-        const field: u32 = ((@as(u32, 1) << width) - 1) << @as(u5, @intCast(op.lo));
-        mask &= ~field;
-    }
-    return mask;
 }
 
 fn writeFormLine(
@@ -255,4 +227,17 @@ test "disasm pc14 and x18.pnot round-trip Upstream's gate words" {
     const b = try roundTrip("x18.pnot p1, p5");
     defer testing.allocator.free(b);
     try testing.expectEqualStrings("x18.pnot p1, p5", b);
+}
+
+test "disasm prints the generic .stop suffix" {
+    const a = try roundTrip("x17.ms.stop s0, #0x0, s5, e3, #0x1, #0x3, #0x0, R2, #0x1");
+    defer testing.allocator.free(a);
+    try testing.expectEqualStrings("x17.ms.stop s0, #0x0, s5, e3, #0x1, #0x3, #0x0, R2, #0x1", a);
+    const b = try roundTrip("x17.sty.stop e5, #0x3, #0x0");
+    defer testing.allocator.free(b);
+    try testing.expectEqualStrings("x17.sty.stop e5, #0x3, #0x0", b);
+}
+
+test "a form with an operand on S1[22:20] takes no .stop" {
+    try testing.expectError(error.AssemblyFailed, asm_mod.assembleOne("x17.ld.stop s1, e2"));
 }

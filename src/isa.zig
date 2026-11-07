@@ -211,6 +211,57 @@ pub fn subFormByName(name: []const u8) ?*const SubForm {
     return null;
 }
 
+/// S1[22:20] = 010 on an x17 continue-shape bundle: the same fields, then a stop (fact
+/// 457, 465, 478: every row with 010 stopped, whatever its S1 and S2 fields).
+pub const STOP_ROW: u32 = 0b010 << 20;
+
+/// Whether `sf` takes the `.stop` suffix: an x17 form whose base has S1[22:20] = 000 and no
+/// operand on those bits.
+pub fn stopCapable(sf: *const SubForm) bool {
+    if (!std.mem.startsWith(u8, sf.name, "x17.") or sf.syllables != 3) return false;
+    if ((sf.base[1] >> 20) & 7 != 0) return false;
+    for (operandsFor(sf.name)) |op| {
+        if (op.syll == 1 and op.lo <= 22 and op.hi >= 20) return false;
+    }
+    return true;
+}
+
+/// `<x17 form>.stop`: the base form when the suffix applies.
+pub fn stopBase(name: []const u8) ?*const SubForm {
+    if (!std.mem.endsWith(u8, name, ".stop")) return null;
+    const sf = subFormByName(name[0 .. name.len - 5]) orelse return null;
+    return if (stopCapable(sf)) sf else null;
+}
+
+/// The constant bits of syllable `syll`: all 32 minus every operand field in it.
+pub fn nonOperandMask(ops: []const Operand, syll: u8) u32 {
+    var mask: u32 = 0xFFFF_FFFF;
+    for (ops) |op| {
+        if (op.syll != syll) continue;
+        mask &= ~op.fieldMask();
+    }
+    return mask;
+}
+
+/// The first sub-form whose constant bits all match `bundle`.
+pub fn matchSubForm(bundle: []const u32) ?*const SubForm {
+    for (subforms) |*sf| {
+        if (sf.syllables > bundle.len) continue;
+        const ops = operandsFor(sf.name);
+        var ok = true;
+        var i: usize = 0;
+        while (i < sf.syllables) : (i += 1) {
+            const mask = nonOperandMask(ops, @intCast(i));
+            if ((bundle[i] & mask) != (sf.base[i] & mask)) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok) return sf;
+    }
+    return null;
+}
+
 const SubFormsParse = struct {
     items: [MAX_SUBFORMS]SubForm,
     len: usize,

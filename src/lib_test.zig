@@ -1164,12 +1164,12 @@ test "aac_sections and aac_scalefactors decode as the model does" {
     try testing.expect(sf_fails > 3);
 }
 
-test "a Y store in x17.mswedge's shadow is refused, not guessed" {
+test "a Y store in x17.ms.stop's shadow is refused, not guessed" {
     // fact 465: in shadow slot 1 it is lost; in slot 2 it reads address 0 unless slot 1
     // wrote s4. Neither is modelled.
     const gpa = testing.allocator;
     const prog = try assemble(gpa,
-        \\        x17.mswedge s0, #0, s5, e3, #1, #3, #0, R2, #1
+        \\        x17.ms.stop s0, #0, s5, e3, #1, #3, #0, R2, #1
         \\        x17.ms s0, #0, s1, e6, #0, #0, #0, R0, #0
         \\        x17.halt
         \\
@@ -1182,11 +1182,11 @@ test "a Y store in x17.mswedge's shadow is refused, not guessed" {
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, prog, 0, 64));
 }
 
-test "x17.mswedge with no store source is refused: silicon stored s1 there" {
+test "x17.ms.stop with no store source is refused: silicon stored s1 there" {
     // fact 465: with S1[27:24] = 0 the bundle's own store wrote s1, not nothing.
     const gpa = testing.allocator;
     const prog = try assemble(gpa,
-        \\        x17.mswedge s0, #0, s0, e3, #1, #3, #0, R2, #1
+        \\        x17.ms.stop s0, #0, s0, e3, #1, #3, #0, R2, #1
         \\        x17.halt
         \\
     );
@@ -1643,4 +1643,28 @@ test "x02 w2[30] arms the halt deadline" {
         const r = emu.runFrom(gpa, &state, prog.items, 0, 64);
         if (g == 6) _ = try r else try testing.expectError(error.HaltDeadline, r);
     }
+}
+
+test "x17.sty.stop stores, runs two shadow bundles and stops unhalted" {
+    // fact 478: any continue-shape x17 with S1[22:20] = 010 stops after its slots.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        ldi s13, #0x6FF
+        \\        x17.mve e5, s13
+        \\        ldi s3, #0x42
+        \\        x17.sty.stop e5, #3, #0
+        \\        ldi s1, #1
+        \\        ldi s2, #2
+        \\        ldi s4, #4
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    _ = try emu.runFrom(gpa, &state, prog, 0, 64);
+    try testing.expectEqual(@as(?u32, 0x42), state.getY(0x700));
+    try testing.expectEqual(@as(u32, 2), state.s[2]);
+    try testing.expectEqual(@as(u32, 0), state.s[4]);
+    try testing.expect(!state.halted);
 }

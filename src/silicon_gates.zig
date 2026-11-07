@@ -1430,7 +1430,7 @@ const GATES = [_]Gate{
         },
         .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0x1234 }},
         .src =
-        \\x17.mswedge s0, #0, s5, e3, #1, #3, #0, R2, #1
+        \\x17.ms.stop s0, #0, s5, e3, #1, #3, #0, R2, #1
         \\alu s0, s0, s0, #0
         \\alu s0, s0, s0, #0
         \\x17.ms s0, #0, s1, e6, #0, #0, #0, R0, #0
@@ -1452,7 +1452,7 @@ const GATES = [_]Gate{
             .{ .bank = .e, .index = 3, .value = 0x740 },
         },
         .src =
-        \\x17.mswedge s0, #0, s5, e3, #1, #3, #0, R2, #1
+        \\x17.ms.stop s0, #0, s5, e3, #1, #3, #0, R2, #1
         \\ldi s4, #0x720
         \\ldi s7, #0x77
         \\ldi s9, #0x99
@@ -1476,7 +1476,7 @@ const GATES = [_]Gate{
         },
         .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0x1234 }},
         .src =
-        \\x17.mswedge s0, #0, s5, e3, #1, #3, #0, R2, #1
+        \\x17.ms.stop s0, #0, s5, e3, #1, #3, #0, R2, #1
         \\alu s0, s0, s0, #0
         \\alu s0, s0, s0, #0
         \\alu s0, s0, s0, #0

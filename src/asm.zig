@@ -847,7 +847,7 @@ pub fn assembleLine(src: []const u8, start: usize, env: ?*const Env) Result {
     // Multi-syllable bundles all route through the same data-driven packer
     // in assembleX17.  The sub-form name (x17.e, x19.ld, alu11, ...) picks
     // the base words + operand table; the "x17/x19" prefix is not special.
-    if (isa.subFormByName(head.text) != null) {
+    if (isa.subFormByName(head.text) != null or isa.stopBase(head.text) != null) {
         return assembleX17(head, &lex, src, env);
     }
 
@@ -1022,7 +1022,9 @@ fn parseYAddr(lex: *Lexer, tok: Token, op: isa.Operand) union(enum) { ok: u32, e
 }
 
 fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Result {
-    const sf = isa.subFormByName(head.text) orelse {
+    // `<x17 form>.stop`: the form's fields with S1[22:20] = 010 (isa.stopBase).
+    const stop_base = if (isa.subFormByName(head.text) == null) isa.stopBase(head.text) else null;
+    const sf = stop_base orelse isa.subFormByName(head.text) orelse {
         var d = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(head) };
         var buf: [96]u8 = undefined;
         const m = std.fmt.bufPrint(&buf, "unknown sub-form '{s}'", .{head.text}) catch buf[0..0];
@@ -1118,6 +1120,7 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
         d.setMsg(m);
         return .{ .err = d };
     }
+    if (stop_base != null) b.words[1] |= isa.STOP_ROW;
     return .{ .ok = b };
 }
 
