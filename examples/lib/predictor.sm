@@ -109,8 +109,8 @@ done:
 ; s11 = 5, s6 = 2^15 - 1, s1 = 2^18, s5 = w << 18 (w = 1), s3 = the first out. Uses s2.
 ; D (set before, in s4) is tested directly: s4 <= 0.
 .macro adapt_init() {
-        x19.aagu5 A9, A7, #5, #0
-        x19.aagu5 A11, A10, #5, #0
+        x19.aagu A9, A7, #5, #0
+        x19.aagu A11, A10, #5, #0
         ldy s8, e12
         ldy s2, e13
         x19.alu s9, s14, s2, #SHIFT ; 2^ds
@@ -136,7 +136,7 @@ done:
         alu s12, s7, s14, #OP_SUB
         ptst p1, s0, #LT12, #PTST ; n == 0
         jmp #3, #1, finish
-        x19.aagu5 A4, A3, #5, #0 ; (delay slot) A4 = out base
+        x19.aagu A4, A3, #5, #0 ; (delay slot) A4 = out base
         nop()
         x19.xrd s1, #2          ; out[0] = pc[0]
         x02.ainc #2, #2
@@ -188,8 +188,8 @@ copy:   ldy s7, e15
         jmp #IF_NOT, #2, copy
         nop()
         nop()
-window: x19.aagu5 A8, A4, #5, #0 ; top: out[j - order - 1]
-        x19.aagu5 A7, A4, #5, #0
+window: x19.aagu A8, A4, #5, #0 ; top: out[j - order - 1]
+        x19.aagu A7, A4, #5, #0
         x02.ainc #7, #7         ; history: out[j - order]
         ; R6 = A10 + order + 1: where A11 stands once the tap has prefetched its last term
         ldy s13, e12
@@ -206,8 +206,8 @@ sample: ldy s7, e15
         nop()
         nop()
         x19.xrd s7, #8          ; top
-        x19.aagu5 A9, A7, #5, #0
-        x19.aagu5 A11, A10, #5, #0
+        x19.aagu A9, A7, #5, #0
+        x19.aagu A11, A10, #5, #0
         ; sum += c * d, d = out[j - 1 - k] - top, exact as floor(cd / 2^16) * 2^16 + cd[15:0]:
         ; the x02 floor >> 24 of (c << 8) * d and the undoubled low half of c * d (w1[17] = 1,
         ; fact 399). Four x02.v bundles a term, the X reads and A steps one term ahead, the

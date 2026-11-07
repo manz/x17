@@ -4568,3 +4568,66 @@ test "A16 and above through xld10 and x19aagu" {
     try testing.expect(g.a[17] != 0);
     try testing.expectEqual(@as(u32, 0), g.a[1]);
 }
+
+test "x19aagu's other slots (fact 271, 335, 341, 342)" {
+    const gpa = testing.allocator;
+    // own-x19aagp: A2 = 0x100, R2 = 0x20: A8 <- A2 + R2 + 1 (main, i = 1), A2 <- A2 + R2 (copy).
+    var p = emu.State{};
+    defer p.deinit(gpa);
+    p.a[2] = 0x100;
+    p.r[2] = 0x20;
+    _ = try emu.runFrom(gpa, &p, &.{ 0x10000019, 0x06020040, 0x80000000, 0x40210000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x121), p.a[8]);
+    try testing.expectEqual(@as(u32, 0x120), p.a[2]);
+    // own-x19aagu5: w1[25] = 0 (no main write); the copy A2 <- A5 = 0x345.
+    var c = emu.State{};
+    defer c.deinit(gpa);
+    c.a[5] = 0x345;
+    _ = try emu.runFrom(gpa, &c, &.{ 0x093A5019, 0xA4020010, 0x00000007, 0x40528000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x345), c.a[2]);
+    // own-x19ax: s2 = 0x0BEE, A10 = 0x345: X:[A<w2[26:22]> = A13] <- sx24 s2 with w1[8], w1[10].
+    var x = emu.State{};
+    defer x.deinit(gpa);
+    x.s[2] = 0x0BEE;
+    x.a[13] = 0x345;
+    x.a[10] = 0x345;
+    _ = try emu.runFrom(gpa, &x, &.{ 0x00000019, 0x06400548, 0x03400000, 0x40548001, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(?u32, 0x0BEE), x.readX(0x345));
+    // own-x19aar: R2 = 0x500: R1 <- AGU10[10](y = R<h[30:27]> = R2, i = h[26:11] = 4) = 0x504.
+    var r = emu.State{};
+    defer r.deinit(gpa);
+    r.r[2] = 0x500;
+    r.e[2] = 0x700;
+    _ = try emu.runFrom(gpa, &r, &.{ 0x10002019, 0xa4020800, 0x08003000, 0x44528000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x504), r.r[1]);
+    // Without w1[25] the main write drops; with w1[15] the copy takes s<w2[21:18]>.
+    for ([_]struct { w1: u32, w2: u32, a8: u32, a2: u32 }{
+        .{ .w1 = 0x04020040, .w2 = 0x80000000, .a8 = 0, .a2 = 0x120 },
+        .{ .w1 = 0x06028040, .w2 = 0x800C0000, .a8 = 0x121, .a2 = 0x777 },
+    }) |k| {
+        var q = emu.State{};
+        defer q.deinit(gpa);
+        q.a[2] = 0x100;
+        q.r[2] = 0x20;
+        q.s[3] = 0x777;
+        _ = try emu.runFrom(gpa, &q, &.{ 0x10000019, k.w1, k.w2, 0x40210000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(k.a8, q.a[8]);
+        try testing.expectEqual(k.a2, q.a[2]);
+    }
+    // e<w2[3:0]> = e3: w2[13] = 1 gives e<w2[7:4]> - 1 = e2 - 1 on fn 10; w2[13] = 0 table B's
+    // y + i = R2 + 4.  (For R the two tables agree on every fn w1's class admits: 0, 1, 10, 11.)
+    for ([_][2]u32{ .{ 0x08003023, 0x6FF }, .{ 0x08001023, 0x504 } }) |k| {
+        var q = emu.State{};
+        defer q.deinit(gpa);
+        q.r[2] = 0x500;
+        q.e[2] = 0x700;
+        _ = try emu.runFrom(gpa, &q, &.{ 0x10002019, 0xa4020800, k[0], 0x44528000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(k[1], q.e[3]);
+    }
+    // w1[26] = 0 wedges; one store gate alone is unmeasured.
+    for ([_]u32{ 0x02000048, 0x06000148 }) |w1| {
+        var o = emu.State{};
+        defer o.deinit(gpa);
+        try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x00000019, w1, 0x00000000, 0x40248008, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    }
+}

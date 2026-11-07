@@ -395,7 +395,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x16alu post-op (564): X16_POST rows for (op, S1[15]) = (5,0) (4,0) (5,1) (4,1) (7,0) (6,1); codes 9/10/28 take n for b, 40/41 #n; 563's op-4 58 = a << n and 62 = 0.  Open: (4,1) 38/39/42/43/44, (6,1) logic codes, ops 0-3.
 # wedge gates (559): xld10 S1[18], x19a3 w1[27] (dld h[30] already) refused when clear.  x16alu S2 class 111 post-op (563): head[30:25] code, n = S2[7:4], ops 4/5 with S1[15] = 0 table on 16-bit signed exact sums; plain on 11/15/63 and 3 with n = 0; the rest refused.
 # x16 class-100 row R<S1[14:11]> (558): S1[24] = 1 #head[20:5], 0 the cell value (517); no cell OPEN.  own-b16R.
-# x19alu any w2 class (555); x19aagu w2 classes 001/101 (556) and its s<w2[30:27]> <- Y:[e<w3[28:25]>][7:0] << 8 with w2[12:11] = 2 (342; other mux values OPEN).  x19aagu's X store (335), R (341), A copy and e writes (342) are not yet modelled.
+# x19alu any w2 class (555); x19aagu w2 classes 001/101 (556).  x19aagu all slots (335, 341, 342): main A<w1[7:3]> <- agu_xr + i gated by w1[25]; copy A<w1[20:16]>; e<{w1[2:0], h[31]}>; X store with w1[8] and w1[10]; R and e<w2[3:0]> by w2[13] (AGU10 / table B); byte load; w1[26] = 0 wedges.
 # x17 S1 class 000 + S2 class 111 (554): S2[4:3] = 11 stores Y:[e<S2[24:21]>] <- s<2*S2[2:0]> (pre-move), beside the s<S1[27:24]> write; S2[4:3] = 01 and source 0 OPEN, refused.
 # x12.agu every head[31:29] (562, retracting 553): e<h[12:9]>, s<2*w1[2:0] + h[31]>, R<w1[24:21]> <- AGU10 all write; w1[28] unread.  own: cbe012d2 23780001 / 33780001, e6 = 0x760.
 # ste (552): 0x0F with a class-001 second and e index {w1[0], h[31:29]} = 0 writes s<h[24:21]> <- e<w1[20:17]> (+1 with w1[2]) instead of an e.

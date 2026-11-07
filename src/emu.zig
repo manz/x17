@@ -2926,35 +2926,110 @@ fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (a_dest != 0) state.a[a_dest] = a_val;
 }
 
+/// x19aagu (fact 144, 152, 335, 341, 342), every slot reading before any writes:
+///   T = agu_xr[w3[24:20]](x = A<w3[19:15]>, r = R<h[30:27]>), i = 2*w3[14:0] | w2[31];
+///   A<w1[7:3]> <- T + i when w1[25] (fn 21: only A0, discarded);
+///   A<w1[20:16]> <- T (fn 21: x - i), or s<w2[21:18]> with w1[15];
+///   e<{w1[2:0], h[31]}> <- s<w2[21:18]>;
+///   X:[A<w2[26:22]>] <- sx24 s<w1[24:21]> when w1[8] and w1[10];
+///   R<w1[14:11]> <- (w2[13] ? AGU10 : table B)[w1[31:28]](x = e<w3[28:25]>, y = R<h[30:27]>,
+///     i = h[26:11]);
+///   e<w2[3:0]> <- w2[13] = 0: table B, + i on fn 12-15; w2[13] = 1: e<w2[7:4]> - 1 on fn < 12,
+///     else E1[fn - 12] (measured with w2[7:4] = 0 only);
+///   s<w2[30:27]> <- Y:[e<w3[28:25]>][7:0] << 8 when w2[12:11] = 2 (the other muxes OPEN).
+/// w1[26] = 0 wedges.
 fn execX19Aagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
+    const h = bundle[0];
     const w1 = bundle[1];
-    const w3 = bundle[3];
-
     const w2 = bundle[2];
-    const dest_a: u32 = (w1 >> 3) & 0x1F;
-    const src_a: u32 = (w3 >> 15) & 0x1F;
-    const fn_op: u32 = (w3 >> 20) & 0x1F;
-    // When w2 class is 100 (bit [31] set), i gains an extra high bit:
-    //   i = (w3[14:0] << 1) | w2[31]
-    const w2_bit31: u32 = (w2 >> 31) & 1;
-    const imm_base: u32 = w3 & 0x7FFF;
-    const imm_scaled: u32 = (imm_base << 1) | w2_bit31;
+    const w3 = bundle[3];
+    if ((w1 >> 26) & 1 == 0) return RunError.UnknownForm;
+    const fn_a: u32 = (w3 >> 20) & 0x1F;
+    const x: u32 = state.a[(w3 >> 15) & 0x1F];
+    const ry: u32 = state.r[(h >> 27) & 0xF];
+    const i: u32 = ((w3 & 0x7FFF) << 1) | (w2 >> 31);
+    const t: u32 = aguXrEval(fn_a, x, ry);
+    const s_src: u32 = state.s[(w2 >> 18) & 0xF];
 
-    const x_val: u32 = state.a[src_a];
-    const new_val: u32 = aguaEval(fn_op, x_val, imm_scaled) orelse return RunError.UnknownForm;
-    // s<w2[30:27]> <- Y:[e<w3[28:25]>][7:0] << 8 when w2[12:11] = 2 (342, 556); the other mux
-    // values are OPEN.
+    const main_dest: u32 = if ((w1 >> 25) & 1 == 1) (w1 >> 3) & 0x1F else 0;
+    if (fn_a == 21 and main_dest != 0) return RunError.UnknownForm;
+    const main_val: u32 = (t +% i) & 0xFFFF;
+    const copy_dest: u32 = (w1 >> 16) & 0x1F;
+    const copy_val: u32 = if ((w1 >> 15) & 1 == 1) s_src else if (fn_a == 21) (x -% i) & 0xFFFF else t;
+    const e2_dest: u32 = ((w1 & 7) << 1) | (h >> 31);
+
+    const st_on = (w1 >> 8) & 1 == 1 and (w1 >> 10) & 1 == 1;
+    if (!st_on and ((w1 >> 8) & 1 == 1 or (w1 >> 10) & 1 == 1)) return RunError.UnknownForm;
+    const st_addr: u32 = state.a[(w2 >> 22) & 0x1F];
+    const st_val: u32 = sx16To24(state.s[(w1 >> 21) & 0xF]);
+
+    const fn_r: u32 = w1 >> 28;
+    const ex: u32 = state.e[(w3 >> 25) & 0xF];
+    const ri: u32 = (h >> 11) & 0xFFFF;
+    const use10 = (w2 >> 13) & 1 == 1;
+    const r_dest: u32 = (w1 >> 11) & 0xF;
+    const r_val: u32 = if (r_dest == 0) 0 else if (use10) try agu10IEval(fn_r, ex, ry, ri) else x19aaguB(fn_r, ex, ry, ri);
+    const e1_dest: u32 = w2 & 0xF;
+    const e1_val: u32 = if (e1_dest == 0) 0 else if (use10) blk: {
+        if (fn_r < 12) break :blk (state.e[(w2 >> 4) & 0xF] -% 1) & 0xFFFF;
+        if ((w2 >> 4) & 0xF != 0) return RunError.UnknownForm;
+        break :blk switch (fn_r) {
+            12 => (ry +% ri) & 0xFFFF,
+            13 => (ex +% ry +% ri) & 0xFFFF,
+            14 => ((ry >> 1) +% ri) & 0xFFFF,
+            else => ry >> 1,
+        };
+    } else (x19aaguB(fn_r, ex, ry, ri) +% (if (fn_r >= 12) ri else 0)) & 0xFFFF;
+    if (e1_dest != 0 and e1_dest == e2_dest) return RunError.UnknownForm;
+
     const sd: u32 = (w2 >> 27) & 0xF;
+    const yv: u32 = if (sd == 0) 0 else (state.getY(try yAddrE(state, (w3 >> 25) & 0xF)) orelse 0) & 0xFFFF;
     const sv: ?u32 = if (sd == 0) null else switch ((w2 >> 11) & 3) {
-        2 => ((state.getY(try yAddrE(state, (w3 >> 25) & 0xF)) orelse 0) & 0xFF) << 8,
+        2 => (yv & 0xFF) << 8,
         else => return RunError.UnknownForm,
     };
-    state.a[dest_a] = new_val;
+
+    if (st_on) state.x_mem.put(gpa, st_addr, st_val) catch return RunError.OutOfMemory;
+    if (main_dest != 0) state.a[main_dest] = main_val;
+    if (copy_dest != 0) state.a[copy_dest] = copy_val;
+    if (r_dest != 0) state.r[r_dest] = r_val;
+    if (e1_dest != 0) state.e[e1_dest] = e1_val;
+    if (e2_dest != 0) state.e[e2_dest] = s_src & 0xFFFF;
     if (sv) |v| {
         state.s[sd] = v;
-        state.yd = (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF; // 571
+        state.yd = yv; // 571
     }
+}
+
+/// x19aagu's table B (fact 342, 343): AGU10B with i at 8, 10 and 11.
+fn x19aaguB(fn_op: u32, x: u32, y: u32, i: u32) u32 {
+    const v: u32 = switch (fn_op & 0xF) {
+        0 => x,
+        1 => y,
+        2, 9 => 0,
+        3 => 0 -% x,
+        4, 13 => 0 -% y,
+        5 => 1,
+        6 => x +% y,
+        7 => x -% y,
+        8 => i,
+        10 => y +% i,
+        11 => y -% i,
+        12 => y,
+        14 => y +% 1,
+        else => y -% 1,
+    };
+    return v & 0xFFFF;
+}
+
+/// AGU10 with its immediate entries (fact 109, 341): 8 i, 10 y + i, 11 y - i.
+fn agu10IEval(fn_op: u32, x: u32, y: u32, i: u32) RunError!u32 {
+    return switch (fn_op & 0xF) {
+        8 => i & 0xFFFF,
+        10 => (y +% i) & 0xFFFF,
+        11 => (y -% i) & 0xFFFF,
+        else => agu10Eval(fn_op, x, y),
+    };
 }
 
 fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
