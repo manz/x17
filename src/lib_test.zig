@@ -1807,3 +1807,21 @@ test "x18 class 000 with w2[18] = 1 and w2[17] = 0 arms the halt deadline" {
         if (c.ok) _ = try r else try testing.expectError(error.HaltDeadline, r);
     }
 }
+
+test "x18 class 111 X-slot muxes 3, 4 and 5 read lanes of Y:[e]" {
+    // fact 486: plant 0x12AB; mux 3 gives 0xAB00, mux 4 (Y << 7)[15:0], mux 5 Y.
+    const gpa = testing.allocator;
+    for ([_]struct { mux: u32, want: u32 }{
+        .{ .mux = 3, .want = 0xAB00 },
+        .{ .mux = 4, .want = 0x5580 },
+        .{ .mux = 5, .want = 0x12AB },
+        .{ .mux = 6, .want = 0x0000 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try state.y_mem.put(gpa, 0x700, 0x12AB);
+        state.e[3] = 0x700;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00400018, c.mux << 12, 0x00000000, 0xE6000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.s[2]);
+    }
+}

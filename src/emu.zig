@@ -1779,6 +1779,19 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const alu_dest: u32 = (w1 >> 8) & 0xF;
     const x_lo_raw: u32 = state.s[w2 & 0xF] & 0xFFFF;
     const st_val: u32 = x_lo_raw;
+    // X slot s<head[24:21]>: muxes 1, 2 and 6 the immediate head[20:5] (175); 3, 4 and 5 lanes
+    // of Y:[e<w3[28:25]>] (486: Y[7:0] << 8, (Y << 7)[15:0], Y).
+    const xs_dest: u32 = (h >> 21) & 0xF;
+    const xs_val: u32 = if (xs_dest == 0) 0 else blk: {
+        const y: u32 = (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF;
+        break :blk switch ((w1 >> 12) & 7) {
+            1, 2, 6 => (h >> 5) & 0xFFFF,
+            3 => (y & 0xFF) << 8,
+            4 => (y << 7) & 0xFFFF,
+            5 => y,
+            else => return RunError.UnknownForm,
+        };
+    };
     var acc: i64 = 0;
     if (hi_dest != 0 or lo_dest != 0) {
         const p: i64 = sx16(state.s[(w2 >> 24) & 0xF]) * sx16(state.s[(w2 >> 28) & 0xF]) * 2;
@@ -1807,6 +1820,7 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         state.y_mem.put(gpa, state.e[(w3 >> 25) & 0xF], st_val) catch return RunError.OutOfMemory;
     }
     const acc_u: u64 = @bitCast(acc);
+    if (xs_dest != 0) state.s[xs_dest] = xs_val;
     if (hi_dest != 0) state.s[hi_dest] = @truncate((acc_u >> 24) & 0xFFFF);
     if (lo_dest != 0) state.s[lo_dest] = @truncate(acc_u & 0xFFFF);
     if (alu_dest != 0) state.s[alu_dest] = alu_v;
