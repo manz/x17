@@ -2437,9 +2437,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     }
     // x19mac: w1 class 000/001 plain, 010/101 with the head ALU (fact 312, 384-386).
     // w2 class 100 runs it as 001 (521, 7 of 7); with w3 class 101 it is OPEN and falls
-    // through to the refusal below.  w2 = 0x80C80000 wedged silicon twice (w2[31] is needed
-    // for it, the rest of the condition is unmeasured): that exact word is refused.
-    if (w2_class == 4 and w3_class == 6 and bundle[2] == 0x80C80000) return RunError.UnknownForm;
+    // through to the refusal below.  The two rows that wedged silicon (w2 = 0x80C80000) are
+    // refused already: one by the open X store (w2[23:22] = 11), one by its w1 class 111.
     if ((w2_class == 1 or w2_class == 4) and w3_class == 6 and (w1_class == 0 or w1_class == 1 or w1_class == 2 or w1_class == 5)) {
         return execX19Mac(gpa, state, bundle);
     }
