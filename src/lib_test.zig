@@ -2213,3 +2213,53 @@ test "the 0x01 slot's xori and asr codes" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "the 0x01 R slot loads R from Y:[e<w4[8:5]>], Y:[0] at index 0" {
+    // fact 425, 505: own-x01ry (index 5) and own-x01ry0; e0 points elsewhere, so
+    // index 0 is the address 0, not e0.
+    const gpa = testing.allocator;
+    const N: u32 = 0x40000005;
+    for ([_]struct { w4: u32, w5: u32, want: ?u32 }{
+        .{ .w4 = 0x00000000, .w5 = 0x00001800, .want = 0x1357 },
+        .{ .w4 = 0x000000A0, .w5 = 0x00001800, .want = 0x2468 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[0] = 0x720;
+        state.e[5] = 0x710;
+        try state.y_mem.put(gpa, 0, 0x1357);
+        try state.y_mem.put(gpa, 0x710, 0x2468);
+        try state.y_mem.put(gpa, 0x720, 0x7777);
+        const r = emu.runFrom(gpa, &state, &.{ 0x882151C1, 0x00000541, 0x0380C0C0, 0x40000000, c.w4, c.w5, 0x00000000, N, N, N, N, N, 0x44024007, N, N, N, 0x00000017, 0x31308000, 0xA0000000 }, 0, 64);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[1]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "the 0x01 R slot's AGU10 form: R<w3[31:29]> <- fn(R<head[30:27]>, head[26:11])" {
+    // fact 320: own-x01ragu (head[31] = 1, y = R0, i = 0x700, fn 10 gives R1 = 0x700),
+    // then y = R5 under fns 11, 8, 14, and an unmeasured fn refused.
+    const gpa = testing.allocator;
+    for ([_]struct { head: u32, fn_op: u32, w4: u32 = 0, dest: u32 = 1, want: ?u32 }{
+        .{ .head = 0x80380001, .fn_op = 10, .want = 0x700 },
+        .{ .head = 0xA8380001, .fn_op = 10, .want = 0x1700 },
+        .{ .head = 0xA8380001, .fn_op = 11, .want = 0x0900 },
+        .{ .head = 0xA8380001, .fn_op = 8, .want = 0x700 },
+        .{ .head = 0xA8380001, .fn_op = 14, .want = 0x1000 },
+        .{ .head = 0xC8380001, .fn_op = 14, .want = 0x2000 }, // y = R9
+        .{ .head = 0xA8380001, .fn_op = 14, .w4 = 1, .dest = 9, .want = 0x1000 }, // 321: w4[0]
+        .{ .head = 0xA8380001, .fn_op = 6, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[5] = 0x1000;
+        state.r[9] = 0x2000;
+        const r = emu.runFrom(gpa, &state, &.{ c.head, c.fn_op << 7, 0x00000000, 0x20000000, c.w4, 0x00200000, 0x00000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.r[c.dest]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

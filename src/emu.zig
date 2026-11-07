@@ -340,7 +340,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return;
         }
     }
-    if ((low5 == 0x00 or (low5 == 0x01 and (head >> 30) == 0)) and bundle.len == 7) {
+    // 0x01's head[31] is inert and head[30:27] is its R slot's y index (fact 320).
+    if ((low5 == 0x00 or low5 == 0x01) and bundle.len == 7) {
         return execX00(gpa, state, bundle);
     }
     if (low5 == 0x04 and bundle.len >= 6) {
@@ -936,8 +937,30 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         else => return RunError.UnknownForm,
     }
 
+    // The 0x01 R slot (fact 320, 321, 425, 505): R<{w4[0], w3[31:29]}> <- w5[21] = 1:
+    // AGU10[w1[10:7]](y = R<head[30:27]>, i = head[26:11]), fns 8 (i), 10 (y+i), 11 (y-i) and
+    // 14 (y) measured; w5[21] = 0: Y:[e<w4[8:5]>], Y:[0] at index 0.  Reads before this
+    // bundle's writes.  0x00 has no such slot measured.
+    const r_dest: u32 = ((w4 & 1) << 3) | (w3 >> 29);
+    const r_val: u32 = if (r_dest == 0) 0 else blk: {
+        if (!x01) return RunError.UnknownForm;
+        if ((w5 >> 21) & 1 == 1) {
+            const y: u32 = state.r[(h >> 27) & 0xF];
+            break :blk switch ((w1 >> 7) & 0xF) {
+                8 => imm,
+                10 => (y +% imm) & 0xFFFF,
+                11 => (y -% imm) & 0xFFFF,
+                14 => y & 0xFFFF,
+                else => return RunError.UnknownForm,
+            };
+        }
+        const ri: u32 = (w4 >> 5) & 0xF;
+        break :blk (state.getY(if (ri == 0) 0 else state.e[ri]) orelse 0) & 0xFFFF;
+    };
+
     if (y_on) state.y_mem.put(gpa, y_addr, y_val) catch return RunError.OutOfMemory;
     if (x_on) state.x_mem.put(gpa, x_addr, x_val) catch return RunError.OutOfMemory;
+    if (r_dest != 0) state.r[r_dest] = r_val;
     if (s_dest != 0) state.s[s_dest] = s_val;
     if (alu_dest != 0) state.s[alu_dest] = alu_val;
     if (mac_dest != 0) state.s[mac_dest] = mac_val;
