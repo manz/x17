@@ -2559,7 +2559,7 @@ fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
 /// 0x19 ALU op 23 (fact 147): b >= 0 gives sat24(a << b); b < 0 gives the rounded
 /// a >> -b, (a + 2^(-b-1)) >> -b, half up on negatives.  MEASURED: own-x19alu and the
-/// own-x19shr-* / own-x19shl-* gates (PROBES.md).
+/// own-x19shr-* / own-x19shl-* gates (PROBES.md); counts past +-23 shift fully out (515).
 pub fn shift23(a: i64, b: i64) i64 {
     if (b >= 0) {
         const s: u6 = @intCast(@min(b, 40));
@@ -4482,6 +4482,11 @@ test "0x19 op 23: a negative count is a rounded right shift; left shifts saturat
     try testing.expectEqual(@as(i64, 0x7FFFFF), shift23(0x400000, 2));
     try testing.expectEqual(@as(i64, -0x800000), shift23(-0x400000, 2));
     try testing.expectEqual(@as(i64, -16), shift23(-1, 4));
+    // 515 (own-x19shrfar and its sweep): counts past 23 shift fully out, no wrap mod 32 or 64
+    for ([_]i64{ 0x7FFFFF, 0x400000, -0x400000, -1, -0x800000 }) |a| {
+        for ([_]i64{ -24, -25, -31, -32, -40, -64 }) |b| try testing.expectEqual(@as(i64, 0), shift23(a, b));
+        for ([_]i64{ 24, 40 }) |b| try testing.expectEqual(@as(i64, if (a > 0) 0x7FFFFF else -0x800000), shift23(a, b));
+    }
 }
 
 test "x19.alu #23 with a negative count register shifts right, rounded" {
