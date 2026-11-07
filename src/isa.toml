@@ -397,6 +397,13 @@ evidence = "MEASURED"
 ref = "fact 68 pass 94: s<[30:26]> (ldi numbering) <- Y:[e<[8:5]>]; bit 9 = 1 enables.  own-ldy."
 
 [[form]]
+name = "ldy.r"
+mask = "0x803FFE1F"
+value = "0x0000020A"
+evidence = "MEASURED"
+ref = "fact 523: ldy with R<[25:22]> != 0 (ldy itself matches R0): R<[25:22]> also gets Y:[e<[8:5]>], beside or without s<[29:26]> ([30] = 1; index 0 is no s write).  Bit 9 = 0 gives the stale latch for both (not decoded).  48 of 48 rows.  own-ldyr."
+
+[[form]]
 name = "stx"
 mask = "0xFFF007FF"
 value = "0x4030000A"
@@ -477,6 +484,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12
 # S[10:8] = 101 (522) also stores X:[A<S[19:15]>] <- sx24 s<S[7:4]>, the address read before the bundle's A write; 48 of 48 rows. Source index 0 OPEN (neither s0 nor a constant), refused.
+# ldy and the class-0A parallel move (523): R<head[25:22]> also gets the Y word (16 bits), beside s<head[29:26]> or alone; bit 9 = 0 gives the stale latch for both (refused beside an R destination); [30] = 0 with an R destination refused.  48 of 48 rows, own-ldyr.
 # stx0f.e, low5 0x0F S class 101 with S[22], S[20] (fact 437): beside the X store, e<S[6:3]> <- #head[20:5] under any
 # head[31:30]; measured with S[22:20] = 111 only.  own-st0fe
 # x17.styr, x17sty (S1 class != 0, S2 class 011) with S2[3:1] = 1 or 5 (fact 439): R<S1[14:11]> <- X17LD_OP[h[10:5]](s<S2[28:25]>,

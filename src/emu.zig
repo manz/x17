@@ -360,7 +360,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (std.mem.eql(u8, f.name, "stx")) {
         return execStx(gpa, state, head);
     }
-    if (std.mem.eql(u8, f.name, "ldy")) {
+    if (std.mem.eql(u8, f.name, "ldy") or std.mem.eql(u8, f.name, "ldy.r")) {
         return execLdy(gpa, state, head);
     }
     if (std.mem.eql(u8, f.name, "ptst")) {
@@ -1196,12 +1196,17 @@ fn execTst(state: *State, bundle: []const u32) RunError!void {
 fn execPar(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const k: u32 = (head >> 26) & 0x1F;
     // Without bit 9 the load's address lags (OPEN): only an s0 target is let through.
-    if ((head >> 9) & 1 == 0 and k != 16) return RunError.UnknownForm;
+    // R<[25:22]> also gets the load (fact 523, 7B368AAA writes R12); without bit 9 both
+    // take the stale latch, unmodelled.
+    const dest_r: u32 = (head >> 22) & 0xF;
+    if ((head >> 9) & 1 == 0 and (k != 16 or dest_r != 0)) return RunError.UnknownForm;
     const xv: u32 = state.s[(head >> 16) & 0xF] & M24;
     state.x_mem.put(gpa, state.a[(head >> 11) & 0x1F], xv) catch return RunError.OutOfMemory;
     if ((head >> 9) & 1 == 0) return;
     if (k < 16) return RunError.UnknownForm;
-    state.s[k - 16] = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
+    const yv: u32 = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
+    state.s[k - 16] = yv;
+    if (dest_r != 0) state.r[dest_r] = yv;
 }
 
 /// mul13, low5 0x13, S class 101 with S[19] (fact 128):
@@ -3936,12 +3941,18 @@ fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     _ = gpa;
     const dest_k: u32 = (head >> 26) & 0x1F;
     const src_e: u32 = (head >> 5) & 0xF;
-    if (dest_k < 16) return;
+    // R<[25:22]> gets the same word (fact 523), measured with [30] = 1 only.
+    const dest_r: u32 = (head >> 22) & 0xF;
+    if (dest_k < 16) {
+        if (dest_r != 0) return RunError.UnknownForm;
+        return;
+    }
     const dest_s: u32 = dest_k - 16;
     const addr: u32 = try yAddrE(state, src_e);
     const raw: u32 = (state.getY(addr) orelse 0) & 0xFFFF;
     // Sign-extends the 16-bit word (fact 409, own-ldysx).
     state.s[dest_s] = if (raw & 0x8000 != 0) raw | 0xFF0000 else raw;
+    if (dest_r != 0) state.r[dest_r] = raw;
 }
 
 fn execStx(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

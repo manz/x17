@@ -552,6 +552,12 @@ plog	op	imm	5	10	head
 ldy	dest	dest_ldi	26	30	head
 ldy	src_e	e	5	8	head
 
+# ldy.r (1 syllable): ldy that also writes R (fact 523).
+# Grammar: ldy.r <dest_s>, <src_e>, <dest_R>
+ldy.r	dest	dest_ldi	26	30	head
+ldy.r	src_e	e	5	8	head
+ldy.r	dest_R	R	22	25	head
+
 # ptest (2 syllables): scalar from predicate function.
 # Grammar: ptest <dest_s>, <p_src>, #<fn>
 ptest	dest_s	s	21	24	head

@@ -3439,3 +3439,55 @@ test "the 0x01 R slot takes the product route too; its immediate and zero bits r
         try testing.expectEqual(c.want, state.r[2]);
     }
 }
+
+test "ldy also loads R<[25:22]>, with or without its s destination" {
+    // fact 523: own-ldyr (ldy.r s0, e3, R2 is 4080026a) and the synthetic words, Y:[e5].
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        ldy.r s0, e3, R2
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    try testing.expectEqual(@as(u32, 0x4080026a), prog[0]);
+    for ([_]struct { w: u32, r: u32, s: u32 }{
+        .{ .w = 0x420002aa, .r = 8, .s = 0 },
+        .{ .w = 0x7a0002aa, .r = 8, .s = 14 },
+        .{ .w = 0x408002aa, .r = 2, .s = 0 },
+        .{ .w = 0x41c002aa, .r = 7, .s = 0 },
+        .{ .w = 0x4080026a, .r = 2, .s = 0 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[3] = 0x710;
+        state.e[5] = 0x710;
+        try state.y_mem.put(gpa, 0x710, 0x9357);
+        _ = try emu.runFrom(gpa, &state, &.{ c.w, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u32, 0x9357), state.r[c.r]);
+        if (c.s != 0) try testing.expectEqual(@as(u32, 0xFF9357), state.s[c.s]);
+        for (0..16) |i| if (i != c.s) try testing.expectEqual(@as(u32, 0), state.s[i]);
+    }
+    // R with [30] = 0 (no s destination field) is unmeasured
+    var st3 = emu.State{};
+    defer st3.deinit(gpa);
+    st3.e[5] = 0x710;
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st3, &.{ 0x020002aa, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
+
+test "the class-0A parallel move writes R<[25:22]> too" {
+    // fact 523: 7B368AAA writes R12 beside s14 and its X store.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[5] = 0x710;
+    try state.y_mem.put(gpa, 0x710, 0x1357);
+    _ = try emu.runFrom(gpa, &state, &.{ 0x7B368AAA, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1357), state.r[12]);
+    try testing.expectEqual(@as(u32, 0x1357), state.s[14]);
+    // without bit 9 both take the stale latch, unmodelled
+    var st2 = emu.State{};
+    defer st2.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st2, &.{ 0x7B368CAA & ~@as(u32, 0x200), 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    // an s0 target without bit 9 is let through, but not beside an R destination
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st2, &.{ 0x433000AA, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
