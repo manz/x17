@@ -113,6 +113,8 @@ pub const RunError = error{
     OutOfMemory,
     UnknownBundleLength,
     RunawayProgram,
+    /// A halt more than six bundles after the latest armer never completes (fact 98, 477).
+    HaltDeadline,
 };
 
 /// Execute one bundle (1..7 syllables) against `state`.  Dispatches by
@@ -3384,6 +3386,8 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
     var shadow: ?u8 = null;
     // Inside x17.ms 010's shadow a Y store is lost or misaddressed (fact 465): refused.
     var wedge_shadow = false;
+    // Bundles since the latest halt-deadline armer (fact 98, 477), null when none ran.
+    var since_armer: ?usize = null;
     const lane0: usize = state.cur_lane;
     state.halted = false;
     while (i < syllables.len) : (bundles_run += 1) {
@@ -3407,6 +3411,13 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             if (!sameY(&before, &state.y_mem)) return RunError.UnknownForm;
         } else try executeBundle(gpa, state, slice);
         updateE0(state, slice);
+        if (shadow == null) {
+            if (isHaltBundle(slice)) {
+                if (since_armer) |n| if (n > 6) return RunError.HaltDeadline;
+            } else if (isDeadlineArmer(slice)) {
+                since_armer = 0;
+            } else if (since_armer) |*n| n.* += 1;
+        }
         i += len;
         // The stop has a shadow (fact 72): an ldi and a st + wr after it
         // still run and the next pair does not; two bundles, exact count OPEN.
@@ -3501,6 +3512,21 @@ fn sameY(a: *const std.AutoHashMapUnmanaged(u32, u32), b: *const std.AutoHashMap
         if ((b.get(kv.key_ptr.*) orelse return false) != kv.value_ptr.*) return false;
     }
     return true;
+}
+
+/// Bundles that arm the halt deadline: an x17 with S1[15] = 1 that does not halt, S2 class
+/// 000, 101 or 111 (fact 98) and an x02/x03 with w2[30] = 1 (477).  Measured: six bundles between armer and halt
+/// complete, seven or more park.
+fn isDeadlineArmer(bundle: []const u32) bool {
+    const low5 = bundle[0] & 0x1F;
+    // S2 classes 000, 101 and 111 are the measured ones; in a class-011 store S1[18:15] is the
+    // e field, and whether an odd e arms the deadline is OPEN.
+    if (low5 == 0x17 and bundle.len >= 3) {
+        const cls = bundle[2] >> 29;
+        return (cls == 0 or cls == 5 or cls == 7) and (bundle[1] >> 15) & 1 == 1;
+    }
+    if ((low5 == 0x02 or low5 == 0x03) and bundle.len >= 6) return (bundle[2] >> 30) & 1 == 1;
+    return false;
 }
 
 fn isHaltBundle(bundle: []const u32) bool {

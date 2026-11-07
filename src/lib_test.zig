@@ -1602,3 +1602,45 @@ test "x18.pmov copies p5 = 0 too" {
     defer st.deinit(testing.allocator);
     try testing.expectEqual(@as(u8, 0), st.p[1]);
 }
+
+fn deadlineRun(armers: []const usize, gap_after: []const usize) !void {
+    // An x17.cont (an armer) then n nops, per entry, then the halt.
+    const gpa = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(gpa);
+    for (armers, gap_after) |_, n| {
+        try src.appendSlice(gpa, "x17.cont\n");
+        for (0..n) |_| try src.appendSlice(gpa, "alu s0, s0, s0, #0\n");
+    }
+    try src.appendSlice(gpa, "x17.halt\n");
+    const prog = try assemble(gpa, src.items);
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    _ = try emu.runFrom(gpa, &state, prog, 0, 256);
+}
+
+test "a halt within six bundles of a continuing x17 completes; seven parks" {
+    // fact 98: six instructions between complete, seven do not; the latest x17 restarts it.
+    try deadlineRun(&.{0}, &.{6});
+    try testing.expectError(error.HaltDeadline, deadlineRun(&.{0}, &.{7}));
+    try deadlineRun(&.{ 0, 0 }, &.{ 8, 3 });
+    try testing.expectError(error.HaltDeadline, deadlineRun(&.{ 0, 0 }, &.{ 8, 8 }));
+}
+
+test "x02 w2[30] arms the halt deadline" {
+    // fact 477: 00100002 0000A008 40000224 00000000 00022810 C0024200, g nops, halt:
+    // g = 6 halts, g = 8 does not.
+    const gpa = testing.allocator;
+    for ([_]usize{ 6, 8 }) |g| {
+        var prog: std.ArrayList(u32) = .empty;
+        defer prog.deinit(gpa);
+        try prog.appendSlice(gpa, &.{ 0x00100002, 0x0000A008, 0x40000224, 0x00000000, 0x00022810, 0xC0024200 });
+        for (0..g) |_| try prog.append(gpa, 0x40000005);
+        try prog.appendSlice(gpa, &.{ 0x00000017, 0x31308000, 0xA0000000 });
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const r = emu.runFrom(gpa, &state, prog.items, 0, 64);
+        if (g == 6) _ = try r else try testing.expectError(error.HaltDeadline, r);
+    }
+}
