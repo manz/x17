@@ -367,6 +367,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x18 class 100 (197): s<w3[16:13]> <- 0x02's multiply of s<w3[20:17]>, s<w3[24:21]> (mode w1[13:11], w1[15]/[16]/[17]); s<w2[15:12]> low half; Y store only with w2[22:21] = 11.  own-x18mpy100
 # x18 class 100 (198): s<w1[27:24]> <- s<w2[19:16]> shifted by w1[23:20], head[27] 1 right (rounded) / 0 left; w3[9] negates; head[26] OPEN.  own-x18shr100, own-x18shl100
 # x18 class 001 (199): R<w3[10:7]> <- head[30] ? AGU3[w3[24:20]](A<w3[19:15]>, R<w3[14:11]>) : AGU10B[w1[31:28]](e<w3[28:25]>, R<w3[14:11]>); Y:[e<w3[28:25]>] <- s<head[25:22]> when w1[19] and w2[11].  own-x18rcl001, own-x18rag001
+# x18 class 110 ALU2 slot (527): s<w1[11:8]> <- op 0 under head[30:25] = 0x04: (s<w3[6:3]> + s<w1[7:4]> + 2^(n-1)) >> n, n = w3[28:25], rounded arithmetic (n = 0 a plain add); 0x09 / 0x0F the plain add; b read before the bundle writes.  own-x18rnd.  Other codes and ops refused, as is a sum past 24 bits.
 # x18 class 011 (200): R<w3[10:7]> <- the unary slot result (168), alongside s<w1[11:8]>; w3[3] / head[30] zero it (OPEN); not in class 110.  own-x18runa
 # x18 class 101 (201): w2[30:29] = 00 -> branch if p<{w3[2:0], w2[31]}> (0 = always) by sext(w1[28:18]), 2 delay slots; 10 wedges (OPEN).  own-x18br101, own-x18br101-not, own-x18br101-e
 # x02 third slot (182): s<{w5[1:0], w4[31:30]}> <- (a op w5[8:6] b) << w5[5:2], a = s<w4[25:22]>, b = s<w4[29:26]>; ops a+b, b-a, b, b+1, b-1, a-b, -b, |b|; w5[16] X read.  own-x02x3

@@ -3558,3 +3558,37 @@ test "st.x also performs rimm's writes" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "the x18 class-110 ALU2 slot: the rounded shift under code 0x04" {
+    // fact 527: own-x18rnd, s1 = 0x100, s2 = 7: n = 2 gives 0x42 (truncation 0x41),
+    // n = 3 0x21, n = 0 0x107; codes 0x09 / 0x0F add; other codes and ops refuse.
+    const gpa = testing.allocator;
+    const w3: u32 = 0xc4742c09 & ~@as(u32, 0xF << 25);
+    const h: u32 = 0x08000018 & ~@as(u32, 0x3F << 25);
+    for ([_]struct { h: u32, w1: u32, n: u32, s1: u32, want: ?u32 }{
+        .{ .h = h | 0x04 << 25, .w1 = 0x80005320, .n = 2, .s1 = 0x100, .want = 0x42 },
+        .{ .h = h | 0x04 << 25, .w1 = 0x80005320, .n = 3, .s1 = 0x100, .want = 0x21 },
+        .{ .h = h | 0x04 << 25, .w1 = 0x80005320, .n = 0, .s1 = 0x100, .want = 0x107 },
+        .{ .h = h | 0x04 << 25, .w1 = 0x80005320, .n = 9, .s1 = 0x10000, .want = 0x80 },
+        .{ .h = h | 0x04 << 25, .w1 = 0x80005320, .n = 2, .s1 = 0xFFFF00, .want = 0xFFFFC2 },
+        .{ .h = h | 0x09 << 25, .w1 = 0x80005320, .n = 2, .s1 = 0x100, .want = 0x107 },
+        .{ .h = h | 0x0F << 25, .w1 = 0x80005320, .n = 2, .s1 = 0x100, .want = 0x107 },
+        .{ .h = h | 0x05 << 25, .w1 = 0x80005320, .n = 2, .s1 = 0x100, .want = null },
+        .{ .h = h | 0x04 << 25, .w1 = 0x80005320 | 1 << 15, .n = 2, .s1 = 0x100, .want = null },
+        .{ .h = h | 0x04 << 25, .w1 = 0x80005320, .n = 2, .s1 = 0x7FFFFE, .want = null },
+        // the X slot writes b's register too: the slot reads b before it (s2 then 0x500)
+        .{ .h = h | 0x04 << 25 | 2 << 21, .w1 = 0x80005320, .n = 2, .s1 = 0x100, .want = 0x42 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = c.s1;
+        state.s[2] = 7;
+        state.a[8] = 0x300;
+        try state.x_mem.put(gpa, 0x300, 0x500);
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.w1, 0x00500029, w3 | c.n << 25, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[3]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

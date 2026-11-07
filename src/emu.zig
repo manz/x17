@@ -300,12 +300,18 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return execX18Br(gpa, state, bundle);
         }
         if (w3_class == 0b011 and bundle[3] & 0x101 == 0x100) return execX18Br(gpa, state, bundle);
-        if (w3_class == 0b110 and w1_mode == 5) return execX18Xrd(gpa, state, bundle);
-        if (w3_class == 0b110 and bundle[2] != 0) {
-            try x18PWrite(state, bundle);
-            return execX18Mpy(gpa, state, bundle);
+        if (w3_class == 0b110) {
+            // The ALU2 slot reads before the bundle writes, and writes last (527).
+            const alu2 = try x18Alu110(state, bundle);
+            if (w1_mode == 5) {
+                try execX18Xrd(gpa, state, bundle);
+            } else if (bundle[2] != 0) {
+                try x18PWrite(state, bundle);
+                try execX18Mpy(gpa, state, bundle);
+            } else try execX18Imm(gpa, state, bundle);
+            if (alu2) |w| state.s[w.dest] = w.value;
+            return;
         }
-        if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
         // 485, 487: with w2[17], w2[18] and w3[7] all clear a class-000 bundle may stop two
         // slots later or run on (own-x18e2nd-w17 of 180 runs, the template wedges with w3[8]
         // set or clear); no field decides yet.
@@ -1976,6 +1982,29 @@ fn execX18Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
 /// The x18 class 011/111 ALU slot (fact 168, 206): op w1[17:15] over
 /// a = s<w2[5:2]>, b = s<w1[7:4]>.  Op 0 is only measured as pass (179).
+const SWrite = struct { dest: u32, value: u32 };
+
+/// The class-110 ALU2 slot (fact 527): s<w1[11:8]> <- op w1[17:15] of a = s<w3[6:3]>,
+/// b = s<w1[7:4]>.  Op 0 under head[30:25] = 0x04 is the rounded shift (a + b + 2^(n-1)) >> n,
+/// n = w3[28:25] (n = 0 a plain add); 0x09 and 0x0F the plain add.  Other codes, other ops
+/// and a sum outside 24 bits are refused.
+fn x18Alu110(state: *const State, bundle: []const u32) RunError!?SWrite {
+    const w1 = bundle[1];
+    const w3 = bundle[3];
+    const dest: u32 = (w1 >> 8) & 0xF;
+    if (dest == 0) return null;
+    if ((w1 >> 15) & 7 != 0) return RunError.UnknownForm;
+    const n: u6 = switch ((bundle[0] >> 25) & 0x3F) {
+        0x04 => @intCast((w3 >> 25) & 0xF),
+        0x09, 0x0F => 0,
+        else => return RunError.UnknownForm,
+    };
+    const sum: i64 = @as(i64, sx24(state.s[(w3 >> 3) & 0xF])) + sx24(state.s[(w1 >> 4) & 0xF]);
+    if (sum >= 1 << 23 or sum < -(1 << 23)) return RunError.UnknownForm;
+    const bias: i64 = if (n == 0) 0 else @as(i64, 1) << (n - 1);
+    return .{ .dest = dest, .value = @as(u32, @truncate(@as(u64, @bitCast((sum + bias) >> n)))) & M24 };
+}
+
 fn x18SlotAlu(op: u32, a: u32, b: u32) RunError!u32 {
     return switch (op) {
         // 491: op 0 adds b (168's "pass" had b = s0).
