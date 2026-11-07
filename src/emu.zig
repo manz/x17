@@ -75,6 +75,9 @@ pub const State = struct {
     halted: bool = false,
     /// Set by a bundle that stops the program one bundle later (x17e S2[3:0] = 4, fact 448).
     stop_pending: bool = false,
+    /// Set by a bundle after which one more bundle runs and the program stops without a halt
+    /// (x17 S2 class 101 with S1[22:20] = 010, fact 457).
+    wedge_pending: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
     xa: ?u32 = null,
     /// The 0x18 class-000 phase T, flipped by w2[17] = 0 (fact 180).
@@ -2547,7 +2550,8 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 /// S2 class 101.  S1[22:20] = 011 is the stop, with its S2[1] store.  Otherwise four slots, reads before writes (fact
 /// 410-413, own-x17st/-r/-e/-y).  Y:[e<S1[18:15]>] <- s<S1[27:24]>; R<S2[8:5]> and
 /// e<{S2[0], S1[31:29]}> <- #h[20:5]; with S1[28], s<h[24:21]> <- mux S2[3:1] of the Y word at
-/// e<S1[18:15]>: 0 gives 0, 2 the word, 6 its low byte << 8.  S1[19], S1[21], S1[22] wedge;
+/// e<S1[18:15]>: 0 gives 0, 2 the word, 6 its low byte << 8.  S1[22:20] = 010 runs the slots,
+/// one more bundle and stops unhalted (457); S1[19], S1[22] and other S1[21] rows wedge;
 /// mux 2 sign-extends (414), mux 4 is the same word (436); S1[28] = 0 with a load and muxes
 /// 1/3/5 are OPEN.
 fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -2565,7 +2569,10 @@ fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         }
         return;
     }
-    if ((s1 >> 19) & 1 == 1 or (s1 >> 21) & 3 != 0) return RunError.UnknownForm;
+    // S1[22:20] = 010 runs the slots, then one more bundle, then stops unhalted (457).
+    const wedge_row = (s1 >> 20) & 7 == 0b010;
+    if ((s1 >> 19) & 1 == 1 or (s1 >> 22) & 1 == 1 or ((s1 >> 21) & 1 == 1 and !wedge_row)) return RunError.UnknownForm;
+    if (wedge_row) state.wedge_pending = true;
     const y_addr: u32 = state.e[(s1 >> 15) & 0xF];
     const yv: u32 = (state.getY(y_addr) orelse 0) & 0xFFFF;
     const imm: u32 = (h >> 5) & 0xFFFF;
@@ -3308,6 +3315,12 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         if (isHaltBundle(slice)) {
             state.halted = true;
             shadow = 1;
+            continue;
+        }
+        if (state.wedge_pending) {
+            // S1[22:20] = 010: one more bundle, then a stop no poll sees (fact 457).
+            state.wedge_pending = false;
+            shadow = 0;
             continue;
         }
         if (state.stop_pending) {

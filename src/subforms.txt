@@ -675,6 +675,10 @@ x17.eagu   3   0x00027937   0x00060000   0x80000E0A
 # Y load through a mux (S1[28] enables it).
 x17.ms     3   0x00000017   0x00000000   0xA0000000
 
+# x17.mswedge: x17.ms with S1[22:20] = 010 (fact 457): the slots, one more bundle, then
+# a stop with no halt visible.
+x17.mswedge 3  0x00000017   0x00200000   0xA0000000
+
 # x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275).
 x17.sty    3   0x00000017   0x00000109   0x60003800
 
