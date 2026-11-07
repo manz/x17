@@ -3651,6 +3651,7 @@ test "x19a3's s write goes through the w1[17:15] mux; A always takes AGU3" {
         .{ .w1 = 0x08153b00, .s3 = 0x200 }, // mux 2
         .{ .w1 = 0x0816bb00, .s3 = null }, // mux 5
         .{ .w1 = 0x08173b00, .s3 = null }, // mux 6
+        .{ .w1 = 0x0014bb00, .s3 = null }, // w1[27] cleared wedges (559)
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -4263,4 +4264,106 @@ test "own-b16R: the class-100 row's R write muxes on S1[24]" {
             try testing.expectEqual(v, state.r[11]);
         } else try testing.expectError(error.UnknownForm, r);
     }
+}
+
+test "wedge gates and post-op codes refused (fact 559, 563)" {
+    const gpa = testing.allocator;
+    for ([_][]const u32{
+        // xld10 with S1[18] cleared (own-xld10's 80a17dd0 60640181).
+        &.{ 0x80A17DD0, 0x60600181 },
+        // x16alu (S2 class 111) post-op codes 7, 19, and 3 with n = 4 on op 4 with S1[15] = 1:
+        // unmeasured (563).
+        &.{ 0x0e600016, 0x0284d550, 0xe708a200 },
+        &.{ 0x26600016, 0x0284d550, 0xe708a200 },
+        &.{ 0x06600016, 0x0284d550, 0xe708a240 },
+    }) |w| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        var b: [6]u32 = undefined;
+        @memcpy(b[0..w.len], w);
+        b[w.len] = 0x00000017;
+        b[w.len + 1] = 0x31308000;
+        b[w.len + 2] = 0xA0000000;
+        try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, b[0 .. w.len + 3], 0, 16));
+    }
+    // The ungated xld10 still runs.
+    var ok = emu.State{};
+    defer ok.deinit(gpa);
+    ok.a[6] = 0x330;
+    try ok.x_mem.put(gpa, 0x330, 0x777);
+    _ = try emu.runFrom(gpa, &ok, &.{ 0x80A17DD0, 0x60640181, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x777), ok.s[3]);
+}
+
+test "own-dld13: dld's h[13] is inert without a Y destination" {
+    // fact 559: 4091a009 (h[13] set) reads X:[A3] = 0x135 like 40918009.
+    const gpa = testing.allocator;
+    for ([_]u32{ 0x4091a009, 0x40918009 }) |h| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[3] = 0x320;
+        try state.x_mem.put(gpa, 0x320, 0x135);
+        _ = try emu.runFrom(gpa, &state, &.{ h, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u32, 0x135), state.s[2]);
+    }
+}
+
+test "x16alu's post-op code (fact 563)" {
+    const gpa = testing.allocator;
+    // own-x16ovf: code 3, op 4, n = 4 on the exact sum: (0x5505 + 0x4404) asr 4 = 0x0990.
+    var ovf = emu.State{};
+    defer ovf.deinit(gpa);
+    ovf.s[3] = 0x5505;
+    ovf.s[5] = 0x4404;
+    _ = try emu.runFrom(gpa, &ovf, &.{ 0x06600016, 0x02845550, 0xe708a240, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x0990), ovf.s[5]);
+    // The operands are 16-bit signed: (0x8808 + 0x6606) asr 1 = 0xF707.
+    var neg = emu.State{};
+    defer neg.deinit(gpa);
+    neg.s[3] = 0x8808;
+    neg.s[5] = 0x6606;
+    _ = try emu.runFrom(gpa, &neg, &.{ 0x06600016, 0x02845550, 0xe708a210, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0xF707), neg.s[5]);
+    // Plain code 15 keeps every op, here op 4 with S1[15] = 1 (561's bundle): a - b.
+    var pl = emu.State{};
+    defer pl.deinit(gpa);
+    pl.s[3] = 0x300;
+    pl.s[5] = 0x123;
+    _ = try emu.runFrom(gpa, &pl, &.{ 0x1e600016, 0x0284d550, 0xe708a200, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1DD), pl.s[5]);
+    // 561's miss row: code 4, op 5, n = 1: (0x3303 + 1) >> 1 = 0x1982 into s8.
+    var miss = emu.State{};
+    defer miss.deinit(gpa);
+    miss.s[3] = 0x3303;
+    _ = try emu.runFrom(gpa, &miss, &.{ 0x08c41076, 0x00455800, 0xe6960010, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1982), miss.s[8]);
+}
+
+test "x16Post table cells" {
+    const P = emu.x16PostForTest;
+    try testing.expectEqual(@as(?i64, 0x4404), P(3, true, 0x3303, 0x5505, 1)); // exact sum
+    try testing.expectEqual(@as(?i64, -0x08F9), P(3, true, -0x77F8, 0x6606, 1)); // 0xF707
+    try testing.expectEqual(@as(?i64, (0x3303 ^ 0x5505) << 1), P(22, true, 0x3303, 0x5505, 1));
+    try testing.expectEqual(@as(?i64, (0x3303 | 0x5505) << 1), P(22, false, 0x3303, 0x5505, 1));
+    try testing.expectEqual(@as(?i64, 5), P(40, true, 1, 2, 5));
+    try testing.expectEqual(@as(?i64, 0x3303), P(48, true, 0x3303, 2, 3));
+    try testing.expectEqual(@as(?i64, 0x3303 << 3), P(48, false, 0x3303, 2, 3));
+    try testing.expectEqual(@as(?i64, 0x3303 + 3), P(9, true, 0x3303, 2, 3));
+    try testing.expectEqual(@as(?i64, 0x3303 - 3), P(28, true, 0x3303, 2, 3));
+    try testing.expectEqual(@as(?i64, 2 - 0x3303), P(16, true, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, -0x3303), P(16, false, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, -(0x3303 + 2) - 2), P(20, true, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, 0), P(7, true, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, null), P(7, false, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, null), P(62, false, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, 0x3303 + 2), P(62, true, 0x3303, 2, 0));
+    try testing.expectEqual(@as(?i64, 3), P(45, true, 0, 5, 1)); // b asr n, rounded
+    try testing.expectEqual(@as(?i64, 2), P(44, true, 0, 1, 1));
+    try testing.expectEqual(@as(?i64, 0x3303 ^ 0x5505), P(29, true, 0x3303, 0x5505, 0));
+    try testing.expectEqual(@as(?i64, 0x5505), P(35, true, 0x3303, 0x5505, 0));
+    try testing.expectEqual(@as(?i64, 0x3303), P(51, true, 0x3303, 0x5505, 2));
+    try testing.expectEqual(@as(?i64, 0x3303 >> 2), P(51, false, 0x3303, 0x5505, 2));
+    try testing.expectEqual(@as(?i64, 0x3303 - 0x5505), P(18, true, 0x3303, 0x5505, 0));
+    try testing.expectEqual(@as(?i64, 0x3303), P(18, false, 0x3303, 0x5505, 0));
+    try testing.expectEqual(@as(?i64, null), P(54, false, 0x3303, 0x5505, 0));
 }

@@ -1829,7 +1829,7 @@ fn execX16AluX(state: *State, bundle: []const u32) RunError!void {
     const s1 = bundle[1];
     const s2 = bundle[2];
     if ((s2 >> 13) & 1 == 1) state.x16_xi = (s2 >> 8) & 0x1F;
-    try x16Alu(state, s1, s2);
+    try x16AluPost(state, (bundle[0] >> 25) & 0x3F, s1, s2);
     const src: u32 = (s1 >> 12) & 7;
     // mux 1 / 5 with S2[18] (and not S2[19]): Y:[e<S2[24:21]>] fresh, not yd (521, 15 of 15)
     if ((src == 1 or src == 5) and (s2 >> 18) & 3 == 1) {
@@ -2364,6 +2364,8 @@ fn execXst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     if (bundle.len < 2) return RunError.UnknownForm;
+    // Every row sets S1[18]; clearing it wedges (559).
+    if ((bundle[1] >> 18) & 1 == 0) return RunError.UnknownForm;
     const head = bundle[0];
     const s1 = bundle[1];
     const a_half: u32 = (head >> 30) & 0x3;
@@ -2623,6 +2625,8 @@ fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const head = bundle[0];
     const w1 = bundle[1];
     const w3 = bundle[3];
+    // Every row sets w1[27]; clearing it wedges (559).
+    if ((w1 >> 27) & 1 == 0) return RunError.UnknownForm;
     const y: u32 = state.r[(w1 >> 18) & 0xF];
     const agu = agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], y, 2 * (w3 & 0x7FFF));
     const s_val: u32 = switch ((w1 >> 15) & 7) {
@@ -3252,6 +3256,61 @@ fn execX16Sh(state: *State, bundle: []const u32) RunError!void {
     const hd: u32 = (h >> 21) & 0xF;
     if (hd != 0) state.s[hd] = hv;
     if (dest != 0 and n != 0) state.s[dest] = sh;
+}
+
+/// x16alu with its post-op code (fact 563): codes 11, 15, 63, and 3 with n = 0, keep
+/// the plain ALU; any other code is measured for ops 4 and 5 with S1[15] = 0 only.
+fn x16AluPost(state: *State, code: u32, s1: u32, s2: u32) RunError!void {
+    const n: u32 = (s2 >> 4) & 0xF;
+    const plain = code == 11 or code == 15 or code == 63 or (code == 3 and n == 0);
+    if (plain) return x16Alu(state, s1, s2);
+    const op: u32 = (s1 >> 16) & 7;
+    if ((s1 >> 15) & 1 == 1 or (op != 4 and op != 5)) return RunError.UnknownForm;
+    const a: i64 = sx16(state.s[(s2 >> 25) & 0xF]);
+    const b: i64 = sx16(state.s[(s1 >> 4) & 0xF]);
+    const v = x16Post(code, op == 4, a, b, @intCast(n)) orelse return RunError.UnknownForm;
+    const dest: u32 = (s1 >> 8) & 0xF;
+    if (dest != 0) state.s[dest] = @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF;
+}
+
+/// The 563 post-op table on 16-bit signed operands; the shift sees the exact sum.  `add` is
+/// op 4 (base a + b, logic a ^ b), else op 5 (base a, logic a | b).  null: OPEN.
+fn x16Post(code: u32, add: bool, a: i64, b: i64, n: u6) ?i64 {
+    const base: i64 = if (add) a + b else a;
+    const logic: i64 = if (add) a ^ b else a | b;
+    return switch (code) {
+        0, 1, 2, 58 => base << n,
+        3, 5 => base >> n,
+        4 => asrRound(base, n),
+        11, 12, 13, 14, 15, 60, 61, 63 => base,
+        22, 23 => logic << n,
+        24, 25 => logic >> n,
+        29, 30, 31, 37 => logic,
+        32, 33, 34, 59 => 0,
+        35, 36, 38, 39, 42, 43 => b,
+        40, 41 => n,
+        44 => b << n,
+        45 => asrRound(b, n),
+        48, 49, 50 => if (add) a else a << n,
+        51, 53 => if (add) a else a >> n,
+        52 => if (add) a else asrRound(a, n),
+        9, 10 => if (add) a + n else a,
+        28 => if (add) a - n else a,
+        16, 17 => if (add) b - a else -a,
+        18, 19 => if (add) a - b else a,
+        20, 21 => -base - 2,
+        6, 7, 8, 26, 27, 46, 47, 57 => if (add) 0 else null,
+        54, 55, 56 => if (add) a else null,
+        62 => if (add) a + b else null,
+        else => unreachable,
+    };
+}
+
+pub const x16PostForTest = x16Post;
+
+/// x asr n rounded half up.
+fn asrRound(x: i64, n: u6) i64 {
+    return if (n == 0) x else (x + (@as(i64, 1) << (n - 1))) >> n;
 }
 
 /// An alu_word (op, m, #s) triple a slot has measured OPEN.
