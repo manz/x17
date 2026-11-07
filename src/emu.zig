@@ -1774,11 +1774,17 @@ fn sx16(v: u32) i64 {
 /// s<S1[11:8]> <- X16_ALU[S1[15]][S1[18:16]](s<S2[28:25]>, s<S1[7:4]>)
 /// (fact 116, 119).  Ops 0-3 wedge silicon.
 fn x16Alu(state: *State, s1: u32, s2: u32) RunError!void {
-    const op: u32 = (s1 >> 16) & 7;
+    const v = try x16AluOp(s1, state.s[(s2 >> 25) & 0xF], state.s[(s1 >> 4) & 0xF]);
+    const dest: u32 = (s1 >> 8) & 0xF;
+    if (dest != 0) state.s[dest] = v & 0xFFFF;
+}
+
+/// X16_ALU[S[15]][S[18:16]](a, b), unmasked (fact 116, 119; psel too, 126).  Ops 0-3
+/// wedge silicon.
+fn x16AluOp(sw: u32, a: u32, b: u32) RunError!u32 {
+    const op: u32 = (sw >> 16) & 7;
     if (op < 4) return RunError.UnknownForm;
-    const a: u32 = state.s[(s2 >> 25) & 0xF];
-    const b: u32 = state.s[(s1 >> 4) & 0xF];
-    const v: u32 = if ((s1 >> 15) & 1 == 0) switch (op) {
+    return if ((sw >> 15) & 1 == 0) switch (op) {
         4 => a +% b,
         5 => a,
         6 => a -% 1,
@@ -1788,8 +1794,6 @@ fn x16Alu(state: *State, s1: u32, s2: u32) RunError!void {
         5 => a +% 1,
         else => a,
     };
-    const dest: u32 = (s1 >> 8) & 0xF;
-    if (dest != 0) state.s[dest] = v & 0xFFFF;
 }
 
 /// S2 class 111: S2[13] latches xi <- S2[12:8]; source S1[14:12] = 101 with
@@ -4110,27 +4114,26 @@ fn execStk(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     state.y_mem.put(gpa, try yAddrE(state, (head >> 5) & 0xF), v) catch return RunError.OutOfMemory;
 }
 
+/// psel, low5 0x0E with head[30:25] = 0x23 (fact 126, 152): s<S[11:8]> <- c ? r : b with
+/// c = p<S[27:24]> (S[21] = 0 inverts) and r = X16_ALU(a = s<S[31:28]>, b = s<S[7:4]>); and
+/// shape A's head write (531), s<head[24:21]> <- mux S[14:12]: 0 zero (152), 1/2/6
+/// #head[20:5]; the other muxes are OPEN and refused.
 fn execPsel(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     if (bundle.len < 2) return RunError.UnknownForm;
-    _ = bundle[0];
+    const h = bundle[0];
     const s1 = bundle[1];
-    const dest_s: u32 = (s1 >> 8) & 0xF;
-    const a_s: u32 = (s1 >> 28) & 0xF;
-    const b_s: u32 = (s1 >> 4) & 0xF;
-    const op: u32 = (s1 >> 16) & 0x7;
-    const p_src: u32 = (s1 >> 24) & 0xF;
-    const pol: u32 = (s1 >> 21) & 1;
-    const raw: u8 = state.p[p_src];
-    const pv: u8 = if (pol == 1) raw else @as(u8, 1) -% raw;
-    const a_val: u32 = state.s[a_s] & M24;
-    const b_val: u32 = state.s[b_s] & M24;
-    const combined: u32 = switch (op) {
-        4 => (a_val +% b_val) & M24,
+    const hv: u32 = switch ((s1 >> 12) & 7) {
+        0 => 0,
+        1, 2, 6 => (h >> 5) & 0xFFFF,
         else => return RunError.UnknownForm,
     };
-    const v: u32 = if (pv != 0) combined else b_val;
-    if (dest_s != 0) state.s[dest_s] = v;
+    const raw: u8 = state.p[(s1 >> 24) & 0xF];
+    const pv: u8 = if ((s1 >> 21) & 1 == 1) raw else @as(u8, 1) -% raw;
+    const b_val: u32 = state.s[(s1 >> 4) & 0xF] & M24;
+    const r = try x16AluOp(s1, state.s[(s1 >> 28) & 0xF] & M24, b_val);
+    state.s[(s1 >> 8) & 0xF] = if (pv != 0) r & M24 else b_val;
+    state.s[(h >> 21) & 0xF] = hv;
 }
 
 fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

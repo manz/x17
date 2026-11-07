@@ -3661,3 +3661,28 @@ test "x19a3's s write goes through the w1[17:15] mux; A always takes AGU3" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "psel also performs shape A's head write" {
+    // fact 531: own-pselh, s3 = 0xABC: 4660246e 3205e250 gives s3 = 0x123 (mux 6);
+    // h[24:21] = 0 leaves s3; mux 2 is the same immediate; mux 0 writes 0 (152); mux 3 is
+    // OPEN.  The select (p2 = 0, S[21] = 0) takes X16_ALU[1][5] = a + 1 with a = s3 read
+    // before the head write: s2 = 0xABD.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, s1: u32, s3: ?u32 }{
+        .{ .h = 0x4660246e, .s1 = 0x3205e250, .s3 = 0x123 },
+        .{ .h = 0x4600246e, .s1 = 0x3205e250, .s3 = 0xABC },
+        .{ .h = 0x4660246e, .s1 = 0x3205a250, .s3 = 0x123 },
+        .{ .h = 0x4660246e, .s1 = 0x32058250, .s3 = 0 },
+        .{ .h = 0x4660246e, .s1 = 0x3205b250, .s3 = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0xABC;
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.s1, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.s3) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[3]);
+            try testing.expectEqual(@as(u32, 0xABD), state.s[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

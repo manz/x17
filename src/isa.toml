@@ -126,6 +126,7 @@ ref = "fact 100 pass 126: with a class-100 second S, S[25] = 1: e<S[24:21]> <- F
 # st.x / rimm (low5 0x0F, S class 101).  fact 127 pass 153: with S[22] and S[20] both set, X:[A<4*S[2:0] + head[31:30]>] <- s<S[28:25]> for every head[31:30] (51 saw only head[31:30] = 01); otherwise rimm: R<S[14:11]> <- head[20:5] and s<head[24:21]> <- 0x5000 (source OPEN); S[29] = 0 wedges.  own-stx-a, own-rimm
 
 # psel (no [[form]]: low5 0x0E with head[31] = 0 is two words, and head[31] = 1 is ld0e).  fact 126 pass 152: c = LUT[S[23:21]](p<S[27:24]>) with LUT = (!p, p, 0, 1, 0, 0, 0, 0); ALU r = X16_ALU[S[15]][S[18:16]](a = s<S[31:28]>, b = s<S[7:4]>), op 0-3 wedge; with mux S[14:12] = 0, head[30:25] = 001110: s<head[24:21]> <- c and s<S[11:8]> <- r; head[30:25] = 100011: s<S[11:8]> <- c ? r : b and s<head[24:21]> <- 0.  Other head[30:25] values and muxes OPEN.  own-ptest, own-ptest-0, own-psel, own-psel-0
+# psel head write (531): s<head[24:21]> <- mux S[14:12] as shape A, 1/2/6 = #head[20:5] (0 = 0, 152); other muxes refused.  Its ALU is the shared X16_ALU[S[15]][S[18:16]] table.  own-pselh
 
 [[form]]
 name = "rli"
