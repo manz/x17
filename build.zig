@@ -125,6 +125,7 @@ pub fn build(b: *std.Build) void {
     lib_mod.addAnonymousImport("huffman.sm", .{ .root_source_file = b.path("examples/lib/huffman.sm") });
     lib_mod.addAnonymousImport("sections.sm", .{ .root_source_file = b.path("examples/lib/sections.sm") });
     lib_mod.addAnonymousImport("dequant.sm", .{ .root_source_file = b.path("examples/lib/dequant.sm") });
+    lib_mod.addAnonymousImport("imdct.sm", .{ .root_source_file = b.path("examples/lib/imdct.sm") });
     for ([_][]const u8{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |f| {
         lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/alac/{s}.pkts", .{f})) });
     }

@@ -15,6 +15,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/huffman.sm", .text = @embedFile("huffman.sm") },
     .{ .path = "lib/sections.sm", .text = @embedFile("sections.sm") },
     .{ .path = "lib/dequant.sm", .text = @embedFile("dequant.sm") },
+    .{ .path = "lib/imdct.sm", .text = @embedFile("imdct.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -1907,4 +1908,200 @@ test "x18 class 111 slots read every source before any write" {
     try testing.expectEqual(@as(u32, 2), state.s[6]);
     try testing.expectEqual(@as(u32, 0x4340), state.s[5]);
     try testing.expectEqual(@as(?u32, 0x5505), state.getY(0x740));
+}
+
+// --- IMDCT: a twin of sosumi's ref/dsp/aac/imdct.zig, every operation as the model has it ---
+
+const ImCx = struct { re: i64, im: i64 };
+
+fn imQ23(x: f64) i64 {
+    return @intFromFloat(std.math.clamp(@round(x * 0x1p23), -0x1p23, 0x1p23 - 1));
+}
+
+fn imExpj(theta: f64) ImCx {
+    return .{ .re = imQ23(@cos(theta)), .im = imQ23(@sin(theta)) };
+}
+
+fn ImTables(comptime n2: usize) type {
+    return struct {
+        const n4 = n2 / 2;
+        const stages = std.math.log2_int(usize, n4);
+        pre: [n4]ImCx,
+        post: [n4]ImCx,
+        fft: [n4 / 2]ImCx,
+        /// the x17 layout: stage by stage, size / 2 twiddles each
+        tw: [n4 - 1]ImCx,
+        rev: [n4]u32,
+        fn init() @This() {
+            var t: @This() = undefined;
+            const pi = std.math.pi;
+            const fn2: f64 = @floatFromInt(n2);
+            for (&t.pre, 0..) |*e, n| e.* = imExpj(-pi * (@as(f64, @floatFromInt(n)) + 0.25) / fn2);
+            for (&t.post, 0..) |*e, k| e.* = imExpj(-pi * @as(f64, @floatFromInt(k)) / fn2);
+            for (&t.fft, 0..) |*e, k| e.* = imExpj(-2 * pi * @as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(n4)));
+            var i: usize = 0;
+            var size: usize = 2;
+            while (size <= n4) : (size *= 2) {
+                for (0..size / 2) |j| {
+                    t.tw[i] = t.fft[j * (n4 / size)];
+                    i += 1;
+                }
+            }
+            for (&t.rev, 0..) |*e, n| e.* = @bitReverse(@as(@Int(.unsigned, stages), @intCast(n)));
+            return t;
+        }
+    };
+}
+
+fn imMul(a: i64, b: i64) i64 {
+    return (a * b + (1 << 22)) >> 23;
+}
+
+fn imCmul(a: ImCx, b: ImCx) ImCx {
+    return .{ .re = imMul(a.re, b.re) - imMul(a.im, b.im), .im = imMul(a.re, b.im) + imMul(a.im, b.re) };
+}
+
+fn imAtLeast(a: i64, k: u6) bool {
+    return @abs(a) >= @as(u64, 1) << k;
+}
+
+/// The model's shiftSat: v * 2^sh, rounded, saturated by comparisons.
+fn imShiftSat(v: i64, sh: i64) i64 {
+    if (v == 0 or sh <= -24) return 0;
+    if (sh < 0) return rshr(v, @intCast(-sh));
+    const top: i64 = if (v < 0) -(1 << 23) else (1 << 23) - 1;
+    if (sh >= 23 or imAtLeast(v, @intCast(23 - sh))) return top;
+    return v << @intCast(sh);
+}
+
+fn refImdct(comptime n2: usize, t: *const ImTables(n2), w: []const i64, e: i64, out: []i64) void {
+    const n4 = n2 / 2;
+    var big: u64 = 0;
+    for (w) |v| big = @max(big, @abs(v));
+    if (big == 0) {
+        @memset(out, 0);
+        return;
+    }
+    var x: [n2]i64 = undefined;
+    var ex = e;
+    if (big >= 1 << 22) {
+        for (&x, w) |*d, v| d.* = rshr(v, 1);
+        ex += 1;
+    } else {
+        var s: u6 = 0;
+        while ((big << s) < 1 << 21) s += 1;
+        for (&x, w) |*d, v| d.* = v << s;
+        ex -= s;
+    }
+    var z: [n4]ImCx = undefined;
+    for (0..n4) |n| z[t.rev[n]] = imCmul(.{ .re = x[2 * n], .im = x[n2 - 1 - 2 * n] }, t.pre[n]);
+    var scaled: i64 = 0;
+    var size: usize = 2;
+    while (size <= n4) : (size *= 2) {
+        var sh: u6 = 0;
+        for (z) |c| {
+            if (imAtLeast(c.re, 22) or imAtLeast(c.im, 22)) {
+                sh = 2;
+                break;
+            }
+            if (imAtLeast(c.re, 21) or imAtLeast(c.im, 21)) sh = 1;
+        }
+        if (sh != 0) for (&z) |*c| {
+            c.* = .{ .re = rshr(c.re, sh), .im = rshr(c.im, sh) };
+        };
+        scaled += sh;
+        const half = size / 2;
+        var start: usize = 0;
+        while (start < n4) : (start += size) {
+            for (0..half) |j| {
+                const a = z[start + j];
+                const b = imCmul(z[start + j + half], t.fft[j * (n4 / size)]);
+                z[start + j] = .{ .re = a.re + b.re, .im = a.im + b.im };
+                z[start + j + half] = .{ .re = a.re - b.re, .im = a.im - b.im };
+            }
+        }
+    }
+    var u: [n2]i64 = undefined;
+    for (z, 0..) |c0, k| {
+        const c = imCmul(c0, t.post[k]);
+        u[2 * k] = c.re;
+        u[n2 - 1 - 2 * k] = -c.im;
+    }
+    const sh = scaled + ex - @as(i64, std.math.log2_int(usize, n2)) + 7;
+    for (out, 0..) |*o, n| {
+        const m = n + n4;
+        const v = if (m < n2) u[m] else if (m < 2 * n2) -u[2 * n2 - 1 - m] else -u[m - 2 * n2];
+        o.* = imShiftSat(v, sh);
+    }
+}
+
+test "imdct transforms a long block as the model does" {
+    const gpa = testing.allocator;
+    const n2 = 1024;
+    const T = ImTables(n2);
+    const t = T.init();
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/mem.sm"
+        \\.include "lib/imdct.sm"
+        \\        bits_init(0x4000)
+        \\        imdct(1024, 512, 10, 9, 0x0400, 0x0000, 0x0800, 0x1000, 0x1400, 0x1A00, 0x2400, 0x2390)
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var prng = std.Random.DefaultPrng.init(0x1DC7);
+    const rnd = prng.random();
+    for (0..5) |run| {
+        var w: [n2]i64 = undefined;
+        // a falling spectrum; runs 0 and 3 near 2^22.3 (the halving), run 1 small
+        // (doublings), run 2 silence, run 4 one positive peak
+        const top: f64 = if (run == 1) 9 else 22.3;
+        for (&w, 0..) |*v, k| {
+            const amp = std.math.pow(f64, 2, top) / (1.0 + @as(f64, @floatFromInt(k)) / 8.0);
+            v.* = @intFromFloat(@round((rnd.float(f64) * 2 - 1) * amp));
+        }
+        if (run == 2) @memset(&w, 0);
+        // run 4: the largest word positive and alone, so the max decides the normalisation
+        if (run == 4) {
+            for (&w) |*v| v.* = @divTrunc(v.*, 64);
+            w[3] = (1 << 22) + 12345;
+        }
+        const e: i64 = -20 + @as(i64, @intCast(run)) * 3;
+        var want: [2 * n2]i64 = undefined;
+        refImdct(n2, &t, &w, e, &want);
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const px = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.x_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF);
+            }
+        }.f;
+        const py = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.y_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF);
+            }
+        }.f;
+        for (w, 0..) |v, k| try px(&state, gpa, 0x400 + k, v);
+        for (t.pre, 0..) |c, k| {
+            try px(&state, gpa, 0x1000 + 2 * k, c.re);
+            try px(&state, gpa, 0x1001 + 2 * k, c.im);
+        }
+        for (t.post, 0..) |c, k| {
+            try px(&state, gpa, 0x1400 + 2 * k, c.re);
+            try px(&state, gpa, 0x1401 + 2 * k, c.im);
+        }
+        for (t.tw, 0..) |c, k| {
+            try px(&state, gpa, 0x1A00 + 2 * k, c.re);
+            try px(&state, gpa, 0x1A01 + 2 * k, c.im);
+        }
+        for (t.rev, 0..) |r, n| try py(&state, gpa, 0x2400 + n, 2 * @as(i64, r));
+        try py(&state, gpa, 0x2390, e);
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 26);
+        try testing.expect(state.halted);
+        for (want, 0..) |v, k| {
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF, state.readX(0x800 + @as(u32, @intCast(k))) orelse 0xDEAD);
+        }
+    }
 }
