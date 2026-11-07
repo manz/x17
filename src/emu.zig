@@ -2436,11 +2436,11 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         return execX19RAgua(gpa, state, bundle);
     }
     // x19mac: w1 class 000/001 plain, 010/101 with the head ALU (fact 312, 384-386).
-    // w2 class 100 runs it as 001 (521, 7 of 7); with w3 class 101 it is OPEN.
+    // w2 class 100 runs it as 001 (521, 7 of 7); with w3 class 101 it is OPEN and falls
+    // through to the refusal below.
     if ((w2_class == 1 or w2_class == 4) and w3_class == 6 and (w1_class == 0 or w1_class == 1 or w1_class == 2 or w1_class == 5)) {
         return execX19Mac(gpa, state, bundle);
     }
-    if (w2_class == 4 and w3_class == 5) return RunError.UnknownForm;
     if (w1_class == 0 and w2_class == 0 and w3_class == 1) {
         return execX19Imm(gpa, state, bundle);
     }
