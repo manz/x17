@@ -78,6 +78,8 @@ pub const State = struct {
     /// Set by a bundle after which one more bundle runs and the program stops without a halt
     /// (x17 S2 class 101 with S1[22:20] = 010, fact 457).
     wedge_pending: bool = false,
+    /// Whether e0, the address entry, is known (fact 466, 468): see updateE0.
+    e0_known: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
     xa: ?u32 = null,
     /// The 0x18 class-000 phase T, flipped by w2[17] = 0 (fact 180).
@@ -912,7 +914,7 @@ fn execPar(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     state.x_mem.put(gpa, state.a[(head >> 11) & 0x1F], xv) catch return RunError.OutOfMemory;
     if ((head >> 9) & 1 == 0) return;
     if (k < 16) return RunError.UnknownForm;
-    state.s[k - 16] = (state.getY(state.e[(head >> 5) & 0xF]) orelse 0) & 0xFFFF;
+    state.s[k - 16] = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
 }
 
 /// mul13, low5 0x13, S class 101 with S[19] (fact 128):
@@ -2508,7 +2510,7 @@ fn execStY(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             const src: u32 = (w >> 21) & 0x1F;
             if (src < 16) return RunError.UnknownForm;
             const v: u32 = if (src == 16) 0 else state.s[src - 16] & 0xFFFF;
-            state.y_mem.put(gpa, state.e[(w >> 17) & 0xF], v) catch return RunError.OutOfMemory;
+            state.y_mem.put(gpa, try yAddrE(state, (w >> 17) & 0xF), v) catch return RunError.OutOfMemory;
         }
     }
     state.e[1] = addr;
@@ -3315,9 +3317,7 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             try executeBundle(gpa, state, slice);
             if (!sameY(&before, &state.y_mem)) return RunError.UnknownForm;
         } else try executeBundle(gpa, state, slice);
-        // e0 is no register: it reads the previous word's [20:5] (fact 65, 466), whatever
-        // that word is, a nop included. Measured with one-syllable predecessors only.
-        if (len == 1) state.e[0] = (head >> 5) & 0xFFFF;
+        updateE0(state, slice);
         i += len;
         // The stop has a shadow (fact 72): an ldi and a st + wr after it
         // still run and the next pair does not; two bundles, exact count OPEN.
@@ -3368,6 +3368,34 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
 
 pub fn bundleLen(head: u32) ?u8 {
     return isa.bundleLen(head);
+}
+
+/// e0 is no register (fact 65, 466, 468): after ldi, lde, a 0x05 alu/movb (the nop
+/// included) and the st pair it is that word's [20:5]; an x19alu leaves it. A pc14 pair also
+/// sets it (468), but x17 cannot express the measured word, and no general rule is known: after
+/// anything else e0 is unknown, and a Y address read through it is refused.
+fn updateE0(state: *State, b: []const u32) void {
+    const h = b[0];
+    const low5 = h & 0x1F;
+    const setter = b.len == 1 and ((low5 == 0x05 and h >> 30 == 1) or (low5 == 0x06 and h >> 30 == 3) or
+        (if (isa.classify(h)) |f| std.mem.eql(u8, f.name, "ldi") else false));
+    if (setter) {
+        state.e[0] = (h >> 5) & 0xFFFF;
+        state.e0_known = true;
+        return;
+    }
+    if (low5 == 0x0F and b.len == 2 and h >> 29 == 1 and b[1] & 0xE0018000 == 0x20018000) {
+        state.e0_known = true; // execStY wrote it (65)
+        return;
+    }
+    if (low5 == 0x19 and b.len == 4 and b[1] >> 29 == 0 and b[2] >> 29 == 4 and b[3] >> 29 == 4) return;
+    state.e0_known = false;
+}
+
+/// e<k> as a Y address: e0 only while it is known.
+fn yAddrE(state: *const State, k: u32) RunError!u32 {
+    if (k == 0 and !state.e0_known) return RunError.UnknownForm;
+    return state.e[k];
 }
 
 fn sameY(a: *const std.AutoHashMapUnmanaged(u32, u32), b: *const std.AutoHashMapUnmanaged(u32, u32)) bool {
@@ -3452,7 +3480,7 @@ fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const src_e: u32 = (head >> 5) & 0xF;
     if (dest_k < 16) return;
     const dest_s: u32 = dest_k - 16;
-    const addr: u32 = state.e[src_e];
+    const addr: u32 = try yAddrE(state, src_e);
     const raw: u32 = (state.getY(addr) orelse 0) & 0xFFFF;
     // Sign-extends the 16-bit word (fact 409, own-ldysx).
     state.s[dest_s] = if (raw & 0x8000 != 0) raw | 0xFF0000 else raw;
@@ -3526,7 +3554,7 @@ fn execStx0f(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 /// Y:[e<k>] <- s<[25:22]>.
 fn execStk(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const v: u32 = state.s[(head >> 22) & 0xF] & 0xFFFF;
-    state.y_mem.put(gpa, state.e[(head >> 5) & 0xF], v) catch return RunError.OutOfMemory;
+    state.y_mem.put(gpa, try yAddrE(state, (head >> 5) & 0xF), v) catch return RunError.OutOfMemory;
 }
 
 fn execPsel(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -3570,7 +3598,7 @@ fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
 /// side named in the note is not modelled.
 fn execAset0b(state: *State, head: u32) RunError!void {
     const dest: u32 = (head >> 26) & 7;
-    if (dest != 0) state.s[dest] = (state.getY(state.e[(head >> 5) & 0xF]) orelse 0) & 0xFFFF;
+    if (dest != 0) state.s[dest] = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
 }
 
 /// 0x0C with [31] = 1 (fact 282, 378; Upstream 2026-11-06): one form.

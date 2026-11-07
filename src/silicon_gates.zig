@@ -1524,6 +1524,20 @@ const GATES = [_]Gate{
         .post = &.{.{ .y_mem = .{ .addr = 0, .value = 0x55 } }},
     },
     .{
+        .name = "own-sty0x19",
+        // Upstream, fact 468 (3 of 3): an x19alu between (00000219 02014000 800C8101
+        // 81E18008, its [20:5] = 0x10) leaves e0 at ldi s5's 0x730.
+        .src =
+        \\ldi s1, #0x55
+        \\ldi s5, #0x730
+        \\x19.alum s2, s3, s1, #16, #8
+        \\st.wr #0x40, e0, s1
+        \\alu s0, s0, s0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x730, .value = 0x55 } }},
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},

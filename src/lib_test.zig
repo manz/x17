@@ -1186,3 +1186,19 @@ test "x17.mswedge with no store source is refused: silicon stored s1 there" {
     defer state.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, prog, 0, 64));
 }
+
+test "an e0 address after a bundle no measurement covers is refused" {
+    // fact 468: e0 follows some forms' [20:5] and not others'; no general rule.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        ldi s5, #0x730
+        \\        x02.ainc #6, #6
+        \\        st.wr #0x40, e0, s1
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, prog, 0, 64));
+}
