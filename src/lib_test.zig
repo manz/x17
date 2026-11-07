@@ -4196,3 +4196,30 @@ test "x12agu with h[31:29] >= 2 moves e<h[8:5]> to s<{w1[0], h[31]}>" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x17 S1 class 000 + S2 class 111: the move and its Y store" {
+    // fact 554: S2[4:3] = 11 stores Y:[e<S2[24:21]>] <- s<2*S2[2:0]> (the value before
+    // the move's write), beside s<S1[27:24]> <- s<S2[28:25]>.  S2[4:3] = 01 and source 0 are
+    // OPEN.  Here s6 <- s5 and the store reads the old s6.
+    const gpa = testing.allocator;
+    for ([_]struct { s2: u32, stored: ?u32, ok: bool }{
+        .{ .s2 = 0xEA80001B, .stored = 0x0666, .ok = true },
+        .{ .s2 = 0xEA800003, .stored = null, .ok = true },
+        .{ .s2 = 0xEA80000B, .stored = null, .ok = false },
+        .{ .s2 = 0xEA800018, .stored = null, .ok = false },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[5] = 0x555;
+        state.s[6] = 0x10666;
+        state.e[4] = 0x740;
+        const r = emu.runFrom(gpa, &state, &.{ 0x00000617, 0x06000000, c.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (!c.ok) {
+            try testing.expectError(error.UnknownForm, r);
+            continue;
+        }
+        _ = try r;
+        try testing.expectEqual(@as(u32, 0x555), state.s[6]);
+        try testing.expectEqual(c.stored, state.getY(0x740));
+    }
+}

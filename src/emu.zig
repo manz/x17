@@ -3824,7 +3824,6 @@ fn x17opEval(op: u32, a: i32, b: i32, n: u32) RunError!u32 {
 }
 
 fn execX17Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
     const head = bundle[0];
     const s1 = bundle[1];
     const s2 = bundle[2];
@@ -3840,6 +3839,18 @@ fn execX17Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const b_val: u32 = if (b_field == 0) 0 else state.s[b_field];
 
     const result = try x17opEval(op, sx24(a_val), sx24(b_val), n);
+    // S1 class 000 (554): S2[4:3] = 11 also stores Y:[e<S2[24:21]>] <- s<2*S2[2:0]>, the value
+    // before this bundle's write; S2[4:3] = 01 and a zero source index are OPEN.
+    if (s1 >> 29 == 0) switch ((s2 >> 3) & 3) {
+        3 => {
+            const src: u32 = 2 * (s2 & 7);
+            if (src == 0) return RunError.UnknownForm;
+            const addr = try yAddrE(state, (s2 >> 21) & 0xF);
+            state.y_mem.put(gpa, addr, state.s[src] & 0xFFFF) catch return RunError.OutOfMemory;
+        },
+        1 => return RunError.UnknownForm,
+        else => {},
+    };
     state.s[dest_s] = result;
 }
 
