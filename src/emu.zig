@@ -604,7 +604,7 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const scaled: i64 = if ((w1 >> 17) & 1 == 1)
         prod >> 24
     else
-        @min((prod + (1 << 22)) >> 23, 0x7FFFFF); // -1 * -1 saturates (fact 402)
+        @min(roundShr(prod, 23), 0x7FFFFF); // -1 * -1 saturates (fact 402)
     // Modes (fact 161): X = xd before the bundle, at the [15:0] slice;
     // 1 = a + X, 5 = P + X, 7 = X - P, otherwise P.
     const xv: i64 = @intCast((state.xd_pre << 8) & 0xFFFF);
@@ -715,7 +715,7 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const p: i64 = if ((w1 >> 17) & 1 == 1)
         prod >> 24
     else
-        (prod + (1 << 22)) >> 23;
+        roundShr(prod, 23);
     if (dest_s != 0) {
         const v: i64 = switch (mode) {
             4 => p,
@@ -1030,7 +1030,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             if ((w1 >> 14) & 0xF != 0b0010) return RunError.UnknownForm;
             if (sx24(state.s[(w6 >> 24) & 0xF]) != pa or sx24(state.s[(w6 >> 28) & 0xF]) != pb)
                 return RunError.UnknownForm;
-            break :blk @truncate(@as(u64, @bitCast((pa * pb + (1 << 22)) >> 23)) & M24);
+            break :blk @truncate(@as(u64, @bitCast(roundShr(pa * pb, 23))) & M24);
         }
         if ((w1 >> 14) & 1 == 0) return RunError.UnknownForm;
         const sh: u6 = if ((w1 >> 17) & 1 == 1) 24 else 23;
@@ -1227,7 +1227,7 @@ fn execMul13(state: *State, bundle: []const u32) RunError!void {
     const b_idx: u32 = 2 * (sw & 7) + (bundle[0] >> 31);
     const prod: i64 = sx16(state.s[(sw >> 3) & 0xF]) * sx16(state.s[b_idx]);
     const dest: u32 = (sw >> 11) & 0xF;
-    if (dest != 0) state.s[dest] = @truncate(@as(u64, @bitCast((prod + (1 << 22)) >> 23)) & M24);
+    if (dest != 0) state.s[dest] = @truncate(@as(u64, @bitCast(roundShr(prod, 23))) & M24);
 }
 
 fn execX10Alu(state: *State, bundle: []const u32) RunError!void {
@@ -1943,7 +1943,7 @@ fn execX18Q23(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const bv: u64 = state.s[b_s] & M24;
     const prod: u64 = av * bv;
     const v: u32 = switch (mode) {
-        4 => @truncate(((prod + (1 << 22)) >> 23) & M24), // P: rounded
+        4 => @truncate(@as(u64, @intCast(roundShr(@intCast(prod), 23))) & M24), // P: rounded
         else => return RunError.UnknownForm,
     };
     if (dest_s != 0) state.s[dest_s] = v;
@@ -2001,8 +2001,7 @@ fn x18Alu110(state: *const State, bundle: []const u32) RunError!?SWrite {
     };
     const sum: i64 = @as(i64, sx24(state.s[(w3 >> 3) & 0xF])) + sx24(state.s[(w1 >> 4) & 0xF]);
     if (sum >= 1 << 23 or sum < -(1 << 23)) return RunError.UnknownForm;
-    const bias: i64 = if (n == 0) 0 else @as(i64, 1) << (n - 1);
-    return .{ .dest = dest, .value = @as(u32, @truncate(@as(u64, @bitCast((sum + bias) >> n)))) & M24 };
+    return .{ .dest = dest, .value = @as(u32, @truncate(@as(u64, @bitCast(roundShr(sum, n))))) & M24 };
 }
 
 fn x18SlotAlu(op: u32, a: u32, b: u32) RunError!u32 {
@@ -2088,9 +2087,7 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         const r = try x18SlotAlu((w1 >> 15) & 7, state.s[(w2 >> 16) & 0xF], state.s[(w1 >> 4) & 0xF]);
         const n: u5 = @intCast((w3 >> 11) & 0xF);
         alu_v = if ((h >> 27) & 1 == 1) blk: {
-            const sr: i64 = sx24(r);
-            const bias: i64 = if (n == 0) 0 else @as(i64, 1) << (n - 1);
-            break :blk @truncate(@as(u64, @bitCast((sr + bias) >> n)) & 0xFFFF);
+            break :blk @truncate(@as(u64, @bitCast(roundShr(sx24(r), n))) & 0xFFFF);
         } else (r << n) & 0xFFFF;
     }
     if ((w2 >> 21) & 3 == 3) {
@@ -2255,15 +2252,14 @@ fn execX18C4(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const m_val: u32 = if (dest_m == 0) 0 else blk: {
         if (((w1 >> 11) & 7) != 4) return RunError.UnknownForm;
         const prod: i64 = sx16(state.s[(w3 >> 17) & 0xF]) * sx16(state.s[(w3 >> 21) & 0xF]);
-        break :blk @truncate(@as(u64, @bitCast((prod + (1 << 22)) >> 23)) & 0xFFFF);
+        break :blk @truncate(@as(u64, @bitCast(roundShr(prod, 23))) & 0xFFFF);
     };
     const dest_sh: u32 = (w1 >> 24) & 0xF;
     const sh_val: u32 = if (dest_sh == 0) 0 else blk: {
         const src: u32 = state.s[(w2 >> 16) & 0xF];
         const n: u5 = @intCast((w1 >> 20) & 0xF);
         if ((h >> 27) & 1 == 1) {
-            const bias: i64 = if (n == 0) 0 else @as(i64, 1) << (n - 1);
-            break :blk @truncate(@as(u64, @bitCast((@as(i64, sx24(src)) + bias) >> n)) & 0xFFFF);
+            break :blk @truncate(@as(u64, @bitCast(roundShr(sx24(src), n))) & 0xFFFF);
         }
         break :blk (src << n) & 0xFFFF;
     };
@@ -2649,6 +2645,13 @@ fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
+/// x >> n rounded half up (half up on negatives too), the multiplier's and the shifters'
+/// rounding (fact 147, 165); n = 0 is x.
+pub fn roundShr(x: i64, n: u6) i64 {
+    if (n == 0) return x;
+    return (x + (@as(i64, 1) << (n - 1))) >> n;
+}
+
 /// 0x19 ALU op 23 (fact 147): b >= 0 gives sat24(a << b); b < 0 gives the rounded
 /// a >> -b, (a + 2^(-b-1)) >> -b, half up on negatives.  MEASURED: own-x19alu and the
 /// own-x19shr-* / own-x19shl-* gates (PROBES.md); counts past +-23 shift fully out (515).
@@ -2657,8 +2660,7 @@ pub fn shift23(a: i64, b: i64) i64 {
         const s: u6 = @intCast(@min(b, 40));
         return std.math.clamp(a << s, -0x800000, 0x7FFFFF);
     }
-    const n: u6 = @intCast(@min(-b, 40));
-    return (a + (@as(i64, 1) << (n - 1))) >> n;
+    return roundShr(a, @intCast(@min(-b, 40)));
 }
 
 fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -2813,7 +2815,7 @@ fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     var hi: u32 = 0;
     if (hi_s != 0) {
         if (op != 4) return RunError.UnknownForm;
-        const h: i64 = if (wide) prod >> 24 else if ((w1 >> 15) & 1 == 1) @min((prod + (1 << 22)) >> 23, 0x7FFFFF) else return RunError.UnknownForm; // sat: 402
+        const h: i64 = if (wide) prod >> 24 else if ((w1 >> 15) & 1 == 1) @min(roundShr(prod, 23), 0x7FFFFF) else return RunError.UnknownForm; // sat: 402
         hi = @as(u32, @truncate(@as(u64, @bitCast(h)))) & M24;
     }
     const a_dest: u32 = (w2 >> 17) & 0xF;
@@ -4713,4 +4715,13 @@ test "every isa.toml form has a handler or a bit-pattern row" {
             return error.TestUnexpectedResult;
         }
     }
+}
+
+test "roundShr rounds half up, negatives included" {
+    try testing.expectEqual(@as(i64, 5), roundShr(5, 0));
+    try testing.expectEqual(@as(i64, 3), roundShr(5, 1));
+    try testing.expectEqual(@as(i64, -1), roundShr(-3, 1));
+    try testing.expectEqual(@as(i64, 0), roundShr(-1, 1));
+    try testing.expectEqual(@as(i64, -2), roundShr(-5, 1));
+    try testing.expectEqual(@as(i64, 0x30), roundShr(0x4000 * 0x6000, 23));
 }
