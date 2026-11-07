@@ -2540,66 +2540,53 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 3) {
         return execX19A3(gpa, state, bundle);
     }
-    if (w1_class == 3 and w2_class == 0 and w3_class == 0) {
+    // x19k: w1[31:29] is the X-store source's high bits, not a selector (fact 235, 534).
+    if (w2_class == 0 and w3_class == 0 and (w1_class == 1 or w1_class == 3 or w1_class == 4 or w1_class == 5 or w1_class == 7)) {
         return execX19K00(gpa, state, bundle);
     }
     return RunError.UnknownForm;
 }
 
+/// x19k (fact 235-240, 534): every slot reads before any writes, and all fire together.
+///   s<head[24:21]> <- mux w1[14:12]: 0 and 7 zero, 6 #head[20:5], 1/2 AGU10[w1[27:24]](x, y);
+///     with w1[17:15] = 5 / 7 instead s<w1[11:8]> <- a - b / |b| (16-bit), a = s<w1[7:4]>,
+///     b = s<w3[6:3]>, and no head write.
+///   R<w3[10:7]> <- (w2[25] ? AGU10 : AGU10B)[w1[27:24]](x, y).
+///   X:[A<w2[21:17]>] <- s<w1[31:28]> when w2[23:22] = 11 (239); w1 class 000 is x19agu, so
+///     the source is never s0.
+/// x = e<w3[28:25]>, y = R<w3[14:11]>.  Muxes 3-5 are OPEN.
 fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const head = bundle[0];
     const w1 = bundle[1];
+    const w2 = bundle[2];
     const w3 = bundle[3];
-    const dest_s: u32 = (head >> 21) & 0xF;
-    const mux: u32 = (w1 >> 12) & 0x7;
-    const w1_mod: u32 = (w1 >> 15) & 0x7;
-    // The store source is read before the bundle's writes (fact 239).
+    const fn_op: u32 = (w1 >> 24) & 0xF;
+    const x: u32 = state.e[(w3 >> 25) & 0xF];
+    const y: u32 = state.r[(w3 >> 11) & 0xF];
     const store_val: u32 = state.s[(w1 >> 28) & 0xF] & M24;
-    const v: u32 = switch (mux) {
-        1, 2 => blk: {
-            if (w1_mod == 5 or w1_mod == 7) {
-                // own-x19kalu (m=5, a-b) and own-x19kabs (m=7, |b|).
-                const a_s: u32 = (w1 >> 4) & 0xF;
-                const b_s: u32 = (w3 >> 3) & 0xF;
-                const a_val: u32 = state.s[a_s] & M24;
-                const b_val: u32 = state.s[b_s] & M24;
-                const dest_kalu: u32 = (w1 >> 8) & 0xF;
-                const alu_v: u32 = if (w1_mod == 7) blk2: {
-                    const low16: u32 = b_val & 0xFFFF;
-                    const signed: i32 = if (low16 & 0x8000 != 0)
-                        @bitCast(low16 | 0xFFFF0000)
-                    else
-                        @intCast(low16);
-                    const abs_val: u32 = if (signed < 0) @intCast(-signed) else @intCast(signed);
-                    break :blk2 abs_val & M24;
-                } else (a_val -% b_val) & M24;
-                if (dest_kalu != 0) state.s[dest_kalu] = alu_v;
-                break :blk alu_v;
-            }
-            const fn_op: u32 = (w1 >> 24) & 0xF;
-            const x_e: u32 = (w3 >> 25) & 0xF;
-            const y_r: u32 = (w3 >> 11) & 0xF;
-            const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
-            const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
-            break :blk try agu10Eval(fn_op, x_val, y_val);
-        },
-        6 => blk: {
-            // mux 110: head[20:5] imm (own-x19kimm).
-            break :blk (head >> 5) & 0xFFFF;
-        },
+    const kalu: bool = switch ((w1 >> 15) & 7) {
+        5, 7 => true,
+        else => false,
+    };
+    const mux: u32 = (w1 >> 12) & 7;
+    const s_val: u32 = switch (mux) {
+        0, 7 => 0,
+        6 => (head >> 5) & 0xFFFF,
+        1, 2 => if (kalu) x19KAlu(state, w1, w3) else try agu10Eval(fn_op, x, y),
         else => return RunError.UnknownForm,
     };
-    if ((mux == 1 or mux == 2) and (w1_mod == 5 or w1_mod == 7)) return;
-    if (dest_s != 0) state.s[dest_s] = v;
-    // own-x19kst: the X store side.  Enabled by w2[23:22] = 11 (fact 239).
-    // X:[A<w2[21:17]>] <- sx24 s<w1[31:28]>.
-    const w2 = bundle[2];
-    const store_en: u32 = (w2 >> 22) & 0x3;
-    if (store_en == 0b11) {
-        const a_idx: u32 = (w2 >> 17) & 0x1F;
-        const src_s: u32 = (w1 >> 28) & 0xF;
-        if (src_s != 0) try state.x_mem.put(gpa, state.a[a_idx & 0xF], store_val);
-    }
+    const r_val: u32 = if ((w2 >> 25) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y);
+    if (kalu and (mux == 1 or mux == 2)) state.s[(w1 >> 8) & 0xF] = s_val else state.s[(head >> 21) & 0xF] = s_val;
+    const dest_r: u32 = (w3 >> 7) & 0xF;
+    if (dest_r != 0) state.r[dest_r] = r_val;
+    if ((w2 >> 22) & 3 == 3) state.x_mem.put(gpa, state.a[(w2 >> 17) & 0x1F], store_val) catch return RunError.OutOfMemory;
+}
+
+/// x19k's w1[17:15] ALU (own-x19kalu m = 5: a - b; own-x19kabs m = 7: |b| over 16 bits).
+fn x19KAlu(state: *const State, w1: u32, w3: u32) u32 {
+    const b: u32 = state.s[(w3 >> 3) & 0xF] & M24;
+    if ((w1 >> 15) & 7 == 7) return @intCast(@abs(sx16(b)) & M24);
+    return ((state.s[(w1 >> 4) & 0xF] & M24) -% b) & M24;
 }
 
 /// Y:[e<w3[28:25]>] <- s<{w2[0], w1[31:29]}>.

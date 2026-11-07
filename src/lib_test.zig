@@ -3780,3 +3780,54 @@ test "mul13's head ALU slot and X store" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x19k writes R<w3[10:7]> through AGU10 or AGU10B, beside its store" {
+    // fact 534: own-x19kr, R11 = 0xABC: 9c000019 23040111 02c60000 00515d98 gives
+    // R11 = y + 1 = 0xABD (w2[25] = 1, AGU10 fn 3); w2[25] = 0 picks AGU10B's -x = -e0 = 0.
+    // w1[31:29] is the store source's high bits (s2 here, s10 in the class-101 variant), so
+    // the X store to A3 fires alongside.
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, w2: u32, r11: u32, stored: u32 }{
+        .{ .w1 = 0x23040111, .w2 = 0x02c60000, .r11 = 0xABD, .stored = 0x222 },
+        .{ .w1 = 0x23040111, .w2 = 0x00c60000, .r11 = 0, .stored = 0x222 },
+        .{ .w1 = 0xA3040111, .w2 = 0x02c60000, .r11 = 0xABD, .stored = 0xAAA },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[11] = 0xABC;
+        state.s[2] = 0x222;
+        state.s[10] = 0xAAA;
+        state.a[3] = 0x130;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x9c000019, c.w1, c.w2, 0x00515d98, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.r11, state.r[11]);
+        try testing.expectEqual(@as(?u32, c.stored), state.readX(0x130));
+    }
+}
+
+test "x19k's ALU form still runs the R write and the store (all slots fire, 534)" {
+    // x19.kalu's words with an R destination: s9 <- s4 - s5, R5 <- AGU10 fn 6 (e3 + R6),
+    // X:[A12] <- s6.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[4] = 0x500;
+    state.s[5] = 0x200;
+    state.s[6] = 0x666;
+    state.e[3] = 0x100;
+    state.r[6] = 0x20;
+    state.a[12] = 0x150;
+    _ = try emu.runFrom(gpa, &state, &.{ 0x00000019, 0x66069000 | 9 << 8 | 4 << 4, 0x02D80000, 0x06543000 | 5 << 7 | 5 << 3, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x300), state.s[9]);
+    try testing.expectEqual(@as(u32, 0x120), state.r[5]);
+    try testing.expectEqual(@as(?u32, 0x666), state.readX(0x150));
+}
+
+test "x19k's store: A<w2[21:17]> reaches A16-A31" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[2] = 0x222;
+    state.a[19] = 0x140;
+    _ = try emu.runFrom(gpa, &state, &.{ 0x9c000019, 0x23040111, 0x02e60000, 0x00515d98, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(?u32, 0x222), state.readX(0x140));
+}

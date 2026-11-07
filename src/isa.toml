@@ -326,6 +326,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # 000 0, 011 0x5000?, 110 head[20:5]; an X store (OPEN).  144's (7,0,3) e <- I + (I & 0x7F) was the Y 0x2E80 map: it is I.  own-x19e
 # x19a3 (fact 149): classes (0,0,3)/(7,0,3): s<head[24:21]>, A<head[29:25]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w1[21:18]>,
 # i = 2*w3[14:0]); (0,0,3) R<w1[14:11]> <- AGU10[w1[10:7]](x = e<w3[28:25]>, y); its e<w1[6:3]> write is OPEN.  own-x19a3
+# x19k (534): dispatches on w2 = w3 = class 000 with w1[31:29] in {001, 011, 100, 101, 111} (w1[31:28] is the store source); R<w3[10:7]> <- (w2[25] ? AGU10 : AGU10B)[w1[27:24]](e<w3[28:25]>, R<w3[14:11]>); mux 0/7 write 0; all slots, ALU form included, fire together.  own-x19kr
 # x19alu X writes (533): X = X:[A<w2[26:22]>]; s<w2[7:4]> <- X; s<w2[30:27]> <- mux w2[3:1]: 5 X, 4 (X << 7)[15:0], 1 stale yd, 0 zero, others OPEN.  w1[2:0] beside modes 8/9/A refused only with an ALU destination.  own-x19alx
 # x19agu s write (532): s<head[24:21]> <- by w1[14:12]: 0 zero, 1 the AGU10 value, 4 (X << 7)[15:0], 5 X, X = X:[A<w2[21:17]>] or the stale yd when w3[1] = 0; other muxes OPEN, refused.  own-x19agx
 # x19a3 s mux (529): s<head[24:21]> <- by w1[17:15]: 1/2 the AGU3 value, 0 zero; 5 and 6 OPEN, refused (as are 3, 4, 7); A<head[29:25]> always takes AGU3.  own-x19a3m
