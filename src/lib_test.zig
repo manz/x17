@@ -3107,4 +3107,10 @@ test "rop picks AGU10 by head[21]; x16alu mux 1/5 reads Y by S2[18]; x19mac take
             try testing.expectEqual(v, state.s[5]);
         } else try testing.expectError(error.UnknownForm, r);
     }
+    // the two wedging rows (w2 = 0x80C80000) refuse
+    for ([_][4]u32{ .{ 0x80000019, 0xffe80002, 0x80c80000, 0xc0050003 }, .{ 0x00000019, 0x3fe80001, 0x80c80000, 0xc0020003 } }) |w| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ w[0], w[1], w[2], w[3], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    }
 }
