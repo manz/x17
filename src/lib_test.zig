@@ -14,6 +14,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/alac.sm", .text = @embedFile("alac.sm") },
     .{ .path = "lib/huffman.sm", .text = @embedFile("huffman.sm") },
     .{ .path = "lib/sections.sm", .text = @embedFile("sections.sm") },
+    .{ .path = "lib/dequant.sm", .text = @embedFile("dequant.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -1204,4 +1205,216 @@ test "an e0 address after a bundle no measurement covers is refused" {
     var state = emu.State{};
     defer state.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, prog, 0, 64));
+}
+
+// ---------------------------------------------------------------------------
+// AAC inverse quantisation: sosumi ref/dsp/aac/dequant.zig, plain integers.
+
+const DqTables = struct {
+    dm: [129]i32,
+    de: [129]i32,
+    it: [65]i32,
+    g: [12]i32,
+};
+
+fn dqTables() DqTables {
+    var t: DqTables = undefined;
+    t.dm[0] = 0;
+    t.de[0] = 0;
+    for (1..129) |k| {
+        const v = std.math.pow(f64, @floatFromInt(k), 4.0 / 3.0);
+        var ex: i32 = @intFromFloat(@floor(std.math.log2(v)));
+        var r = @round(std.math.ldexp(v, 22 - ex));
+        if (r >= 1 << 23) {
+            r /= 2;
+            ex += 1;
+        }
+        t.dm[k] = @intFromFloat(r);
+        t.de[k] = ex - 22;
+    }
+    for (&t.it, 64..) |*x, j| x.* = @intFromFloat(@round(std.math.pow(f64, @floatFromInt(j), 4.0 / 3.0) * 8192.0));
+    for (0..3) |rem| for (0..4) |b| {
+        const x = @as(f64, @floatFromInt(rem)) / 3.0 + @as(f64, @floatFromInt(b)) / 4.0;
+        t.g[rem * 4 + b] = @intFromFloat(@round(std.math.pow(f64, 2.0, x) * (1 << 21)));
+    };
+    return t;
+}
+
+const dq_ie = [8]i32{ 0, 1 - 13, 2 - 13, 4 - 13, 5 - 13, 6 - 13, 8 - 13, 9 - 13 };
+const dq_ir = [8]i32{ 0, 1, 2, 0, 1, 2, 0, 1 };
+
+fn rshr(a: i64, n: u6) i64 {
+    if (n == 0) return a;
+    return (a + (@as(i64, 1) << (n - 1))) >> n;
+}
+
+const Mant = struct { m: i64, e: i32, rem: i32 };
+
+fn dqMant(t: *const DqTables, mag: i32) Mant {
+    if (mag <= 128) return .{ .m = t.dm[@intCast(mag)], .e = t.de[@intCast(mag)], .rem = 0 };
+    var s: u6 = 1;
+    var top: i32 = 256;
+    while (mag >= top) : (top *= 2) s += 1;
+    const j = rshr(mag - (@as(i64, 1) << (s - 1)), s);
+    const f = mag - (j << s);
+    const lo: i64 = t.it[@intCast(j - 64)];
+    const d: i64 = t.it[@intCast(j - 63)] - lo;
+    const fs = f << (23 - s);
+    return .{ .m = lo + ((d * fs + (1 << 22)) >> 23), .e = dq_ie[s], .rem = dq_ir[s] };
+}
+
+const DqShape = struct { short: bool, groups: u4, group_len: [8]u4, max_sfb: u6 };
+
+const swb_long_44 = [_]u16{ 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 88, 96, 108, 120, 132, 144, 160, 176, 196, 216, 240, 264, 292, 320, 352, 384, 416, 448, 480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800, 832, 864, 896, 928, 1024 };
+const swb_short_44 = [_]u16{ 0, 4, 8, 12, 16, 20, 28, 36, 44, 56, 68, 80, 96, 112, 128 };
+
+/// Words and exponent, as the model's dequantChannel.
+fn refDequant(t: *const DqTables, spec: []const i32, s: DqShape, books: []const i32, sfs: []const i32, out: []i32) i32 {
+    const offs: []const u16 = if (s.short) &swb_short_44 else &swb_long_44;
+    const win: usize = if (s.short) 128 else 1024;
+    var e_max: ?i32 = null;
+    var fw: usize = 0;
+    for (0..s.groups) |g| {
+        for (0..s.max_sfb) |sfb| {
+            const i = g * s.max_sfb + sfb;
+            if (books[i] < 1 or books[i] > 11) continue;
+            var mx: i32 = 0;
+            for (fw..fw + s.group_len[g]) |w| for (w * win + offs[sfb]..w * win + offs[sfb + 1]) |k| {
+                mx = @max(mx, @as(i32, @intCast(@abs(spec[k]))));
+            };
+            if (mx == 0) continue;
+            const sh: i32 = @intCast(rshr(sfs[i] - 100 - 2, 2));
+            const e = dqMant(t, mx).e + 2 + sh;
+            if (e_max == null or e_max.? < e) e_max = e;
+        }
+        fw += s.group_len[g];
+    }
+    @memset(out, 0);
+    const big = e_max orelse return 0;
+    fw = 0;
+    for (0..s.groups) |g| {
+        for (0..s.max_sfb) |sfb| {
+            const i = g * s.max_sfb + sfb;
+            if (books[i] < 1 or books[i] > 11) continue;
+            const tt = sfs[i] - 100;
+            const sh: i32 = @intCast(rshr(tt - 2, 2));
+            const b = tt - 4 * sh;
+            for (fw..fw + s.group_len[g]) |w| for (w * win + offs[sfb]..w * win + offs[sfb + 1]) |k| {
+                const q = spec[k];
+                if (q == 0) continue;
+                const mt = dqMant(t, @intCast(@abs(q)));
+                const p = (mt.m * t.g[@intCast(mt.rem * 4 + b)] + (1 << 22)) >> 23;
+                const n: u6 = @intCast(@min(big - (mt.e + 2 + sh), 23));
+                const v: i32 = @intCast(rshr(p, n));
+                out[k] = if (q < 0) -v else v;
+            };
+        }
+        fw += s.group_len[g];
+    }
+    return big;
+}
+
+test "dq_channel dequantises as the model does: words and exponent" {
+    const gpa = testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0xD0A);
+    const rnd = prng.random();
+    const t = dqTables();
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/mem.sm"
+        \\.include "lib/huffman.sm"
+        \\.include "lib/sections.sm"
+        \\.include "lib/dequant.sm"
+        \\        bits_init(0x4000)
+        \\        dq_channel()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var nonzero: usize = 0;
+    var interp: usize = 0;
+    var shorts: usize = 0;
+    for (0..40) |run| {
+        const short = rnd.boolean();
+        var s: DqShape = .{ .short = short, .groups = 1, .group_len = @splat(0), .max_sfb = 0 };
+        if (short) {
+            var left: u4 = 8;
+            s.groups = 0;
+            while (left > 0) {
+                const l = rnd.intRangeAtMost(u4, 1, left);
+                s.group_len[s.groups] = l;
+                s.groups += 1;
+                left -= l;
+            }
+            s.max_sfb = rnd.intRangeAtMost(u6, 0, 14);
+            shorts += 1;
+        } else {
+            s.group_len[0] = 1;
+            s.max_sfb = rnd.intRangeAtMost(u6, 0, 49);
+        }
+        const nb = @as(usize, s.groups) * s.max_sfb;
+        var books: [120]i32 = undefined;
+        var sfs: [120]i32 = undefined;
+        const base_sf = rnd.intRangeAtMost(i32, 60, 200);
+        for (0..nb) |i| {
+            const cb = rnd.intRangeAtMost(i32, 0, 15);
+            books[i] = if (cb == 12) 0 else cb;
+            sfs[i] = std.math.clamp(base_sf + rnd.intRangeAtMost(i32, -30, 30), 0, 255);
+        }
+        var spec: [1024]i32 = undefined;
+        for (&spec) |*q| {
+            const r = rnd.uintLessThan(u8, 100);
+            const mag: i32 = if (r < 40) 0 else if (r < 90) rnd.intRangeAtMost(i32, 1, 16) else if (r < 98) rnd.intRangeAtMost(i32, 17, 1000) else rnd.intRangeAtMost(i32, 1001, 8191);
+            q.* = if (rnd.boolean()) -mag else mag;
+            if (mag > 128) interp += 1;
+        }
+        // one run with nothing to dequantise
+        if (run == 0) @memset(&spec, 0);
+        var want: [1024]i32 = undefined;
+        const want_e = refDequant(&t, &spec, s, books[0..nb], sfs[0..nb], &want);
+
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const putX = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: u32, v: i64) !void {
+                try st.x_mem.put(a, addr, @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF);
+            }
+        }.f;
+        const putY = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: u32, v: i64) !void {
+                try st.y_mem.put(a, addr, @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF);
+            }
+        }.f;
+        for (0..1024) |k| try putX(&state, gpa, @intCast(k), spec[k]);
+        for (0..129) |k| {
+            try putX(&state, gpa, 0x1800 + 2 * @as(u32, @intCast(k)), t.dm[k]);
+            try putX(&state, gpa, 0x1801 + 2 * @as(u32, @intCast(k)), t.de[k]);
+        }
+        for (t.it, 0..) |v, j| try putX(&state, gpa, 0x1910 + @as(u32, @intCast(j)), v);
+        for (t.g, 0..) |v, j| try putX(&state, gpa, 0x1960 + @as(u32, @intCast(j)), v);
+        for (0..8) |j| {
+            try putY(&state, gpa, 0x2140 + @as(u32, @intCast(j)), dq_ie[j]);
+            try putY(&state, gpa, 0x2148 + @as(u32, @intCast(j)), dq_ir[j] * 4);
+        }
+        const offs: []const u16 = if (short) &swb_short_44 else &swb_long_44;
+        for (offs, 0..) |o, j| try putY(&state, gpa, 0x2180 + @as(u32, @intCast(j)), o);
+        try putY(&state, gpa, 0x2150, s.groups);
+        try putY(&state, gpa, 0x2151, s.max_sfb);
+        try putY(&state, gpa, 0x2152, if (short) 128 else 1024);
+        for (0..8) |j| try putY(&state, gpa, 0x2153 + @as(u32, @intCast(j)), s.group_len[j]);
+        for (0..nb) |i| {
+            try putY(&state, gpa, 0x2000 + @as(u32, @intCast(i)), books[i]);
+            try putY(&state, gpa, 0x2080 + @as(u32, @intCast(i)), sfs[i]);
+        }
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 24);
+        try testing.expect(state.halted);
+        try testing.expectEqual(@as(u32, @bitCast(want_e)) & 0xFFFF, state.getY(0x215B) orelse 0xDEAD);
+        for (0..1024) |k| {
+            if (want[k] != 0) nonzero += 1;
+            try testing.expectEqual(@as(u32, @bitCast(want[k])) & 0xFFFFFF, state.readX(0x400 + @as(u32, @intCast(k))) orelse 0xDEAD);
+        }
+    }
+    try testing.expect(nonzero > 5000);
+    try testing.expect(interp > 1000);
+    try testing.expect(shorts > 10);
 }
