@@ -2516,7 +2516,8 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 /// 410-413, own-x17st/-r/-e/-y).  Y:[e<S1[18:15]>] <- s<S1[27:24]>; R<S2[8:5]> and
 /// e<{S2[0], S1[31:29]}> <- #h[20:5]; with S1[28], s<h[24:21]> <- mux S2[3:1] of the Y word at
 /// e<S1[18:15]>: 0 gives 0, 2 the word, 6 its low byte << 8.  S1[19], S1[21], S1[22] wedge;
-/// mux 2 sign-extends (414); S1[28] = 0 with a load and muxes 1/3/4/5 are OPEN.
+/// mux 2 sign-extends (414), mux 4 is the same word (436); S1[28] = 0 with a load and muxes
+/// 1/3/5 are OPEN.
 fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const s1 = bundle[1];
@@ -2542,7 +2543,9 @@ fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         if ((s1 >> 28) & 1 == 0) return RunError.UnknownForm;
         ld_val = switch ((s2 >> 1) & 7) {
             0 => 0,
-            2 => if (yv & 0x8000 != 0) yv | 0xFF0000 else yv, // sign-extends, like ldy (414)
+            // mux 2 sign-extends, like ldy (414); mux 4 is the same word (436), its top byte
+            // unmeasured and taken as 2's
+            2, 4 => if (yv & 0x8000 != 0) yv | 0xFF0000 else yv,
             6 => (yv & 0xFF) << 8,
             else => return RunError.UnknownForm,
         };

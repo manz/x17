@@ -1289,6 +1289,22 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 2, .value = 0xFF8001 } }},
     },
     .{
+        .name = "own-x17mux4",
+        // Upstream, fact 436 (3 of 3): mux 4 loads the Y word as mux 2 does; the tail
+        // store reads back 16 bits, so the top byte is unmeasured. Mux 0 would store 0.
+        .pre = &.{
+            .{ .bank = .e, .index = 5, .value = 0x710 },
+            .{ .bank = .e, .index = 6, .value = 0x700 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x710, .value = 0x8001 }},
+        .src =
+        \\x17.ms s2, #0, s0, e5, #1, #0, #0, R0, #4
+        \\x17.ms s0, #0, s2, e6, #0, #0, #0, R0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0x8001 } }},
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},
