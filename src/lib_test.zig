@@ -1711,6 +1711,21 @@ test "the deadline counts words: a two-word st pair takes two" {
     }
 }
 
+test "x18 class 000 with w2[17], w2[18] and w3[7] clear is refused: it may stop" {
+    // fact 485: x18.eagu's template with w2[17] cleared stops; w3[7] set runs on; w3[8]
+    // set is own-x18e2nd-w17's shape (180), which runs.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x00000018, 0x00000004, 0x0000AC00, 0x00040000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    var ok = emu.State{};
+    defer ok.deinit(gpa);
+    _ = try emu.runFrom(gpa, &ok, &.{ 0x00000018, 0x00000004, 0x0000AC00, 0x00040080, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    var img = emu.State{};
+    defer img.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &img, &.{ 0x80800018, XXXXXXXX, 0x0000A97B, 0x00048200, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
+
 test "an x17 store with an odd e does not arm the halt deadline" {
     // fact 479: x17sty 00000017 A902C800 66001202 (S1[15] = 1) halts 12 words out.
     const gpa = testing.allocator;

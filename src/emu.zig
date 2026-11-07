@@ -259,6 +259,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             return execX18Mpy(gpa, state, bundle);
         }
         if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
+        // 485: with w2[17], w2[18] and w3[7] all clear a class-000 bundle may stop two slots
+        // later or run on. Both measured stops have w3[8] = 0; own-x18e2nd-w17 (180) has
+        // w3[8] = 1 and runs, so only w3[8] = 0 is refused (w3[8] as the decider is OPEN).
+        if (w3_class == 0b000 and bundle[2] & 0x60000 == 0 and bundle[3] & 0x180 == 0) return RunError.UnknownForm;
         if (w3_class == 0b000) return execX18C0(gpa, state, bundle);
         if (w3_class == 0b100) return execX18C4(gpa, state, bundle);
         if (w3_class == 0b011) return execX18C3(gpa, state, bundle);
