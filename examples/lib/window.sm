@@ -12,7 +12,7 @@
 ;   X WP   the previous shape's rising half, 1024 words; X WC the current shape's
 ;   X OVL  1024 overlap words, read then rewritten with the block's second half
 ;   Y PCM  1024 samples out
-; Uses s1, s3 .. s13, e6, e7, R2, R3, R7, A4, A6, A8, A14, p1.
+; Uses s1, s3 .. s13, e6, e7, R2, R3, R7, A4, A6, A8, A10, A14, p1 (all the macros here).
 .macro win_long(T, WP, WC, OVL, PCM) {
         aimm(A4, T)
         aimm(A6, WP)
@@ -67,4 +67,179 @@ second: x19.xrd s1, #4
         jmp #IF_NOT, #1, second
         nop()
         nop()
+}
+
+; The other sequences build the Q5 block in X B (2048 words) from runs, then win_out.
+
+; B.. = rnd(T.. * W.. / 2^23) over COUNT words, W stepping by WDIR (1 rising, -1 falling).
+; Uses s1, s3, s5, R2, R3, A4, A6, A8 and aimm's registers.
+.macro win_run(COUNT, T, W, WDIR, B) {
+        aimm(A4, T)
+        aimm(A6, W)
+        aimm(A8, B)
+        rimm R2, #WDIR
+        ldi s11, #COUNT
+wr:     x19.xrd s1, #4
+        x02.ainc #4, #4
+        x19.xrd s3, #6
+        x18.rag101 s0, R3, A6, R2, #2
+        x12.aset #3, R3
+        x02.mpy s5, s1, s3
+        stx A8, s5
+        x02.ainc #8, #8
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, wr
+        nop()
+        nop()
+}
+
+; B.. += rnd(T.. * W.. / 2^23): the short windows' overlapping halves. Uses win_run's registers
+; and s6, A10.
+.macro win_acc(COUNT, T, W, WDIR, B) {
+        aimm(A4, T)
+        aimm(A6, W)
+        aimm(A8, B)
+        aimm(A10, B)
+        rimm R2, #WDIR
+        ldi s11, #COUNT
+wa:     x19.xrd s1, #4
+        x02.ainc #4, #4
+        x19.xrd s3, #6
+        x18.rag101 s0, R3, A6, R2, #2
+        x12.aset #3, R3
+        x02.mpy s5, s1, s3
+        x19.xrd s6, #8
+        x02.ainc #8, #8
+        alu s5, s5, s6, #OP_ADD
+        stx A10, s5
+        x02.ainc #10, #10
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, wa
+        nop()
+        nop()
+}
+
+; B.. = rshr(T.., 2): the stretches where the window is 1. Uses s1, s12, A4, A8.
+.macro win_quarter(COUNT, T, B) {
+        aimm(A4, T)
+        aimm(A8, B)
+        ldi s12, #-2
+        ldi s11, #COUNT
+wq:     x19.xrd s1, #4
+        x02.ainc #4, #4
+        x19.alu s1, s1, s12, #SHIFT
+        stx A8, s1
+        x02.ainc #8, #8
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, wq
+        nop()
+        nop()
+}
+
+; B.. = 0 over COUNT words. Uses A8.
+.macro win_zero(COUNT, B) {
+        aimm(A8, B)
+        ldi s11, #COUNT
+wz:     stx A8, s0
+        x02.ainc #8, #8
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, wz
+        nop()
+        nop()
+}
+
+; PCM = clamp(rshr(OVL + B[0 .. 1023], 5)); OVL = B[1024 .. 2047].
+.macro win_out(B, OVL, PCM) {
+        aimm(A4, B)
+        aimm(A8, OVL)
+        ldi s13, #PCM - 1
+        x17.mve e7, s13
+        ldi s9, #32767
+        ldi s10, #-32768
+        ldi s12, #-5
+        ldi s11, #1024
+wo:     x19.xrd s5, #4
+        x02.ainc #4, #4
+        x19.xrd s6, #8
+        x02.ainc #8, #8
+        alu s5, s5, s6, #OP_ADD
+        x19.alu s5, s5, s12, #SHIFT
+        alu s4, s5, s9, #OP_SUB
+        ptst p1, s0, #LE4, #PTST
+        alu s7, s0, s4, #OP_SUB
+        psel s5, s7, s5, p1, #0, #4
+        alu s4, s5, s10, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        alu s7, s0, s4, #OP_SUB
+        psel s5, s7, s5, p1, #1, #4
+        x17.sty e7, #5, #0
+        x18.eagu e7, e7, #AGU_INC
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, wo
+        nop()
+        nop()
+        aimm(A8, OVL)
+        ldi s11, #1024
+wc:     x19.xrd s5, #4          ; A4 continues at B + 1024
+        x02.ainc #4, #4
+        stx A8, s5
+        x02.ainc #8, #8
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, wc
+        nop()
+        nop()
+}
+
+; long_start: WPL the previous long shape's rising half, WCS the current short one's.
+.macro win_start(T, WPL, WCS, B, OVL, PCM) {
+        win_run(1024, T, WPL, 1, B)
+        win_quarter(448, T + 1024, B + 1024)
+        win_run(128, T + 1472, WCS + 127, -1, B + 1472)
+        win_zero(448, B + 1600)
+        win_out(B, OVL, PCM)
+}
+
+; long_stop: WPS the previous short shape's rising half, WCL the current long one's.
+.macro win_stop(T, WPS, WCL, B, OVL, PCM) {
+        win_zero(448, B)
+        win_run(128, T + 448, WPS, 1, B + 448)
+        win_quarter(448, T + 576, B + 576)
+        win_run(1024, T + 1024, WCL + 1023, -1, B + 1024)
+        win_out(B, OVL, PCM)
+}
+
+; One short window w of eight_short: T the eight IMDCTs' 256 words each, contiguous; WL the
+; rising half for its left side. The rising half adds onto window w - 1's falling half (window 0
+; lands on nothing); the falling half lands on words nothing has written yet.
+.macro win_short1(T, WL, WCS, B, w) {
+        win_acc(128, T + 256 * w, WL, 1, B + 448 + 128 * w)
+        win_run(128, T + 256 * w + 128, WCS + 127, -1, B + 576 + 128 * w)
+}
+
+; eight_short: WPS the previous short shape's rising half (window 0's left), WCS the current.
+.macro win_short(T, WPS, WCS, B, OVL, PCM) {
+        win_zero(448, B)
+        win_run(128, T, WPS, 1, B + 448)
+        win_run(128, T + 128, WCS + 127, -1, B + 576)
+        win_short1(T, WCS, WCS, B, 1)
+        win_short1(T, WCS, WCS, B, 2)
+        win_short1(T, WCS, WCS, B, 3)
+        win_short1(T, WCS, WCS, B, 4)
+        win_short1(T, WCS, WCS, B, 5)
+        win_short1(T, WCS, WCS, B, 6)
+        win_short1(T, WCS, WCS, B, 7)
+        win_zero(448, B + 1600)
+        win_out(B, OVL, PCM)
 }

@@ -2392,3 +2392,71 @@ test "win_long windows, overlaps and clamps as the model does" {
         }
     }
 }
+
+test "win_start, win_stop and win_short build the model's blocks" {
+    // sosumi ref/dsp/aac/window.zig `block` and `synth` for long_start, long_stop and
+    // eight_short, with arbitrary w / 4 tables (the routines do not depend on their values).
+    const gpa = testing.allocator;
+    const calls = [_][]const u8{
+        "win_start(0x0000, 0x0800, 0x1080, 0x1100, 0x1900, 0x2000)",
+        "win_stop(0x0000, 0x1000, 0x0C00, 0x1100, 0x1900, 0x2000)",
+        "win_short(0x0000, 0x1000, 0x1080, 0x1100, 0x1900, 0x2000)",
+    };
+    var prng = std.Random.DefaultPrng.init(0x3D3);
+    const rnd = prng.random();
+    for (calls, 0..) |call, seq| for (0..2) |run| {
+        const src = try std.fmt.allocPrint(gpa, ".include \"lib/bits.sm\"\n.include \"lib/mem.sm\"\n.include \"lib/window.sm\"\n        bits_init(0x4000)\n        {s}\n        x17.halt\n", .{call});
+        defer gpa.free(src);
+        const prog = try assemble(gpa, src);
+        defer gpa.free(prog);
+        const amp: i64 = if (run == 0) 1 << 20 else (1 << 23) - 1;
+        var t: [2048]i64 = undefined;
+        var wpl: [1024]i64 = undefined;
+        var wcl: [1024]i64 = undefined;
+        var wps: [128]i64 = undefined;
+        var wcs: [128]i64 = undefined;
+        var ovl: [1024]i64 = undefined;
+        for (&t) |*v| v.* = rnd.intRangeAtMost(i64, -amp, amp);
+        for (&wpl) |*v| v.* = rnd.intRangeAtMost(i64, 0, 1 << 21);
+        for (&wcl) |*v| v.* = rnd.intRangeAtMost(i64, 0, 1 << 21);
+        for (&wps) |*v| v.* = rnd.intRangeAtMost(i64, 0, 1 << 21);
+        for (&wcs) |*v| v.* = rnd.intRangeAtMost(i64, 0, 1 << 21);
+        for (&ovl) |*v| v.* = rnd.intRangeAtMost(i64, -(1 << 21), 1 << 21);
+        var b: [2048]i64 = @splat(0);
+        switch (seq) {
+            0 => for (0..2048) |n| {
+                b[n] = if (n < 1024) imMul(t[n], wpl[n]) else if (n < 1472) rshr(t[n], 2) else if (n < 1600) imMul(t[n], wcs[1599 - n]) else 0;
+            },
+            1 => for (0..2048) |n| {
+                b[n] = if (n < 448) 0 else if (n < 576) imMul(t[n], wps[n - 448]) else if (n < 1024) rshr(t[n], 2) else imMul(t[n], wcl[2047 - n]);
+            },
+            else => for (0..8) |w| for (0..128) |n| {
+                const left = if (w == 0) &wps else &wcs;
+                b[448 + 128 * w + n] += imMul(t[256 * w + n], left[n]);
+                b[576 + 128 * w + n] += imMul(t[256 * w + 128 + n], wcs[127 - n]);
+            },
+        }
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const put = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.x_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF);
+            }
+        }.f;
+        for (t, 0..) |v, k| try put(&state, gpa, k, v);
+        for (wpl, 0..) |v, k| try put(&state, gpa, 0x800 + k, v);
+        for (wcl, 0..) |v, k| try put(&state, gpa, 0xC00 + k, v);
+        for (wps, 0..) |v, k| try put(&state, gpa, 0x1000 + k, v);
+        for (wcs, 0..) |v, k| try put(&state, gpa, 0x1080 + k, v);
+        for (ovl, 0..) |v, k| try put(&state, gpa, 0x1900 + k, v);
+        // B starts as garbage: every word must be written
+        for (0..2048) |k| try put(&state, gpa, 0x1100 + k, 0x5A5A5A);
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 23);
+        try testing.expect(state.halted);
+        for (0..1024) |n| {
+            const v = std.math.clamp(rshr(ovl[n] + b[n], 5), -32768, 32767);
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF, (state.getY(0x2000 + @as(u32, @intCast(n))) orelse 0xDEAD) & 0xFFFF);
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(b[1024 + n])))) & 0xFFFFFF, state.readX(0x1900 + @as(u32, @intCast(n))) orelse 0xDEAD);
+        }
+    };
+}
