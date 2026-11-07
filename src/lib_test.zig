@@ -3538,3 +3538,23 @@ test "dld loads s from X:[A] and s from Y:[e]" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "st.x also performs rimm's writes" {
+    // fact 525: own-stxr (0000246f ac501001: R2 = 0x123); op[14:11] = 0 leaves R2; the
+    // s<head[24:21]> write (488's OPEN value) refuses.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, s1: u32, want: ?u32 }{
+        .{ .h = 0x0000246f, .s1 = 0xac501001, .want = 0x123 },
+        .{ .h = 0x0000246f, .s1 = 0xac500001, .want = 0xABC },
+        .{ .h = 0x0020246f, .s1 = 0xac501001, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[2] = 0xABC;
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.s1, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.r[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
