@@ -4171,3 +4171,28 @@ test "0x0F's e write at index 0 is an s <- e move instead" {
         try testing.expectEqual(c.e2, state.e[2]);
     }
 }
+
+test "x12agu with h[31:29] >= 2 moves e<h[8:5]> to s<{w1[0], h[31]}>" {
+    // fact 553.  e3 = 0x730, R7 = 0x23, AGU fn 6 (which the low regime would apply).
+    // w1[20] keeps the second off tst's shape (w1 & 0xE1F00000 = 0x20000000).
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, w1: u32, dest: ?u32 }{
+        .{ .h = 0x400C0072, .w1 = 0x20100001, .dest = 2 }, // h[31:29] = 010, w1[0] = 1
+        .{ .h = 0x800C0072, .w1 = XXXXXXXX, .dest = 1 }, // 100, h[31] = 1
+        .{ .h = 0xC00C0072, .w1 = 0x20100007, .dest = 3 }, // w1[2:1] outside the index
+        .{ .h = 0x400C0072, .w1 = 0x30100001, .dest = null }, // w1[28] = 1
+        .{ .h = 0x400C0072, .w1 = XXXXXXXX, .dest = null }, // an R write: unmeasured
+        .{ .h = 0x400C0272, .w1 = 0x20100001, .dest = null }, // an e write: unmeasured
+        .{ .h = 0x400C0072, .w1 = 0x20000001, .dest = null }, // tst's shape
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[3] = 0x730;
+        state.r[7] = 0x23;
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.w1, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.dest) |d| {
+            _ = try r;
+            try testing.expectEqual(@as(u32, 0x730), state.s[d]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
