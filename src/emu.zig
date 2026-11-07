@@ -2403,6 +2403,8 @@ fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (bundle.len < 2) return RunError.UnknownForm;
     const head = bundle[0];
     const s1 = bundle[1];
+    // S[6:3] names an s write whose source is OPEN (fact 542, revising 123's clears).
+    if ((s1 >> 3) & 0xF != 0) return RunError.UnknownForm;
     const dest_s: u32 = (head >> 21) & 0xF;
     const src_e: u32 = (s1 >> 25) & 0xF;
     const addr: u32 = state.e[src_e];

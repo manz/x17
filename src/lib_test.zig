@@ -3904,3 +3904,15 @@ test "x17agu2 writes its AGU value to R<S1[14:11]> too" {
         try testing.expectEqual(c.r11, state.r[11]);
     }
 }
+
+test "yld10's S[6:3] is an OPEN s write, not 123's clears" {
+    // fact 542: own-yld10k (1c026ff0 e00c2299, S[6:3] = 3) leaves s1 and s2 intact on
+    // silicon, and writes some s from an OPEN source: refused.  S[6:3] = 0 still loads.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x1c026ff0, 0xe00c2299, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    var ok = emu.State{};
+    defer ok.deinit(gpa);
+    _ = try emu.runFrom(gpa, &ok, &.{ 0x1c026ff0, 0xe00c2281, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+}
