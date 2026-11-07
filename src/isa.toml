@@ -164,7 +164,7 @@ ref = "fact 107 pass 133: with a class-010/011 second S, S[25] = 1: p<S[7:4]> <-
 # own-x18pset, own-x18pmov, own-x18pnot, own-x18pclr
 # pc14 (fact 380, 381, 464): v = mode S[14:12] of s<S[22:19]> (0-2 -a, 3 ~a, 4 1-a, 5-6 a, 7 -|a|); g 0 c0-7, c9 -> 1;
 # mux 00 loads s<h[24:21]> <- !cond (478, not 0).  g 11 c12 -> v even; g 12 c0-11 -> v >= 0, <= 0, > 0, < 0, != 0, == 0 by c mod 6, c15 -> 1; g 14 -> 0xFD1B; other cells refused.
-# pc14 class-011 second (486): S[28:27] = 10 writes the immediate h[20:5] to s<h[24:21]> unconditionally (461's 0 after a st.y was the MOV readback artifact); its p write is unmeasured, emu refuses a class-011 pc14 with S[7:4] != 0 or another mux.
+# pc14 class-011 second (486): S[28:27] = 10 writes the immediate h[20:5] to s<h[24:21]> unconditionally (461's 0 after a st.y was the MOV readback artifact); its p write is measured for group 0 code 0 only, which sets it (487: XXXXXXXX 72000060 sets p6); emu refuses other p cells and other muxes.
 # own-pc14-e0
 
 [[form]]

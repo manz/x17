@@ -162,9 +162,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b000) return execYtst(gpa, state, bundle);
         if (s_class == 0b101) return execYrm(gpa, state, bundle);
         if (s_class == 0b010) return execPc14(gpa, state, bundle);
-        // 486: a class-011 second with S[28:27] = 10 writes the immediate unconditionally; its
-        // p write is not measured.
-        if (s_class == 0b011 and (bundle[1] >> 27) & 3 == 2 and (bundle[1] >> 4) & 0xF == 0) return execPc14(gpa, state, bundle);
+        // 486: a class-011 second with S[28:27] = 10 writes the immediate unconditionally.
+        if (s_class == 0b011 and (bundle[1] >> 27) & 3 == 2 and pc14C3PMeasured(bundle)) return execPc14(gpa, state, bundle);
     }
     if (low5 == 0x12 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
@@ -406,7 +405,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
 }
 
 /// pc14, low5 0x14 with a class-010 second and S[25] (fact 107, 380, 381, 464), or a
-/// class-011 second with mux 10 and no p write (486):
+/// class-011 second with mux 10 (486) whose p write is measured (487):
 /// p<S[7:4]> <- cond(group h[28:25], code S[11:8]) of v = mode S[14:12] applied to
 /// a = s<S[22:19]> (read before the s write); s<h[24:21]> <- by S[28:27]: 00 the bundle's own
 /// condition negated (478, not 107's 0), 01/10 the immediate h[20:5], 11 refused.  Unmeasured
@@ -428,6 +427,13 @@ fn execPc14(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
         state.s[s_dest] = if (src == 0) @intFromBool(bit == 0) else (h >> 5) & 0xFFFF;
     }
     if (p_dest != 0) state.p[p_dest] = bit;
+}
+
+/// A class-011 pc14's p write is measured only for group 0 code 0, which sets it (487: the
+/// pair XXXXXXXX 72000060 sets p6 from 0 and from 1).
+fn pc14C3PMeasured(bundle: []const u32) bool {
+    if ((bundle[1] >> 4) & 0xF == 0) return true;
+    return (bundle[0] >> 25) & 0xF == 0 and (bundle[1] >> 8) & 0xF == 0;
 }
 
 /// pc14's operand transform (fact 380): 0-2 -a, 3 ~a, 4 1-a, 5-6 a, 7 -|a|.

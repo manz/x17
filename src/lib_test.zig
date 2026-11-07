@@ -1832,9 +1832,9 @@ test "x18 class 111 X-slot muxes 3, 4 and 5 read lanes of Y:[e]" {
     }
 }
 
-test "pc14 class-011 mux 10 writes the immediate; its p write is refused" {
+test "pc14 class-011 mux 10 writes the immediate, and group 0 code 0 sets its p" {
     // fact 486: 461's "0 after a st.y" was a readback artifact; the immediate is
-    // unconditional. The pair XXXXXXXX 72000060 also writes p6, which is not measured.
+    // unconditional. 487: the pair XXXXXXXX 72000060 sets p6; other p cells are refused.
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
@@ -1846,5 +1846,10 @@ test "pc14 class-011 mux 10 writes the immediate; its p write is refused" {
     try testing.expectEqual(@as(u32, 0x1234), state.s[3]);
     var img = emu.State{};
     defer img.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &img, &.{ XXXXXXXX, 0x72000060, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    _ = try emu.runFrom(gpa, &img, &.{ XXXXXXXX, 0x72000060, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1A), img.s[3]);
+    try testing.expectEqual(@as(u8, 1), img.p[6]);
+    var c9 = emu.State{};
+    defer c9.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &c9, &.{ XXXXXXXX, 0x72000960, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
