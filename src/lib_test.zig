@@ -2846,4 +2846,8 @@ test "the 0x03 R slot's Y read, and the mux-2 e source by w1[8]" {
         _ = try emu.runFrom(gpa, &state, &.{ 0x00000003, c.w1, 0, 0x09800000, 0x00001028, 0x20000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c.want, state.s[5]);
     }
+    // w1[8] with w3[26:23] = 0: the image read 0x3422, not e0; refused
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x00000003, 0x100, 0, 0x08000000, 0x00001028, 0x20000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }

@@ -319,7 +319,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         // with w1[8] (fact 190 / own-x03esrc; 519, 2 of 3 rows).
         if ((w4_mode == 1 or w4_mode == 2) and ((bundle[5] >> 28) & 0x3) == 0b10) {
             const dest_s: u32 = (bundle[4] >> 3) & 0xF;
-            const src_e: u32 = if ((bundle[1] >> 8) & 1 == 1) (bundle[3] >> 23) & 0xF else (bundle[3] >> 27) & 0xF;
+            const alt = (bundle[1] >> 8) & 1 == 1;
+            const src_e: u32 = if (alt) (bundle[3] >> 23) & 0xF else (bundle[3] >> 27) & 0xF;
+            // 519: w1[8] with index 0 read 0x3422, not e0 (OPEN)
+            if (alt and src_e == 0) return RunError.UnknownForm;
             if (dest_s != 0) state.s[dest_s] = state.e[src_e];
             return;
         }
@@ -750,8 +753,8 @@ fn execX03XStore(gpa: std.mem.Allocator, state: *State, bundle: []const u32) Run
 
 /// x03's R slot Y read (fact 519, own-x03ry): w5[21] = 1 with w5[27:26] = 00 gives
 /// R<w3[22:19]> <- Y:[e<w3[30:27]>], fresh (w5[21] = 0 keeps the stale latch).  Refused where
-/// it is OPEN: beside w5[20] (a row storing Y in the same bundle read 0x1101), at e index 0 (a
-/// row read 0x3422, not Y:[e0]), and beside the AGU fns 10 / 14 that write the same R.  Nothing
+/// it is OPEN: beside w5[20] (a row storing Y in the same bundle read 0x1101), at e index 0 (no
+/// row measured), and beside the AGU fns 10 / 14 that write the same R.  Nothing
 /// else in the bundle reads R, so it lands first.
 fn x03RYRead(state: *State, bundle: []const u32) RunError!void {
     const w5 = bundle[5];
