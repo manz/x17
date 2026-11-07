@@ -3325,6 +3325,10 @@ fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     };
     if (dest_s != 0) state.s[dest_s] = result;
     if (dest_e != 0) state.e[dest_e] = result;
+    // R<S1[14:11]> takes it too, x17ld's R field (fact 540, own-x17a2r).  The
+    // s<S1[22:19]> write's source is OPEN (not X17LD_OP): unmodelled.
+    const dest_r: u32 = (s1 >> 11) & 0xF;
+    if (dest_r != 0) state.r[dest_r] = result;
 }
 
 fn execX17Alu05(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

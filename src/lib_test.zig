@@ -3888,3 +3888,19 @@ test "x16mul's immediate write and Y store" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x17agu2 writes its AGU value to R<S1[14:11]> too" {
+    // fact 540: own-x17a2r, R11 = 0xABC: 58002c17 2de85d00 00000000 gives
+    // R11 = R11 + 5 = 0xAC1; S1[14:11] = 0 leaves R11.
+    const gpa = testing.allocator;
+    for ([_]struct { s1: u32, r11: u32 }{
+        .{ .s1 = 0x2de85d00, .r11 = 0xAC1 },
+        .{ .s1 = 0x2de80500, .r11 = 0xABC },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[11] = 0xABC;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x58002c17, c.s1, 0x00000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.r11, state.r[11]);
+    }
+}
