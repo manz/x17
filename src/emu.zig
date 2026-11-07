@@ -2509,10 +2509,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 7) {
         return execX19Ld(gpa, state, bundle);
     }
-    if (w1_class == 0 and w2_class == 0 and w3_class == 2) {
-        return execX19Aagu(gpa, state, bundle);
-    }
-    if (w1_class == 0 and w2_class == 4 and w3_class == 2) {
+    // w2 classes 001 and 101 too (556): w2[29] is the s<w2[30:27]> dest's bit.
+    if (w1_class == 0 and (w2_class == 0 or w2_class == 1 or w2_class == 4 or w2_class == 5) and w3_class == 2) {
         return execX19Aagu(gpa, state, bundle);
     }
     // w1 class 101 is inert on the A AGU (fact 271 / own-x19aagu5).
@@ -2541,10 +2539,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 0) {
         return execX19Agu(gpa, state, bundle);
     }
-    if (w1_class == 0 and w2_class == 0 and w3_class == 4) {
-        return execX19Alu(gpa, state, bundle);
-    }
-    if (w1_class == 0 and w2_class == 4 and w3_class == 4) {
+    // Any w2 class (555): w2[30:29] are the s<w2[30:27]> dest's high bits.
+    if (w1_class == 0 and w3_class == 4) {
         return execX19Alu(gpa, state, bundle);
     }
     if (w1_class == 2 and w2_class == 0 and w3_class == 0) {
@@ -2917,7 +2913,15 @@ fn execX19Aagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
 
     const x_val: u32 = state.a[src_a & 0xF];
     const new_val: u32 = aguaEval(fn_op, x_val, imm_scaled) orelse return RunError.UnknownForm;
+    // s<w2[30:27]> <- Y:[e<w3[28:25]>][7:0] << 8 when w2[12:11] = 2 (342, 556); the other mux
+    // values are OPEN.
+    const sd: u32 = (w2 >> 27) & 0xF;
+    const sv: ?u32 = if (sd == 0) null else switch ((w2 >> 11) & 3) {
+        2 => ((state.getY(try yAddrE(state, (w3 >> 25) & 0xF)) orelse 0) & 0xFF) << 8,
+        else => return RunError.UnknownForm,
+    };
     state.a[dest_a & 0xF] = new_val;
+    if (sv) |v| state.s[sd] = v;
 }
 
 fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

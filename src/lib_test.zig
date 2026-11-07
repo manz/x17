@@ -4223,3 +4223,26 @@ test "x17 S1 class 000 + S2 class 111: the move and its Y store" {
         try testing.expectEqual(c.stored, state.getY(0x740));
     }
 }
+
+test "own-x19al5 and own-x19aa5: x19alu and x19aagu with w2 class 001" {
+    // fact 555, 556: X:[A2] = 0x2A4 gives s5 = 0x2A4 through x19alu's X mux; Y:[e4] =
+    // 0x1234 gives s5 = 0x3400 through x19aagu's byte load (342, w2[12:11] = 2).
+    const gpa = testing.allocator;
+    var al = emu.State{};
+    defer al.deinit(gpa);
+    al.a[2] = 0x340;
+    try al.x_mem.put(gpa, 0x340, 0x2A4);
+    _ = try emu.runFrom(gpa, &al, &.{ 0x80000479, 0x03055008, 0x28a8220a, 0x82000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x2A4), al.s[5]);
+
+    var aa = emu.State{};
+    defer aa.deinit(gpa);
+    aa.e[4] = 0x720;
+    try aa.y_mem.put(gpa, 0x720, 0x1234);
+    _ = try emu.runFrom(gpa, &aa, &.{ 0x00000019, 0x06a30500, 0x28401000, 0x49508014, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x3400), aa.s[5]);
+    // The other byte-load mux values are OPEN.
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x00000019, 0x06a30500, 0x28400800, 0x49508014, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
