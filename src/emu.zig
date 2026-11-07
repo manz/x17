@@ -283,6 +283,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     }
     if (low5 == 0x03 and bundle.len >= 6) {
         try x03CondJump(state, bundle);
+        try x03RYRead(state, bundle);
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
         if (w4_mode == 5) {
             try execX03Xrd(gpa, state, bundle);
@@ -314,11 +315,11 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             if (dest_s != 0) state.s[dest_s] = v;
             return;
         }
-        // w4 mux 001 with w5[29:28] = 10: s<w4[6:3]> <- e<w3[30:27]>
-        // (fact 190 / own-x03esrc).
-        if (w4_mode == 1 and ((bundle[5] >> 28) & 0x3) == 0b10) {
+        // w4 mux 001 / 010 with w5[29:28] = 10: s<w4[6:3]> <- e<w3[30:27]>, or e<w3[26:23]>
+        // with w1[8] (fact 190 / own-x03esrc; 519, 2 of 3 rows).
+        if ((w4_mode == 1 or w4_mode == 2) and ((bundle[5] >> 28) & 0x3) == 0b10) {
             const dest_s: u32 = (bundle[4] >> 3) & 0xF;
-            const src_e: u32 = (bundle[3] >> 27) & 0xF;
+            const src_e: u32 = if ((bundle[1] >> 8) & 1 == 1) (bundle[3] >> 23) & 0xF else (bundle[3] >> 27) & 0xF;
             if (dest_s != 0) state.s[dest_s] = state.e[src_e];
             return;
         }
@@ -745,6 +746,21 @@ fn execX03XStore(gpa: std.mem.Allocator, state: *State, bundle: []const u32) Run
     const raw: u32 = state.s[src_s] & 0xFFFF;
     const v: u32 = if (raw & 0x8000 != 0) raw | 0xFF0000 else raw;
     try state.x_mem.put(gpa, state.a[x03AIndex(bundle)], v);
+}
+
+/// x03's R slot Y read (fact 519, own-x03ry): w5[21] = 1 with w5[27:26] = 00 gives
+/// R<w3[22:19]> <- Y:[e<w3[30:27]>], fresh (w5[21] = 0 keeps the stale latch).  Refused where
+/// it is OPEN: beside w5[20] (a row storing Y in the same bundle read 0x1101), at e index 0 (a
+/// row read 0x3422, not Y:[e0]), and beside the AGU fns 10 / 14 that write the same R.  Nothing
+/// else in the bundle reads R, so it lands first.
+fn x03RYRead(state: *State, bundle: []const u32) RunError!void {
+    const w5 = bundle[5];
+    const dest_r: u32 = (bundle[3] >> 19) & 0xF;
+    if (dest_r == 0 or (w5 >> 21) & 1 == 0 or (w5 >> 26) & 3 != 0) return;
+    const idx: u32 = (bundle[3] >> 27) & 0xF;
+    const fn_op: u32 = (bundle[1] >> 7) & 0xF;
+    if ((w5 >> 20) & 1 == 1 or idx == 0 or fn_op == 10 or fn_op == 14) return RunError.UnknownForm;
+    state.r[dest_r] = (state.getY(state.e[idx]) orelse 0) & 0xFFFF;
 }
 
 /// 0x03 carries 0x02's R slot (fact 250).  w5[20] = 1 switches it

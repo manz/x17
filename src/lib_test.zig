@@ -2815,3 +2815,35 @@ test "the 0x16 class-100 row's s ALU: shifts, masked shift, add and subtract by 
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "the 0x03 R slot's Y read, and the mux-2 e source by w1[8]" {
+    // fact 519: own-x03ry (Y:0x700 = 0x1234, e1 = 0x700: R2 = 0x1234); w5[21] = 0 leaves R2;
+    // the open shapes (w5[20], index 0) refuse.
+    const gpa = testing.allocator;
+    for ([_]struct { w3: u32, w5: u32, want: ?u32 }{
+        .{ .w3 = 0x08100000, .w5 = 0x00218000, .want = 0x1234 },
+        .{ .w3 = 0x08100000, .w5 = 0x00018000, .want = 0x5555 },
+        .{ .w3 = 0x08100000, .w5 = 0x00318000, .want = null },
+        .{ .w3 = 0x00100000, .w5 = 0x00218000, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0x700;
+        state.r[2] = 0x5555;
+        try state.y_mem.put(gpa, 0x700, 0x1234);
+        const r = emu.runFrom(gpa, &state, &.{ 0x00000003, 0x08500000, 0, c.w3, 0, c.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.r[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+    // mux 2 (w4[13:11] = 010), w5[29:28] = 10: s5 <- e<w3[30:27]> = e1, or e<w3[26:23]> = e3 with w1[8]
+    for ([_]struct { w1: u32, want: u32 }{ .{ .w1 = 0, .want = 0x111 }, .{ .w1 = 0x100, .want = 0x333 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0x111;
+        state.e[3] = 0x333;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000003, c.w1, 0, 0x09800000, 0x00001028, 0x20000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.s[5]);
+    }
+}
