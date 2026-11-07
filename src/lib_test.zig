@@ -4053,3 +4053,44 @@ test "x02's third slot shifts by the head ALU code" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x00's multiply slot swap reads memory in mode 0" {
+    // fact 550: A16 = 0x350 (X = 0x2A4), A3 = 0x320 (X = 0x135).  w4[22] = 1, w4[18] = 0:
+    // s8 <- X:[A16] (2 of 2) and s6 <- X:[A3]; with w4[18] = 1 and w5[4], Y:[e<w4[8:5]>]; with
+    // w5[4] = 0 (yd, unmeasured) it refuses.  The first bundle's w3 (20000003: a ctl-3 jump
+    // and an R9 write, other slots) is zeroed here.
+    const gpa = testing.allocator;
+    for ([_]struct { w: [7]u32, dest: u32, want: ?u32 }{
+        .{ .w = .{ 0x000001c0, 0x00b80000, 0x00404280, 0x00000000, 0x10400001, 0x06000002, 0x00085002 }, .dest = 8, .want = 0x2A4 },
+        .{ .w = .{ 0x0018b000, 0x00000000, 0x000c0000, 0x00d00000, 0x0060c0c0, 0x06000032, 0x00060000 }, .dest = 6, .want = 0x135 },
+        .{ .w = .{ 0x0018b000, 0x00000000, 0x000c0000, 0x00d00000, 0x0064c0c0, 0x06000032, 0x00060000 }, .dest = 6, .want = 0x777 },
+        .{ .w = .{ 0x0018b000, 0x00000000, 0x000c0000, 0x00d00000, 0x0064c0c0, 0x06000022, 0x00060000 }, .dest = 6, .want = null },
+        .{ .w = .{ 0x0018b000, 0x00000000, 0x000c0000, 0x00d00000, 0x0020c0c0, 0x06000032, 0x00060000 }, .dest = 6, .want = null }, // plain mode 0
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[16] = 0x350;
+        state.a[3] = 0x320;
+        state.e[6] = 0x700;
+        try state.x_mem.put(gpa, 0x350, 0x2A4);
+        try state.x_mem.put(gpa, 0x320, 0x135);
+        try state.y_mem.put(gpa, 0x700, 0x777);
+        const r = emu.runFrom(gpa, &state, &.{ c.w[0], c.w[1], c.w[2], c.w[3], c.w[4], c.w[5], c.w[6], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[c.dest]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "x17sty's R mux 0 takes yd" {
+    // fact 550: yd = 0x246 (a yld10 of Y:0x710), e3 = 0x720: 500001d7 a802d804
+    // 78003a00 gives R11 = 0x246.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.yd = 0x246;
+    state.e[5] = 0x720;
+    _ = try emu.runFrom(gpa, &state, &.{ 0x500001d7, 0xa802d804, 0x78003a00, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x246), state.r[11]);
+}

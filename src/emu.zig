@@ -1056,6 +1056,14 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     };
     const mpy_dest: u32 = (w6 >> 16) & 0xF;
     const mpy_val: u32 = if (mpy_dest == 0) 0 else blk: {
+        // 0x00 mode 0 with w4[22] (316's swap; 550): a memory word instead of the product,
+        // X:[A<w2[22:18]>] (408's address, read by the bundle itself) when w4[18] = 0, else
+        // Y:[e<w4[8:5]>] with w5[4]; yd (w5[4] = 0) is unmeasured.
+        if (!x01 and mode == 0 and (w4 >> 22) & 1 == 1) {
+            if ((w4 >> 18) & 1 == 0) break :blk state.readX(state.a[(w2 >> 18) & 0x1F]) orelse 0;
+            if ((w5 >> 4) & 1 == 0) return RunError.UnknownForm;
+            break :blk (state.getY(state.e[(w4 >> 5) & 0xF]) orelse 0) & 0xFFFF;
+        }
         // 0x01 mode 4 (496, 507): rnd(a * b >> 23), X ignored, w4[22] inert; measured with
         // w1[17:14] = 0010 and operands inside 16 bits only.
         if (x01 and mode == 4) {
@@ -3079,9 +3087,14 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     }
     if ((s2 >> 11) & 3 != 3) return RunError.UnknownForm;
     // Mux 7: R<S1[14:11]> <- AGU10[S1[10:7]](x = e<S1[18:15]>, the store's own address
-    // register, y = R<h[30:27]>, i = #h[26:11]) (fact 543, own-x17styr).
+    // register, y = R<h[30:27]>, i = #h[26:11]) (fact 543, own-x17styr); mux 0: yd[15:0]
+    // (550).
     const h = bundle[0];
-    const r_val: ?u32 = if (r_mode == 7) try agu10ImmEval((s1 >> 7) & 0xF, state.e[(s1 >> 15) & 0xF], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF) else null;
+    const r_val: ?u32 = switch (r_mode) {
+        7 => try agu10ImmEval((s1 >> 7) & 0xF, state.e[(s1 >> 15) & 0xF], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF),
+        0 => state.yd & 0xFFFF,
+        else => null,
+    };
     const v: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
     state.y_mem.put(gpa, state.e[(s1 >> 15) & 0xF], v) catch return RunError.OutOfMemory;
     if (r_val) |r| {
