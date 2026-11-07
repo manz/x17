@@ -3370,15 +3370,22 @@ pub fn bundleLen(head: u32) ?u8 {
     return isa.bundleLen(head);
 }
 
-/// e0 is no register (fact 65, 466, 468): after ldi, lde, a 0x05 alu/movb (the nop
-/// included) and the st pair it is that word's [20:5]; an x19alu leaves it. A pc14 pair also
-/// sets it (468), but x17 cannot express the measured word, and no general rule is known: after
-/// anything else e0 is unknown, and a Y address read through it is refused.
+/// e0 is no register (fact 65, 466, 468, 470): after ldi, lde e0, a 0x05 alu/movb (the
+/// nop included), a pc14 pair loading an immediate and the st pair it is that word's [20:5];
+/// an x19alu and an lde e<k != 0> leave it. No general rule is known: after anything else e0
+/// is unknown, and a Y address read through it is refused.
 fn updateE0(state: *State, b: []const u32) void {
     const h = b[0];
     const low5 = h & 0x1F;
-    const setter = b.len == 1 and ((low5 == 0x05 and h >> 30 == 1) or (low5 == 0x06 and h >> 30 == 3) or
-        (if (isa.classify(h)) |f| std.mem.eql(u8, f.name, "ldi") else false));
+    const name: []const u8 = if (isa.classify(h)) |f| f.name else "";
+    const lde = b.len == 1 and ((low5 == 0x06 and h >> 30 == 3) or std.mem.eql(u8, name, "lde"));
+    // lde e<k != 0> passes the latch through (470, measured with k = 7).
+    if (lde and (h >> 26) & 0xF != 0) return;
+    // pc14 (fact 107, 380): measured only when the pair loads an immediate, s<h[24:21]> != s0.
+    const pc14 = low5 == 0x14 and b.len == 2 and (b[1] >> 29 == 2 or b[1] >> 29 == 3) and
+        (b[1] >> 25) & 1 == 1 and (h >> 21) & 0xF != 0;
+    const setter = pc14 or lde or (b.len == 1 and ((low5 == 0x05 and h >> 30 == 1) or
+        std.mem.eql(u8, name, "ldi")));
     if (setter) {
         state.e[0] = (h >> 5) & 0xFFFF;
         state.e0_known = true;

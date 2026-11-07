@@ -462,7 +462,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # x17.mswedge, x17.ms with S1[22:20] = 010 (fact 457, 463, 465): the four slots, two shadow bundles, then a stop with no halt for
 # the poll.  A Y store in shadow slot 1 is lost, one in slot 2 took e0 from slot 1's word (466; slot-1 loss OPEN, x17 refuses
 # shadow stores); S1[27:24] = 0 stored s1 (refused).  own-x17mswedge-2, own-x17mswedge-sh, own-x17mswedge-8
-# e0 as an address entry (fact 65, 466, 468): not a register.  ldi, lde, a 0x05 alu/movb (a nop with [20:5] = 0 gives 0), the
-# st pair and a pc14 pair set it to their [20:5]; an x19alu leaves it.  No general rule: x17 sets it per measured form, keeps it
-# after x19alu, and refuses a Y address read through e0 after anything else (pc14 included, whose word x17 cannot express).
-# own-sty0imm, own-sty0nop, own-sty0x19
+# e0 as an address entry (fact 65, 466, 468, 470, 473): not a register.  ldi, lde e0, a 0x05 alu/movb (a nop with
+# [20:5] = 0 gives 0), the st pair and a pc14 pair loading an immediate (s<h[24:21]> != s0) set it to their [20:5]; an x19alu
+# and an lde e<k != 0> (k = 7 measured) leave it, and an explicit e0 write does not pin it.  No general rule: x17 sets it per
+# measured form and refuses a Y address read through e0 after anything else.  own-sty0imm, own-sty0nop, own-sty0x19

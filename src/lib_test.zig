@@ -1418,3 +1418,43 @@ test "dq_channel dequantises as the model does: words and exponent" {
     try testing.expect(interp > 1000);
     try testing.expect(shorts > 10);
 }
+
+fn runSpliced(gpa: std.mem.Allocator, state: *emu.State, pre: []const u8, raw: []const u32, post: []const u8) !void {
+    const a = try assemble(gpa, pre);
+    defer gpa.free(a);
+    const b = try assemble(gpa, post);
+    defer gpa.free(b);
+    const prog = try std.mem.concat(gpa, u32, &.{ a, raw, b });
+    defer gpa.free(prog);
+    _ = try emu.runFrom(gpa, state, prog, 0, 256);
+}
+
+test "a pc14 pair loading an immediate sets e0 to its [20:5]" {
+    // Upstream, fact 468: 16E29474 42382CD8 (s7 <- #0x14A3), then the st pair.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try runSpliced(gpa, &state, "        ldi s1, #0x55\n", &.{ 0x16E29474, 0x42382CD8 },
+        \\        st.wr #0x40, e0, s1
+        \\        x17.halt
+        \\
+    );
+    try testing.expectEqual(@as(?u32, 0x55), state.getY(0x14A3));
+}
+
+test "lde e7 passes the e0 latch through" {
+    // Upstream, fact 470: ldi s1 <- 0x1234, lde e7 <- 0x710, st pair: Y:0x1234.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        ldi s1, #0x1234
+        \\        lde e7, #0x710
+        \\        st.wr #0x40, e0, s1
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    _ = try emu.runFrom(gpa, &state, prog, 0, 64);
+    try testing.expectEqual(@as(?u32, 0x1234), state.getY(0x1234));
+}
