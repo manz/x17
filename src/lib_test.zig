@@ -2178,3 +2178,32 @@ test "ldi's head[29:27] picks the source: 0 and 7 load 0, 1/2/6 the immediate, 3
     defer gpa.free(prog);
     try testing.expectEqual(@as(u32, 0xCABFFF0B), prog[0]);
 }
+
+test "the 0x01 slot's xori and asr codes" {
+    // fact 502-504: own-x01norm, own-x01asr, own-x01asrneg and their sweeps.
+    const gpa = testing.allocator;
+    for ([_]struct { code: u32, i: u32, m: u32, a: u32, b: u32, want: ?u32 }{
+        .{ .code = 0x1C, .i = 0, .m = 5, .a = 0, .b = 0x100, .want = 14 },
+        .{ .code = 0x1C, .i = 0, .m = 5, .a = 0, .b = 0xFF8808, .want = 8 },
+        .{ .code = 0x1C, .i = 0, .m = 5, .a = 0, .b = 0, .want = 24 },
+        .{ .code = 0x1C, .i = 3, .m = 0, .a = 7, .b = 0x123, .want = 0x120 },
+        .{ .code = 0x1C, .i = 3, .m = 7, .a = 0, .b = 0x100, .want = 3 },
+        .{ .code = 0x1C, .i = 3, .m = 7, .a = 0, .b = 0xFFFF00, .want = 0xFFFF00 },
+        .{ .code = 0x06, .i = 3, .m = 0, .a = 1, .b = 0x4000, .want = 0x2001 },
+        .{ .code = 0x06, .i = 3, .m = 0, .a = 0xFFFFFE, .b = 0x100, .want = 0x40C },
+        .{ .code = 0x06, .i = 0, .m = 4, .a = 9, .b = 0xFF8000, .want = 0xFFFFBF },
+        .{ .code = 0x06, .i = 0, .m = 6, .a = 9, .b = 0xFF8000, .want = 0x40 },
+        .{ .code = 0x06, .i = 0, .m = 7, .a = 9, .b = 0xFF8000, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = c.a;
+        state.s[8] = c.b;
+        const head = (0x280011C1 & ~@as(u32, 0x3F << 5)) | (c.code << 5);
+        const r = emu.runFrom(gpa, &state, &.{ head, 0x00000580, 0x28000020 | (c.i << 6), 0xA00280A0, XXXXXXXX, 0x00200900 | (c.m << 27), 0x00300090, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[9] & 0xFFFFFF);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

@@ -784,6 +784,10 @@ fn x01Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
     const code: u32 = (h >> 5) & 0x3F;
     const a_idx: u32 = (w6 >> 20) & 0xF;
     const m: u32 = (w5 >> 27) & 7;
+    const b: i64 = sx24(state.s[(w2 >> 2) & 0xF]);
+    const i: i64 = (w2 >> 6) & 0xF;
+    if (code == 0x1C) return x01Xori(m, b, i);
+    if (code == 0x06) return x01Asr(m, b, i, sx24(state.s[a_idx]));
     const adder = switch (ALU05[code]) {
         .add, .addi, .sub => true,
         else => false,
@@ -791,6 +795,41 @@ fn x01Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
     if (!adder and (a_idx != 0 or m != 0)) return RunError.UnknownForm;
     const word: u32 = (code << 5) | (((w2 >> 6) & 0xF) << 19) | (m << 23);
     return (try aluWord(word, sx24(state.s[a_idx]), sx24(state.s[(w2 >> 2) & 0xF]))) orelse RunError.UnknownForm;
+}
+
+/// 0x01 slot xori (fact 502): m over b and i = w2[9:6], a ignored.  m5 counts the
+/// redundant sign bits at 24 bits (24 for 0); b = -1 is unmeasured and refused.
+fn x01Xori(m: u32, b: i64, i: i64) RunError!u32 {
+    const r: i64 = switch (m) {
+        0 => b ^ i,
+        1 => ~(b ^ i),
+        2 => b | i,
+        3 => b & i,
+        4 => ~i,
+        5 => blk: {
+            if (b == -1) return RunError.UnknownForm;
+            if (b == 0) break :blk 24;
+            const v: u32 = @intCast((if (b < 0) ~b else b) & M24);
+            break :blk @as(i64, @clz(v)) - 9;
+        },
+        6 => i,
+        7 => if (b < 0) b else i,
+        else => unreachable,
+    };
+    return @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
+}
+
+/// 0x01 slot asr (fact 503-504): ADDER_M[m](x = i, y = b) >> s<a>, arithmetic, a < 0
+/// shifting left.  m7 (one negative sample: |b| or -b) is refused, as are sums or left
+/// shifts past 24 bits and counts past 23, none measured.
+fn x01Asr(m: u32, b: i64, i: i64, a: i32) RunError!u32 {
+    if (m == 7 or a > 23 or a < -23) return RunError.UnknownForm;
+    const t = adderM(@intCast(m), i, b, 0);
+    const v: i64 = t.x + t.y + t.c;
+    if (v < -0x800000 or v > 0x7FFFFF) return RunError.UnknownForm;
+    const r: i64 = if (a >= 0) v >> @intCast(a) else v << @intCast(-a);
+    if (r < -0x800000 or r > 0x7FFFFF) return RunError.UnknownForm;
+    return @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
 }
 
 fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
