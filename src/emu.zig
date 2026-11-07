@@ -2952,7 +2952,7 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class == 0b000 and s2_class == 0b010) return execX17Mve(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b001) return execX17Rsub(gpa, state, bundle);
     if (s1_class == 0b100 and s2_class == 0b110) return execX17Xpm(gpa, state, bundle);
-    if (s1_class == 0b010 and s2_class == 0b110 and ((bundle[0] >> 27) & 1) == 0) return execX17XldA10(gpa, state, bundle);
+    if ((s1_class == 0b001 or s1_class == 0b010) and s2_class == 0b110 and ((bundle[0] >> 27) & 1) == 0) return execX17Xld(state, bundle);
     return RunError.UnknownForm;
 }
 
@@ -3174,18 +3174,27 @@ fn execX16Sh(state: *State, bundle: []const u32) RunError!void {
     if (dest != 0 and n != 0) state.s[dest] = sh;
 }
 
-fn execX17XldA10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
+/// The x17xld head ALU slot's alu_word triples measured OPEN (528), as h[25:5] masked to the
+/// code, m and #s fields: op 0x01 with m = 5, #12.
+const xld_alu_open = [_]u32{(5 << 23) | (12 << 19) | (0x01 << 5)};
+const alu_word_fields: u32 = (7 << 23) | (0xF << 19) | (0x3F << 5);
+
+/// x17xld, S1 class 001 / 010 + S2 class 110, head[27] clear: s<S2[13:10]> <- X:[A<8*S2[1:0] +
+/// S1[31:29]>] (fact 141); and x17a05's head ALU slot, s<h[18:15]> <- alu_word(h,
+/// s<h[14:11]>, s<S2[28:25]>) (528, own-x17xla).  Both read before either writes; the pairs
+/// alu_word leaves OPEN, and one s for both writes, are refused.
+fn execX17Xld(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
     const s2 = bundle[2];
-
-    const dest_s: u32 = (s2 >> 10) & 0xF;
-    const a_half: u32 = s2 & 0x3;
-    // A-offset pinned at 2 (S1 class = 010): a_idx = 8*a_half + 2.
-    const a_idx: u32 = (8 * a_half + 2) & 0xF;
-
-    const addr: u32 = state.a[a_idx];
-    const loaded: u32 = state.readX(addr) orelse 0;
-    state.s[dest_s] = loaded;
+    const ld_dest: u32 = (s2 >> 10) & 0xF;
+    const alu_dest: u32 = (h >> 15) & 0xF;
+    if (alu_dest != 0 and alu_dest == ld_dest) return RunError.UnknownForm;
+    if (alu_dest != 0 and std.mem.indexOfScalar(u32, &xld_alu_open, h & alu_word_fields) != null) return RunError.UnknownForm;
+    const alu_v: ?u32 = if (alu_dest == 0) null else try aluWord(h, sx24(state.s[(h >> 11) & 0xF]), sx24(state.s[(s2 >> 25) & 0xF])) orelse
+        return RunError.UnknownForm;
+    const a_idx: u32 = (8 * (s2 & 3) + (bundle[1] >> 29)) & 0xF;
+    state.s[ld_dest] = state.readX(state.a[a_idx]) orelse 0;
+    if (alu_v) |v| state.s[alu_dest] = v;
 }
 
 fn execX17Xpm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

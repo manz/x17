@@ -3609,3 +3609,29 @@ test "s0 reads 0 even when the state holds a value there" {
     _ = try emu.runFrom(gpa, &state, prog, 0, 16);
     try testing.expectEqual(@as(?u32, 0), state.readX(0x300));
 }
+
+test "x17xld runs x17a05's head ALU slot beside its load" {
+    // fact 528: own-x17xla, A9 = 0x380, s5 = 0x100 gives s3 = 0xFFFF0C (s5 = 0x40:
+    // 0xFFFFCC); the load lands in s1 from X:[A<8*1 + 1>].
+    const gpa = testing.allocator;
+    for ([_]struct { s5: u32, h: u32, want: ?u32 }{
+        .{ .s5 = 0x100, .h = 0x22e18137, .want = 0xFFFF0C },
+        .{ .s5 = 0x40, .h = 0x22e18137, .want = 0xFFFFCC },
+        .{ .s5 = 0x100, .h = 0x22e18137 & ~@as(u32, 0xF << 15), .want = 0xABC }, // no ALU write
+        .{ .s5 = 0x100, .h = (0x22e18137 & ~@as(u32, 0xF << 15)) | 1 << 15, .want = null }, // one s for both
+        .{ .s5 = 0x100, .h = (0x22e18137 & ~@as(u32, 0x3F << 5)) | 1 << 5, .want = null }, // op 0x01 m5 #12: OPEN
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x380;
+        state.s[5] = c.s5;
+        state.s[3] = 0xABC;
+        try state.x_mem.put(gpa, 0x380, 0x777);
+        const r = emu.runFrom(gpa, &state, &.{ c.h, 0x224aa500, 0xca204401, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[3]);
+            try testing.expectEqual(@as(u32, 0x777), state.s[1]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

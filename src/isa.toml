@@ -279,6 +279,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x17 S1 class 100 + S2 class 110: s<S2[13:10]> <- X:[A<8*S2[1:0]+4>] (S1[17:15] = 101); A<S1[25:22]> <- x + A<S1[12:8]>,
 # x and the enable OPEN (fact 139, own-x17xpm).
 # The load index is 8*S2[1:0] + S1[31:29] for every S1 class (fact 141, own-x17xld-a10).
+# x17xld (S1 class 001/010, S2 class 110, h[27] = 0) also runs x17a05's head ALU slot: s<h[18:15]> <- alu_word(h, s<h[14:11]>, s<S2[28:25]>), reads before writes (528, own-x17xla).  Op 0x01 m5 #12 OPEN, refused; S1 class 001 now dispatches too.
 # x17 S1 class 000 + S2 class 001: s<S1[22:19]> <- OP[S1[14:12]](s<S2[28:25]>, S1[11:8]) (101 = b - a);
 # p<S1[7:4]> <- K[head[24:21]], a constant LUT, source OPEN (fact 140, own-x17rsub).
 # x17 S1 class 000 + S2 class 010: e<S1[19:16]> <- s<S2[28:25]> (+1 when S1[9]) with head[27] set and head[10] clear,
