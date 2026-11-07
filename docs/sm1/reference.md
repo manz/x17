@@ -500,6 +500,7 @@ Emulator:
 > x02 mux 001/010 override (187): w5[29:28] 10 = e<w3[30:27]>, 01 per-run count (OPEN), 11 Y:0x40 (OPEN).  own-x02esrc
 > x02 Y side (545): Y:[e<w3[30:27]>] when w5[12], else yd; the memory mode reads it when w5[14] = 0, the 11 override always ("Y:0x40" was yd).  own-x02yd
 > x02 10 override (548): x01's T[w1[10:7]] (a = e<w3[30:27]>, y = R<w5[25:22]>, b = e<w3[26:23]>), fns 0-2 seen, rest refused.  own-x02ov
+> yd setters (571): yld10, x17 S2 101 with S1[28], x16alu mux 1/5 with S2[18], x02 R slot Y side (w5[12]), x19aagu byte load, x03 (565).  Y stores don't; x00 R slot unmeasured; same-bundle timing ASSUMED (set at the handler's end).
 > agu_xr wrap-once (566-568): M = R<k>, sum < 0 -> +M, sum >= M -> -M.  x02 A sum (k = w3[18:15], A<w2[21:17]>; the second A write with a wrap refused), x02 R slot w5[27:26] = 10, x16 S2 class 010 R slot with S1[24] (k = S2[5:2], any S1 class).
 > x03 Y source (565): w5[1] = 1 reads X:[A<4*w1[2:0] + h[31:30]>] whatever w5[21]; w5[1] = 0: w5[21] = 1 fresh Y:[e<w3[30:27]>] (sets yd), 0 yd; modes 3/4 lane yd alike.  Only the yd-reading sites x17 models update yd so far.
 > x16alu post-op (564): X16_POST rows for (op, S1[15]) = (5,0) (4,0) (5,1) (4,1) (7,0) (6,1); codes 9/10/28 take n for b, 40/41 #n; 563's op-4 58 = a << n and 62 = 0.  Open: (4,1) 38/39/42/43/44, (6,1) logic codes, ops 0-3.

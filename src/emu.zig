@@ -525,10 +525,13 @@ const X02Common = struct {
     x_val: u32 = 0,
     r_dest: u32 = 0,
     r_val: u32 = 0,
+    /// The R slot's Y side sets yd (571): a fresh read with w5[12], else yd itself.
+    yd: ?u32 = null,
 
     fn apply(c: X02Common, gpa: std.mem.Allocator, state: *State) RunError!void {
         if (c.x_on) state.x_mem.put(gpa, c.x_addr, c.x_val) catch return RunError.OutOfMemory;
         if (c.r_dest != 0) state.r[c.r_dest] = c.r_val;
+        if (c.yd) |v| state.yd = v;
     }
 };
 
@@ -556,7 +559,11 @@ fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
         c.r_val = switch ((w5 >> 26) & 3) {
             0 => switch (w5 >> 30) {
                 3 => (h >> 11) & 0xFFFF,
-                0 => x02YSide(state, bundle) & 0xFFFF,
+                0 => blk: {
+                    const v = x02YSide(state, bundle) & 0xFFFF;
+                    c.yd = v;
+                    break :blk v;
+                },
                 else => return RunError.UnknownForm,
             },
             1 => blk: {
@@ -1852,7 +1859,9 @@ fn execX16AluX(state: *State, bundle: []const u32) RunError!void {
     // mux 1 / 5 with S2[18] (and not S2[19]): Y:[e<S2[24:21]>] fresh, not yd (521, 15 of 15)
     if ((src == 1 or src == 5) and (s2 >> 18) & 3 == 1) {
         const dest_y: u32 = (bundle[0] >> 21) & 0xF;
-        if (dest_y != 0) state.s[dest_y] = (state.getY(state.e[(s2 >> 21) & 0xF]) orelse 0) & 0xFFFF;
+        const v: u32 = (state.getY(state.e[(s2 >> 21) & 0xF]) orelse 0) & 0xFFFF;
+        if (dest_y != 0) state.s[dest_y] = v;
+        state.yd = v; // 571, own-ydx16
         return;
     }
     if (src != 5 or (s2 >> 19) & 1 == 0) return RunError.UnknownForm;
@@ -2427,8 +2436,9 @@ fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const dest_s: u32 = (head >> 21) & 0xF;
     const src_e: u32 = (s1 >> 25) & 0xF;
     const addr: u32 = state.e[src_e];
-    const v = state.getY(addr) orelse 0;
+    const v = (state.getY(addr) orelse 0) & 0xFFFF;
     if (dest_s != 0) state.s[dest_s] = v;
+    state.yd = v; // 571
 }
 
 fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -2935,7 +2945,10 @@ fn execX19Aagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         else => return RunError.UnknownForm,
     };
     state.a[dest_a & 0xF] = new_val;
-    if (sv) |v| state.s[sd] = v;
+    if (sv) |v| {
+        state.s[sd] = v;
+        state.yd = (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF; // 571
+    }
 }
 
 fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -3097,6 +3110,7 @@ fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const e_dest: u32 = ((s2 & 1) << 3) | (s1 >> 29);
     if (e_dest != 0) state.e[e_dest] = imm;
     if (ld_dest != 0) state.s[ld_dest] = ld_val;
+    if ((s1 >> 28) & 1 == 1) state.yd = yv; // the fresh read sets yd (571)
 }
 
 /// (S1 class != 0, S2 class 011) (fact 275): the x17ld bundle becomes

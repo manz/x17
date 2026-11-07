@@ -4486,3 +4486,34 @@ test "own-x16rmod: x16alu's R slot wraps by R<S2[5:2]> (fact 568)" {
     _ = try emu.runFrom(gpa, &neg, &.{ 0x1c0047f6, 0x43948440, 0x50002131, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0x2EFC), neg.r[1]);
 }
+
+test "the Y read forms that set yd (fact 571)" {
+    // 571's template: yd primed to 0x1234, the form reads Y:0x720 = 0x0BEE, then an x03 with
+    // w5[1] = w5[21] = 0 copies yd into s5.  Every e points at 0x720.
+    const gpa = testing.allocator;
+    const rd = try assemble(gpa, "        x03.yrd s5, e3, #5, #0\n");
+    defer gpa.free(rd);
+    var yd_rd: [6]u32 = rd[0..6].*;
+    yd_rd[5] &= ~@as(u32, 1 << 21);
+    for ([_][]const u32{
+        &.{ 0x00a00010, 0xe6420080 }, // yld10
+        &.{ 0x40429d57, 0x90028010, 0xa0000004 }, // x17 S2 class 101, S1[28] = 1
+        &.{ 0x44400016, 0x00071700, 0xe0c40000 }, // x16alu mux Y read (own-ydx16)
+        &.{ 0x00000002, 0, 0x0000a000, 0x91880000, 0x00004001, 0x00001800 }, // x02 R slot, w5[12]
+        &.{ 0x10002019, 0xa4020800, 0x08003000, 0x44528000 }, // x19aagu byte load
+    }) |form| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |k| state.e[k] = 0x720;
+        state.yd = 0x1234;
+        try state.y_mem.put(gpa, 0x720, 0x0BEE);
+        var b: [16]u32 = undefined;
+        @memcpy(b[0..form.len], form);
+        @memcpy(b[form.len..][0..6], &yd_rd);
+        b[form.len + 6] = 0x00000017;
+        b[form.len + 7] = 0x31308000;
+        b[form.len + 8] = 0xA0000000;
+        _ = try emu.runFrom(gpa, &state, b[0 .. form.len + 9], 0, 32);
+        try testing.expectEqual(@as(u32, 0x0BEE), state.s[5]);
+    }
+}
