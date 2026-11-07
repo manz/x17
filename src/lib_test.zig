@@ -1871,8 +1871,9 @@ test "rimm's s write and x16 mux 3 are refused: they depend on state not yet fou
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &m, prog, 0, 16));
 }
 
-test "x17 S2 class 101 with S1[28] = 0 loads 0" {
-    // fact 490 on own-x17st's shape with S1[28] cleared and a load into s2.
+test "x17 S2 class 101 with S1[28] = 0 and mux 4 loads 0; other muxes are refused" {
+    // fact 490 measured mux 4 (XXXXXXXX XXXXXXXX XXXXXXXX) in plain programs; here on
+    // own-x17st's shape with S1[28] cleared and a load into s2.
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
@@ -1880,7 +1881,14 @@ test "x17 S2 class 101 with S1[28] = 0 loads 0" {
     state.s[7] = 0x4321;
     state.e[3] = 0x720;
     try state.y_mem.put(gpa, 0x720, 0x1234);
-    _ = try emu.runFrom(gpa, &state, &.{ 0x00400017, 0x67018000, 0xA0000044, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    _ = try emu.runFrom(gpa, &state, &.{ 0x00400017, 0x67018000, 0xA0000048, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0), state.s[2]);
     try testing.expectEqual(@as(?u32, 0x4321), state.getY(0x720));
+    var m2 = emu.State{};
+    defer m2.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &m2, &.{ 0x00400017, 0x67018000, 0xA0000044, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    var w = emu.State{};
+    defer w.deinit(gpa);
+    _ = try emu.runFrom(gpa, &w, &.{ XXXXXXXX, XXXXXXXX, XXXXXXXX, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0), w.s[15]);
 }
