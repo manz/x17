@@ -4776,19 +4776,18 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x16mux-b",
-        // mux 011: s3 <- 0xCD00; mux 100: s5 <- (0xABCD << 7)[15:0] = 0xE680.
+        // mux 100: s5 <- (0xABCD << 7)[15:0] = 0xE680. Mux 011 (s3 <- 0xCD00 here) varies from
+        // run to run (fact 488) and is refused.
         .pre = &.{
             .{ .bank = .e, .index = 2, .value = 0x700 },
             .{ .bank = .r, .index = 3, .value = 0x20 },
         },
         .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0xABCD }},
         .src =
-        \\x16.mux s3, R3, #1, #0, #6, #4, #3
         \\x16.mux s5, R3, #1, #0, #10, #4, #4
         \\x17.halt
         ,
         .post = &.{
-            .{ .s_reg = .{ .index = 3, .value = 0xCD00 } },
             .{ .s_reg = .{ .index = 5, .value = 0xE680 } },
         },
     },

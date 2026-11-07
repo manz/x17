@@ -1853,3 +1853,20 @@ test "pc14 class-011 mux 10 writes the immediate, and group 0 code 0 sets its p"
     defer c9.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &c9, &.{ XXXXXXXX, 0x72000960, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "rimm's s write and x16 mux 3 are refused: they depend on state not yet found" {
+    // fact 488: rimm XXXXXXXX A1008000 writes s2 = 0x0700 before any st.y and 0x5000
+    // after; x16 mux 3 varies from run to run.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ XXXXXXXX, 0xA1008000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    var r = emu.State{};
+    defer r.deinit(gpa);
+    _ = try emu.runFrom(gpa, &r, &.{ 0x0000000F, 0xA1008000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    const prog = try assemble(gpa, "x16.mux s3, R3, #1, #0, #6, #4, #3\nx17.halt\n");
+    defer gpa.free(prog);
+    var m = emu.State{};
+    defer m.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &m, prog, 0, 16));
+}

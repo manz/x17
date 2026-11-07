@@ -1492,7 +1492,7 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
     // S1[30:28] is a source mux (fact 207): 001 = AGU10, 101 = Y:[x],
-    // 011 = Y:[x][7:0] << 8, 100 = (Y:[x] << 7)[15:0], 110 = head[26:11] << 6.
+    // 011 = Y:[x][7:0] << 8 (refused, 488), 100 = (Y:[x] << 7)[15:0], 110 = head[26:11] << 6.
     const mux: u32 = (s1 >> 28) & 7;
     const yd: u32 = (state.getY(x_val) orelse 0) & 0xFFFF;
     const v: u32 = switch (mux) {
@@ -1502,7 +1502,7 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             else => try agu10Eval(fn_op, x_val, y_val),
         },
         5 => yd,
-        3 => (yd & 0xFF) << 8,
+        // 488: mux 3 varies from run to run on silicon: refused.
         4 => (yd << 7) & 0xFFFF,
         6 => (((head >> 11) & 0xFFFF) << 6) & 0xFFFF,
         else => return RunError.UnknownForm,
@@ -3727,8 +3727,12 @@ fn execX0E(state: *State, bundle: []const u32) RunError!void {
     if (hd != 0) state.s[hd] = hv;
 }
 
-/// low5 0x0F, S class 101 without S[22] & S[20] (fact 127): R<S[14:11]> <- #head[20:5].
+/// low5 0x0F, S class 101 without S[22] & S[20] (fact 127): R<S[14:11]> <- #head[20:5];
+/// a bundle that also writes s<head[24:21]> is refused (488).
 fn execRimm(state: *State, bundle: []const u32) RunError!void {
+    // 488: its s<head[24:21]> write reads 0x0700 before any st.y and 0x5000 after (source
+    // OPEN): refused.
+    if ((bundle[0] >> 21) & 0xF != 0) return RunError.UnknownForm;
     const dest: u32 = (bundle[1] >> 11) & 0xF;
     if (dest != 0) state.r[dest] = (bundle[0] >> 5) & 0xFFFF;
 }
