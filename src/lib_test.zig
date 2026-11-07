@@ -1545,3 +1545,45 @@ test "pc14 group 0 is measured for codes 0-7 and 9 only" {
 test "pc14 refuses head-target mux 3, untested on silicon" {
     try testing.expectError(error.UnknownForm, pc14P("pc14 p2, s3, #0, #0, #5, s6, #3, #0\nx17.halt\n", 0));
 }
+
+fn runX18(words: [4]u32, p1: u8, p5: u8) !emu.State {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    state.p[1] = p1;
+    state.p[5] = p5;
+    state.s[1] = 0x123;
+    state.s[2] = 0x456;
+    const prog = [_]u32{ words[0], words[1], words[2], words[3], 0x00000017, 0x31308000, 0xA0000000 };
+    _ = try emu.runFrom(gpa, &state, &prog, 0, 16);
+    return state;
+}
+
+test "x18 class-110 p write on the multiply base: Upstream's gates" {
+    // fact 469: own-x18pinv also writes s2 <- lo(s1 * s1 << 1), s1 <- hi.
+    var st = try runX18(.{ 0x1C000018, 0x00000000, 0x02002222, 0xC4114001 }, 1, 1);
+    defer st.deinit(testing.allocator);
+    try testing.expectEqual(@as(u8, 0), st.p[1]);
+    try testing.expectEqual(@as(u32, 0x9592), st.s[2]);
+    try testing.expectEqual(@as(u32, 0), st.s[1]);
+    // 470 own-x18p1: op 2 with w3[9:8] != 0 writes 1.
+    var st2 = try runX18(.{ 0x1C000018, 0x00010000, 0x02002222, 0xC4114101 }, 0, 1);
+    defer st2.deinit(testing.allocator);
+    try testing.expectEqual(@as(u8, 1), st2.p[1]);
+    // 471 own-x18c11: code 11, f 10 writes 0.
+    var st3 = try runX18(.{ 0x16000018, 0x00010000, 0x02002222, 0xD4114001 }, 1, 1);
+    defer st3.deinit(testing.allocator);
+    try testing.expectEqual(@as(u8, 0), st3.p[1]);
+}
+
+test "x18 class-110 p write refuses an unmeasured cell" {
+    // code 11, f 4: not measured.
+    try testing.expectError(error.UnknownForm, runX18(.{ 0x16000018, 0x00000000, 0x00002022, 0xC8114001 }, 0, 0));
+    // op 1: 451's comparisons, not this table.
+    try testing.expectError(error.UnknownForm, runX18(.{ 0x1C000018, 0x00008000, 0x00002022, 0xC4114001 }, 0, 0));
+}
+
+test "x18.pmov copies p5 = 0 too" {
+    var st = try runX18(.{ 0x1C000018, 0x00000000, 0x00002022, 0xC2114001 }, 1, 0);
+    defer st.deinit(testing.allocator);
+    try testing.expectEqual(@as(u8, 0), st.p[1]);
+}

@@ -240,10 +240,19 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x18 and bundle.len >= 4) {
         const w3_class: u32 = (bundle[3] >> 29) & 0x7;
         const w1_mode: u32 = (bundle[1] >> 12) & 0x7;
-        if (w3_class == 0b110 and ((bundle[3] >> 8) & 1) == 1) return execX18Br(gpa, state, bundle);
+        if (w3_class == 0b110 and ((bundle[3] >> 8) & 1) == 1) {
+            // The class-110 p write and multiply slots run beside the branch (fact 470:
+            // own-x18p1 carries w3[8] with branch predicate p0).
+            try x18PWrite(state, bundle);
+            try execX18Mpy(gpa, state, bundle);
+            return execX18Br(gpa, state, bundle);
+        }
         if (w3_class == 0b011 and bundle[3] & 0x101 == 0x100) return execX18Br(gpa, state, bundle);
         if (w3_class == 0b110 and w1_mode == 5) return execX18Xrd(gpa, state, bundle);
-        if (w3_class == 0b110 and bundle[2] != 0) return execX18Mpy(gpa, state, bundle);
+        if (w3_class == 0b110 and bundle[2] != 0) {
+            try x18PWrite(state, bundle);
+            return execX18Mpy(gpa, state, bundle);
+        }
         if (w3_class == 0b110) return execX18Imm(gpa, state, bundle);
         if (w3_class == 0b000) return execX18C0(gpa, state, bundle);
         if (w3_class == 0b100) return execX18C4(gpa, state, bundle);
@@ -1606,6 +1615,39 @@ fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_r != 0) state.r[dest_r] = v;
 }
 
+/// The x18 class-110 p write (fact 469, 470, 471, 476): p<w2[16:13]> <- fn of
+/// p<w3[17:14]>, picked by code h[28:25], op w1[17:15], f w3[28:25] and w3[9:8].  Measured:
+/// w3[9:8] != 0 under op 0/2, and codes 0-10 under op 0, give 1; code 14 under op 0/2 maps f
+/// 0, 4, 10-15 to 1, 1, 3, 8 to p, 2, 5 to !p, 6, 7, 9 to 0; code 11 under op 0/2 maps f 0, 1,
+/// 5, 6, 12 to 1 and 2, 3, 9, 10 to 0.  Every other cell is refused.
+fn x18PWrite(state: *State, bundle: []const u32) RunError!void {
+    const dest: u32 = (bundle[2] >> 13) & 0xF;
+    if (dest == 0) return;
+    const w3 = bundle[3];
+    const code: u32 = (bundle[0] >> 25) & 0xF;
+    const op: u32 = (bundle[1] >> 15) & 7;
+    const f: u32 = (w3 >> 25) & 0xF;
+    const p: u8 = state.p[(w3 >> 14) & 0xF];
+    const op02 = op == 0 or op == 2;
+    const v: u8 = blk: {
+        if (op02 and (w3 >> 8) & 3 != 0) break :blk 1;
+        if (op == 0 and code <= 10) break :blk 1;
+        if (op02 and code == 14) break :blk switch (f) {
+            0, 4, 10...15 => 1,
+            1, 3, 8 => p,
+            2, 5 => @intFromBool(p == 0),
+            else => 0,
+        };
+        if (op02 and code == 11) break :blk switch (f) {
+            0, 1, 5, 6, 12 => 1,
+            2, 3, 9, 10 => 0,
+            else => return RunError.UnknownForm,
+        };
+        return RunError.UnknownForm;
+    };
+    state.p[dest] = v;
+}
+
 fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     const w2 = bundle[2];
@@ -1619,8 +1661,11 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // Integer mode (w3[24] = 1): low half is P & 0xFFFF per fact 167;
     // the measured 0x4001 * 0x6003 = 0x18012003 shows low = 0x2003.  High
     // half is P >> 24.
-    const lo: u32 = @truncate(prod & 0xFFFF);
-    const hi: u32 = @truncate((prod >> 24) & M24);
+    // w3[24] = 0 doubles the product first (fact 469: 0x123 * 0x123 gave lo 0x9592,
+    // hi 0); only a hi of 0 is measured there.
+    const pp: u64 = if ((bundle[3] >> 24) & 1 == 1) prod else prod << 1;
+    const lo: u32 = @truncate(pp & 0xFFFF);
+    const hi: u32 = @truncate((pp >> 24) & M24);
     if (lo_dest != 0) state.s[lo_dest] = lo;
     if (hi_dest != 0) state.s[hi_dest] = hi;
 }

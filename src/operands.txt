@@ -838,6 +838,20 @@ x16.xld	xi	imm	4	8	s2
 # x16.ldb <dest_s>
 x16.ldb	dest_s	s	21	24	head
 
+# x18.pmov / x18.pnot <p_dest>, <p_src>; x18.pset / x18.pclr <p_dest>
+# x18.pfn <p_dest>, <p_src>, #<f>, #<code>, #<op>
+x18.pmov	p_dest	p	13	16	s2
+x18.pmov	p_src	p	14	17	s3
+x18.pnot	p_dest	p	13	16	s2
+x18.pnot	p_src	p	14	17	s3
+x18.pset	p_dest	p	13	16	s2
+x18.pclr	p_dest	p	13	16	s2
+x18.pfn	p_dest	p	13	16	s2
+x18.pfn	p_src	p	14	17	s3
+x18.pfn	f	imm	25	28	s3
+x18.pfn	code	imm	25	28	head
+x18.pfn	op	imm	15	17	s1
+
 # x18.pw <p>, <src_s>, #<cond>
 x18.pw	p	imm	14	17	s2
 x18.pw	src_s	s	2	5	s2

@@ -1536,6 +1536,46 @@ const GATES = [_]Gate{
         .post = &.{.{ .y_mem = .{ .addr = 0x14A3, .value = 0x55 } }},
     },
     .{
+        .name = "own-x18pset",
+        // Upstream, fact 476: the pure class-110 base, p1 preset opposite the result.
+        .pre = &.{.{ .bank = .p, .index = 1, .value = 0 }},
+        .src =
+        \\x18.pset p1
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-x18pmov",
+        // Upstream, fact 476: the pure class-110 base, p1 preset opposite the result.
+        .pre = &.{ .{ .bank = .p, .index = 1, .value = 0 }, .{ .bank = .p, .index = 5, .value = 1 } },
+        .src =
+        \\x18.pmov p1, p5
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 1 } }},
+    },
+    .{
+        .name = "own-x18pnot",
+        // Upstream, fact 476: the pure class-110 base, p1 preset opposite the result.
+        .pre = &.{ .{ .bank = .p, .index = 1, .value = 1 }, .{ .bank = .p, .index = 5, .value = 1 } },
+        .src =
+        \\x18.pnot p1, p5
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
+    },
+    .{
+        .name = "own-x18pclr",
+        // Upstream, fact 476: the pure class-110 base, p1 preset opposite the result.
+        .pre = &.{.{ .bank = .p, .index = 1, .value = 1 }},
+        .src =
+        \\x18.pclr p1
+        \\x17.halt
+        ,
+        .post = &.{.{ .p_reg = .{ .index = 1, .value = 0 } }},
+    },
+    .{
         .name = "own-sty0x19",
         // Upstream, fact 468 (3 of 3): an x19alu between (00000219 02014000 800C8101
         // 81E18008, its [20:5] = 0x10) leaves e0 at ldi s5's 0x730.

@@ -581,6 +581,16 @@ x16.xld    3   0x00000016   0x68000000   0x00000008
 # x16.ldb: x16.ldi with mux 011, X:[A<xi>][7:0] << 8 (fact 217).
 x16.ldb    3   0x00000316   0x07043000   0x000000A8
 
+# x18 class-110 p write on the pure base (fact 469-471, 476): the multiply dests
+# w2[27:24] and w2[12:9] are 0, so only p<w2[16:13]> <- fn<w3[28:25]>(p<w3[17:14]>) lands.
+# The aliases fix code 14, op 0 and one f each (and p5 as the unread source of pset/pclr);
+# they come first so disasm prints them.  x18.pfn spells any measured cell.
+x18.pmov   4   0x1C000018   0x00000000   0x00000022   0xC2100001
+x18.pnot   4   0x1C000018   0x00000000   0x00000022   0xC4100001
+x18.pset   4   0x1C000018   0x00000000   0x00000022   0xC0114001
+x18.pclr   4   0x1C000018   0x00000000   0x00000022   0xCC114001
+x18.pfn    4   0x00000018   0x00000000   0x00000022   0xC0100001
+
 # x18.pw: class 011 with w3[8] = w3[0] = 1, p<w2[17:14]> <- cond head[28:25]
 # of the slot result (fact 179 / own-x18pw-*).
 x18.pw     4   0x00000018   0x00000000   0x00000000   0x60000101
