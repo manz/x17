@@ -3217,10 +3217,19 @@ fn execX16Sh(state: *State, bundle: []const u32) RunError!void {
     if (dest != 0 and n != 0) state.s[dest] = sh;
 }
 
-/// The x17xld head ALU slot's alu_word triples measured OPEN (528), as h[25:5] masked to the
-/// code, m and #s fields: op 0x01 with m = 5, #12.
-const xld_alu_open = [_]u32{(5 << 23) | (12 << 19) | (0x01 << 5)};
-const alu_word_fields: u32 = (7 << 23) | (0xF << 19) | (0x3F << 5);
+/// An alu_word (op, m, #s) triple a slot has measured OPEN.
+const AluTriple = struct { op: AluOp, m: u32, s: u32 };
+
+/// Whether alu_word `word` (code [10:5], m [25:23], #s [22:19]) is on a slot's OPEN list.
+fn aluOpen(open: []const AluTriple, word: u32) bool {
+    for (open) |t| {
+        if (ALU05[(word >> 5) & 0x3F] == t.op and (word >> 23) & 7 == t.m and (word >> 19) & 0xF == t.s) return true;
+    }
+    return false;
+}
+
+/// x17xld's head ALU slot (528): add (code 0x01) with m = 5, #12.
+const xld_alu_open = [_]AluTriple{.{ .op = .add, .m = 5, .s = 12 }};
 
 /// x17xld, S1 class 001 / 010 + S2 class 110, head[27] clear: s<S2[13:10]> <- X:[A<8*S2[1:0] +
 /// S1[31:29]>] (fact 141); and x17a05's head ALU slot, s<h[18:15]> <- alu_word(h,
@@ -3232,7 +3241,7 @@ fn execX17Xld(state: *State, bundle: []const u32) RunError!void {
     const ld_dest: u32 = (s2 >> 10) & 0xF;
     const alu_dest: u32 = (h >> 15) & 0xF;
     if (alu_dest != 0 and alu_dest == ld_dest) return RunError.UnknownForm;
-    if (alu_dest != 0 and std.mem.indexOfScalar(u32, &xld_alu_open, h & alu_word_fields) != null) return RunError.UnknownForm;
+    if (alu_dest != 0 and aluOpen(&xld_alu_open, h)) return RunError.UnknownForm;
     const alu_v: ?u32 = if (alu_dest == 0) null else try aluWord(h, sx24(state.s[(h >> 11) & 0xF]), sx24(state.s[(s2 >> 25) & 0xF])) orelse
         return RunError.UnknownForm;
     const a_idx: u32 = (8 * (s2 & 3) + (bundle[1] >> 29)) & 0xF;
@@ -3394,13 +3403,30 @@ fn execX17E(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     }
 }
 
+/// x17imm, S1 class 011 + S2 class 111 (fact 134, 537): s<S1[10:7]> <- #h[26:11]; and the
+/// ALU slot T = alu_word(code h[10:5], m = S1[13:11], #S1[23:20], a = s<S1[19:16]>, b =
+/// s<S2[28:25]>) into s<S1[27:24]> and R<S2[16:13]>, from pre-bundle operands.  Refused: the
+/// OPEN triples, the Y slot (S2[24:21] != 0), and two writes to one s.
 fn execX17Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
-    const head = bundle[0];
+    const h = bundle[0];
     const s1 = bundle[1];
-    const dest_s: u32 = (s1 >> 7) & 0xF;
-    const imm: u32 = (head >> 11) & 0xFFFF;
-    state.s[dest_s] = imm;
+    const s2 = bundle[2];
+    if ((s2 >> 21) & 0xF != 0) return RunError.UnknownForm;
+    const imm_dest: u32 = (s1 >> 7) & 0xF;
+    const t_dest: u32 = (s1 >> 24) & 0xF;
+    const r_dest: u32 = (s2 >> 13) & 0xF;
+    if (t_dest != 0 and t_dest == imm_dest) return RunError.UnknownForm;
+    const word: u32 = (h & (0x3F << 5)) | (((s1 >> 11) & 7) << 23) | (((s1 >> 20) & 0xF) << 19);
+    const t: ?u32 = if (t_dest == 0 and r_dest == 0) null else blk: {
+        // 537's OPEN triples (xori m3 #15, sel m1 #4) are outside alu_word's domain already.
+        break :blk try aluWord(word, sx24(state.s[(s1 >> 16) & 0xF]), sx24(state.s[(s2 >> 25) & 0xF])) orelse return RunError.UnknownForm;
+    };
+    state.s[imm_dest] = (h >> 11) & 0xFFFF;
+    if (t) |v| {
+        state.s[t_dest] = v;
+        if (r_dest != 0) state.r[r_dest] = v & 0xFFFF;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -4778,4 +4804,13 @@ test "roundShr rounds half up, negatives included" {
     try testing.expectEqual(@as(i64, 0), roundShr(-1, 1));
     try testing.expectEqual(@as(i64, -2), roundShr(-5, 1));
     try testing.expectEqual(@as(i64, 0x30), roundShr(0x4000 * 0x6000, 23));
+}
+
+test "aluOpen matches op, m and #s together" {
+    const add_m5_12: u32 = (5 << 23) | (12 << 19) | (0x01 << 5);
+    try testing.expect(aluOpen(&xld_alu_open, add_m5_12));
+    try testing.expect(aluOpen(&xld_alu_open, (add_m5_12 & ~@as(u32, 0x3F << 5)) | (0x0e << 5))); // another add code
+    try testing.expect(!aluOpen(&xld_alu_open, add_m5_12 ^ (1 << 19)));
+    try testing.expect(!aluOpen(&xld_alu_open, add_m5_12 ^ (1 << 23)));
+    try testing.expect(!aluOpen(&xld_alu_open, (add_m5_12 & ~@as(u32, 0x3F << 5)) | (0x10 << 5))); // sub
 }

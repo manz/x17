@@ -3831,3 +3831,31 @@ test "x19k's store: A<w2[21:17]> reaches A16-A31" {
     _ = try emu.runFrom(gpa, &state, &.{ 0x9c000019, 0x23040111, 0x02e60000, 0x00515d98, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(?u32, 0x222), state.readX(0x140));
 }
+
+test "x17imm's ALU slot writes s<S1[27:24]> and R<S2[16:13]>" {
+    // fact 537: own-x17ia, s2 = 0x100, s5 = 0x900: 000029d7 62024a80 ea012000 gives
+    // s2 = s5 - s2 = 0x800 (add m1) from the pre-bundle s5, though the immediate writes
+    // s5 <- 5 in the same bundle; R9 takes T too.  S1[11] = 0 (m0) gives 0xA00.  Refused:
+    // sel m1 #4 (OPEN), the Y slot, and T aimed at the immediate's s.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x000029d7, s1: u32, s2: u32 = 0xea012000, want: ?u32 }{
+        .{ .s1 = 0x62024a80, .want = 0x800 },
+        .{ .s1 = 0x62024280, .want = 0xA00 },
+        .{ .h = 0x00002837, .s1 = 0x62224280, .want = 0x2800 }, // code 0x01, m0, #2: (a + b) << 2
+        .{ .h = 0x00002d97, .s1 = 0x62424a80, .want = null }, // code 0x2C sel, m1, #4
+        .{ .s1 = 0x62024a80, .s2 = 0xea212000, .want = null },
+        .{ .s1 = 0x65024a80, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[2] = 0x100;
+        state.s[5] = 0x900;
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.s1, c.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[2]);
+            try testing.expectEqual(v, state.r[9]);
+            try testing.expectEqual(@as(u32, 5), state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
