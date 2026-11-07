@@ -1322,6 +1322,21 @@ const GATES = [_]Gate{
         .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0x1234 } }},
     },
     .{
+        .name = "own-st0fe",
+        // Upstream, fact 437 (3 of 3): 0000E20F AE700032, e6 <- #0x710 beside the X store;
+        // the stk after it stores through e6.
+        .src =
+        \\stx0f.e #0, #2, s7, e6, #0x710
+        \\ldi s5, #0x55
+        \\stk e6, s5
+        \\x17.halt
+        ,
+        .post = &.{
+            .{ .e_reg = .{ .index = 6, .value = 0x710 } },
+            .{ .y_mem = .{ .addr = 0x710, .value = 0x55 } },
+        },
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},

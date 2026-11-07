@@ -703,6 +703,9 @@ rimm       2   0x0000000F   0xA0000000
 # stx0f: low5 0x0F X store, A index 4*S[2:0] + head[31:30] (fact 127).
 stx0f      2   0x0000000F   0xA0500000
 
+# stx0f.e: the stx0f row with S[21] and its e write, e<S[6:3]> <- #head[20:5] (fact 437).
+stx0f.e    2   0x0000000F   0xA0700000
+
 # ste.n: ste with a bare class-001 second (fact 75 / own-st-e6).
 ste.n      2   0x0000000F   0x20000000
 

@@ -1118,6 +1118,11 @@ rimm	imm	imm	5	20	head
 stx0f	a_lo	imm	30	31	head
 stx0f	a_hi	imm	0	2	s1
 stx0f	src_s	s	25	28	s1
+stx0f.e	a_lo	imm	30	31	head
+stx0f.e	a_hi	imm	0	2	s1
+stx0f.e	src_s	s	25	28	s1
+stx0f.e	dest_e	e	3	6	s1
+stx0f.e	imm	imm	5	20	head
 
 # ste.n #<e_lo>, #<imm>
 ste.n	e_lo	imm	29	31	head

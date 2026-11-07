@@ -450,3 +450,5 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # S[6:3] bit b zeroes s<1 << b>; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the stock bundle is OPEN.  own-yld10
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12
+# stx0f.e, low5 0x0F S class 101 with S[22], S[20] (fact 437): beside the X store, e<S[6:3]> <- #head[20:5] under any
+# head[31:30]; measured with S[22:20] = 111 only.  own-st0fe

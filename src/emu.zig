@@ -3419,12 +3419,15 @@ fn execRimm(state: *State, bundle: []const u32) RunError!void {
 }
 
 /// low5 0x0F, S class 101 with S[22] and S[20] (fact 127):
-/// X:[A<4*S[2:0] + head[31:30]>] <- sx24 s<S[28:25]>.
+/// X:[A<4*S[2:0] + head[31:30]>] <- sx24 s<S[28:25]>; and e<S[6:3]> <- #head[20:5] under any
+/// head[31:30] (437, measured with S[22:20] = 111 only).
 fn execStx0f(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const sw = bundle[1];
     const a_idx: u32 = 4 * (sw & 7) + (bundle[0] >> 30);
     const v: u32 = state.s[(sw >> 25) & 0xF] & M24;
     state.x_mem.put(gpa, state.a[a_idx], v) catch return RunError.OutOfMemory;
+    const e_dest: u32 = (sw >> 3) & 0xF;
+    if (e_dest != 0) state.e[e_dest] = (bundle[0] >> 5) & 0xFFFF;
 }
 
 /// low5 0x08, [31:29] = 010, op[10:5] = 0x30 + k (fact 61, 101):
