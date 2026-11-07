@@ -1114,6 +1114,8 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
                 else => return RunError.UnknownForm,
             };
         }
+        // 0x00 with w5[4] = 0 reads yd, the last Y read, not a fresh word (550).
+        if (!x01 and (w5 >> 4) & 1 == 0) break :blk state.yd & 0xFFFF;
         const ri: u32 = (w4 >> 5) & 0xF;
         break :blk (state.getY(if (ri == 0) 0 else state.e[ri]) orelse 0) & 0xFFFF;
     };
@@ -3033,14 +3035,13 @@ fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         state.wedge_pending = true;
     }
     const y_addr: u32 = state.e[(s1 >> 15) & 0xF];
-    const yv: u32 = (state.getY(y_addr) orelse 0) & 0xFFFF;
+    // S1[28] = 0 reads yd, the last Y read, instead of Y:[e] (550; 490's "0 in a plain program,
+    // 0xA050 under x99" was yd).
+    const yv: u32 = (if ((s1 >> 28) & 1 == 1) state.getY(y_addr) orelse 0 else state.yd) & 0xFFFF;
     const imm: u32 = (h >> 5) & 0xFFFF;
     const ld_dest: u32 = (h >> 21) & 0xF;
     var ld_val: u32 = 0;
-    // S1[28] = 0 with mux 4 loads 0 in a plain program (490: XXXXXXXX XXXXXXXX XXXXXXXX; x99
-    // read 0xA050 there, so this holds without x99's presets only). Other muxes are refused.
-    if (ld_dest != 0 and (s1 >> 28) & 1 == 0 and (s2 >> 1) & 7 != 4) return RunError.UnknownForm;
-    if (ld_dest != 0 and (s1 >> 28) & 1 == 1) {
+    if (ld_dest != 0) {
         ld_val = switch ((s2 >> 1) & 7) {
             0 => 0,
             // mux 2 sign-extends, like ldy (414); mux 4 is the same word (436), its top byte

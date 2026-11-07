@@ -1876,9 +1876,9 @@ test "rimm's s write and x16 mux 3 are refused: they depend on state not yet fou
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &m, prog, 0, 16));
 }
 
-test "x17 S2 class 101 with S1[28] = 0 and mux 4 loads 0; other muxes are refused" {
-    // fact 490 measured mux 4 (XXXXXXXX XXXXXXXX XXXXXXXX) in plain programs; here on
-    // own-x17st's shape with S1[28] cleared and a load into s2.
+test "x17 S2 class 101 with S1[28] = 0 loads yd through the mux" {
+    // fact 490 measured mux 4 (XXXXXXXX XXXXXXXX XXXXXXXX) giving 0 in plain programs:
+    // that was yd (550).  Here on own-x17st's shape with S1[28] cleared and a load into s2.
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
@@ -1891,7 +1891,9 @@ test "x17 S2 class 101 with S1[28] = 0 and mux 4 loads 0; other muxes are refuse
     try testing.expectEqual(@as(?u32, 0x4321), state.getY(0x720));
     var m2 = emu.State{};
     defer m2.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &m2, &.{ 0x00400017, 0x67018000, 0xA0000044, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    m2.yd = 0x9234;
+    _ = try emu.runFrom(gpa, &m2, &.{ 0x00400017, 0x67018000, 0xA0000044, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0xFF9234), m2.s[2]); // mux 2 sign-extends yd
     var w = emu.State{};
     defer w.deinit(gpa);
     _ = try emu.runFrom(gpa, &w, &.{ XXXXXXXX, XXXXXXXX, XXXXXXXX, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
@@ -2745,15 +2747,17 @@ test "ystm: AGU10B or AGU10 by s[20] with the store on, a fresh Y read at s[17:1
 }
 
 test "the 0x00 R slot: AGU10, the immediate, zero, the product's low half, or Y" {
-    // fact 516: own-x00rimm (R2 = 0x280) and the other sources of the same slot.
+    // fact 516: own-x00rimm (R2 = 0x280) and the other sources of the same slot.  The Y
+    // source is fresh only with w5[4]; without it, yd (550).
     const gpa = testing.allocator;
     for ([_]struct { h: u32, w1: u32, w4: u32, w5: u32, w6: u32, want: u32 }{
         .{ .h = 0x00140000, .w1 = 0, .w4 = 0, .w5 = 0x06000000, .w6 = 0, .want = 0x280 },
         .{ .h = 0x00140000, .w1 = 0, .w4 = 0, .w5 = 0x04000000, .w6 = 0, .want = 0 },
         .{ .h = 0x00140000, .w1 = 0x2000, .w4 = 0, .w5 = 0x02000000, .w6 = 0x43000000, .want = (0x1234 * 0x0567 * 2) & 0xFFFF },
         .{ .h = 0x00140000, .w1 = 0x22000, .w4 = 0, .w5 = 0x02000000, .w6 = 0x43000000, .want = (0x1234 * 0x0567) & 0xFFFF },
-        .{ .h = 0x00140000, .w1 = 0, .w4 = 0x000000A0, .w5 = 0x02000000, .w6 = 0x43000000, .want = 0x2468 },
-        .{ .h = 0x00140000, .w1 = 0, .w4 = 0x000000A0, .w5 = 0, .w6 = 0, .want = 0x2468 },
+        .{ .h = 0x00140000, .w1 = 0, .w4 = 0x000000A0, .w5 = 0x02000000, .w6 = 0x43000000, .want = 0xBEE },
+        .{ .h = 0x00140000, .w1 = 0, .w4 = 0x000000A0, .w5 = 0, .w6 = 0, .want = 0xBEE },
+        .{ .h = 0x00140000, .w1 = 0, .w4 = 0x000000A0, .w5 = 0x10, .w6 = 0, .want = 0x2468 },
         .{ .h = 0x08140000, .w1 = 0x500, .w4 = 0, .w5 = 0x00200000, .w6 = 0, .want = 0x380 },
     }) |c| {
         var state = emu.State{};
@@ -2762,6 +2766,7 @@ test "the 0x00 R slot: AGU10, the immediate, zero, the product's low half, or Y"
         state.r[1] = 0x100;
         state.s[3] = 0x1234;
         state.s[4] = 0x0567;
+        state.yd = 0xBEE;
         try state.y_mem.put(gpa, 0x710, 0x2468);
         _ = try emu.runFrom(gpa, &state, &.{ c.h, c.w1, 0, 0x40000000, c.w4, c.w5, c.w6, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c.want, state.r[2]);

@@ -388,6 +388,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x02 mux 001/010 override (187): w5[29:28] 10 = e<w3[30:27]>, 01 per-run count (OPEN), 11 Y:0x40 (OPEN).  own-x02esrc
 # x02 Y side (545): Y:[e<w3[30:27]>] when w5[12], else yd; the memory mode reads it when w5[14] = 0, the 11 override always ("Y:0x40" was yd).  own-x02yd
 # x02 10 override (548): x01's T[w1[10:7]] (a = e<w3[30:27]>, y = R<w5[25:22]>, b = e<w3[26:23]>), fns 0-2 seen, rest refused.  own-x02ov
+# yd reads (550): 0x00's R slot Y source with w5[4] = 0 (0x01 unaffected) and x17 S2 class 101 with S1[28] = 0 read yd, the last Y read, through the same muxes (490's 0 / 0xA050 was yd).  x00's swap read and x17sty mux 0 still to model.
 # x02 third slot (549): alu_word over the head code h[10:5], m = w5[8:6], #n = w5[5:2] (adder codes: 0-2 <<n, 3/5 >>n, 4 >>n rounded); non-adder codes OPEN, refused; runs in w4 modes 0 and 5.  own-x02t3
 # x02 R<w3[22:19]> (547): w5[27:26] 00 imm / Y side by w5[31:30]; 01 (w5[11] ? AGU10 : AGU10B)[w1[10:7]](e<w3[30:27]>, R<w5[25:22]>); w5[27] (265's carry) fresh-state only, refused on x02 and x03.  own-x02ra
 # x02 (188): w3[31] inert; w3[30] only as e<w3[30:27]>'s top bit.  Two 0x02s need 3+ nops between them.  own-x02w3b31
