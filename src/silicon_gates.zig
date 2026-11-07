@@ -5103,7 +5103,8 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
             std.debug.print("gate '{s}': halted, expected a wedge\n", .{g.name});
             return error.GateFailed;
         }
-        return;
+        // A wedge the emulator models (it stops without halting) still has its stores checked.
+        _ = ran catch return;
     }
     _ = ran catch |e| {
         std.debug.print("gate '{s}': emulator error {s}\n", .{ g.name, @errorName(e) });
