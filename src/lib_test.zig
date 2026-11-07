@@ -4152,3 +4152,22 @@ test "own-x19kal: x19k with w2 class 001" {
     _ = try emu.runFrom(gpa, &state, &.{ 0x01821179, 0x90941000, 0x33e20000, 0x13a00801, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0x790), state.s[12]);
 }
+
+test "0x0F's e write at index 0 is an s <- e move instead" {
+    // fact 552: e3 = 0x730: s3 <- e3 + 1 = 0x731 with w1[2], e3 itself without; a
+    // nonzero index keeps 279's e <- #imm and no s write.
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, w1: u32, s3: u32, e2: u32 }{
+        .{ .h = 0x0060000F, .w1 = 0x20060004, .s3 = 0x731, .e2 = 0 },
+        .{ .h = 0x0060000F, .w1 = 0x20060000, .s3 = 0x730, .e2 = 0 },
+        .{ .h = 0x4060246F, .w1 = 0x20060004, .s3 = 0xABC, .e2 = 0x123 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[3] = 0x730;
+        state.s[3] = 0xABC;
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, c.w1, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.s3, state.s[3]);
+        try testing.expectEqual(c.e2, state.e[2]);
+    }
+}

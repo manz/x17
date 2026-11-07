@@ -4317,12 +4317,17 @@ fn aguXrEval(fn_op: u32, x: u32, r: u32) u32 {
     return v & 0xFFFF;
 }
 
-/// 0x0F head class 000 with a class-001 second (fact 279):
-/// e<{w1[0], head[31:29]}> <- #head[20:5].  The bundle's Y store is not
-/// modelled.
+/// 0x0F with a class-001 second (fact 279, 552): e<{w1[0], head[31:29]}> <- #head[20:5];
+/// with that index 0, s<head[24:21]> <- e<w1[20:17]>, + 1 when w1[2].  The bundle's Y store is
+/// not modelled.
 fn execSte(state: *State, bundle: []const u32) RunError!void {
-    const dest: u32 = ((bundle[1] & 1) << 3) | (bundle[0] >> 29);
-    if (dest != 0) state.e[dest] = (bundle[0] >> 5) & 0xFFFF;
+    const w1 = bundle[1];
+    const dest: u32 = ((w1 & 1) << 3) | (bundle[0] >> 29);
+    if (dest != 0) {
+        state.e[dest] = (bundle[0] >> 5) & 0xFFFF;
+        return;
+    }
+    state.s[(bundle[0] >> 21) & 0xF] = (state.e[(w1 >> 17) & 0xF] +% ((w1 >> 2) & 1)) & 0xFFFF;
 }
 
 fn execLde(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
