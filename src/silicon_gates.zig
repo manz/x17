@@ -1278,6 +1278,17 @@ const GATES = [_]Gate{
         .post = &.{.{ .s_reg = .{ .index = 2, .value = 0x2468 } }},
     },
     .{
+        .name = "own-x17ysx",
+        // Upstream, fact 414 (3 of 3): mux 2 sign-extends, Y 0x8001 -> s2 = 0xFF8001.
+        .pre = &.{.{ .bank = .e, .index = 5, .value = 0x710 }},
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x710, .value = 0x8001 }},
+        .src =
+        \\x17.ms s2, #0, s0, e5, #1, #0, #0, R0, #2
+        \\x17.halt
+        ,
+        .post = &.{.{ .s_reg = .{ .index = 2, .value = 0xFF8001 } }},
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},
