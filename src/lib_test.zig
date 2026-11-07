@@ -3686,3 +3686,35 @@ test "psel also performs shape A's head write" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x19agu writes s<head[24:21]> through its w1[14:12] mux" {
+    // fact 532: own-x19agx, X:[A3 = 0x310] = 0x567: mux 5 gives s5 = 0x567, mux 4
+    // 0xB380, w3[1] = 0 the stale yd (0xA050); mux 0 zero, mux 1 the AGU value (R5's, e6 + 1);
+    // mux 2 refuses.
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, w3: u32, s5: ?u32, w2: u32 = 0x02460000 }{
+        .{ .w1 = 0x02045004, .w3 = 0x0c232a82, .s5 = 0x567 },
+        .{ .w1 = 0x02044004, .w3 = 0x0c232a82, .s5 = 0xB380 },
+        .{ .w1 = 0x02045004, .w3 = 0x0c232a80, .s5 = 0xA050 },
+        .{ .w1 = 0x02040004, .w3 = 0x0c232a82, .s5 = 0 },
+        .{ .w1 = 0x02041004, .w3 = 0x0c232a82, .s5 = 0x101 },
+        .{ .w1 = 0x02042004, .w3 = 0x0c232a82, .s5 = null },
+        .{ .w1 = 0x02045004, .w3 = 0x0c232a82, .s5 = 0x777, .w2 = 0x02660000 }, // A19
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[3] = 0x310;
+        state.e[6] = 0x100;
+        state.s[5] = 0xABC;
+        state.yd = 0xA050;
+        try state.x_mem.put(gpa, 0x310, 0x567);
+        state.a[19] = 0x320;
+        try state.x_mem.put(gpa, 0x320, 0x777);
+        const r = emu.runFrom(gpa, &state, &.{ 0x80a00019, c.w1, c.w2, c.w3, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.s5) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+            try testing.expectEqual(@as(u32, 0x101), state.r[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

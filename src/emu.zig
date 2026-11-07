@@ -2754,8 +2754,22 @@ fn execX19Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const v = try agu10Eval(fn_op, x_val, y_val);
     // w2[24] = 1: the e destination takes #head[20:5] (fact 270).
     const e_val: u32 = if ((bundle[2] >> 24) & 1 == 1) (bundle[0] >> 5) & 0xFFFF else v;
+    const s_val = try x19AguS(state, bundle, v);
     if (dest_e != 0) state.e[dest_e] = e_val;
     if (dest_r != 0) state.r[dest_r] = v;
+    state.s[(bundle[0] >> 21) & 0xF] = s_val;
+}
+
+/// x19agu's s<head[24:21]> source, mux w1[14:12] (fact 532): 0 zero, 1 the AGU value, 4
+/// (X << 7)[15:0], 5 X, with X = X:[A<w2[21:17]>], or the stale yd latch when w3[1] = 0.  The
+/// other muxes are OPEN.
+fn x19AguS(state: *State, bundle: []const u32, agu: u32) RunError!u32 {
+    const mux: u32 = (bundle[1] >> 12) & 7;
+    if (mux == 0) return 0;
+    if (mux == 1) return agu;
+    if (mux != 4 and mux != 5) return RunError.UnknownForm;
+    const x: u32 = if ((bundle[3] >> 1) & 1 == 0) state.yd else state.readX(state.a[(bundle[2] >> 17) & 0x1F]) orelse 0;
+    return if (mux == 4) (x << 7) & 0xFFFF else x;
 }
 
 fn execX19Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
