@@ -3008,30 +3008,30 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
     if (alu_dest != 0) state.s[alu_dest] = alu_val;
 }
 
-/// The class-100 row's s ALU (fact 517), head[31] = 1 with S2 & 0x01FFFFF8 = 0 only:
-/// s<S1[28:25]> <- cell (head[29:27], S2[2:0]) of (a = s<S2[28:25]>, n = S1[31:29]).  Mux 0
-/// even codes but 6 give a << n, odd but 7 (a & 0xF00) << n; mux 1 even codes a >> n; mux 2
-/// a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN; measured on a positive a with
-/// results inside 23 bits, so anything else is refused too.
+/// The class-100 row's s ALU (fact 517, 518), gated on S2 & 0x01FFFFF8 = 0 alone:
+/// s<S1[28:25]> <- cell (head[29:27], S2[2:0]) of (a = s<S2[28:25]>, n = S1[31:29]), 24-bit
+/// wrapping.  Mux 0 even codes but 6 give a << n, odd but 7 (a & 0xF00) << n; mux 1 even codes
+/// a >> n (arithmetic); mux 2 a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN.  Outside
+/// the gate the one shape seen, S2[6] alone, writes 0 (92); other shapes are refused.
 fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
-    if (h >> 31 == 0 or s2 & 0x01FFFFF8 != 0) return RunError.UnknownForm;
-    const a: i64 = sx24(state.s[(s2 >> 25) & 0xF]);
-    if (a < 0) return RunError.UnknownForm;
-    const n: u6 = @intCast(s1 >> 29);
+    const extra = s2 & 0x01FFFFF8;
+    if (extra == 0x40) return 0;
+    if (extra != 0) return RunError.UnknownForm;
+    const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
+    const n: u5 = @intCast(s1 >> 29);
     const code: u32 = s2 & 7;
-    const r: i64 = switch ((h >> 27) & 7) {
+    const r: u32 = switch ((h >> 27) & 7) {
         0 => if (code == 6 or code == 7) return RunError.UnknownForm else if (code & 1 == 0) a << n else (a & 0xF00) << n,
-        1 => if (code & 1 == 0) a >> n else return RunError.UnknownForm,
+        1 => if (code & 1 == 0) @bitCast(@as(i32, @intCast(sx24(a))) >> n) else return RunError.UnknownForm,
         2 => switch (code >> 1) {
-            0 => a + n,
-            1 => a - n,
+            0 => a +% n,
+            1 => a -% n,
             2 => a,
-            else => a + 1,
+            else => a +% 1,
         },
         else => return RunError.UnknownForm,
     };
-    if (r < 0 or r > 0x7FFFFF) return RunError.UnknownForm;
-    return @intCast(r);
+    return r & M24;
 }
 
 /// x16 S1 class 001 / S2 class 111 (fact 90): Y load s<head[24:21]> <-

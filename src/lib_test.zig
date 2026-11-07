@@ -2782,6 +2782,11 @@ test "the 0x16 class-100 row's s ALU: shifts, masked shift, add and subtract by 
         .{ .s3 = 0x3303, .mux = 0, .code = 6, .want = null },
         .{ .s3 = 0x3303, .mux = 1, .code = 1, .want = null },
         .{ .s3 = 0x3303, .mux = 3, .code = 0, .want = null },
+        // 518: arithmetic >>, wrapping << and -
+        .{ .s3 = 0xFF8000, .mux = 1, .code = 0, .want = 0xFFFF00 },
+        .{ .s3 = 0xFF8000, .mux = 0, .code = 0, .want = 0xC00000 },
+        .{ .s3 = 0x7FFF, .mux = 0, .code = 0, .want = 0x3FFF80 },
+        .{ .s3 = 3, .mux = 2, .code = 2, .want = 0xFFFFFC },
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -2793,8 +2798,20 @@ test "the 0x16 class-100 row's s ALU: shifts, masked shift, add and subtract by 
             try testing.expectEqual(v, state.s[5]);
         } else try testing.expectError(error.UnknownForm, r);
     }
-    // S2[6] set breaks the rule: refused
-    var state = emu.State{};
-    defer state.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x801211d6, 0xeb000007, 0x86000040, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    // 518: own-b16h31 (head[31] = 0 runs the same ALU); S2[6] alone writes 0; other shapes refuse
+    for ([_]struct { h: u32, s2: u32, want: ?u32 }{
+        .{ .h = 0x001211d6, .s2 = 0x86000000, .want = 0x8080 },
+        .{ .h = 0x801211d6, .s2 = 0x86000040, .want = 0 },
+        .{ .h = 0x801211d6, .s2 = 0x86000080, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0x101;
+        state.s[5] = 0x5555;
+        const r = emu.runFrom(gpa, &state, &.{ c.h, 0xeb000007, c.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
 }
