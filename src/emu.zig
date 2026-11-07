@@ -811,7 +811,15 @@ fn execX04Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const yd: u32 = (state.getY(state.e[(w3 >> 27) & 0xF]) orelse 0) & 0xFFFF;
     const dest_r: u32 = (w3 >> 19) & 0xF;
     const r_val: u32 = if (dest_r == 0) 0 else switch (rsel) {
-        0 => yd,
+        // fact 522: w5[30] = 1 in mode w1[13:11] = 4 routes the low half of
+        // s<w2[8:5]> * s<w2[4:1]> (doubled unless w1[17]); otherwise the Y read.
+        0 => blk: {
+            if ((w5 >> 30) & 1 == 0 or (w1 >> 11) & 7 != 4) break :blk yd;
+            if ((w5 >> 25) & 1 == 1) return RunError.UnknownForm;
+            const prod: u64 = @bitCast(@as(i64, sx24(state.s[(w2 >> 5) & 0xF])) * sx24(state.s[(w2 >> 1) & 0xF]));
+            const sh: u6 = if ((w1 >> 17) & 1 == 1) 0 else 1;
+            break :blk @truncate((prod << sh) & 0xFFFF);
+        },
         1 => blk: {
             const y: u32 = state.r[(head >> 27) & 0xF];
             const i: u32 = (head >> 11) & 0xFFFF;
@@ -1041,13 +1049,14 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     // 14 (y) measured; w5[21] = 0: Y:[e<w4[8:5]>], Y:[0] at index 0.  Reads before this
     // bundle's writes.  0x00 has the same slot (516) and three more sources: w5[26:25] = 11 the
     // immediate, 10 zero, and w5[25] = 1 in mode 4 the low 16 bits of s<w6[27:24]> *
-    // s<w6[31:28]>, doubled unless w1[17].  On 0x01 those bits read Y (505; OPEN).
+    // s<w6[31:28]>, doubled unless w1[17].  On 0x01 the product route holds too (522); the
+    // immediate and zero bits read Y there (505; OPEN).
     const r_dest: u32 = ((w4 & 1) << 3) | (w3 >> 29);
     const r_val: u32 = if (r_dest == 0) 0 else blk: {
-        if ((w5 >> 21) & 1 == 0 and !x01) {
+        if ((w5 >> 21) & 1 == 0) {
             const sel: u32 = (w5 >> 25) & 3;
-            if (sel == 3) break :blk imm;
-            if (sel == 2) break :blk 0;
+            if (sel == 3 and !x01) break :blk imm;
+            if (sel == 2 and !x01) break :blk 0;
             if (sel == 1 and mode == 4) {
                 const prod: u64 = @bitCast(@as(i64, sx24(state.s[(w6 >> 24) & 0xF])) * sx24(state.s[(w6 >> 28) & 0xF]));
                 const sh: u6 = if ((w1 >> 17) & 1 == 1) 0 else 1;
@@ -1356,12 +1365,19 @@ fn execX02Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 }
 
 fn execX12Aset(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
     if (bundle.len < 2) return RunError.UnknownForm;
     const head = bundle[0];
     const s = bundle[1];
     const dest_a: u32 = 2 * (s & 0x7);
     const src_r: u32 = (head >> 13) & 0xF;
+    // fact 522: S[10:8] = 101 also stores X:[A<S[19:15]>] <- sx24 s<S[7:4]>, the address
+    // read before this bundle's A write.  Source index 0 is OPEN (neither s0 nor a constant).
+    if ((s >> 8) & 7 == 5) {
+        const src_s: u32 = (s >> 4) & 0xF;
+        if (src_s == 0) return RunError.UnknownForm;
+        const addr: u32 = state.a[(s >> 15) & 0x1F];
+        state.x_mem.put(gpa, addr, state.s[src_s] & M24) catch return RunError.OutOfMemory;
+    }
     if (dest_a == 0) return;
     state.a[dest_a & 0xF] = if (src_r == 0) 0 else state.r[src_r];
 }

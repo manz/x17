@@ -3370,3 +3370,72 @@ test "pns_channel fills noise bands as the model does, both modes" {
     try testing.expect(noisy > 200);
     try testing.expect(corr > 15);
 }
+
+test "aset12 with S[10:8] = 101 also stores s at X:[A], the address read before the A write" {
+    // fact 522: X:[A<S[19:15]>] <- sx24 s<S[7:4]>; source index 0 is OPEN.
+    const gpa = testing.allocator;
+    for ([_]struct { xa: u32, src: u32, want: ?u32 }{
+        .{ .xa = 10, .src = 7, .want = 0x300 },
+        .{ .xa = 17, .src = 7, .want = 0x500 },
+        .{ .xa = 10, .src = 0, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[10] = 0x300;
+        state.a[17] = 0x500;
+        state.r[3] = 0x345;
+        state.s[7] = 0x823456;
+        const s1: u32 = 0xA0000000 | c.xa << 15 | 5 << 8 | c.src << 4 | 5;
+        const r = emu.runFrom(gpa, &state, &.{ 0x02C00012 | 3 << 13, s1, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |addr| {
+            _ = try r;
+            try testing.expectEqual(@as(?u32, 0x823456), state.readX(addr));
+            try testing.expectEqual(@as(u32, 0x345), state.a[10]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "the 0x04 R slot: the Y read, or the product's low half with w5[30] in mode 4" {
+    // fact 522: own-x04yd's R value is the w5[25] Y read; w5[30] = 1 with w1[13:11] = 4
+    // gives (s<w2[8:5]> * s<w2[4:1]>)[15:0], doubled unless w1[17].
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, w5: u32, want: ?u32 }{
+        .{ .w1 = 0x582, .w5 = 0x32060000, .want = 0x1357 },
+        .{ .w1 = 0x582 | 4 << 11, .w5 = 0x70060000, .want = (0x1234 * 0x0567 * 2) & 0xFFFF },
+        .{ .w1 = 0x582 | 4 << 11 | 1 << 17, .w5 = 0x70060000, .want = (0x1234 * 0x0567) & 0xFFFF },
+        .{ .w1 = 0x582 | 3 << 11, .w5 = 0x70060000, .want = 0x1357 },
+        .{ .w1 = 0x582, .w5 = 0x70060000, .want = 0x1357 },
+        .{ .w1 = 0x582 | 4 << 11, .w5 = 0x72060000, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[4] = 0x700;
+        state.s[3] = 0x1234;
+        state.s[4] = 0x0567;
+        try state.y_mem.put(gpa, 0x700, 0x1357);
+        const r = emu.runFrom(gpa, &state, &.{ 0x10004004, c.w1, 0x00100000 | 3 << 5 | 4 << 1, 4 << 27 | 5 << 19, 0x00000801, c.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.r[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "the 0x01 R slot takes the product route too; its immediate and zero bits read Y" {
+    // fact 522: own-x01mp, s7 = 0x100, s1 = 3: R2 = 0x300 (mode 4, w1[17] = 1). The
+    // 0x00 immediate (w5[26:25] = 11) and zero (10) read Y:[e<w4[8:5]>] on 0x01 (505).
+    const gpa = testing.allocator;
+    for ([_]struct { w5: u32, want: u32 }{
+        .{ .w5 = 0xc2000900, .want = 0x300 },
+        .{ .w5 = 0xc6000900, .want = 0x4242 },
+        .{ .w5 = 0xc4000900, .want = 0x4242 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[7] = 0x100;
+        state.s[1] = 3;
+        try state.y_mem.put(gpa, 0, 0x4242);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x409dd001, 0x0002a502, 0xe8008000, 0x40000100, 0x00000000, c.w5, 0x17000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.r[2]);
+    }
+}
