@@ -2564,9 +2564,20 @@ fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 
 /// (S1 class != 0, S2 class 011) (fact 275): the x17ld bundle becomes
 /// a Y store, Y:[e<S1[18:15]>] <- s<{S2[0], S1[31:29]}>, when S2[12:11] = 11.
+/// With S2[3:1] = 1 or 5 (439): R<S1[14:11]> <- X17LD_OP[h[10:5]](s<S2[28:25]>, S1[26:23]),
+/// S1[27] = 1 (0 wedges). Only row 0, a << n, is measured, and only with S2[12:11] = 10 (no Y
+/// store seen); the other rows and the store beside it are refused.
 fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const s1 = bundle[1];
     const s2 = bundle[2];
+    const r_mode: u32 = (s2 >> 1) & 7;
+    if (r_mode == 1 or r_mode == 5) {
+        if ((s1 >> 27) & 1 == 0 or (bundle[0] >> 5) & 0x3F != 0 or (s2 >> 11) & 3 != 2) return RunError.UnknownForm;
+        const a: u32 = state.s[(s2 >> 25) & 0xF];
+        const r_dest: u32 = (s1 >> 11) & 0xF;
+        if (r_dest != 0) state.r[r_dest] = (a << @intCast((s1 >> 23) & 0xF)) & 0xFFFF;
+        return;
+    }
     if ((s2 >> 11) & 3 != 3) return RunError.UnknownForm;
     const v: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
     state.y_mem.put(gpa, state.e[(s1 >> 15) & 0xF], v) catch return RunError.OutOfMemory;

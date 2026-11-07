@@ -1337,6 +1337,16 @@ const GATES = [_]Gate{
         },
     },
     .{
+        .name = "own-x17styr",
+        // Upstream, fact 439 (3 of 3): 00000017 A902C800 66001202, R9 <- s3 << 2.
+        .pre = &.{.{ .bank = .s, .index = 3, .value = 0x123 }},
+        .src =
+        \\x17.styr R9, s3, #2, e5, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .r_reg = .{ .index = 9, .value = 0x48C } }},
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},

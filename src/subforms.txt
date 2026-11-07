@@ -670,6 +670,10 @@ x17.ms     3   0x00000017   0x00000000   0xA0000000
 # x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275).
 x17.sty    3   0x00000017   0x00000109   0x60003800
 
+# x17.styr: the x17sty row's R write, S2[3:1] = 1, S1[27] = 1, S2[12:11] = 10 (fact 439):
+# R<S1[14:11]> <- s<S2[28:25]> << S1[26:23] (X17LD_OP row 0, h[10:5] = 0).
+x17.styr   3   0x00000017   0xA8000000   0x60001202
+
 # x17.yld: S1/S2 class 000, s <- Y:[e] (fact 274 / own-x17yld).
 x17.yld    3   0x00000177   0x0E000000   0x1C1A8180
 

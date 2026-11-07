@@ -452,3 +452,5 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12
 # stx0f.e, low5 0x0F S class 101 with S[22], S[20] (fact 437): beside the X store, e<S[6:3]> <- #head[20:5] under any
 # head[31:30]; measured with S[22:20] = 111 only.  own-st0fe
+# x17.styr, x17sty (S1 class != 0, S2 class 011) with S2[3:1] = 1 or 5 (fact 439): R<S1[14:11]> <- X17LD_OP[h[10:5]](s<S2[28:25]>,
+# S1[26:23]), S1[27] = 1 (0 wedges); row 0 (a << n) only, with S2[12:11] = 10 and no Y store seen.  own-x17styr
