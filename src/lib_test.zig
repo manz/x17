@@ -4517,3 +4517,19 @@ test "the Y read forms that set yd (fact 571)" {
         try testing.expectEqual(@as(u32, 0x0BEE), state.s[5]);
     }
 }
+
+test "x00 control 3 jumps like 1, by sx13(w1[30:18]) (fact 572)" {
+    const gpa = testing.allocator;
+    for ([_]struct { ctl: u32, w1: u32, off: i32 }{
+        .{ .ctl = 3, .w1 = 0x1FFF << 18, .off = -1 },
+        .{ .ctl = 1, .w1 = 0x1FFF << 18, .off = -1 },
+        .{ .ctl = 3, .w1 = 0xFF << 18, .off = 0xFF }, // 8-bit 0xFF is not -1
+        .{ .ctl = 3, .w1 = 0x1000 << 18, .off = -0x1000 },
+        .{ .ctl = 1, .w1 = 0x0123 << 18, .off = 0x123 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try emu.executeBundle(gpa, &state, &.{ 0, c.w1, 0, c.ctl, 0, 0, 0 });
+        try testing.expectEqual(@as(?i32, c.off), state.pending_jmp_offset);
+    }
+}

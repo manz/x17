@@ -1106,7 +1106,9 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const ctl: u32 = w3 & 0x1F;
     const target: u32 = (w1 >> 18) & 0xFF;
     switch (ctl) {
-        1, 3, 0xE, 0x11, 0x13, 0x16, 0x17 => state.pending_jmp_offset = @intCast(target),
+        // 1 and 3 (572): q + sx13(w1[30:18]), unconditional, two delay slots, no link.
+        1, 3 => state.pending_jmp_offset = @as(i32, @as(i13, @bitCast(@as(u13, @truncate(w1 >> 18))))),
+        0xE, 0x11, 0x13, 0x16, 0x17 => state.pending_jmp_offset = @intCast(target),
         4 => state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc)),
         0, 2, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
         else => return RunError.UnknownForm,
