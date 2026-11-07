@@ -4540,3 +4540,31 @@ test "x00's jump controls take sx8(w1[25:18]) (fact 572, 573)" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "no A index is masked to 4 bits (A has 32 registers)" {
+    const src = @embedFile("emu.zig");
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, src, i, "state.a[")) |at| : (i = at + 1) {
+        const close = std.mem.indexOfScalarPos(u8, src, at, ']') orelse break;
+        try testing.expect(std.mem.indexOf(u8, src[at..close], "& 0xF)") == null);
+        try testing.expect(!std.mem.endsWith(u8, src[at..close], "& 0xF"));
+    }
+}
+
+test "A16 and above through xld10 and x19aagu" {
+    const gpa = testing.allocator;
+    // xld10: A<4*S1[2:0] + h[31:30]> = A31 (own-xld10's shape with both fields maxed).
+    var x = emu.State{};
+    defer x.deinit(gpa);
+    x.a[31] = 0x330;
+    try x.x_mem.put(gpa, 0x330, 0x777);
+    _ = try emu.runFrom(gpa, &x, &.{ 0xC0A17DD0, 0x60640187, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x777), x.s[3]);
+    // x19aagu: A<w1[7:3]> = A17 <- AGUA(A<w3[19:15]> = A18) (own-x19aagu's fn 2, i = 16).
+    var g = emu.State{};
+    defer g.deinit(gpa);
+    g.a[18] = 0x100;
+    _ = try emu.runFrom(gpa, &g, &.{ 0x00000019, 0x06000088, 0x00000000, 0x40290008, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expect(g.a[17] != 0);
+    try testing.expectEqual(@as(u32, 0), g.a[1]);
+}

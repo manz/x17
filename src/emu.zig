@@ -627,7 +627,7 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // w5[19] = 1: the w2 slot takes the w4 slot's X read instead of P
     // (fact 158, 161 / own-x02c6).
     if ((bundle[5] >> 19) & 1 == 1) {
-        const a_idx: u32 = (bundle[4] >> 17) & 0xF;
+        const a_idx: u32 = (bundle[4] >> 17) & 0x1F;
         if (dest_s != 0) state.s[dest_s] = state.readX(state.a[a_idx]) orelse 0;
         return;
     }
@@ -678,7 +678,7 @@ fn execX18C1(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const y: u32 = state.r[(w3 >> 11) & 0xF];
     const dest_r: u32 = (w3 >> 7) & 0xF;
     const r_val: u32 = if ((h >> 30) & 1 == 1)
-        agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0xF], y, 0)
+        agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], y, 0)
     else
         agu10bEval((w1 >> 28) & 0xF, xe_val, y);
     const st_val: u32 = state.s[(h >> 22) & 0xF] & 0xFFFF;
@@ -893,7 +893,7 @@ fn execX04Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     };
     const dest_s: u32 = (w4 >> 3) & 0xF;
     const xst = (w5 >> 22) & 3 == 3;
-    const x_addr: u32 = state.a[(w4 >> 17) & 0xF];
+    const x_addr: u32 = state.a[(w4 >> 17) & 0x1F];
     const x_val: u32 = state.s[((w2 & 1) << 3) | (w1 >> 29)] & M24;
     if (xst) state.x_mem.put(gpa, x_addr, x_val) catch return RunError.OutOfMemory;
     if (dest_r != 0) state.r[dest_r] = r_val;
@@ -1036,7 +1036,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const x_on = (w5 >> xe) & 3 == 3;
     const y_addr: u32 = state.e[(w4 >> 5) & 0xF];
     const y_val: u32 = state.s[(w4 >> 13) & 0xF] & 0xFFFF;
-    const x_addr: u32 = state.a[(w2 >> 18) & 0xF];
+    const x_addr: u32 = state.a[(w2 >> 18) & 0x1F];
     const x_src: u32 = (w2 >> 10) & 0xF;
     const x_val: u32 = if (x01 and x_src == 0) (state.xd << 8) & M24 else state.s[x_src] & M24;
 
@@ -1339,7 +1339,7 @@ fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const w5 = bundle[5];
     const fn_op: u32 = (w2 >> 22) & 0x1F;
     const dest_a: u32 = (w3 >> 10) & 0x1F;
-    const x_val: u32 = state.a[w3 & 0xF];
+    const x_val: u32 = state.a[w3 & 0x1F];
     const i_val: u32 = ((w5 & 1) << 15) | ((w4 >> 17) & 0x7FFF);
     // Second A dest (fact 193): A<w2[21:17]> <- A<w3[4:0]>, or with
     // w5[5] = 1 the Y read Y:[e<w3[30:27]>].
@@ -1348,9 +1348,9 @@ fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // AGU table "5" = x + i (fact 164).
     if (dest_a != 0) {
         if (fn_op != 5) return RunError.UnknownForm;
-        state.a[dest_a & 0xF] = (x_val +% i_val) & M24;
+        state.a[dest_a] = (x_val +% i_val) & M24;
     }
-    if (acp_dest != 0 and acp_dest != dest_a) state.a[acp_dest & 0xF] = acp_val;
+    if (acp_dest != 0 and acp_dest != dest_a) state.a[acp_dest] = acp_val;
 }
 
 fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -1362,7 +1362,7 @@ fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (w4 >> 3) & 0xF;
     const a_hi: u32 = w1 & 0x7;
     const a_lo: u32 = (head >> 30) & 0x3;
-    const a_idx: u32 = ((a_hi << 2) | a_lo) & 0xF;
+    const a_idx: u32 = ((a_hi << 2) | a_lo) & 0x1F;
     // w5[1] = 1: X:[A<4*w1[2:0] + h[31:30]>] whatever w5[21] says (565).  w5[1] = 0: w5[21] = 1
     // reads Y:[e<w3[30:27]>] (190 / own-x03yrd), 0 delivers yd (565).
     const w5 = bundle[5];
@@ -1436,7 +1436,7 @@ fn execX12Aset(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         state.x_mem.put(gpa, addr, state.s[src_s] & M24) catch return RunError.OutOfMemory;
     }
     if (dest_a == 0) return;
-    state.a[dest_a & 0xF] = if (src_r == 0) 0 else state.r[src_r];
+    state.a[dest_a] = if (src_r == 0) 0 else state.r[src_r];
 }
 
 fn execX12Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -1636,7 +1636,7 @@ fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const half: bool = (s1 & 1) == 1;
     // S2[3:2] = 11: X:[A<S2[8:4]>] <- s<S1[25:22]> (fact 209).
     if ((s2 >> 2) & 3 == 3) {
-        try state.x_mem.put(gpa, state.a[(s2 >> 4) & 0xF], state.s[(s1 >> 22) & 0xF] & M24);
+        try state.x_mem.put(gpa, state.a[(s2 >> 4) & 0x1F], state.s[(s1 >> 22) & 0xF] & M24);
     }
     if (dest_s == 0) return;
     // head[28] = 0: the multiply slot writes 0 (fact 121).
@@ -1719,7 +1719,7 @@ fn execX16Xld(state: *State, bundle: []const u32) RunError!void {
     if ((s2 >> 3) & 1 == 1) state.x16_xi = (s2 >> 4) & 0x1F;
     const xi = state.x16_xi orelse return RunError.UnknownForm;
     const dest: u32 = (s1 >> 28) & 0xF;
-    const addr: u32 = if (xi == 0) 0 else state.a[xi & 0xF];
+    const addr: u32 = if (xi == 0) 0 else state.a[xi & 0x1F];
     if (dest != 0) state.s[dest] = (state.readX(addr) orelse 0) & 0xFFFF;
 }
 
@@ -1731,7 +1731,7 @@ fn execX16St2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const s2 = bundle[2];
     const xv: u32 = state.s[(s1 >> 28) & 0xF] & M24;
     const yv: u32 = state.s[s2 & 0xF] & 0xFFFF;
-    if ((s2 >> 13) & 3 == 3) try state.x_mem.put(gpa, state.a[(s2 >> 8) & 0xF], xv);
+    if ((s2 >> 13) & 3 == 3) try state.x_mem.put(gpa, state.a[(s2 >> 8) & 0x1F], xv);
     if ((s2 >> 16) & 1 == 1 and (s2 >> 18) & 1 == 1) {
         state.y_mem.put(gpa, state.e[(s2 >> 21) & 0xF], yv) catch return RunError.OutOfMemory;
     }
@@ -1874,7 +1874,7 @@ fn execX16AluX(state: *State, bundle: []const u32) RunError!void {
     const xi = state.x16_xi orelse return RunError.UnknownForm;
     if (xi == 0) return RunError.UnknownForm;
     const dest: u32 = (bundle[0] >> 21) & 0xF;
-    if (dest != 0) state.s[dest] = (state.readX(state.a[xi & 0xF]) orelse 0) & 0xFFFF;
+    if (dest != 0) state.s[dest] = (state.readX(state.a[xi & 0x1F]) orelse 0) & 0xFFFF;
 }
 
 /// S1/S2 class 000 (fact 115, 122, 217): S2[3] latches xi <- S2[8:4];
@@ -1889,13 +1889,13 @@ fn execX16Ld(state: *State, bundle: []const u32) RunError!void {
     if ((s2 >> 3) & 1 == 1) state.x16_xi = (s2 >> 4) & 0x1F;
     if (!imm_mux) try x16Alu(state, s1, s2);
     const dest: u32 = (h >> 21) & 0xF;
-    if (h >> 31 == 1 and (s1 >> 3) & 1 == 0) state.a[(2 * (s1 & 7) + 1) & 0xF] = (h >> 5) & 0xFFFF;
+    if (h >> 31 == 1 and (s1 >> 3) & 1 == 0) state.a[2 * (s1 & 7) + 1] = (h >> 5) & 0xFFFF;
     if (dest == 0) return;
     const src: u32 = (s1 >> 12) & 7;
     const v: u32 = switch (src) {
         5 => blk: {
             const xi = state.x16_xi orelse return RunError.UnknownForm;
-            const addr: u32 = if (xi == 0) 0 else state.a[xi & 0xF];
+            const addr: u32 = if (xi == 0) 0 else state.a[xi & 0x1F];
             break :blk (state.readX(addr) orelse 0) & 0xFFFF;
         },
         7 => 0,
@@ -1903,7 +1903,7 @@ fn execX16Ld(state: *State, bundle: []const u32) RunError!void {
         // S1[26:25] = 11 with mux 011: X:[A<xi>][7:0] << 8 (fact 217).
         3 => if (imm_mux) blk: {
             const xi = state.x16_xi orelse return RunError.UnknownForm;
-            const addr: u32 = if (xi == 0) 0 else state.a[xi & 0xF];
+            const addr: u32 = if (xi == 0) 0 else state.a[xi & 0x1F];
             break :blk ((state.readX(addr) orelse 0) & 0xFF) << 8;
         } else return RunError.UnknownForm,
         else => return RunError.UnknownForm,
@@ -2041,7 +2041,7 @@ fn execX18Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const w2 = bundle[2];
     const dest_s: u32 = (head >> 21) & 0xF;
     const src_a: u32 = (w2 >> 17) & 0x1F;
-    const a_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
+    const a_val: u32 = if (src_a == 0) 0 else state.a[src_a];
     const v: u32 = state.readX(a_val) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
 }
@@ -2169,7 +2169,7 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 /// The class 010/101 R slot (fact 194, 195):
 /// R<w3[10:7]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w3[14:11]>).
 fn x18RSlot(state: *const State, w3: u32) u32 {
-    return agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0xF], state.r[(w3 >> 11) & 0xF], 0);
+    return agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], state.r[(w3 >> 11) & 0xF], 0);
 }
 
 /// Class 010 (fact 176, 194, 267): X slot s<head[24:21]> by mux
@@ -2388,7 +2388,7 @@ fn execXst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const a_half: u32 = (head >> 30) & 0x3;
     const a_low: u32 = s1 & 0x7;
     const src_s: u32 = (s1 >> 4) & 0xF;
-    const a_idx: u32 = (4 * a_low + a_half) & 0xF;
+    const a_idx: u32 = (4 * a_low + a_half) & 0x1F;
     const addr: u32 = state.a[a_idx];
     const value: u32 = state.s[src_s] & M24;
     try state.x_mem.put(gpa, addr, value);
@@ -2406,7 +2406,7 @@ fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const imm16: u32 = (head >> 5) & 0xFFFF;
     const dest_s_x: u32 = (s1 >> 7) & 0xF;
     const a_low: u32 = s1 & 0x7;
-    const a_idx: u32 = (4 * a_low + a_half) & 0xF;
+    const a_idx: u32 = (4 * a_low + a_half) & 0x1F;
     const addr: u32 = state.a[a_idx];
     const v: u32 = state.readX(addr) orelse 0;
     if (dest_s_x != 0) state.s[dest_s_x] = v;
@@ -2645,7 +2645,7 @@ fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const v: u32 = state.s[src_s] & 0xFFFF;
     const w3 = bundle[3];
     const dest_s: u32 = (bundle[0] >> 21) & 0xF;
-    const s_val = agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0xF], 0, 2 * (w3 & 0x7FFF));
+    const s_val = agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], 0, 2 * (w3 & 0x7FFF));
     state.y_mem.put(gpa, state.e[addr_e], v) catch return RunError.OutOfMemory;
     if (dest_s != 0) state.s[dest_s] = s_val;
 }
@@ -2698,7 +2698,7 @@ fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const w3 = bundle[3];
     const dest_s: u32 = (head >> 21) & 0xF;
     const src_a: u32 = (w3 >> 15) & 0x1F;
-    const a_val: u32 = if (src_a == 0) 0 else state.a[src_a & 0xF];
+    const a_val: u32 = if (src_a == 0) 0 else state.a[src_a];
     const v: u32 = state.readX(a_val) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
 }
@@ -2875,7 +2875,7 @@ fn execX19RAgua(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunE
     _ = gpa;
     const w3 = bundle[3];
     const dest_r: u32 = (w3 >> 7) & 0xF;
-    const x_val: u32 = state.a[(w3 >> 15) & 0xF];
+    const x_val: u32 = state.a[(w3 >> 15) & 0x1F];
     // Only fn 0 with w3[14:0] = 0 is measured: x + 1 (w2[31] is the class
     // bit here, not an i bit, per own-x19ragua's 0x346).
     if (((w3 >> 20) & 0x1F) != 0 or (w3 & 0x7F) != 0) return RunError.UnknownForm;
@@ -2941,7 +2941,7 @@ fn execX19Aagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const imm_base: u32 = w3 & 0x7FFF;
     const imm_scaled: u32 = (imm_base << 1) | w2_bit31;
 
-    const x_val: u32 = state.a[src_a & 0xF];
+    const x_val: u32 = state.a[src_a];
     const new_val: u32 = aguaEval(fn_op, x_val, imm_scaled) orelse return RunError.UnknownForm;
     // s<w2[30:27]> <- Y:[e<w3[28:25]>][7:0] << 8 when w2[12:11] = 2 (342, 556); the other mux
     // values are OPEN.
@@ -2950,7 +2950,7 @@ fn execX19Aagu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         2 => ((state.getY(try yAddrE(state, (w3 >> 25) & 0xF)) orelse 0) & 0xFF) << 8,
         else => return RunError.UnknownForm,
     };
-    state.a[dest_a & 0xF] = new_val;
+    state.a[dest_a] = new_val;
     if (sv) |v| {
         state.s[sd] = v;
         state.yd = (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF; // 571
@@ -3530,7 +3530,7 @@ fn execX17Xld(state: *State, bundle: []const u32) RunError!void {
     if (alu_dest != 0 and aluOpen(&xld_alu_open, h)) return RunError.UnknownForm;
     const alu_v: ?u32 = if (alu_dest == 0) null else try aluWord(h, sx24(state.s[(h >> 11) & 0xF]), sx24(state.s[(s2 >> 25) & 0xF])) orelse
         return RunError.UnknownForm;
-    const a_idx: u32 = (8 * (s2 & 3) + (bundle[1] >> 29)) & 0xF;
+    const a_idx: u32 = (8 * (s2 & 3) + (bundle[1] >> 29)) & 0x1F;
     state.s[ld_dest] = state.readX(state.a[a_idx]) orelse 0;
     if (alu_v) |v| state.s[alu_dest] = v;
 }
@@ -3541,7 +3541,7 @@ fn execX17Xpm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
     const dest_s: u32 = (s2 >> 10) & 0xF;
     const a_half: u32 = s2 & 0x3;
-    const a_idx: u32 = (8 * a_half + 4) & 0xF;
+    const a_idx: u32 = (8 * a_half + 4) & 0x1F;
 
     const addr: u32 = state.a[a_idx];
     const loaded: u32 = state.readX(addr) orelse 0;
@@ -4517,7 +4517,7 @@ fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     const n: u32 = (s1 >> 1) & 0x7;
     if (dest_s != 0) state.s[dest_s] = 0;
     // op[0] = s1[0] adds 2 (fact 287): A<4n + 1 + 2*op[0]>.
-    const a_idx: u32 = (4 * n + 1 + 2 * (s1 & 1)) & 0xF;
+    const a_idx: u32 = (4 * n + 1 + 2 * (s1 & 1)) & 0x1F;
     state.a[a_idx] = addr;
 }
 
