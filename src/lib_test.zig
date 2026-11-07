@@ -3513,12 +3513,12 @@ test "dld loads s from X:[A] and s from Y:[e]" {
         .{ .w = 0x40918009 & ~@as(u32, 1 << 20), .s2 = null, .s5 = 0 },
         .{ .w = 0x40918009 | 5 << 26 | 4 << 5, .s2 = null, .s5 = 0 }, // [13] = 0: the stale latch
         .{ .w = 0x40918009 | 1 << 13 | 2 << 26 | 4 << 5, .s2 = null, .s5 = 0 }, // one s for both
-        .{ .w = 0x40918009 | 1 << 13 | 5 << 26 | 6 << 5, .s2 = null, .s5 = 0 }, // Y bit 15 set
+        .{ .w = 0x40918009 | 1 << 13 | 5 << 26 | 6 << 5, .s2 = 0x3333, .s5 = 0xFF9357 }, // sign-extended (54)
+        .{ .w = 0x40918009 & ~@as(u32, 1 << 30), .s2 = null, .s5 = 0 }, // [30] = 0 wedges (54, 116)
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
         state.s[2] = 0x0ABC;
-        state.s[0] = 0x55;
         for ([_]u32{ 1, 2, 3, 4, 12 }, 0..) |a, i| {
             state.a[a] = 0x300 + @as(u32, @intCast(i));
             try state.x_mem.put(gpa, 0x300 + @as(u32, @intCast(i)), 0x1111 * a);
@@ -3534,7 +3534,7 @@ test "dld loads s from X:[A] and s from Y:[e]" {
             _ = try r;
             try testing.expectEqual(v, state.s[2]);
             try testing.expectEqual(c.s5, state.s[5]);
-            try testing.expectEqual(@as(u32, 0x55), state.s[0]); // destination 0 writes nothing
+            try testing.expectEqual(@as(u32, 0), state.s[0]); // s0 reads 0 (438)
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
@@ -3591,4 +3591,21 @@ test "the x18 class-110 ALU2 slot: the rounded shift under code 0x04" {
             try testing.expectEqual(v, state.s[3]);
         } else try testing.expectError(error.UnknownForm, r);
     }
+}
+
+test "s0 reads 0 even when the state holds a value there" {
+    // fact 438: s0 always reads 0; stx has no index-0 case of its own.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        stx A3, s0
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[0] = 0xDEAD;
+    state.a[3] = 0x300;
+    _ = try emu.runFrom(gpa, &state, prog, 0, 16);
+    try testing.expectEqual(@as(?u32, 0), state.readX(0x300));
 }

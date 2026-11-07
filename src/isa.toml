@@ -492,6 +492,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12
 # S[10:8] = 101 (522) also stores X:[A<S[19:15]>] <- sx24 s<S[7:4]>, the address read before the bundle's A write; 48 of 48 rows. Source index 0 OPEN (neither s0 nor a constant), refused.
+# s0 (438): always reads 0, writes discarded; the emulator pins it around every bundle.  dld (524 answers): the Y half sign-extends (54); [30] = 0 wedges (54, 116), refused.
 # ldy and the class-0A parallel move (523): R<head[25:22]> also gets the Y word (16 bits), beside s<head[29:26]> or alone; bit 9 = 0 gives the stale latch for both (refused beside an R destination); [30] = 0 with an R destination refused.  48 of 48 rows, own-ldyr.
 # st.x (low5 0x0F X store, 525): also rimm's writes, R<S[14:11]> <- #head[20:5] (84 of 84 rows, own-stxr); its s<head[24:21]> write is 488's OPEN value, refused as on rimm.
 # stx0f.e, low5 0x0F S class 101 with S[22], S[20] (fact 437): beside the X store, e<S[6:3]> <- #head[20:5] under any

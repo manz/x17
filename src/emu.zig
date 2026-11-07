@@ -166,6 +166,9 @@ const named_forms = std.StaticStringMap(Handler).initComptime(.{
 });
 
 pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    // s0 always reads 0 and a write to it is discarded (fact 438).
+    state.s[0] = 0;
+    defer state.s[0] = 0;
     if (bundle.len == 0) return;
     // A0 reads 0 and writes to it have no visible effect, like R0 (Upstream probe
     // 2026-11-06: lda A0 then a readback gives 0; an x19mac A0 source reads 0).
@@ -752,8 +755,7 @@ fn execX03XStore(gpa: std.mem.Allocator, state: *State, bundle: []const u32) Run
     if (((bundle[5] >> 18) & 0x3) != 0b11) return;
     const src_s: u32 = ((bundle[2] & 1) << 3) | ((bundle[1] >> 29) & 0x7);
     const raw: u32 = state.s[src_s] & 0xFFFF;
-    const v: u32 = if (raw & 0x8000 != 0) raw | 0xFF0000 else raw;
-    try state.x_mem.put(gpa, state.a[x03AIndex(bundle)], v);
+    try state.x_mem.put(gpa, state.a[x03AIndex(bundle)], sx16To24(raw));
 }
 
 /// x03's R slot Y read (fact 519, own-x03ry): w5[21] = 1 with w5[27:26] = 00 gives
@@ -2071,7 +2073,7 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     var acc: i64 = 0;
     if (hi_dest != 0 or lo_dest != 0) {
         const p: i64 = sx16(state.s[(w2 >> 24) & 0xF]) * sx16(state.s[(w2 >> 28) & 0xF]) * 2;
-        const x_lo: i64 = @as(i64, if (x_lo_raw & 0x8000 != 0) x_lo_raw | 0xFF0000 else x_lo_raw);
+        const x_lo: i64 = sx16To24(x_lo_raw);
         const x: i64 = (@as(i64, state.s[(w1 >> 28) & 0xF] & 0xFFFF) << 24) + x_lo;
         acc = switch ((w3 >> 4) & 7) {
             3 => x,
@@ -2997,7 +2999,7 @@ fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
             0 => 0,
             // mux 2 sign-extends, like ldy (414); mux 4 is the same word (436), its top byte
             // unmeasured and taken as 2's
-            2, 4 => if (yv & 0x8000 != 0) yv | 0xFF0000 else yv,
+            2, 4 => sx16To24(yv),
             6 => (yv & 0xFF) << 8,
             else => return RunError.UnknownForm,
         };
@@ -3143,6 +3145,7 @@ fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (hd != 0) state.s[hd] = hv;
 }
 
+/// A 16-bit word sign-extended to 24 bits, as ldy loads one (fact 409).
 fn sx16To24(v: u32) u32 {
     const w: u32 = v & 0xFFFF;
     return if (w & 0x8000 != 0) w | 0xFF0000 else w;
@@ -3972,10 +3975,11 @@ fn execPlog(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 }
 
 /// dld, low5 0x09 with [31] = 0 (fact 524): s<[25:22]> <- X:[A<[19:15]>] when [20] = 1;
-/// s<[29:26]> <- Y:[e<[8:5]>] when [13] = 1; destination 0 writes nothing.  Refused: [20] = 0
-/// beside an X destination (another word, OPEN), [13] = 0 beside a Y one (the stale latch), a
-/// Y word with bit 15 set (its extension is unstated) and one s for both halves.
+/// s<[29:26]> <- sx16 Y:[e<[8:5]>] when [13] = 1 (as ldy, 54).  Refused: [30] = 0 (wedges, 54,
+/// 116), [20] = 0 beside an X destination (another word, OPEN), [13] = 0 beside a Y one (the
+/// stale latch) and one s for both halves.
 fn execDld(state: *State, head: u32) RunError!void {
+    if ((head >> 30) & 1 == 0) return RunError.UnknownForm;
     const xd: u32 = (head >> 22) & 0xF;
     const yd: u32 = (head >> 26) & 0xF;
     if (xd != 0 and yd == xd) return RunError.UnknownForm;
@@ -3987,11 +3991,10 @@ fn execDld(state: *State, head: u32) RunError!void {
     var yv: u32 = 0;
     if (yd != 0) {
         if ((head >> 13) & 1 == 0) return RunError.UnknownForm;
-        yv = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
-        if (yv & 0x8000 != 0) return RunError.UnknownForm;
+        yv = sx16To24((state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF);
     }
-    if (xd != 0) state.s[xd] = xv;
-    if (yd != 0) state.s[yd] = yv;
+    state.s[xd] = xv;
+    state.s[yd] = yv;
 }
 
 fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
@@ -4008,7 +4011,7 @@ fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const addr: u32 = try yAddrE(state, src_e);
     const raw: u32 = (state.getY(addr) orelse 0) & 0xFFFF;
     // Sign-extends the 16-bit word (fact 409, own-ldysx).
-    state.s[dest_s] = if (raw & 0x8000 != 0) raw | 0xFF0000 else raw;
+    state.s[dest_s] = sx16To24(raw);
     if (dest_r != 0) state.r[dest_r] = raw;
 }
 
@@ -4298,13 +4301,13 @@ test "ldi sets the scalar register" {
     try testing.expectEqual(@as(u32, 0), state.s[15]);
 }
 
-test "ldi to s0 maps from dest k=16" {
+test "ldi to s0 (dest k=16) is discarded: s0 always reads 0 (fact 438)" {
     var state = State{};
     defer state.deinit(testing.allocator);
 
     const b = try asm_mod.assembleOne("ldi s0, #0xDEAD");
     try executeBundle(testing.allocator, &state, b.slice());
-    try testing.expectEqual(@as(u32, 0xFFDEAD), state.s[0]); // sign-extended
+    try testing.expectEqual(@as(u32, 0), state.s[0]);
 }
 
 test "two ldi in sequence land in distinct regs" {
