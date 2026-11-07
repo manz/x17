@@ -2180,7 +2180,7 @@ test "ldi's head[29:27] picks the source: 0 and 7 load 0, 1/2/6 the immediate, 3
 }
 
 test "the 0x01 slot's xori and asr codes" {
-    // fact 502-504: own-x01norm, own-x01asr, own-x01asrneg and their sweeps.
+    // fact 502-506: own-x01norm, own-x01asr, own-x01asrneg, own-x01asrwrap, sweeps.
     const gpa = testing.allocator;
     for ([_]struct { code: u32, i: u32, m: u32, a: u32, b: u32, want: ?u32 }{
         .{ .code = 0x1C, .i = 0, .m = 5, .a = 0, .b = 0x100, .want = 14 },
@@ -2193,7 +2193,13 @@ test "the 0x01 slot's xori and asr codes" {
         .{ .code = 0x06, .i = 3, .m = 0, .a = 0xFFFFFE, .b = 0x100, .want = 0x40C },
         .{ .code = 0x06, .i = 0, .m = 4, .a = 9, .b = 0xFF8000, .want = 0xFFFFBF },
         .{ .code = 0x06, .i = 0, .m = 6, .a = 9, .b = 0xFF8000, .want = 0x40 },
-        .{ .code = 0x06, .i = 0, .m = 7, .a = 9, .b = 0xFF8000, .want = null },
+        .{ .code = 0x06, .i = 3, .m = 7, .a = 0, .b = 0x100, .want = 0x100 },
+        .{ .code = 0x06, .i = 3, .m = 7, .a = 1, .b = 0x100, .want = 0x80 },
+        .{ .code = 0x06, .i = 0, .m = 7, .a = 9, .b = 0xFF8000, .want = 0x40 },
+        .{ .code = 0x06, .i = 0, .m = 0, .a = 24, .b = 0x4000, .want = 0 },
+        .{ .code = 0x06, .i = 0, .m = 0, .a = 30, .b = 0xFF8000, .want = 0xFFFFFF },
+        .{ .code = 0x06, .i = 0, .m = 0, .a = 0xFFFFF6, .b = 0x4000, .want = 0 },
+        .{ .code = 0x06, .i = 0, .m = 0, .a = 0xFFFFF6, .b = 0xFF8000, .want = null },
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);

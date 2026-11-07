@@ -819,16 +819,23 @@ fn x01Xori(m: u32, b: i64, i: i64) RunError!u32 {
     return @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
 }
 
-/// 0x01 slot asr (fact 503-504): ADDER_M[m](x = i, y = b) >> s<a>, arithmetic, a < 0
-/// shifting left.  m7 (one negative sample: |b| or -b) is refused, as are sums or left
-/// shifts past 24 bits and counts past 23, none measured.
+/// 0x01 slot asr (fact 503-504, 506): ADDER_M[m](x = i, y = b) >> s<a>, arithmetic,
+/// a < 0 shifting left; m7 is |b| (i ignored).  Counts >= 24 shift everything out; a left
+/// shift past 24 bits wraps (measured on a positive value; negative overflow and counts below
+/// -23 are refused, as are sums past 24 bits and |-2^23|).
 fn x01Asr(m: u32, b: i64, i: i64, a: i32) RunError!u32 {
-    if (m == 7 or a > 23 or a < -23) return RunError.UnknownForm;
-    const t = adderM(@intCast(m), i, b, 0);
-    const v: i64 = t.x + t.y + t.c;
+    if (a < -23) return RunError.UnknownForm;
+    const v: i64 = if (m == 7) blk: {
+        if (b == -0x800000) return RunError.UnknownForm;
+        break :blk if (b < 0) -b else b;
+    } else blk: {
+        const t = adderM(@intCast(m), i, b, 0);
+        break :blk t.x + t.y + t.c;
+    };
     if (v < -0x800000 or v > 0x7FFFFF) return RunError.UnknownForm;
-    const r: i64 = if (a >= 0) v >> @intCast(a) else v << @intCast(-a);
-    if (r < -0x800000 or r > 0x7FFFFF) return RunError.UnknownForm;
+    if (a >= 0) return @as(u32, @truncate(@as(u64, @bitCast(v >> @intCast(@min(a, 24)))))) & M24;
+    const r: i64 = v << @intCast(-a);
+    if (v < 0 and r < -0x800000) return RunError.UnknownForm;
     return @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
 }
 
