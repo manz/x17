@@ -2687,7 +2687,7 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 /// e<{S2[0], S1[31:29]}> <- #h[20:5]; with S1[28], s<h[24:21]> <- mux S2[3:1] of the Y word at
 /// e<S1[18:15]>: 0 gives 0, 2 the word, 6 its low byte << 8.  S1[22:20] = 010 runs the slots,
 /// two more bundles and stops unhalted (457, 465); S1[19], S1[22] and other S1[21] rows wedge;
-/// mux 2 sign-extends (414), mux 4 is the same word (436); S1[28] = 0 with a load and muxes
+/// mux 2 sign-extends (414), mux 4 is the same word (436); S1[28] = 0 loads 0 (490); muxes
 /// 1/3/5 are OPEN.
 fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
@@ -2717,8 +2717,8 @@ fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const imm: u32 = (h >> 5) & 0xFFFF;
     const ld_dest: u32 = (h >> 21) & 0xF;
     var ld_val: u32 = 0;
-    if (ld_dest != 0) {
-        if ((s1 >> 28) & 1 == 0) return RunError.UnknownForm;
+    // S1[28] = 0 writes 0 in a plain program (490; x99's 0xA050 was its environment).
+    if (ld_dest != 0 and (s1 >> 28) & 1 == 1) {
         ld_val = switch ((s2 >> 1) & 7) {
             0 => 0,
             // mux 2 sign-extends, like ldy (414); mux 4 is the same word (436), its top byte
