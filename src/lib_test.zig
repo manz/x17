@@ -4094,3 +4094,61 @@ test "x17sty's R mux 0 takes yd" {
     _ = try emu.runFrom(gpa, &state, &.{ 0x500001d7, 0xa802d804, 0x78003a00, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0x246), state.r[11]);
 }
+
+test "class-bit aliases run as their base class (fact 551)" {
+    // Each row: a measured base bundle, and the syllable/mask whose class bits flip without
+    // changing the result.  End states must match the base run's.
+    const gpa = testing.allocator;
+    const aset = try assemble(gpa, "        x12.aset #5, R3\n");
+    defer gpa.free(aset);
+    const Row = struct { words: []const u32, at: usize, set: u32, clear: u32 };
+    const mac = [_]u32{ 0x00000019, 0x40000000, 0x20020000, 0xC0448000 };
+    const kal = [_]u32{ 0x01821179, 0x90941000, 0x33e20000, 0x13a00801 };
+    const a2r = [_]u32{ 0x58002c17, 0x2de85d00, 0x00000000 };
+    for ([_]Row{
+        .{ .words = &mac, .at = 2, .set = 0, .clear = 0xE0000000 }, // x19mac w2 class 000
+        .{ .words = &mac, .at = 2, .set = 0xA0000000, .clear = 0xE0000000 }, // and 101
+        .{ .words = &kal, .at = 2, .set = 0, .clear = 0x60000000 }, // x19k w2 class 001 -> 000
+        .{ .words = &kal, .at = 2, .set = 0x40000000, .clear = 0x60000000 }, // -> 010
+        .{ .words = &kal, .at = 2, .set = 0x60000000, .clear = 0x60000000 }, // -> 011
+        .{ .words = &a2r, .at = 1, .set = 0x60000000, .clear = 0xE0000000 }, // x17agu2 S1 011
+        .{ .words = &a2r, .at = 1, .set = 0xA0000000, .clear = 0xE0000000 }, // and 101
+        .{ .words = aset[0..2], .at = 1, .set = 0xE0000000, .clear = 0xE0000000 }, // aset12 S 111
+    }) |row| {
+        var base = emu.State{};
+        defer base.deinit(gpa);
+        var alias = emu.State{};
+        defer alias.deinit(gpa);
+        for ([_]*emu.State{ &base, &alias }) |st| {
+            st.a[9] = 0x240;
+            st.e[9] = 0x790;
+            st.r[3] = 0x345;
+            st.r[11] = 0xABC;
+            st.s[9] = 0x999;
+            st.a[17] = 0x360;
+        }
+        var w: [8]u32 = undefined;
+        @memcpy(w[0..row.words.len], row.words);
+        const n = row.words.len;
+        w[n] = 0x00000017;
+        w[n + 1] = 0x31308000;
+        w[n + 2] = 0xA0000000;
+        _ = try emu.runFrom(gpa, &base, w[0 .. n + 3], 0, 16);
+        w[row.at] = (w[row.at] & ~row.clear) | row.set;
+        _ = try emu.runFrom(gpa, &alias, w[0 .. n + 3], 0, 16);
+        try testing.expectEqual(base.s, alias.s);
+        try testing.expectEqual(base.a, alias.a);
+        try testing.expectEqual(base.r, alias.r);
+        try testing.expectEqual(base.readX(0x360), alias.readX(0x360));
+    }
+}
+
+test "own-x19kal: x19k with w2 class 001" {
+    // fact 551: e9 = 0x790: 01821179 90941000 33e20000 13a00801 gives s12 = 0x790.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[9] = 0x790;
+    _ = try emu.runFrom(gpa, &state, &.{ 0x01821179, 0x90941000, 0x33e20000, 0x13a00801, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x790), state.s[12]);
+}

@@ -216,7 +216,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x12 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execX12Agu(gpa, state, bundle);
-        if (s_class == 0b101) return execX12Aset(gpa, state, bundle);
+        // S class 111 runs as 101 (fact 551).
+        if (s_class == 0b101 or s_class == 0b111) return execX12Aset(gpa, state, bundle);
     }
     if (low5 == 0x0B) {
         const high3: u32 = (head >> 29) & 0x7;
@@ -2522,7 +2523,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     // w2 class 100 runs it as 001 (521, 7 of 7); with w3 class 101 it is OPEN and falls
     // through to the refusal below.  The two rows that wedged silicon (w2 = 0x80C80000) are
     // refused already: one by the open X store (w2[23:22] = 11), one by its w1 class 111.
-    if ((w2_class == 1 or w2_class == 4) and w3_class == 6 and (w1_class == 0 or w1_class == 1 or w1_class == 2 or w1_class == 5)) {
+    // 551: w2 classes 000 and 101 run it too.
+    if ((w2_class == 0 or w2_class == 1 or w2_class == 4 or w2_class == 5) and w3_class == 6 and (w1_class == 0 or w1_class == 1 or w1_class == 2 or w1_class == 5)) {
         return execX19Mac(gpa, state, bundle);
     }
     if (w1_class == 0 and w2_class == 0 and w3_class == 1) {
@@ -2554,7 +2556,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         return execX19A3(gpa, state, bundle);
     }
     // x19k: w1[31:29] is the X-store source's high bits, not a selector (fact 235, 534).
-    if (w2_class == 0 and w3_class == 0 and (w1_class == 1 or w1_class == 3 or w1_class == 4 or w1_class == 5 or w1_class == 7)) {
+    // w2[30:29] are inert there too (551): w2 classes 000-011.
+    if (w2_class < 4 and w3_class == 0 and (w1_class == 1 or w1_class == 3 or w1_class == 4 or w1_class == 5 or w1_class == 7)) {
         return execX19K00(gpa, state, bundle);
     }
     return RunError.UnknownForm;
@@ -2998,7 +3001,8 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class == 0b011 and s2_class == 0b111) return execX17Imm(gpa, state, bundle);
     if (s2_class == 0b111) return execX17Alu(gpa, state, bundle);
     if (s1_class == 0b001 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
-    if (s1_class == 0b001 and s2_class == 0b000) return execX17Agu2(gpa, state, bundle);
+    // S1 classes 011 and 101 run as 001 (fact 551).
+    if ((s1_class == 0b001 or s1_class == 0b011 or s1_class == 0b101) and s2_class == 0b000) return execX17Agu2(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b100) return execX17E(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b011) return execX17Ld(gpa, state, bundle);
     if (s2_class == 0b011) return execX17Sty(gpa, state, bundle);
