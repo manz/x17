@@ -2052,10 +2052,10 @@ test "imdct transforms a long block as the model does" {
     defer gpa.free(prog);
     var prng = std.Random.DefaultPrng.init(0x1DC7);
     const rnd = prng.random();
-    for (0..5) |run| {
+    for (0..6) |run| {
         var w: [n2]i64 = undefined;
         // a falling spectrum; runs 0 and 3 near 2^22.3 (the halving), run 1 small
-        // (doublings), run 2 silence, run 4 one positive peak
+        // (doublings), run 2 silence, run 4 one positive peak, run 5 a large last coefficient
         const top: f64 = if (run == 1) 9 else 22.3;
         for (&w, 0..) |*v, k| {
             const amp = std.math.pow(f64, 2, top) / (1.0 + @as(f64, @floatFromInt(k)) / 8.0);
@@ -2066,6 +2066,12 @@ test "imdct transforms a long block as the model does" {
         if (run == 4) {
             for (&w) |*v| v.* = @divTrunc(v.*, 64);
             w[3] = (1 << 22) + 12345;
+        }
+        // run 5: small noise under one large coefficient at n2 - 1, so the pre-twiddle's
+        // imaginary part decides the first stage
+        if (run == 5) {
+            for (&w) |*v| v.* = @divTrunc(v.*, 64);
+            w[n2 - 1] = (1 << 22) - 3;
         }
         const e: i64 = -20 + @as(i64, @intCast(run)) * 3;
         var want: [2 * n2]i64 = undefined;
@@ -2096,7 +2102,7 @@ test "imdct transforms a long block as the model does" {
             try px(&state, gpa, 0x1A00 + 2 * k, c.re);
             try px(&state, gpa, 0x1A01 + 2 * k, c.im);
         }
-        for (t.rev, 0..) |r, n| try py(&state, gpa, 0x2400 + n, 2 * @as(i64, r));
+        for (t.rev, 0..) |r, n| try py(&state, gpa, 0x2400 + n, 2 * @as(i64, r) - 2);
         try py(&state, gpa, 0x2390, e);
         _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 26);
         try testing.expect(state.halted);
