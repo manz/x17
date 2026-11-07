@@ -7,8 +7,8 @@ const std = @import("std");
 const asm_mod = @import("asm");
 const emu = @import("emu");
 
-const lib_paths = [_][]const u8{ "lib/bits.sm", "lib/rice.sm", "lib/predictor.sm", "lib/unmix.sm", "lib/alac.sm" };
-const lib_texts = [_][]const u8{ @embedFile("bits.sm"), @embedFile("rice.sm"), @embedFile("predictor.sm"), @embedFile("unmix.sm"), @embedFile("alac.sm") };
+const lib_paths = [_][]const u8{ "lib/bits.sm", "lib/rice.sm", "lib/predictor.sm", "lib/unmix.sm", "lib/mem.sm", "lib/alac.sm" };
+const lib_texts = [_][]const u8{ @embedFile("bits.sm"), @embedFile("rice.sm"), @embedFile("predictor.sm"), @embedFile("unmix.sm"), @embedFile("mem.sm"), @embedFile("alac.sm") };
 
 /// The stage calls in alac.sm, in program order.
 const stages = [_][]const u8{ "rice_decompress(RICE)", "integrate()", "unpredict()", "unmix()" };
@@ -69,6 +69,7 @@ pub fn main(init: std.process.Init) !void {
         \\.include "lib/rice.sm"
         \\.include "lib/predictor.sm"
         \\.include "lib/unmix.sm"
+        \\.include "lib/mem.sm"
         \\.include "lib/alac.sm"
         \\        bits_init(0x4000)
         \\        alac_packet()

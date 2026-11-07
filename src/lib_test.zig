@@ -10,6 +10,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/rice.sm", .text = @embedFile("rice.sm") },
     .{ .path = "lib/predictor.sm", .text = @embedFile("predictor.sm") },
     .{ .path = "lib/unmix.sm", .text = @embedFile("unmix.sm") },
+    .{ .path = "lib/mem.sm", .text = @embedFile("mem.sm") },
     .{ .path = "lib/alac.sm", .text = @embedFile("alac.sm") },
     .{ .path = "lib/huffman.sm", .text = @embedFile("huffman.sm") },
     .{ .path = "lib/sections.sm", .text = @embedFile("sections.sm") },
@@ -533,6 +534,7 @@ test "alac_packet decodes fixture packets as the reference does" {
         \\.include "lib/rice.sm"
         \\.include "lib/predictor.sm"
         \\.include "lib/unmix.sm"
+        \\.include "lib/mem.sm"
         \\.include "lib/alac.sm"
         \\        bits_init(0x4000)
         \\        alac_packet()
@@ -621,6 +623,7 @@ test "the packet program has no long runs of 0x05 words" {
         \\.include "lib/rice.sm"
         \\.include "lib/predictor.sm"
         \\.include "lib/unmix.sm"
+        \\.include "lib/mem.sm"
         \\.include "lib/alac.sm"
         \\        bits_init(0x4000)
         \\        alac_packet()

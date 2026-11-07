@@ -16,8 +16,7 @@
 ; 1 a zero run overran, 2 an unsupported element, 3 pb * pb_factor / 4 above the Rice
 ; loop's 127). The rest is scratch, see the .consts. Mode != 0 integrates PRED first.
 ;
-; Moves into A registers go s -> e (x17.mve, +1) -> R (x19.a3 AGU10 fn 2, +1) -> even A
-; (x12.aset) -> any A (x03.agu + 0): every step gated. They use s13, e6, R7 and A14.
+; Needs lib/mem.sm (yat, yld, yst, amov, aimm).
 ; Loops that advance with x02.ainc count in s1: its bundle's multiply slot overwrites s2.
 
 .const PRED  = 0x1000
@@ -50,23 +49,6 @@
 .const PK_CNT = PK + 16
 .const PK_SUB = PK + 20         ; per lane: mode, den_shift, pb_factor, order
 
-; e6 = addr.
-.macro yat(addr) {
-        ldi s13, #addr - 1
-        x17.mve e6, s13
-}
-
-.macro yld(dst, addr) {
-        yat(addr)
-        ldy dst, e6
-}
-
-; Y:[addr] = s3.
-.macro yst(addr) {
-        yat(addr)
-        x17.sty e6, #3, #0
-}
-
 ; e6 = PK_SUB + 4 * lane + field. Uses s3, s4, s13.
 .macro ysub(field) {
         yld(s3, PK_L)
@@ -75,21 +57,6 @@
         ldi s13, #PK_SUB + field - 1
         alu s13, s13, s4, #OP_ADD
         x17.mve e6, s13
-}
-
-; A<an> = the value in `src` (not s13).
-.macro amov(an, src) {
-        ldi s13, #2
-        alu s13, src, s13, #OP_SUB
-        x17.mve e6, s13
-        x19.a3 s0, R7, e6, #25, #2, #0
-        x12.aset #7, R7
-        x03.agu an, A14, #0, #0, A0
-}
-
-.macro aimm(an, value) {
-        ldi s12, #value
-        amov(an, s12)
 }
 
 ; s3 = base + 0x1000 * lane (lane in PK_L). Uses s4, s13.

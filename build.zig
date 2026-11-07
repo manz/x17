@@ -120,6 +120,7 @@ pub fn build(b: *std.Build) void {
     lib_mod.addAnonymousImport("rice.sm", .{ .root_source_file = b.path("examples/lib/rice.sm") });
     lib_mod.addAnonymousImport("predictor.sm", .{ .root_source_file = b.path("examples/lib/predictor.sm") });
     lib_mod.addAnonymousImport("unmix.sm", .{ .root_source_file = b.path("examples/lib/unmix.sm") });
+    lib_mod.addAnonymousImport("mem.sm", .{ .root_source_file = b.path("examples/lib/mem.sm") });
     lib_mod.addAnonymousImport("alac.sm", .{ .root_source_file = b.path("examples/lib/alac.sm") });
     lib_mod.addAnonymousImport("huffman.sm", .{ .root_source_file = b.path("examples/lib/huffman.sm") });
     lib_mod.addAnonymousImport("sections.sm", .{ .root_source_file = b.path("examples/lib/sections.sm") });
@@ -135,7 +136,7 @@ pub fn build(b: *std.Build) void {
     });
     bench_mod.addImport("asm", asm_mod);
     bench_mod.addImport("emu", emu_mod);
-    for ([_][]const u8{ "bits", "rice", "predictor", "unmix", "alac" }) |l| {
+    for ([_][]const u8{ "bits", "rice", "predictor", "unmix", "mem", "alac" }) |l| {
         bench_mod.addAnonymousImport(b.fmt("{s}.sm", .{l}), .{ .root_source_file = b.path(b.fmt("examples/lib/{s}.sm", .{l})) });
     }
     for ([_][]const u8{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |f| {
