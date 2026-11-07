@@ -1892,3 +1892,19 @@ test "x17 S2 class 101 with S1[28] = 0 and mux 4 loads 0; other muxes are refuse
     _ = try emu.runFrom(gpa, &w, &.{ XXXXXXXX, XXXXXXXX, XXXXXXXX, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0), w.s[15]);
 }
+
+test "x18 class 111 slots read every source before any write" {
+    // fact 491: 02c00058 00046562 00670005 e2023000. s6 <- #2 (X slot) and s5 <- the
+    // ALU slot while Y:[e1] <- s5 stores the old s5. 491 reads the ALU slot as (s7 + s6) << 6
+    // with the old s6; emu's op 0 is 168's pass, so s5 is not checked until that is settled.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[5] = 0x1111;
+    state.s[6] = 0x6606;
+    state.s[7] = 0x0003;
+    state.e[1] = 0x740;
+    _ = try emu.runFrom(gpa, &state, &.{ 0x02C00058, 0x00046562, 0x00670005, 0xE2023000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 2), state.s[6]);
+    try testing.expectEqual(@as(?u32, 0x1111), state.getY(0x740));
+}
