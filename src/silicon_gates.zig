@@ -1495,6 +1495,35 @@ const GATES = [_]Gate{
         .wedge = true,
     },
     .{
+        .name = "own-sty0imm",
+        // Upstream, fact 466 (3 of 3): the wr's e0 is the previous word's [20:5], here
+        // ldi s5's 0x730; reading s4 would give 0x720.
+        .src =
+        \\ldi s1, #0x55
+        \\ldi s4, #0x720
+        \\alu s0, s0, s0, #0
+        \\alu s0, s0, s0, #0
+        \\ldi s5, #0x730
+        \\st.wr #0x40, e0, s1
+        \\alu s0, s0, s0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x730, .value = 0x55 } }},
+    },
+    .{
+        .name = "own-sty0nop",
+        // fact 466: a nop (40000005, [20:5] = 0) between them sends the store to Y:0.
+        .src =
+        \\ldi s1, #0x55
+        \\ldi s5, #0x730
+        \\alu s0, s0, s0, #0
+        \\st.wr #0x40, e0, s1
+        \\alu s0, s0, s0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0, .value = 0x55 } }},
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},

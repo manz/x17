@@ -3315,6 +3315,9 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             try executeBundle(gpa, state, slice);
             if (!sameY(&before, &state.y_mem)) return RunError.UnknownForm;
         } else try executeBundle(gpa, state, slice);
+        // e0 is no register: it reads the previous word's [20:5] (fact 65, 466), whatever
+        // that word is, a nop included. Measured with one-syllable predecessors only.
+        if (len == 1) state.e[0] = (head >> 5) & 0xFFFF;
         i += len;
         // The stop has a shadow (fact 72): an ldi and a st + wr after it
         // still run and the next pair does not; two bundles, exact count OPEN.
