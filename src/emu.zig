@@ -1742,7 +1742,9 @@ fn execX18Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 /// a = s<w2[5:2]>, b = s<w1[7:4]>.  Op 0 is only measured as pass (179).
 fn x18SlotAlu(op: u32, a: u32, b: u32) RunError!u32 {
     return switch (op) {
-        0, 2 => a & M24,
+        // 491: op 0 adds b (168's "pass" had b = s0).
+        0 => (a +% b) & M24,
+        2 => a & M24,
         1 => (a -% b) & M24,
         3 => (a +% 1) & M24,
         5 => (b -% a) & M24,
