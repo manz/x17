@@ -456,3 +456,6 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # S1[26:23]), S1[27] = 1 (0 wedges); row 0 (a << n) only, with S2[12:11] = 10 and no Y store seen.  own-x17styr
 # x17.ldr, x17ld (S1 class 000, S2 class 011) with S1[27] = 0 (fact 443, 460): with S2[2], R<S1[14:11]> <- AGU10[S1[10:7]](y = R<h[30:27]>,
 # i = #h[26:11]), fn 10 = y + i measured, fn 11 wedges; no S2[2], no R write.  The asr and Y slots beside it are unmeasured.  own-x17ldsyn
+# x19.alum, x19alu w1[14:11] mode (fact 454, 462): 0xB is the op-23 table (147); 8 ops on a + b: 0-5, 11-15 a + b; 9, 10, 28 a;
+# 6-8, 26, 27 0; 16, 17 b - a; 20, 21 -(a + b) - 2; the rest no write.  0xA is 8 with b = 0, the no-write rows giving a.  9 writes
+# nothing.  Pass-through rows may be shifts by an amount that was 0 (OPEN); w1[2:0] != 0 OPEN.  own-x19syn, own-x19m8add, own-x19maon, own-x19m8neg

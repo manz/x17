@@ -135,6 +135,11 @@ x19.alu	dest_s	s	24	27	s1
 x19.alu	a_s	s	18	21	s2
 x19.alu	b_s	s	16	19	s1
 x19.alu	code	imm	5	9	head
+x19.alum	dest_s	s	24	27	s1
+x19.alum	a_s	s	18	21	s2
+x19.alum	b_s	s	16	19	s1
+x19.alum	code	imm	5	9	head
+x19.alum	mode	imm	11	14	s1
 
 # x19.e (4 syllables): e-imm write + muxed s source.
 # Grammar: x19.e <dest_e>, #<imm>, <dest_s>, <e_src>, #<mux>

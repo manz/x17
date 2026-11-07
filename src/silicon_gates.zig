@@ -1358,6 +1358,66 @@ const GATES = [_]Gate{
         .post = &.{.{ .r_reg = .{ .index = 2, .value = 0x1080 } }},
     },
     .{
+        .name = "own-x19syn",
+        // Upstream, fact 454/462 (3 of 3): 00000219 02014000 800C8101 81E18008, op 16 mode 8, b - a.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x100 },
+            .{ .bank = .s, .index = 1, .value = 0x23 },
+            .{ .bank = .e, .index = 6, .value = 0x700 },
+        },
+        .src =
+        \\x19.alum s2, s3, s1, #16, #8
+        \\x17.ms s0, #0, s2, e6, #0, #0, #0, R0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0xFF23 } }},
+    },
+    .{
+        .name = "own-x19m8add",
+        // fact 454: 000001D9 02014000 800C8101 81E18008, op 14 mode 8, a + b.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x100 },
+            .{ .bank = .s, .index = 1, .value = 0x23 },
+            .{ .bank = .e, .index = 6, .value = 0x700 },
+        },
+        .src =
+        \\x19.alum s2, s3, s1, #14, #8
+        \\x17.ms s0, #0, s2, e6, #0, #0, #0, R0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0x0123 } }},
+    },
+    .{
+        .name = "own-x19maon",
+        // fact 454: 000001D9 02015000 800C8101 81E18008, op 14 mode 0xA, a.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x100 },
+            .{ .bank = .s, .index = 1, .value = 0x23 },
+            .{ .bank = .e, .index = 6, .value = 0x700 },
+        },
+        .src =
+        \\x19.alum s2, s3, s1, #14, #10
+        \\x17.ms s0, #0, s2, e6, #0, #0, #0, R0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0x0100 } }},
+    },
+    .{
+        .name = "own-x19m8neg",
+        // fact 454: 00000299 02014000 800C8101 81E18008, op 20 mode 8, -(a + b) - 2.
+        .pre = &.{
+            .{ .bank = .s, .index = 3, .value = 0x100 },
+            .{ .bank = .s, .index = 1, .value = 0x23 },
+            .{ .bank = .e, .index = 6, .value = 0x700 },
+        },
+        .src =
+        \\x19.alum s2, s3, s1, #20, #8
+        \\x17.ms s0, #0, s2, e6, #0, #0, #0, R0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0xFEDB } }},
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},

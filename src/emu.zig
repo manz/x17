@@ -2277,11 +2277,41 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const b_s: u32 = (w1 >> 16) & 0xF;
     const a_val: i64 = sx24(state.s[a_s]);
     const b_val: i64 = sx24(state.s[b_s]);
+    // w1[14:11] is the mode (fact 454): 0xB the table below (147), 8 ops on a + b, 0xA
+    // ops on a, 9 writes nothing; w1[2:0] != 0 beside 8/9/0xA is OPEN.
+    const mode: u32 = (w1 >> 11) & 0xF;
+    if (mode != 0xB) {
+        if (w1 & 7 != 0) return RunError.UnknownForm;
+        const r: ?i64 = switch (mode) {
+            8 => x19ModeOp(code, a_val, b_val, false),
+            0xA => x19ModeOp(code, a_val, 0, true),
+            9 => null,
+            else => return RunError.UnknownForm,
+        };
+        if (r) |x| {
+            if (dest_s != 0) state.s[dest_s] = @truncate(@as(u64, @bitCast(x)) & M24);
+        }
+        return;
+    }
     const v: u32 = switch (code) {
         23 => @truncate(@as(u64, @bitCast(shift23(a_val, b_val))) & M24),
         else => return RunError.UnknownForm,
     };
     if (dest_s != 0) state.s[dest_s] = v;
+}
+
+/// The x19alu ops in modes 8 and 0xA (fact 454, one operand pair): mode 0xA is mode 8
+/// with b = 0, except that the ops mode 8 leaves unwritten give a. Null is no write. Rows that
+/// pass a through may be shifts by an amount that was 0 in the measured pair (OPEN).
+fn x19ModeOp(code: u32, a: i64, b: i64, on_a: bool) ?i64 {
+    return switch (code) {
+        0...5, 11...15 => a + b,
+        9, 10, 28 => a,
+        6, 7, 8, 26, 27 => 0,
+        16, 17 => b - a,
+        20, 21 => -(a + b) - 2,
+        else => if (on_a) a else null, // 18, 19, 22-25, 29-31
+    };
 }
 
 fn execX19E(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
