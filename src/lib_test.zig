@@ -4435,3 +4435,54 @@ test "x03 with w5[1] = 0: w5[21] picks a fresh Y read or yd (fact 565)" {
     _ = try emu.runFrom(gpa, &x, &bx, 0, 16);
     try testing.expectEqual(@as(u32, 0x777), x.s[5]);
 }
+
+test "agu_xr's once-only wrap on x02's A sum and R slot (fact 566, 567)" {
+    // A9 = 0x200, R9 = 0x50 (y), R3 = 0x40 (M, w3[18:15] = 3): fn 2 sum 0x250 wraps to 0x210 in
+    // A1 (w5[27] = 0) and in R9 (w5[27:26] = 10); M field 0 leaves 0x250.
+    const gpa = testing.allocator;
+    for ([_]struct { w3: u32, w5: u32, a1: u32, r9: u32 }{
+        .{ .w3 = 0x00018009, .w5 = 0x02400000, .a1 = 0x210, .r9 = 0x50 },
+        .{ .w3 = 0x00000009, .w5 = 0x02400000, .a1 = 0x250, .r9 = 0x50 },
+        .{ .w3 = 0x00498009, .w5 = 0x0A400000, .a1 = 0x210, .r9 = 0x210 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x200;
+        state.r[9] = 0x50;
+        state.r[3] = 0x40;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0, 0x00820000, c.w3, 0, c.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.a1, state.a[1]);
+        try testing.expectEqual(c.r9, state.r[9]);
+    }
+    // M = 9: sum 0x10 gives 7, 0x800F gives 0x8018, 0, 6 and 8 stay.
+    for ([_][2]u32{ .{ 0x10, 7 }, .{ 0x800F, 0x8018 }, .{ 0, 0 }, .{ 6, 6 }, .{ 8, 8 }, .{ 9, 0 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = c[0];
+        state.r[3] = 9;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0, 0x00820000, 0x00018009, 0, 0x00000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c[1], state.a[1]);
+    }
+    // The second A write's order against the wrap is OPEN.
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x00000002, 0, 0x00820000, 0x00019409, 0, 0x02400000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
+
+test "own-x16rmod: x16alu's R slot wraps by R<S2[5:2]> (fact 568)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.a[1] = 0x200;
+    state.r[5] = 0x50;
+    state.r[12] = 0x40;
+    _ = try emu.runFrom(gpa, &state, &.{ 0x1c0047f6, 0x43948440, 0x50002231, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x210), state.r[1]);
+    // -A1 (fn 4) with A1 = 0x110 and M = 0x300C adds M: 0x2EFC.
+    var neg = emu.State{};
+    defer neg.deinit(gpa);
+    neg.a[1] = 0x110;
+    neg.r[12] = 0x300C;
+    _ = try emu.runFrom(gpa, &neg, &.{ 0x1c0047f6, 0x43948440, 0x50002131, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x2EFC), neg.r[1]);
+}
