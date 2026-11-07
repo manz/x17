@@ -775,6 +775,24 @@ fn x00Op(x01: bool, op: u32, a: u32, b: u32) RunError!u32 {
 /// multiply s<w6[19:16]> <- mode w1[13:11](X = s<w2[13:10]>, P = s*s >> 23 (24 if w1[17])
 ///   rounded when w1[15] = 1);
 /// control w3[4:0]: jr +w1[25:18], ja w1[25:18], two delay slots.
+/// The 0x01 ALU slot s<w6[7:4]> (fact 498-500): w5[3:2] = 0x is the class-05 adder,
+/// alu_word with a = s<w6[23:20]>, b = s<w2[5:2]>, m = w5[29:27], shift w2[9:6]; w4[19] inert.
+/// w5[3:2] = 10 (source OPEN) and 11 (yd, not modelled) are refused, as are non-add codes with
+/// a or m set.
+fn x01Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
+    if ((w5 >> 3) & 1 == 1) return RunError.UnknownForm;
+    const code: u32 = (h >> 5) & 0x3F;
+    const a_idx: u32 = (w6 >> 20) & 0xF;
+    const m: u32 = (w5 >> 27) & 7;
+    const adder = switch (ALU05[code]) {
+        .add, .addi, .sub => true,
+        else => false,
+    };
+    if (!adder and (a_idx != 0 or m != 0)) return RunError.UnknownForm;
+    const word: u32 = (code << 5) | (((w2 >> 6) & 0xF) << 19) | (m << 23);
+    return (try aluWord(word, sx24(state.s[a_idx]), sx24(state.s[(w2 >> 2) & 0xF]))) orelse RunError.UnknownForm;
+}
+
 fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const w1 = bundle[1];
@@ -817,7 +835,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const x_val: u32 = if (x01 and x_src == 0) (state.xd << 8) & M24 else state.s[x_src] & M24;
 
     const alu_dest: u32 = (w6 >> 4) & 0xF;
-    const alu_val: u32 = if (alu_dest == 0) 0 else blk: {
+    const alu_val: u32 = if (alu_dest == 0) 0 else if (x01) try x01Alu(state, h, w2, w5, w6) else blk: {
         if ((w4 >> 19) & 1 == 1) return RunError.UnknownForm;
         const word: u32 = (((h >> 5) & 0x3F) << 5) | (((w2 >> 6) & 0xF) << 19);
         break :blk (try aluWord(word, 0, sx24(state.s[(w2 >> 2) & 0xF]))) orelse return RunError.UnknownForm;

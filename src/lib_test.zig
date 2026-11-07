@@ -2127,3 +2127,25 @@ test "x02.ainc's template writes s2 and x18.rag's steps e7" {
     try testing.expectEqual(@as(u32, 0x30), state.s[2]);
     try testing.expectEqual(@as(u32, 0x2401), state.e[7]);
 }
+
+test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[29:27]" {
+    // fact 498-500: own-x01am (m1, b - a = 0x23), own-x01neg (m6 with a = s0: -b), m2
+    // passes b; w5[3:2] = 10 is refused.
+    const gpa = testing.allocator;
+    for ([_]struct { w5: u32, w6: u32, want: ?u32 }{
+        .{ .w5 = 0x08200900, .w6 = 0x00300090, .want = 0x23 },
+        .{ .w5 = 0x30200900, .w6 = 0x00000090, .want = 0xFFFEDD },
+        .{ .w5 = 0x10200900, .w6 = 0x00000090, .want = 0x123 },
+        .{ .w5 = 0x08200908, .w6 = 0x00300090, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0x100;
+        state.s[8] = 0x123;
+        const r = emu.runFrom(gpa, &state, &.{ 0x280011C1, 0x00000580, 0x28000020, 0xA00280A0, XXXXXXXX, c.w5, c.w6, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[9] & 0xFFFFFF);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
