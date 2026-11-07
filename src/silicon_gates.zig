@@ -1305,6 +1305,23 @@ const GATES = [_]Gate{
         .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0x8001 } }},
     },
     .{
+        .name = "own-x17estop",
+        // Upstream, fact 448 (3 of 3): x17e S2[3:0] = 4 stops the program one bundle
+        // later; the Y store after the nop never lands and the run ends cleanly.
+        .pre = &.{
+            .{ .bank = .s, .index = 1, .value = 0x55 },
+            .{ .bank = .e, .index = 6, .value = 0x700 },
+        },
+        .pre_mem = &.{.{ .kind = .y, .addr = 0x700, .value = 0x1234 }},
+        .src =
+        \\x17.estop
+        \\alu s0, s0, s0, #0
+        \\x17.ms s0, #0, s1, e6, #0, #0, #0, R0, #0
+        \\x17.halt
+        ,
+        .post = &.{.{ .y_mem = .{ .addr = 0x700, .value = 0x1234 } }},
+    },
+    .{
         .name = "own-ptest",
         // p2 seeded = 1; s5 <- f1(p2) = p2 = 1.
         .pre = &.{.{ .bank = .p, .index = 2, .value = 1 }},

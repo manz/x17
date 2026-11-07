@@ -73,6 +73,8 @@ pub const State = struct {
     yd: u32 = 0,
     /// Set when runLinear met a stop; a run without one is a wedge on silicon.
     halted: bool = false,
+    /// Set by a bundle that stops the program one bundle later (x17e S2[3:0] = 4, fact 448).
+    stop_pending: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
     xa: ?u32 = null,
     /// The 0x18 class-000 phase T, flipped by w2[17] = 0 (fact 180).
@@ -2806,6 +2808,13 @@ fn execX17E(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
 
     const dest_s: u32 = (head >> 21) & 0xF;
     const imm: u32 = (head >> 5) & 0xFFFF;
+    // S2[3:0] = 4 stops the program one bundle later and loads s<h[24:21]> from a counter that
+    // rises 9 a run (fact 448); its value is unmeasured, so a dest is refused.
+    if (s2 & 0xF == 4) {
+        if (dest_s != 0 or (s1 >> 17) & 3 != 0) return RunError.UnknownForm;
+        state.stop_pending = true;
+        return;
+    }
     const dest_e_a: u32 = (s2 >> 8) & 0xF;
     const dest_e_b: u32 = (s1 >> 13) & 0xF;
     const src_e: u32 = (s2 >> 16) & 0xF;
@@ -3244,6 +3253,13 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         if (isHaltBundle(slice)) {
             state.halted = true;
             shadow = 1;
+            continue;
+        }
+        if (state.stop_pending) {
+            // x17e's stop: one more bundle runs, the next does not (fact 448).
+            state.stop_pending = false;
+            state.halted = true;
+            shadow = 0;
             continue;
         }
         // Resolve a pending jmp/br/bcc issued by this bundle.  Target is
