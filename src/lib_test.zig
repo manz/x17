@@ -3938,3 +3938,91 @@ test "x17sty's R mux 7 is the AGU over the store's own address register" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+fn runX02(gpa: std.mem.Allocator, state: *emu.State, w: [6]u32) !usize {
+    return emu.runFrom(gpa, state, &.{ w[0], w[1], w[2], w[3], w[4], w[5], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+}
+
+test "x02's Y side: Y:[e<w3[30:27]>] with w5[12], else yd" {
+    // fact 545: own-x02yd, yd = 0x246 (a yld10 of Y:0x710), Y:0x720 = 0x567, e8 = 0x720.
+    // Mode 1 with the w5[29:28] = 11 override: s3 <- yd, or with w5[12] the Y word.  The
+    // memory mode (5) without w5[14] takes the same Y side; with w5[14] X:[A18].
+    const gpa = testing.allocator;
+    for ([_]struct { w4: u32 = 0x00240818, w5: u32, s3: u32 }{
+        .{ .w5 = 0x30020628, .s3 = 0x246 },
+        .{ .w5 = 0x30021628, .s3 = 0x567 },
+        .{ .w4 = 0x00242818, .w5 = 0x30020628, .s3 = 0x246 },
+        .{ .w4 = 0x00242818, .w5 = 0x30021628, .s3 = 0x567 },
+        .{ .w4 = 0x00242818, .w5 = 0x30024628, .s3 = 0x999 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.yd = 0x246;
+        state.e[8] = 0x720;
+        state.a[18] = 0x340;
+        try state.y_mem.put(gpa, 0x720, 0x567);
+        try state.x_mem.put(gpa, 0x340, 0x999);
+        _ = try runX02(gpa, &state, .{ 0x000001c2, 0x80000040, 0x00014001, 0x40080000, c.w4, c.w5 });
+        try testing.expectEqual(c.s3, state.s[3]);
+        // R<w3[22:19]> = R1 takes the same Y side (w5[31:30] = 00, 547)
+        try testing.expectEqual(@as(u32, if ((c.w5 >> 12) & 1 == 1) 0x567 else 0x246), state.r[1]);
+    }
+}
+
+test "x02's R slot: AGU10 or AGU10B by w5[11]; the w5[27] carry refuses" {
+    // fact 547: own-x02ra, e2 = 0x720: R11 <- AGU10 fn 2 (x + 1) = 0x721; w5[11] = 0
+    // takes AGU10B's 0.  w5[27] = 1 is OPEN outside fresh state.
+    const gpa = testing.allocator;
+    for ([_]struct { w5: u32, r11: ?u32 }{
+        .{ .w5 = 0x05800800, .r11 = 0x721 },
+        .{ .w5 = 0x05800000, .r11 = 0 },
+        .{ .w5 = 0x0D800800, .r11 = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[2] = 0x720;
+        state.r[11] = 0xABC;
+        const r = runX02(gpa, &state, .{ 0x00000002, 0x00000110, 0x00c00000, 0x105814a7, 0x00000810, c.w5 });
+        if (c.r11) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.r[11]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "x02's w5[29:28] = 10 override is x01's T table" {
+    // fact 548: own-x02ov's registers, e5 = 0x730 (a), e2 = 0x720 (b): fn 0 gives a,
+    // fn 2 b, fn 1 y = R6; fn 3 is unseen and refuses.
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, s3: ?u32 }{
+        .{ .w1 = 0x80000040, .s3 = 0x730 },
+        .{ .w1 = 0x80000140, .s3 = 0x720 },
+        .{ .w1 = 0x800000C0, .s3 = 0x66 },
+        .{ .w1 = 0x800001C0, .s3 = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[5] = 0x730;
+        state.e[2] = 0x720;
+        state.r[6] = 0x66;
+        const r = runX02(gpa, &state, .{ 0x000001c2, c.w1, 0x00014001, 0x29080000, 0x00240818, 0x21820628 });
+        if (c.s3) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[3]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "x03's R slot refuses the w5[27] carry (fresh state only, 547)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.r[6] = 0x155;
+    // own-x02ra's words as x03, AGU10B fn 14 (y + 1) on R6 into R11
+    try testing.expectError(error.UnknownForm, runX02(gpa, &state, .{ 0x00000003, 0x00000710, 0x00c00000, 0x105814a7, 0x00000000, 0x09800000 }));
+    var ok = emu.State{};
+    defer ok.deinit(gpa);
+    ok.r[6] = 0x155;
+    _ = try runX02(gpa, &ok, .{ 0x00000003, 0x00000710, 0x00c00000, 0x105814a7, 0x00000000, 0x01800000 });
+    try testing.expectEqual(@as(u32, 0x156), ok.r[11]);
+}

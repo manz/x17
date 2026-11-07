@@ -39,6 +39,9 @@ const Gate = struct {
     lane: u8 = 0,
     /// The run must not reach a stop (silicon wedged).
     wedge: bool = false,
+    /// The emulator must refuse the run (UnknownForm): the silicon result holds only in the
+    /// state the gate ran from, its source is OPEN.  `post` keeps what silicon showed.
+    refused: bool = false,
 };
 
 const GATES = [_]Gate{
@@ -2337,8 +2340,10 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x02cin",
-        // Pre R12 = 0x155; fn 14 (y+1) with cin=1: R1 <- R12 + 1 + 1 = 0x157.
+        // Pre R12 = 0x155; fn 14 (y+1) with cin=1: R1 <- R12 + 1 + 1 = 0x157.  The "+1" is
+        // fresh state only: under x99 rows w5[27] adds A-slot-like values (fact 547).
         .pre = &.{.{ .bank = .r, .index = 12, .value = 0x155 }},
+        .refused = true,
         .src =
         \\x02.agu R1, R12, #14, #1
         \\x17.halt
@@ -2477,8 +2482,9 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x02cin1",
-        // Pre R12 = 0x155; fn 10 (y) with cin=1: R1 <- y + 1 = 0x156.
+        // Pre R12 = 0x155; fn 10 (y) with cin=1: R1 <- y + 1 = 0x156.  Fresh state only (547).
         .pre = &.{.{ .bank = .r, .index = 12, .value = 0x155 }},
+        .refused = true,
         .src =
         \\x02.agu R1, R12, #10, #1
         \\x17.halt
@@ -5275,6 +5281,13 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
     defer gpa.free(words);
 
     const ran = emu.runLinear(gpa, &state, words);
+    if (g.refused) {
+        if (ran) |_| {
+            std.debug.print("gate '{s}': ran, expected a refusal\n", .{g.name});
+            return error.GateFailed;
+        } else |e| if (e != error.UnknownForm) return e;
+        return;
+    }
     if (g.wedge) {
         const ok = if (ran) |_| !state.halted else |_| true;
         if (!ok) {

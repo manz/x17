@@ -483,7 +483,7 @@ fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!bool {
     const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
     if (w4_mode == 1) {
-        try execX02Imm(gpa, state, bundle);
+        try execX02Xrd(gpa, state, bundle);
         return true;
     }
     if (w4_mode == 5) {
@@ -500,14 +500,8 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         try execX02X3Pre(gpa, state, bundle, s_pre);
         return true;
     }
-    if (w4_mode == 1) {
-        try execX02Imm(gpa, state, bundle);
-        return true;
-    }
     if (w4_mode == 0) {
-        // The A slot reads R before the R slot writes it.
         try execX02Ainc(gpa, state, bundle);
-        try execX02Agu(gpa, state, bundle);
         return true;
     }
     if (w4_mode == 2) {
@@ -530,9 +524,11 @@ const X02Common = struct {
     }
 };
 
-/// 0x02 slots outside the w4 modes (fact 513): w5[10:9] = 11 stores sx24
-/// s<{w2[0], w1[31:29]}> at X:[A<w4[21:17]>]; with w5[27:26] = 00, R<w3[22:19]> <- w5[31:30] = 11:
-/// #head[26:11], 00: yd (01/10 refused).  Both read before the bundle writes.
+/// 0x02 slots outside the w4 modes (fact 513, 547): w5[10:9] = 11 stores sx24
+/// s<{w2[0], w1[31:29]}> at X:[A<w4[21:17]>]; R<w3[22:19]> <- by w5[27:26]: 00 w5[31:30] = 11
+/// #head[26:11], 00 the Y side (01/10 refused); 01 (w5[11] ? AGU10 : AGU10B)[w1[10:7]](x =
+/// e<w3[30:27]>, y = R<w5[25:22]>); w5[27] = 1 OPEN (265's "R <- 1" holds only in fresh state).
+/// Both read before the bundle writes.
 fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
     const h = bundle[0];
     const w1 = bundle[1];
@@ -547,15 +543,31 @@ fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
         c.x_val = state.s[((w2 & 1) << 3) | (w1 >> 29)] & M24;
     }
     const r_dest: u32 = (w3 >> 19) & 0xF;
-    if (r_dest != 0 and (w5 >> 26) & 3 == 0) {
+    if (r_dest != 0) {
         c.r_dest = r_dest;
-        c.r_val = switch (w5 >> 30) {
-            3 => (h >> 11) & 0xFFFF,
-            0 => state.yd & 0xFFFF,
+        c.r_val = switch ((w5 >> 26) & 3) {
+            0 => switch (w5 >> 30) {
+                3 => (h >> 11) & 0xFFFF,
+                0 => x02YSide(state, bundle) & 0xFFFF,
+                else => return RunError.UnknownForm,
+            },
+            1 => blk: {
+                const fn_op: u32 = (w1 >> 7) & 0xF;
+                const x: u32 = state.e[(w3 >> 27) & 0xF];
+                const y: u32 = state.r[(w5 >> 22) & 0xF];
+                break :blk if ((w5 >> 11) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y);
+            },
             else => return RunError.UnknownForm,
         };
     }
     return c;
+}
+
+/// x02's Y-side source (fact 186, 545): Y:[e<w3[30:27]>] when w5[12], else yd, the last
+/// Y read before the bundle.
+fn x02YSide(state: *const State, bundle: []const u32) u32 {
+    if ((bundle[5] >> 12) & 1 == 0) return state.yd;
+    return state.getY(state.e[(bundle[3] >> 27) & 0xF]) orelse 0;
 }
 
 fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -773,10 +785,25 @@ fn x03RYRead(state: *State, bundle: []const u32) RunError!void {
     state.r[dest_r] = (state.getY(state.e[idx]) orelse 0) & 0xFFFF;
 }
 
+/// x03's R slot without w5[20] (fact 250): fn 10 y, fn 14 y + 1 (AGU10B's); other fns
+/// write nothing.  w5[27]'s "+1" (265) holds only in fresh state (547): refused.
+fn x03RAgu10b(state: *State, bundle: []const u32) RunError!void {
+    const dest_r: u32 = (bundle[3] >> 19) & 0xF;
+    if (dest_r == 0) return;
+    if ((bundle[5] >> 27) & 1 == 1) return RunError.UnknownForm;
+    const y_val: u32 = state.r[(bundle[5] >> 22) & 0xF];
+    state.r[dest_r] = switch ((bundle[1] >> 7) & 0xF) {
+        10 => y_val & 0xFFFF,
+        14 => (y_val +% 1) & 0xFFFF,
+        else => return,
+    };
+}
+
 /// 0x03 carries 0x02's R slot (fact 250).  w5[20] = 1 switches it
 /// from AGU10B to AGU10 with i = 0 (fact 252 / own-x03ragu10).
 fn execX03RSlot(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    if ((bundle[5] >> 20) & 1 == 0) return execX02Agu(gpa, state, bundle);
+    _ = gpa;
+    if ((bundle[5] >> 20) & 1 == 0) return x03RAgu10b(state, bundle);
     const fn_op: u32 = (bundle[1] >> 7) & 0xF;
     const dest_r: u32 = (bundle[3] >> 19) & 0xF;
     const y_r: u32 = (bundle[5] >> 22) & 0xF;
@@ -1332,69 +1359,34 @@ fn execX02X3Pre(gpa: std.mem.Allocator, state: *State, bundle: []const u32, s_pr
     state.s[dest_s] = (base << shift) & M24;
 }
 
-fn execX02Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
-    if (bundle.len < 6) return RunError.UnknownForm;
-    const w1 = bundle[1];
-    const w3 = bundle[3];
-    const w5 = bundle[5];
-    const fn_op: u32 = (w1 >> 7) & 0xF;
-    const dest_r: u32 = (w3 >> 19) & 0xF;
-    const y_r: u32 = (w5 >> 22) & 0xF;
-    if (dest_r == 0) return;
-    const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
-    const cin: u32 = (w5 >> 27) & 1;
-    const v: u32 = switch (fn_op) {
-        10 => (y_val +% cin) & 0xFFFF,
-        14 => (y_val +% 1 +% cin) & 0xFFFF,
-        else => return,
-    };
-    state.r[dest_r] = v;
-}
-
+/// x02's w4 slot, s<w4[6:3]> <- by mode w4[13:11] (fact 186, 187, 191, 545, 548): 101
+/// memory, X:[A<w4[21:17]>] when w5[14], else the Y side; 001 / 010 by the w5[29:28] override:
+/// 00 the mode's own source (001 #head[26:11], 010 e<w3[30:27]>), 10 x01's T[w1[10:7]] (a =
+/// e<w3[30:27]>, y = R<w5[25:22]>, b = e<w3[26:23]>; fns 0-2 seen), 01 A<w3[4:0]> + 1 (010 only;
+/// 001 OPEN), 11 the Y side.
 fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
-    if (bundle.len < 6) return RunError.UnknownForm;
     const w3 = bundle[3];
     const w4 = bundle[4];
     const w5 = bundle[5];
-    const dest_s: u32 = (w4 >> 3) & 0xF;
-    // Y-slot bit: w5[12] = 1 selects Y:[e<w3[30:27]>] instead of X:[A<w4[21:17]>].
-    const is_y: bool = ((w5 >> 12) & 1) == 1;
-    // Mux bits at w4[13:11]: 101 = X-read (default), 010 = scalar e (esrc).
-    const mux: u32 = (w4 >> 11) & 0x7;
-    const v: u32 = if (is_y) blk: {
-        const src_e: u32 = (w3 >> 27) & 0xF;
-        const addr: u32 = state.e[src_e];
-        break :blk state.getY(addr) orelse 0;
-    } else if (mux == 0b010) blk: {
-        // w5[29:28] selects the mux-010 subsource.
-        const sub: u32 = (w5 >> 28) & 0x3;
-        if (sub == 0b01) {
-            // asrc: s <- A<w3[4:0]> + 1
-            const src_a: u32 = w3 & 0x1F;
-            break :blk ((if (src_a == 0) 0 else state.a[src_a]) +% 1) & M24;
-        }
-        const src_e: u32 = (w3 >> 27) & 0xF;
-        break :blk if (src_e == 0) 0 else state.e[src_e];
-    } else blk: {
-        const src_a: u32 = (w4 >> 17) & 0xF;
-        const addr: u32 = state.a[src_a];
-        break :blk state.readX(addr) orelse 0;
+    const mode: u32 = (w4 >> 11) & 7;
+    const e_src: u32 = state.e[(w3 >> 27) & 0xF];
+    const v: u32 = if (mode == 5) blk: {
+        if ((w5 >> 14) & 1 == 1) break :blk state.readX(state.a[(w4 >> 17) & 0x1F]) orelse 0;
+        break :blk x02YSide(state, bundle);
+    } else switch ((w5 >> 28) & 3) {
+        0 => if (mode == 1) (bundle[0] >> 11) & 0xFFFF else e_src,
+        2 => switch ((bundle[1] >> 7) & 0xF) {
+            0 => e_src,
+            1 => state.r[(w5 >> 22) & 0xF],
+            2 => state.e[(w3 >> 23) & 0xF],
+            else => return RunError.UnknownForm,
+        },
+        1 => if (mode == 2) (state.a[w3 & 0x1F] +% 1) & M24 else return RunError.UnknownForm,
+        else => x02YSide(state, bundle),
     };
-    if (dest_s != 0) state.s[dest_s] = v;
+    state.s[(w4 >> 3) & 0xF] = v;
 }
-
-fn execX02Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
-    if (bundle.len < 6) return RunError.UnknownForm;
-    const head = bundle[0];
-    const w4 = bundle[4];
-    const dest_s: u32 = (w4 >> 3) & 0xF;
-    const imm: u32 = (head >> 11) & 0xFFFF;
-    if (dest_s != 0) state.s[dest_s] = imm;
-}
-
 fn execX12Aset(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len < 2) return RunError.UnknownForm;
     const head = bundle[0];
