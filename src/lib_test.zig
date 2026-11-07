@@ -16,6 +16,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/sections.sm", .text = @embedFile("sections.sm") },
     .{ .path = "lib/dequant.sm", .text = @embedFile("dequant.sm") },
     .{ .path = "lib/imdct.sm", .text = @embedFile("imdct.sm") },
+    .{ .path = "lib/window.sm", .text = @embedFile("window.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -2335,4 +2336,59 @@ test "0x00's s-slot sub-mux 10 is 234's table" {
     state.e[1] = 0x100;
     _ = try emu.runFrom(gpa, &state, &.{ 0x28001000, 0x0002A005 | (3 << 7), 0xE8010000, 0x00000020, 0x00000020, 0xC3000900, 0x35001002, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0xFF00), state.s[1]);
+}
+
+test "win_long windows, overlaps and clamps as the model does" {
+    // sosumi ref/dsp/aac/window.zig, only_long: block = rnd(t w / 2^23) with w / 4 tables,
+    // pcm = clamp(rshr(overlap + block, 5)), overlap = the second half.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/mem.sm"
+        \\.include "lib/window.sm"
+        \\        bits_init(0x4000)
+        \\        win_long(0x0000, 0x0800, 0x0C00, 0x1000, 0x2000)
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var prng = std.Random.DefaultPrng.init(0x3D2);
+    const rnd = prng.random();
+    for (0..3) |run| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        // run 0 quiet, 1 loud enough to clip both ways, 2 at the clamp edges
+        const amp: i64 = if (run == 0) 1 << 20 else (1 << 23) - 1;
+        var t: [2048]i64 = undefined;
+        var wp: [1024]i64 = undefined;
+        var wc: [1024]i64 = undefined;
+        var ovl: [1024]i64 = undefined;
+        for (&t) |*v| v.* = rnd.intRangeAtMost(i64, -amp, amp);
+        for (&wp) |*v| v.* = rnd.intRangeAtMost(i64, 0, 1 << 21);
+        for (&wc) |*v| v.* = rnd.intRangeAtMost(i64, 0, 1 << 21);
+        for (&ovl) |*v| v.* = rnd.intRangeAtMost(i64, -(1 << 21), 1 << 21);
+        if (run == 2) for (0..1024) |n| {
+            // block 0, overlap straddling the rounding edges of 32767 and -32768
+            wp[n] = 0;
+            ovl[n] = if (n % 2 == 0) (32767 << 5) + 15 + @as(i64, @intCast(n % 4)) else -(32768 << 5) - 16 - @as(i64, @intCast(n % 4));
+        };
+        const put = struct {
+            fn f(st: *emu.State, a: std.mem.Allocator, addr: usize, v: i64) !void {
+                try st.x_mem.put(a, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF);
+            }
+        }.f;
+        for (t, 0..) |v, k| try put(&state, gpa, k, v);
+        for (wp, 0..) |v, k| try put(&state, gpa, 0x800 + k, v);
+        for (wc, 0..) |v, k| try put(&state, gpa, 0xC00 + k, v);
+        for (ovl, 0..) |v, k| try put(&state, gpa, 0x1000 + k, v);
+        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 22);
+        try testing.expect(state.halted);
+        for (0..1024) |n| {
+            const b = imMul(t[n], wp[n]);
+            const v = std.math.clamp(rshr(ovl[n] + b, 5), -32768, 32767);
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF, (state.getY(0x2000 + @as(u32, @intCast(n))) orelse 0xDEAD) & 0xFFFF);
+            const o = imMul(t[1024 + n], wc[1023 - n]);
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(o)))) & 0xFFFFFF, state.readX(0x1000 + @as(u32, @intCast(n))) orelse 0xDEAD);
+        }
+    }
 }

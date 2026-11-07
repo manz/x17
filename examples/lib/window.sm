@@ -1,0 +1,70 @@
+; AAC window, overlap-add and PCM: the x17 twin of sosumi's ref/dsp/aac/window.zig.
+;
+; The IMDCT's 2048 Q7 words times the window halves, stored as w / 4 in Q23 so one rounded
+; multiply gives Q5 words whose sums never wrap. PCM = clamp(rshr(overlap + block, 5)) to
+; 16 bits; the shift comes first, so the clamp's differences stay within 2^18.
+;
+; Needs lib/bits.sm (s0 = 0, s14 = 1) and lib/mem.sm. x02.ainc's template also writes s2 and
+; x02.mpy steps A1, so nothing lives in them.
+
+; win_long(T, WP, WC, OVL, PCM): an only_long block.
+;   X T    the IMDCT's 2048 words
+;   X WP   the previous shape's rising half, 1024 words; X WC the current shape's
+;   X OVL  1024 overlap words, read then rewritten with the block's second half
+;   Y PCM  1024 samples out
+; Uses s1, s3 .. s13, e6, e7, R2, R3, R7, A4, A6, A8, A14, p1.
+.macro win_long(T, WP, WC, OVL, PCM) {
+        aimm(A4, T)
+        aimm(A6, WP)
+        aimm(A8, OVL)
+        ldi s13, #PCM - 1
+        x17.mve e7, s13         ; e7 = PCM
+        ldi s9, #32767
+        ldi s10, #-32768
+        ldi s12, #-5
+        ldi s11, #1024
+first:  x19.xrd s1, #4          ; t
+        x02.ainc #4, #4
+        x19.xrd s3, #6          ; w
+        x02.ainc #6, #6
+        x02.mpy s5, s1, s3
+        x19.xrd s6, #8          ; overlap
+        x02.ainc #8, #8
+        alu s5, s5, s6, #OP_ADD
+        x19.alu s5, s5, s12, #SHIFT ; rshr 5
+        alu s4, s5, s9, #OP_SUB
+        ptst p1, s0, #LE4, #PTST
+        alu s7, s0, s4, #OP_SUB
+        psel s5, s7, s5, p1, #0, #4 ; v > 32767: 32767
+        alu s4, s5, s10, #OP_SUB
+        ptst p1, s0, #LT4, #PTST
+        alu s7, s0, s4, #OP_SUB
+        psel s5, s7, s5, p1, #1, #4 ; v < -32768: -32768
+        x17.sty e7, #5, #0
+        x18.eagu e7, e7, #AGU_INC
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, first
+        nop()
+        nop()
+        ldi s12, #WC + 1023
+        amov(A6, s12)           ; the current shape, falling
+        aimm(A8, OVL)
+        rimm R2, #-1
+        ldi s11, #1024
+second: x19.xrd s1, #4
+        x02.ainc #4, #4
+        x19.xrd s3, #6
+        x18.rag101 s0, R3, A6, R2, #2
+        x12.aset #3, R3
+        x02.mpy s5, s1, s3
+        stx A8, s5
+        x02.ainc #8, #8
+        alu s11, s11, s14, #OP_SUB
+        alu s4, s11, s0, #OP_ADD
+        ptst p1, s0, #EQ4, #PTST
+        jmp #IF_NOT, #1, second
+        nop()
+        nop()
+}
