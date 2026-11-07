@@ -3433,11 +3433,7 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
                 if (since_armer) |g| if (!g.completes()) return RunError.HaltDeadline;
             } else if (deadlineLimit(slice)) |limit| {
                 since_armer = .{ .limit = limit };
-            } else if (since_armer) |*g| {
-                g.bundles += 1;
-                g.words += slice.len;
-                if (slice.len > 1) g.mixed = true;
-            }
+            } else if (since_armer) |*g| g.words += slice.len;
         }
         i += len;
         // The stop has a shadow (fact 72): an ldi and a st + wr after it
@@ -3537,24 +3533,21 @@ fn sameY(a: *const std.AutoHashMapUnmanaged(u32, u32), b: *const std.AutoHashMap
     return true;
 }
 
-/// What lies between an armer and the halt.
+/// Words between an armer and the halt: the halt completes while they stay within the armer's
+/// limit (fact 484, 485: after an x18 armer 7 nops complete, and so do 5 nops and a
+/// two-word st pair, while 6 and the pair park). The unit may be cycles (OPEN).
 const DeadlineGap = struct {
     limit: usize,
-    bundles: usize = 0,
     words: usize = 0,
-    mixed: bool = false,
 
-    /// Measured (fact 484): one-word bundles complete up to the armer's limit and park
-    /// one past it. 98's gap of four nops, an ldi and a two-word st pair (7 words) completed
-    /// after an x17 and parked one nop later, so a gap holding a longer bundle completes while
-    /// its words stay below the limit. The window's unit is OPEN (cycles, probably).
     fn completes(g: DeadlineGap) bool {
-        return if (g.mixed) g.words < g.limit else g.bundles <= g.limit;
+        return g.words <= g.limit;
     }
 };
 
 /// Bundles that arm the halt deadline, with their limit: an x17 with S1[15] = 1 that does not
-/// halt, S2 class 000, 101 or 111 (fact 98), limit 8; an x02 with w2[30] = 1 (477) and an
+/// halt, S2 class 000, 101 or 111 (fact 98), limit 8 (the bare continuing x17 of 484;
+/// 98's store-carrying x17 allowed 7, a form x17 does not separate yet); an x02 with w2[30] = 1 (477) and an
 /// x18 class 000 with w2[18:17] = 10 (483), limit 7 (484); an x03 with w2[31:29] = 010, an lde
 /// with h[30] = 0 and an rop with h[31] = 1 (479), limit 7 by analogy.
 fn deadlineLimit(bundle: []const u32) ?usize {

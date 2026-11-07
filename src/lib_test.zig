@@ -1686,21 +1686,28 @@ test "x03 with w2[31:29] = 010 arms the halt deadline" {
     }
 }
 
-test "a gap holding a two-word bundle completes while its words stay below the limit" {
-    // fact 98: continuing x17, 4 nops, ldi, st pair, halt completes; one more nop parks.
+test "the deadline counts words: a two-word st pair takes two" {
+    // fact 485: x18 armer, n nops, st pair, halt: n = 5 completes, n = 6 parks.
     const gpa = testing.allocator;
-    for ([_]usize{ 4, 5 }) |g| {
+    for ([_]usize{ 5, 6 }) |g| {
         var src: std.ArrayList(u8) = .empty;
         defer src.deinit(gpa);
-        try src.appendSlice(gpa, "x17.cont\n");
         for (0..g) |_| try src.appendSlice(gpa, "alu s0, s0, s0, #0\n");
-        try src.appendSlice(gpa, "ldi s4, #0x700\nst.wr #0x40, e0, s4\nx17.halt\n");
-        const prog = try assemble(gpa, src.items);
-        defer gpa.free(prog);
+        try src.appendSlice(gpa, "st.wr #0x40, e0, s4\nx17.halt\n");
+        const head = try assemble(gpa, "ldi s4, #0x700\n");
+        defer gpa.free(head);
+        const tail = try assemble(gpa, src.items);
+        defer gpa.free(tail);
+        var prog: std.ArrayList(u32) = .empty;
+        defer prog.deinit(gpa);
+        // the ldi sets e0 for the pair before the armer, outside the counted gap
+        try prog.appendSlice(gpa, head);
+        try prog.appendSlice(gpa, &.{ 0x00000018, 0x00000004, 0x0004AC00, 0x00040000 });
+        try prog.appendSlice(gpa, tail);
         var state = emu.State{};
         defer state.deinit(gpa);
-        const r = emu.runFrom(gpa, &state, prog, 0, 64);
-        if (g == 4) _ = try r else try testing.expectError(error.HaltDeadline, r);
+        const r = emu.runFrom(gpa, &state, prog.items, 0, 64);
+        if (g == 5) _ = try r else try testing.expectError(error.HaltDeadline, r);
     }
 }
 
