@@ -6282,88 +6282,88 @@ test "pcm_packet copies WAV and AIFF samples into the host ring, packet after pa
     }
 }
 
-fn x18c3Run(head: u32, w1: u32, w2: u32, s4: u32) !emu.State {
+fn x18c3Run(head: u32, w1: u32, w2: u32, s5: u32) !emu.State {
     var state = emu.State{};
     errdefer state.deinit(testing.allocator);
-    state.s[4] = s4;
+    state.s[5] = s5;
     state.s[7] = 3;
-    _ = try emu.runFrom(testing.allocator, &state, &.{ head, w1, w2, 0x740000c9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    _ = try emu.runFrom(testing.allocator, &state, &.{ head, w1, w2, 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     return state;
 }
 
 fn x18c3Head(code: u32) u32 {
-    return (0x20400018 & ~@as(u32, 0x3F << 25)) | (code << 25);
+    return (0x21c00018 & ~@as(u32, 0x3F << 25)) | (code << 25);
 }
 
 test "x18 class 011 codes 0x10 and 0x23 run the ALU only for n in {2,5,6,7,9}" {
-    // own-x18b: code 0x10, op 0, n = 0, a = s4 = 5, b = s7 = 3: table B op 0 = b - a.
+    // own-x18b (21c00018 00001970 30000014 74000149): code 0x10, op 0, n = 0, a = s5 = 5, b = s7 = 3: table B op 0 = b - a.
     const want_b = [8]u32{ 0xFFFFFE, 0xFFFFF7, 0xFFFFFB, 0xFFFFFB, 0xFFFFFA, 9, 6, 0xFFFFFB };
     for (want_b, 0..) |want, op| {
-        var st = try x18c3Run(x18c3Head(0x10), 0x00001970 | (@as(u32, @intCast(op)) << 15), 0x30000010 | (1 << 6), 5);
+        var st = try x18c3Run(x18c3Head(0x10), 0x00001970 | (@as(u32, @intCast(op)) << 15), 0x30000014 | (1 << 6), 5);
         defer st.deinit(testing.allocator);
         try testing.expectEqual(want, st.s[9]);
     }
     for ([_]u32{ 2, 5, 6, 7, 9 }) |n| {
-        var st = try x18c3Run(x18c3Head(0x10), 0x00001970, 0x30000010 | (n << 6), 5);
+        var st = try x18c3Run(x18c3Head(0x10), 0x00001970, 0x30000014 | (n << 6), 5);
         defer st.deinit(testing.allocator);
         try testing.expectEqual(@as(u32, 8), st.s[9]); // slot op 0: a + b
-        var s2 = try x18c3Run(x18c3Head(0x23), 0x00001970, 0x30000010 | (n << 6), 5);
+        var s2 = try x18c3Run(x18c3Head(0x23), 0x00001970, 0x30000014 | (n << 6), 5);
         defer s2.deinit(testing.allocator);
         try testing.expectEqual(@as(u32, 8), s2.s[9]);
     }
     for ([_]u32{ 0, 1, 3, 4, 8, 10, 15 }) |n| {
-        var st = try x18c3Run(x18c3Head(0x23), 0x00001970, 0x30000010 | (n << 6), 5);
+        var st = try x18c3Run(x18c3Head(0x23), 0x00001970, 0x30000014 | (n << 6), 5);
         defer st.deinit(testing.allocator);
         try testing.expectEqual(@as(u32, 3), st.s[9]); // writes b
     }
     // op 7: a < 0 picks a + 1, else -a; a where 16- and 24-bit signs disagree refuses
-    var neg = try x18c3Run(x18c3Head(0x10), 0x00001970 | (7 << 15), 0x30000010, 0xFFFFFB);
+    var neg = try x18c3Run(x18c3Head(0x10), 0x00001970 | (7 << 15), 0x30000014, 0xFFFFFB);
     defer neg.deinit(testing.allocator);
     try testing.expectEqual(@as(u32, 0xFFFFFC), neg.s[9]);
-    try testing.expectError(error.UnknownForm, x18c3Run(x18c3Head(0x10), 0x00001970 | (7 << 15), 0x30000010, 0x8000));
+    try testing.expectError(error.UnknownForm, x18c3Run(x18c3Head(0x10), 0x00001970 | (7 << 15), 0x30000014, 0x8000));
     // other codes: binary op with n != 0 refuses
-    try testing.expectError(error.UnknownForm, x18c3Run(x18c3Head(0x09), 0x00001970, 0x30000010 | (1 << 6), 5));
+    try testing.expectError(error.UnknownForm, x18c3Run(x18c3Head(0x09), 0x00001970, 0x30000014 | (1 << 6), 5));
 }
 
 test "x18 class 011 unary ops shift the result by n under codes 0x00-0x05" {
-    // own-x18s: code 0x00, op 3 (a + 1), n = 1: (5 + 1) << 1 = 12.
-    var st = try x18c3Run(0x00400018, 0x00019970, 0x30000050, 5);
+    // own-x18s (01c00018 00019970 30000054 74000149): code 0x00, op 3 (a + 1), n = 1: (5 + 1) << 1 = 12.
+    var st = try x18c3Run(0x01c00018, 0x00019970, 0x30000054, 5);
     defer st.deinit(testing.allocator);
     try testing.expectEqual(@as(u32, 0xC), st.s[9]);
-    var l2 = try x18c3Run(x18c3Head(0x02), 0x00019970, 0x30000010 | (3 << 6), 5);
+    var l2 = try x18c3Run(x18c3Head(0x02), 0x00019970, 0x30000014 | (3 << 6), 5);
     defer l2.deinit(testing.allocator);
     try testing.expectEqual(@as(u32, 48), l2.s[9]);
-    var r = try x18c3Run(x18c3Head(0x03), 0x00019970, 0x30000010 | (1 << 6), 5);
+    var r = try x18c3Run(x18c3Head(0x03), 0x00019970, 0x30000014 | (1 << 6), 5);
     defer r.deinit(testing.allocator);
     try testing.expectEqual(@as(u32, 3), r.s[9]);
     // floor: (-5 + 1) >> 3 = -1
-    var rn = try x18c3Run(x18c3Head(0x05), 0x00019970, 0x30000010 | (3 << 6), 0xFFFFFB);
+    var rn = try x18c3Run(x18c3Head(0x05), 0x00019970, 0x30000014 | (3 << 6), 0xFFFFFB);
     defer rn.deinit(testing.allocator);
     try testing.expectEqual(@as(u32, 0xFFFFFF), rn.s[9]);
     // left shift of a negative result keeps its sign; past 24 bits is refused
-    var w = try x18c3Run(x18c3Head(0x01), 0x00011970, 0x30000010 | (4 << 6), 0xFFFFFB);
+    var w = try x18c3Run(x18c3Head(0x01), 0x00011970, 0x30000014 | (4 << 6), 0xFFFFFB);
     defer w.deinit(testing.allocator);
     try testing.expectEqual(@as(u32, 0xFFFFB0), w.s[9]);
-    try testing.expectError(error.UnknownForm, x18c3Run(x18c3Head(0x00), 0x00011970, 0x30000010 | (4 << 6), 0x7FFFFF));
+    try testing.expectError(error.UnknownForm, x18c3Run(x18c3Head(0x00), 0x00011970, 0x30000014 | (4 << 6), 0x7FFFFF));
     // a binary op under 0x16 runs the slot ALU at n = 0
-    var b = try x18c3Run(x18c3Head(0x16), 0x00001970, 0x30000010, 5);
+    var b = try x18c3Run(x18c3Head(0x16), 0x00001970, 0x30000014, 5);
     defer b.deinit(testing.allocator);
     try testing.expectEqual(@as(u32, 8), b.s[9]);
 }
 
 /// Runs one class-011 bundle, s9 <- the slot.  p1 is the p destination, for codes whose
 /// head[28:25] is the p-write condition 11.
-fn x18c3Unary(code: u32, op: u32, n: u32, s4: u32, s7: u32) !u32 {
+fn x18c3Unary(code: u32, op: u32, n: u32, s5: u32, s7: u32) !u32 {
     var state = emu.State{};
     defer state.deinit(testing.allocator);
-    state.s[4] = s4;
+    state.s[5] = s5;
     state.s[7] = s7;
-    _ = try emu.runFrom(testing.allocator, &state, &.{ x18c3Head(code), 0x00001970 | (op << 15), 0x30000010 | (n << 6) | (1 << 14), 0x740000c9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    _ = try emu.runFrom(testing.allocator, &state, &.{ x18c3Head(code), 0x00001970 | (op << 15), 0x30000014 | (n << 6) | (1 << 14), 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     return state.s[9];
 }
 
 test "x18 class 011 unary ops under codes 0x16-0x19, 0x30-0x35, 0x3A (643)" {
-    // own-x18l: s4 = 7, s7 = -2, code 0x16, op 3 (a & b), n = 1: (7 & -2) << 1 = 12.
+    // own-x18l (2dc00018 00019970 30000054 74000149): s5 = 7, s7 = -2, code 0x16, op 3 (a & b), n = 1: (7 & -2) << 1 = 12.
     try testing.expectEqual(@as(u32, 12), try x18c3Unary(0x16, 3, 1, 7, 0xFFFFFE));
     const a: u32 = 0x000C35; // 3125
     const b: u32 = 0x0000F0;
@@ -6413,8 +6413,8 @@ test "x18 class 011 slot ops 4 and 6: a - 1 and -a (fact 641 rows)" {
 }
 
 test "x18 class 011 unary ops under the 45 remaining codes (644)" {
-    // own-x18m: s4 = -4, s7 = 9, code 0x26, op 2: min(-4, 9) = -4.
-    var st = try x18c3Run(0x4c400018, 0x00011970, 0x30000010, 0xFFFFFC);
+    // own-x18m (4dc00018 00011970 30000014 74000149): s5 = -4, s7 = 9, code 0x26, op 2: min(-4, 9) = -4.
+    var st = try x18c3Run(0x4dc00018, 0x00011970, 0x30000014, 0xFFFFFC);
     defer st.deinit(testing.allocator);
     try testing.expectEqual(@as(u32, 0xFFFFFC), st.s[9]); // the exact words, s7 = 3 here
     try testing.expectEqual(@as(u32, 0xFFFFFC), try x18c3Unary(0x26, 2, 0, 0xFFFFFC, 9));
@@ -6494,11 +6494,73 @@ test "x18 class 011 unary ops under the 45 remaining codes (644)" {
     }
     const R = struct { code: u32, op: u32, n: u32, a: u32 = 5, b: u32 = 3 };
     for ([_]R{
-        .{ .code = 0x36, .op = 2, .n = 0 },          .{ .code = 0x39, .op = 6, .n = 0 },
         .{ .code = 0x3E, .op = 2, .n = 0 },          .{ .code = 0x3C, .op = 3, .n = 3 },
         .{ .code = 0x3D, .op = 3, .n = 2 },          .{ .code = 0x3F, .op = 3, .n = 2 },
         .{ .code = 0x26, .op = 7, .n = 0 },          .{ .code = 0x26, .op = 2, .n = 3 },
         .{ .code = 0x08, .op = 6, .n = 0 },          .{ .code = 0x21, .op = 4, .n = 0 },
-        .{ .code = 0x06, .op = 2, .n = 0, .b = 13 }, .{ .code = 0x06, .op = 2, .n = 0, .b = 0xFFFFF7 },
+        .{ .code = 0x06, .op = 2, .n = 0, .b = 13 }, .{ .code = 0x06, .op = 2, .n = 0, .b = 0xFFFFF3 },
     }) |r| try testing.expectError(error.UnknownForm, x18c3Unary(r.code, r.op, r.n, r.a, r.b));
+}
+
+test "x18 class 011 codes 0x36-0x39 and the head's Y load (645)" {
+    // own-x18rot: 71c00018 00031970 30000014 74000149, s5 = -0x123, s7 = 4: rot24 left by 4.
+    var st = try x18c3Run(0x71c00018, 0x00031970, 0x30000014, 0xFFFEDD);
+    defer st.deinit(testing.allocator);
+    try testing.expectEqual(@as(u32, 0xFFFEDD), st.s[5]);
+    st.s[7] = 4;
+    try testing.expectEqual(@as(u32, 0xFFEDDF), try x18c3Unary(0x38, 6, 0, 0xFFFEDD, 4));
+    const N: u32 = 0xFFFEDD; // -0x123
+    const C = struct { code: u32, op: u32, n: u32, a: u32, b: u32, want: u32 };
+    for ([_]C{
+        .{ .code = 0x36, .op = 2, .n = 0, .a = 0x123, .b = 4, .want = 0x12 },
+        .{ .code = 0x37, .op = 2, .n = 0, .a = 0x123, .b = 4, .want = 0x12 }, // (0x123 + 8) >> 4
+        .{ .code = 0x37, .op = 2, .n = 0, .a = 0x128, .b = 4, .want = 0x13 },
+        .{ .code = 0x36, .op = 2, .n = 0, .a = 0x128, .b = 4, .want = 0x12 },
+        .{ .code = 0x38, .op = 2, .n = 0, .a = N, .b = 8, .want = 0xFFFE },
+        .{ .code = 0x36, .op = 2, .n = 1, .a = N, .b = 8, .want = 0xFFFFFE },
+        .{ .code = 0x36, .op = 2, .n = 0, .a = 0x123, .b = 0xFFFFFF, .want = 0x246 }, // b < 0 shifts left
+        .{ .code = 0x36, .op = 3, .n = 2, .a = 0x123, .b = 4, .want = 0x1230 },
+        .{ .code = 0x37, .op = 3, .n = 2, .a = 0x128, .b = 0xFFFFFC, .want = 0x13 }, // rounds the right shift
+        .{ .code = 0x36, .op = 3, .n = 2, .a = 0x128, .b = 0xFFFFFC, .want = 0x12 },
+        .{ .code = 0x36, .op = 3, .n = 1, .a = 0x123, .b = 4, .want = 0x123 },
+        .{ .code = 0x38, .op = 4, .n = 2, .a = N, .b = 8, .want = 0xFFFE },
+        .{ .code = 0x37, .op = 4, .n = 0, .a = 0x128, .b = 4, .want = 0x128 },
+        .{ .code = 0x36, .op = 6, .n = 0, .a = N, .b = 4, .want = 0xFFEDDF }, // (a | 1) rotated: 0xFFFEDD already odd
+        .{ .code = 0x37, .op = 6, .n = 0, .a = 0xFFFFFC, .b = 4, .want = 0xFFFFDF }, // -4 | 1 = -3, rotated
+        .{ .code = 0x38, .op = 6, .n = 0, .a = 0xFFFFFC, .b = 4, .want = 0xFFFFCF }, // -4 rotated plain
+        .{ .code = 0x38, .op = 6, .n = 0, .a = 0x123, .b = 0xFFFFF8, .want = 0x230001 }, // right by 8
+        .{ .code = 0x39, .op = 2, .n = 0, .a = 0x123, .b = 4, .want = 0x1230 },
+        .{ .code = 0x39, .op = 6, .n = 1, .a = 0x123, .b = 0xFFFFFC, .want = 0 },
+        .{ .code = 0x39, .op = 3, .n = 2, .a = N, .b = 4, .want = 0xFFFFED },
+        .{ .code = 0x39, .op = 3, .n = 2, .a = N, .b = 0xFFFFFC, .want = 0xFFFFFF },
+        .{ .code = 0x39, .op = 3, .n = 2, .a = 0x123, .b = 0xFFFFFC, .want = 0 },
+        .{ .code = 0x39, .op = 2, .n = 2, .a = N, .b = 4, .want = 0x0FFFED },
+        .{ .code = 0x39, .op = 4, .n = 2, .a = N, .b = 0xFFFFFC, .want = 0 },
+    }) |c| {
+        const got = x18c3Unary(c.code, c.op, c.n, c.a, c.b) catch |e| {
+            std.debug.print("code {x} op {d} n {d}: {}\n", .{ c.code, c.op, c.n, e });
+            return e;
+        };
+        if (got != c.want) std.debug.print("code {x} op {d} n {d}: got {x}\n", .{ c.code, c.op, c.n, got });
+        try testing.expectEqual(c.want, got);
+    }
+    for ([_]C{
+        .{ .code = 0x36, .op = 2, .n = 0, .a = 1, .b = 16, .want = 0 },
+        .{ .code = 0x38, .op = 6, .n = 0, .a = 1, .b = 13, .want = 0 },
+        .{ .code = 0x39, .op = 2, .n = 0, .a = 1, .b = 0xFFFFF3, .want = 0 },
+        .{ .code = 0x37, .op = 7, .n = 0, .a = 1, .b = 1, .want = 0 },
+        .{ .code = 0x39, .op = 2, .n = 3, .a = 1, .b = 1, .want = 0 },
+    }) |c| try testing.expectError(error.UnknownForm, x18c3Unary(c.code, c.op, c.n, c.a, c.b));
+    // the head loads s14 <- Y:[e10]; a word with bit 15 set is refused (sign unmeasured)
+    var ld = emu.State{};
+    defer ld.deinit(testing.allocator);
+    ld.e[10] = 0x700;
+    try ld.y_mem.put(testing.allocator, 0x700, 0x1234);
+    ld.s[5] = 5;
+    ld.s[7] = 3;
+    _ = try emu.runFrom(testing.allocator, &ld, &.{ 0x21c00018, 0x00001970, 0x30000014, 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1234), ld.s[14]);
+    try testing.expectEqual(@as(u32, 0xFFFFFE), ld.s[9]);
+    try ld.y_mem.put(testing.allocator, 0x700, 0x8000);
+    try testing.expectError(error.UnknownForm, emu.runFrom(testing.allocator, &ld, &.{ 0x21c00018, 0x00001970, 0x30000014, 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }

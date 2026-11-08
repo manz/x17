@@ -2345,18 +2345,31 @@ fn x18C3SlotAlu(op: u32, a: u32, b: u32) RunError!u32 {
 }
 
 /// shr / rshr / lsr by a register count (644): b >= 0 shifts right (arithmetic, rounded, or
-/// logical over 24 bits), b < 0 shifts left by -b.  Counts are measured over -8..12 (644, 645
-/// sweeps); any other b is refused, as is a left shift past 24 bits.
+/// logical over 24 bits), b < 0 shifts left by -b.  Counts are measured over |b| <= 12 (644,
+/// 645); any other b is refused, as is a left shift past 24 bits.
 const X18C3ShiftKind = enum { shr, rshr, lsr };
 fn x18C3ShiftBy(kind: X18C3ShiftKind, v: u32, b: u32) RunError!u32 {
     const k = sx24(b);
-    if (k < -8 or k > 12) return RunError.UnknownForm;
+    if (k < -12 or k > 12) return RunError.UnknownForm;
     if (k < 0) return x18C3Shl(v, @intCast(-k));
     return switch (kind) {
         .shr => x18C3Shr(v, @intCast(k)),
         .rshr => x18C3Rnd(v, @intCast(k)),
         .lsr => (v & M24) >> @intCast(k),
     };
+}
+
+/// 0x36 / 0x37 / 0x38's register-count shift kinds (645).
+const X18C3_SHIFT_36 = [3]X18C3ShiftKind{ .shr, .rshr, .lsr };
+
+/// rot24(v, b): rotate the 24-bit value left by b, right for b < 0 (645, |b| <= 12).
+fn x18C3Rot(v: u32, b: u32) RunError!u32 {
+    const k = sx24(b);
+    if (k < -12 or k > 12) return RunError.UnknownForm;
+    const l: u5 = @intCast(@mod(k, 24));
+    const x = v & M24;
+    if (l == 0) return x;
+    return ((x << l) | (x >> @intCast(24 - @as(u6, l)))) & M24;
 }
 
 /// Ops 2/3/4 min, op 6 max, signed 24-bit (644).
@@ -2431,7 +2444,22 @@ fn x18C3Unary644(code: u32, op: u32, n: u32, a: u32, b: u32) RunError!?u32 {
         0x3C => if (n <= 1) try x18C3SlotAlu(op, a, b) else if (n == 2) b & M24 else RunError.UnknownForm,
         0x3D, 0x3F => if (n <= 1) try x18C3SlotAlu(op, a, b) else RunError.UnknownForm,
         0x3E => if (op == 4) try x18C3Shr(a, n) else RunError.UnknownForm,
-        else => RunError.UnknownForm, // 0x36-0x39
+        0x36...0x38 => switch (op) {
+            2 => try x18C3ShiftBy(X18C3_SHIFT_36[code - 0x36], a, b),
+            // 645: op 3 at n = 2 shifts left by b (0x37 rounding the reverse shift); n < 2 gives a.
+            3 => if (n < 2) a & M24 else try x18C3ShiftBy(if (code == 0x37) .rshr else .shr, a, (0 -% b) & M24),
+            4 => if (n < 2) a & M24 else try x18C3ShiftBy(X18C3_SHIFT_36[code - 0x36], a, b),
+            // 645: op 6 rotates the 24-bit value by b; 0x36 / 0x37 rotate a | (a < 0).
+            else => try x18C3Rot(if (code != 0x38 and sx24(a) < 0) a | 1 else a, b),
+        },
+        // 645: 0x39, n < 2 shlz for every op; n = 2 asrz for op 3, lsrz for the others.
+        else => blk: {
+            const k = sx24(b);
+            if (k < -12 or k > 12) return RunError.UnknownForm;
+            if (n < 2) break :blk if (k < 0) 0 else try x18C3Shl(a, @intCast(k));
+            if (op == 3) break :blk if (k < 0) (if (sx24(a) < 0) M24 else 0) else try x18C3Shr(a, @intCast(k));
+            break :blk if (k < 0) 0 else (a & M24) >> @intCast(k);
+        },
     };
 }
 
@@ -2518,8 +2546,19 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const b: u32 = state.s[(w1 >> 4) & 0xF];
     const v = try x18C3Value(h, w1, w2, a, b);
     const dest_s: u32 = (w1 >> 8) & 0xF;
+    // The head's load slot (own-x18b and siblings, 645 note): s<head[24:21]> <- Y:[e<w3[28:25]>].
+    // Only words below 0x8000 were loaded (sign unmeasured), and a dest shared with the slot's
+    // dest or operands has no measured order: refuse those.
+    const ld_dest: u32 = (h >> 21) & 0xF;
+    var ld_val: u32 = 0;
+    if (ld_dest != 0) {
+        ld_val = state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0;
+        if (ld_val & 0x8000 != 0) return RunError.UnknownForm;
+        if (ld_dest == dest_s or ld_dest == (w2 >> 2) & 0xF or ld_dest == (w1 >> 4) & 0xF) return RunError.UnknownForm;
+    }
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_s != 0) state.s[dest_s] = v;
+    if (ld_dest != 0) state.s[ld_dest] = ld_val;
     if (dest_r != 0) state.r[dest_r] = v & 0xFFFF;
     if (((h >> 25) & 0xF) == 11) {
         if ((w2 >> 14) & 0xF == 0) return RunError.UnknownForm; // p0 write: unmeasured
