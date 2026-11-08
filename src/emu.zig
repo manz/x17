@@ -804,22 +804,25 @@ fn x03AccXIndex(bundle: []const u32) u32 {
 }
 
 /// x03's high dest beside w4 mode 5 (604, 605): s<w2[12:9]> <- the 40-bit
-/// {X_hi : X_lo} op P, [39:24], floor; X_hi = s<{w2[0], w1[31:29]}>, X_lo = s<w5[12:9]>.
-/// Measured for mode 4 / 5 with w1[14] = 1 and w1[17:15] = 0 only, the operands signed
-/// (0x7000 * -0x123 floors to -1).
+/// {X_hi : X_lo} op 2ab, [39:24]; X_hi = s<{w2[0], w1[31:29]}>, X_lo = s<w5[12:9]>; op by
+/// mode 4 P, 5 X + P, 6 P - X, 7 X - P; w1[15] = 1 adds 2^23 first, 0 floors.  Measured with
+/// w1[14] = 1 and w1[17:16] = 0 only, the operands signed (0x7000 * -0x123 floors to -1).
 fn x03ProductHigh(state: *const State, bundle: []const u32) RunError!?SWrite {
     const w1 = bundle[1];
     const w2 = bundle[2];
     const dest: u32 = (w2 >> 9) & 0xF;
     if (dest == 0) return null;
     const mode: u32 = (w1 >> 11) & 0x7;
-    if ((w1 >> 14) & 1 == 0 or (w1 >> 15) & 7 != 0) return RunError.UnknownForm;
-    if (mode != 4 and mode != 5) return RunError.UnknownForm;
+    if ((w1 >> 14) & 1 == 0 or (w1 >> 16) & 3 != 0 or mode < 4) return RunError.UnknownForm;
     const x_hi_s = x03AccXIndex(bundle);
-    if (mode == 5 and x_hi_s == 0) return RunError.UnknownForm;
+    if (mode != 4 and x_hi_s == 0) return RunError.UnknownForm;
     const prod: i64 = @as(i64, sx24(state.s[(w2 >> 1) & 0xF])) * sx24(state.s[(w2 >> 5) & 0xF]);
     const x: i64 = if (mode == 4) 0 else (@as(i64, state.s[x_hi_s] & 0xFFFF) << 24) + sx24(state.s[(bundle[5] >> 9) & 0xF]);
-    const acc: i64 = x + prod * 2;
+    const acc: i64 = switch (mode) {
+        4, 5 => x + prod * 2,
+        6 => prod * 2 - x,
+        else => x - prod * 2,
+    } + if ((w1 >> 15) & 1 == 1) @as(i64, 1 << 23) else 0;
     return .{ .dest = dest, .value = @truncate(@as(u64, @bitCast(acc >> 24)) & 0xFFFF) };
 }
 

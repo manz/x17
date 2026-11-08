@@ -5308,15 +5308,15 @@ test "x03 product low half is (X op P)[15:0] (fact 603)" {
     const gpa = testing.allocator;
     // 80000003 00006800 01441485 00000007 00002C90 00041402 (w4 mode 5): s9 <- low, s2 = 3, s4 = 5 (P = 0x1E),
     // s<k> = 0x110 k + 1, X = s<w5[12:9]>, mode w1[13:11].
-    // Modes 6 / 7 and w1[17] clear the w2[12:9] high dest (DERIVED: measured with 0xA, whose
-    // high write there is unmodelled and refuses).
+    // w1[17] clears the w2[12:9] high dest (DERIVED: measured with 0xA, whose high write
+    // there is unmodelled and refuses).
     for ([_]struct { w1: u32 = 0x00006800, w2: u32 = 0x01441485, k: u32 = 8, want: ?u32 }{
         .{ .want = 0x089F },
         .{ .k = 10, .want = 0x0ABF },
         .{ .k = 12, .want = 0x0CDF },
         .{ .k = 1, .want = 0x012F },
-        .{ .w1 = 0x00007800, .w2 = 0x01440085, .want = 0x0863 },
-        .{ .w1 = 0x00007000, .w2 = 0x01440085, .want = 0xF79D },
+        .{ .w1 = 0x00007800, .want = 0x0863 },
+        .{ .w1 = 0x00007000, .want = 0xF79D },
         .{ .w1 = 0x00006000, .want = 0x001E },
         .{ .w1 = 0x00026800, .w2 = 0x01440085, .want = 0x0890 }, // w1[17]: P not doubled
         .{ .w1 = 0x00002800, .want = null }, // w1[14] = 0 with an X mode: OPEN
@@ -5347,7 +5347,7 @@ test "x03 high dest beside w4 mode 5 is the 40-bit acc's [39:24] (fact 604, 605)
         .{ .w1 = 0x60006800, .w2 = 0x01441484, .want = 0x0331 }, // w2[0] = 0: s3
         .{ .w1 = 0xC0006800, .w2 = 0x01441484, .want = 0x0661 }, // s6
         .{ .w2 = 0x01441484, .want = null }, // X index 0: OPEN
-        .{ .w1 = 0x00007000, .want = null }, // mode 6 on the high half: unmeasured
+        .{ .w1 = 0x00026800, .want = null }, // w1[17] (again, kept for the table shape)
         .{ .w1 = 0x00026800, .want = null }, // w1[17]
         .{ .w1 = 0x00006000, .a = 0x4000, .b = 0x4000, .want = 0x0020 }, // mode 4: P alone
     }) |c| {
@@ -5361,5 +5361,29 @@ test "x03 high dest beside w4 mode 5 is the 40-bit acc's [39:24] (fact 604, 605)
             _ = try r;
             try testing.expectEqual(v, state.s[10]);
         } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "x03 mode-5-path high dest: modes 6/7 and w1[15] rounding (after fact 605)" {
+    const gpa = testing.allocator;
+    // X_hi = s8 = 0x881, X_lo = s10 = 0xAA1; 2ab = 0x1800000 (0x1000 * 0x0C00) or 0x1E (3 * 5).
+    for ([_]struct { mode: u32, big: bool, floor: u32, round: u32 }{
+        .{ .mode = 5, .big = true, .floor = 0x0882, .round = 0x0883 },
+        .{ .mode = 5, .big = false, .floor = 0x0881, .round = 0x0881 },
+        .{ .mode = 6, .big = true, .floor = 0xF780, .round = 0xF780 },
+        .{ .mode = 6, .big = false, .floor = 0xF77E, .round = 0xF77F },
+        .{ .mode = 7, .big = true, .floor = 0x087F, .round = 0x0880 },
+        .{ .mode = 7, .big = false, .floor = 0x0881, .round = 0x0881 },
+    }) |c| {
+        for ([_]u32{ 0, 1 }) |rnd| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            for (1..16) |i| state.s[i] = 0x110 * @as(u32, @intCast(i)) + 1;
+            state.s[2] = if (c.big) 0x1000 else 3;
+            state.s[4] = if (c.big) 0x0C00 else 5;
+            const w1: u32 = 0x00004000 | c.mode << 11 | rnd << 15;
+            _ = try emu.runFrom(gpa, &state, &.{ 0x80000003, w1, 0x01441485, 0x00000007, 0x00002C90, 0x00041402, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            try testing.expectEqual(if (rnd == 1) c.round else c.floor, state.s[10]);
+        }
     }
 }
