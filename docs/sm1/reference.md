@@ -2611,6 +2611,25 @@ Emulator:
 
 > x18.mac: class 111 40-bit MAC (fact 174, 203 / own-x18mac, acc111*).
 
+### `x18.macf`
+
+- Syllables: 4
+- Base: `1c000018` `02070007` `00320000` `e6070080`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| hi_dest | s | s3 | [3:0] |
+| mode | imm | s3 | [6:4] |
+| a_s | s | s2 | [27:24] |
+| b_s | s | s2 | [31:28] |
+| x_hi | s | s1 | [31:28] |
+| x_lo | s | s2 | [3:0] |
+| lo_dest | s | s2 | [15:12] |
+
+> x18.macf: x18.mac with w3[8] = 0, no 2^23: hi = floor(acc / 2^24), so mode 5's (hi, lo)
+> chain exactly as a running sum (665, 668). Both forms also write A14 <- A14 + 1 (668; the
+> field is not yet known, and the emulator does not model it).
+
 ### `x18.sh111`
 
 - Syllables: 4

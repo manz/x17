@@ -944,6 +944,13 @@ x18.mac	b_s	s	28	31	s2
 x18.mac	x_hi	s	28	31	s1
 x18.mac	x_lo	s	0	3	s2
 x18.mac	lo_dest	s	12	15	s2
+x18.macf	hi_dest	s	0	3	s3
+x18.macf	mode	imm	4	6	s3
+x18.macf	a_s	s	24	27	s2
+x18.macf	b_s	s	28	31	s2
+x18.macf	x_hi	s	28	31	s1
+x18.macf	x_lo	s	0	3	s2
+x18.macf	lo_dest	s	12	15	s2
 
 # x18.sh111 <dest_s>, #<op>, <a_s>, <b_s>, #<sh>, #<right>, #<st>, <y_e>
 x18.sh111	dest_s	s	8	11	s1

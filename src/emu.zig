@@ -366,6 +366,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         try x03RYRead(state, bundle);
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
         if (w4_mode == 5) {
+            // The repeat class w2[31:29] = 011 runs the MAC row once and hangs later (673).
+            if (bundle[2] >> 29 == 3) return RunError.UnknownForm;
             // The product low half runs beside the Xrd path (603), reading before it writes.
             if ((bundle[4] >> 7) & 0xF != 0 and (bundle[5] >> 6) & 1 == 1) return RunError.UnknownForm;
             // The w2[12:9] high dest is live here too (604, 605).
@@ -822,7 +824,8 @@ fn x03AccXIndex(bundle: []const u32) u32 {
 
 /// x03's high dest beside w4 mode 5 (604, 605): s<w2[12:9]> <- the 40-bit
 /// {X_hi : X_lo} op 2ab, [39:24]; X_hi = s<{w2[0], w1[31:29]}>, X_lo = s<w5[12:9]>; op by
-/// mode 4 P, 5 X + P, 6 P - X, 7 X - P; w1[15] = 1 adds 2^23 first, 0 floors.  Measured with
+/// mode 4 P, 5 X + P, 6 P - X, 7 X - P; w1[15] = 1 adds 2^23 first, 0 floors.  Mode 5 takes
+/// X_lo unsigned (670).  Measured with
 /// w1[14] = 1 and w1[17:16] = 0 only, the operands signed (0x7000 * -0x123 floors to -1).
 fn x03ProductHigh(state: *const State, bundle: []const u32) RunError!?SWrite {
     const w1 = bundle[1];
@@ -834,7 +837,11 @@ fn x03ProductHigh(state: *const State, bundle: []const u32) RunError!?SWrite {
     const x_hi_s = x03AccXIndex(bundle);
     if (mode != 4 and x_hi_s == 0) return RunError.UnknownForm;
     const prod: i64 = @as(i64, sx24(state.s[(w2 >> 1) & 0xF])) * sx24(state.s[(w2 >> 5) & 0xF]);
-    const x: i64 = if (mode == 4) 0 else (@as(i64, state.s[x_hi_s] & 0xFFFF) << 24) + sx24(state.s[(bundle[5] >> 9) & 0xF]);
+    // Mode 5's X_lo is unsigned 24 (670: X_lo = 0x900000, P = 0 gives hi 0), so (hi, lo) fed
+    // back chain exactly with w1[15] = 0; modes 6 and 7 keep 605's signed reading.
+    const x_lo_v: u32 = state.s[(bundle[5] >> 9) & 0xF];
+    const x_lo: i64 = if (mode == 5) @as(i64, x_lo_v & M24) else sx24(x_lo_v);
+    const x: i64 = if (mode == 4) 0 else (@as(i64, state.s[x_hi_s] & 0xFFFF) << 24) + x_lo;
     const acc: i64 = switch (mode) {
         4, 5 => x + prod * 2,
         6 => prod * 2 - x,
@@ -1048,7 +1055,7 @@ fn x01Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
 }
 
 /// 0x01 slot xori (fact 502): m over b and i = w2[9:6], a ignored.  m5 counts the
-/// redundant sign bits at 24 bits (24 for 0); b = -1 is unmeasured and refused.
+/// redundant sign bits at 24 bits (24 for 0, 23 for -1).
 fn x01Xori(m: u32, b: i64, i: i64) RunError!u32 {
     const r: i64 = switch (m) {
         0 => b ^ i,
@@ -1057,7 +1064,7 @@ fn x01Xori(m: u32, b: i64, i: i64) RunError!u32 {
         3 => b & i,
         4 => ~i,
         5 => blk: {
-            if (b == -1) return RunError.UnknownForm;
+            // norm(-1) = 23, norm(-2) = 22 (667 follow-up)
             if (b == 0) break :blk 24;
             const v: u32 = @intCast((if (b < 0) ~b else b) & M24);
             break :blk @as(i64, @clz(v)) - 9;
@@ -1106,6 +1113,8 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const w5 = bundle[5];
     const w6 = bundle[6];
     const x01 = (h & 0x1F) == 0x01;
+    // 0x01 also writes e<w4[12:9]>, value OPEN (fact 669): refused when nonzero.
+    if (x01 and (w4 >> 9) & 0xF != 0) return RunError.UnknownForm;
     const imm: u32 = (h >> 11) & 0xFFFF;
 
     const s_dest: u32 = (w6 >> 12) & 0xF;
@@ -1457,10 +1466,15 @@ fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32, e_pre:
     const dest_a: u32 = (w3 >> 10) & 0x1F;
     const x_val: u32 = state.a[w3 & 0x1F];
     const i_val: u32 = ((w5 & 1) << 15) | ((w4 >> 17) & 0x7FFF);
-    // Second A dest (fact 193): A<w2[21:17]> <- A<w3[4:0]>, or with
-    // w5[5] = 1 the Y read Y:[e<w3[30:27]>].
+    // Second A dest (fact 193): A<w2[21:17]> <- fn(A<w3[4:0]>) by w2[26:22], fn 5 = x (670),
+    // fn 0 = x + 1 (672, the one-bundle tap's pointer step); other fns unmeasured. With
+    // w5[5] = 1 it is the Y read Y:[e<w3[30:27]>].
     const acp_dest: u32 = (w2 >> 17) & 0x1F;
-    const acp_val: u32 = if ((w5 >> 5) & 1 == 1) (state.getY(state.e[(w3 >> 27) & 0xF]) orelse 0) & 0xFFFF else x_val;
+    const acp_val: u32 = if ((w5 >> 5) & 1 == 1) (state.getY(state.e[(w3 >> 27) & 0xF]) orelse 0) & 0xFFFF else switch (fn_op) {
+        5 => x_val,
+        0 => (x_val +% 1) & M24,
+        else => if (acp_dest != 0) return RunError.UnknownForm else 0,
+    };
     // AGU table "5" = x + i (fact 164).
     if (dest_a != 0) {
         if (fn_op != 5) return RunError.UnknownForm;
@@ -2625,11 +2639,19 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         };
     };
     var acc: i64 = 0;
+    const mode: u32 = (w3 >> 4) & 7;
     if (hi_dest != 0 or lo_dest != 0) {
-        const p: i64 = sx16(state.s[(w2 >> 24) & 0xF]) * sx16(state.s[(w2 >> 28) & 0xF]) * 2;
-        const x_lo: i64 = sx16To24(x_lo_raw);
+        // a and b are measured at 16-bit magnitudes only (665): wider values refused.
+        const a_v: i64 = sx24(state.s[(w2 >> 24) & 0xF]);
+        const b_v: i64 = sx24(state.s[(w2 >> 28) & 0xF]);
+        if (a_v < -0x8000 or a_v > 0x7FFF or b_v < -0x8000 or b_v > 0x7FFF) return RunError.UnknownForm;
+        const p: i64 = a_v * b_v * 2;
+        // Mode 5's X_lo is the 24-bit register unsigned, and its low output acc mod 2^24, so
+        // (hi, lo) fed back chain exactly with w3[8] = 0 (665, 668). The other modes keep 203's
+        // 16-bit readings: X_lo sign-extended from 16, taken unsigned at 24.
+        const x_lo: i64 = if (mode == 5) state.s[w2 & 0xF] & M24 else sx16To24(x_lo_raw);
         const x: i64 = (@as(i64, state.s[(w1 >> 28) & 0xF] & 0xFFFF) << 24) + x_lo;
-        acc = switch ((w3 >> 4) & 7) {
+        acc = switch (mode) {
             3 => x,
             4 => p,
             5 => x + p,
@@ -2637,10 +2659,10 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
             7 => x - p,
             else => return RunError.UnknownForm,
         };
-        // w3[8] rounds the high write half toward +inf on the final sum, every mode (601 and
-        // after).  Adding 2^23 leaves the low write [15:0] alone.
-        if ((w3 >> 8) & 1 == 1) acc += 1 << 23;
     }
+    // w3[8] rounds the high write half toward +inf on the final sum, every mode (601 and
+    // after); the low write is the unrounded acc (665).
+    const acc_hi: i64 = if ((w3 >> 8) & 1 == 1) acc + (1 << 23) else acc;
     var alu_v: u32 = 0;
     if (alu_dest != 0) {
         const r = try x18SlotAlu((w1 >> 15) & 7, state.s[(w2 >> 16) & 0xF], state.s[(w1 >> 4) & 0xF]);
@@ -2653,10 +2675,11 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         state.y_mem.put(gpa, state.e[(w3 >> 25) & 0xF], st_val) catch return RunError.OutOfMemory;
     }
     const acc_u: u64 = @bitCast(acc);
+    const hi_u: u64 = @bitCast(acc_hi);
     if (xs_dest != 0) state.s[xs_dest] = xs_val;
     if (yd_new) |v| state.yd = v;
-    if (hi_dest != 0) state.s[hi_dest] = @truncate((acc_u >> 24) & 0xFFFF);
-    if (lo_dest != 0) state.s[lo_dest] = @truncate(acc_u & 0xFFFF);
+    if (hi_dest != 0) state.s[hi_dest] = @truncate((hi_u >> 24) & 0xFFFF);
+    if (lo_dest != 0) state.s[lo_dest] = @truncate(acc_u & (if (mode == 5) M24 else 0xFFFF));
     if (alu_dest != 0) state.s[alu_dest] = alu_v;
 }
 
@@ -3816,9 +3839,10 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         0 => state.yd & 0xFFFF,
         else => null,
     };
-    // S1[28:27] = 00 with S1[5] = 0 stops the engine after the store when p1 is set (fact 648);
-    // what runs after that stop is unmeasured: refused. With p1 clear the store just runs.
-    if ((s1 >> 27) & 3 == 0 and (s1 >> 5) & 1 == 0 and state.p[1] != 0) return RunError.UnknownForm;
+    // S1[28:27] = 00 with S1[5] = 0 is a stop form keyed by S1[2:0] (648, 667): k = 1 stops
+    // after the store iff p1, k = 3 runs away, any other k stops. Only k = 1 with p1 clear
+    // (a plain store) is modelled; the stops' shadows are unmeasured.
+    if ((s1 >> 27) & 3 == 0 and (s1 >> 5) & 1 == 0 and (s1 & 7 != 1 or state.p[1] != 0)) return RunError.UnknownForm;
     // e<2*S1[2:0] + h[31]> <- AGU10[S1[10:7]](x = e<k>), written after the store (fact 658,
     // 429), measured with R mux 0 (fns x and x+1). Under mux 7 the e write lands elsewhere:
     // refused.

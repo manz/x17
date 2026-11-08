@@ -140,7 +140,10 @@ write is meant:
 | x03 (A-copy mode) | e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1 |
 | x17sty, x17ld, x17agu2 | e<2*w1[2:0] + h[31]> <- AGU10[w1[10:7]](x = e<w1[18:15]>) |
 | x02 multiply templates naming A1 | A1 <- A1 + 1 |
-| x01 norm word (below) | R5 <- R5 - 2 |
+| x01 (R slot) | R<{w4[0], w3[31:29]}> <- R5 - 2 in the norm word (§669) |
+| x01 | e<w4[12:9]> <- value unknown (§669): the emulator refuses a nonzero field |
+| x18 class 111 MAC templates | A14 <- A14 + 1 (§668; field unknown, not modelled) |
+| x03 A copy | A<w2[21:17]> <- A<w3[4:0]> (fn w2[26:22] = 5) or + 1 (fn 0) (§670, §672) |
 
 The assembler's templates clear these fields. Used on purpose, they are free post-increments and
 decrements: a pointer step rides on a compute or store bundle instead of costing an x18.eagu.
@@ -255,23 +258,31 @@ Measured idioms, cheapest first:
 - **Loops.** There is no zero-overhead multi-bundle loop: x03 can repeat one bundle while a
   predicate holds (§263, §452), and nothing more (§453). The cheapest counted loop is a pcond on
   A against R plus a jmp whose two slots do work (§662), about one bundle of overhead. Unroll
-  when the body is short.
+  when the body is short. The repeat class w2[31:29] = 011 on an x03 MAC row runs it once and
+  then hangs (§673): the emulator refuses it.
 - **Free pointer steps.** Stores (x17.styi, §658) and x17ld loads (§429) post-increment an e; x03
   counts an e down (§349); x02 steps an A (§660). Each replaces an x18.eagu or aset bundle.
 - **Packed bundles that are measured** (§155, §183, §185, §347-§350, §513, §174, §203):
   - x02: X read, multiply, second product, third-slot ALU, A step, and an optional X store;
   - x03: X read, multiply, accumulate, A copy, e counter, and a Y store;
-  - x18 class 111: Y load, negate, e step and MAC.
+  - x18 class 111: Y load, negate, e step and MAC;
+  - x03 one-bundle tap (§671, §672): s <- X:[A], A <- A + 1 and {hi:lo} += 2 s b. The read
+    lands after the multiply has taken its operands, so each bundle multiplies the value the
+    previous bundle loaded: prime the register first, and the last bundle's load is a dummy.
+    Measured with one stepping pointer and a fixed second operand.
   Other combinations are unmeasured.
 - **Count leading bits in one bundle.** The x01 slot's xori code with m = w5[29:27] = 5 gives
   s <- norm(b), the redundant sign bits at 24 bits: norm(0x100) = 14, norm(-0x100) = 15,
-  norm(0x7FFF) = 8, norm(0) = 24 (§502, §666). A run of k >= 1 leading ones gives norm = k - 1;
-  test the sign first for k = 0. The word also does R5 <- R5 - 2. The result is ready for the
-  next bundle.
-- **Running MAC.** x18 class 111 computes acc = hi * 2^24 + lo (lo unsigned 24) + 2ab, and
-  returns hi' = round(acc / 2^24) and lo' = acc mod 2^24; the exact value is
-  hi' * 2^24 + sx24(lo') (§665). Fed straight back, (hi', lo') overcounts by 2^24 whenever lo'
-  >= 2^23, so a chain needs one correcting alu per step or a lo that stays below 2^23.
+  norm(0x7FFF) = 8, norm(0) = 24, norm(-1) = 23, norm(-2) = 22 (§502, §666, §669). A run of
+  k >= 1 leading ones gives norm = k - 1; test the sign first for k = 0. The result is ready for
+  the next bundle. Use the clean word with both side writes cleared (§669):
+  `28001381 00000580 280000e0 000280a0 00040002 28200900 00300090` = s9 <- norm(s8).
+- **Running MAC.** Mode 5 computes acc = hi * 2^24 + lo + 2ab with lo taken unsigned 24 bits,
+  and returns lo' = acc mod 2^24. With rounding off, hi' = floor(acc / 2^24), so feeding
+  (hi', lo') back is an exact running sum: one bundle per tap, round once at the end. Two forms
+  are measured: x18 class 111 as `x18.macf` (w3[8] = 0; `x18.mac` adds 2^23 to hi only, §665,
+  §668) and x03 mode 5 with w1[15] = 0 (§670). Measured with operands of 16-bit magnitude and a
+  small hi; the emulator refuses wider a and b on x18.
 - **Selects without branches.** x19alu's write can be conditional on p1 (§646); the x01 slot's
   m = 7 gives b < 0 ? b : i (§502).
 - **Constants.** ldi is 16 bits, sign-extended: 0xFFFF costs ldi plus two adds, or a mask.

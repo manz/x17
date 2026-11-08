@@ -640,6 +640,11 @@ x18.br101  4   0x00000018   0x00000000   0x00000000   0xA0000000
 # x18.mac: class 111 40-bit MAC (fact 174, 203 / own-x18mac, acc111*).
 x18.mac    4   0x1C000018   0x02070007   0x00320000   0xE6070180
 
+# x18.macf: x18.mac with w3[8] = 0, no 2^23: hi = floor(acc / 2^24), so mode 5's (hi, lo)
+# chain exactly as a running sum (665, 668). Both forms also write A14 <- A14 + 1 (668; the
+# field is not yet known, and the emulator does not model it).
+x18.macf   4   0x1C000018   0x02070007   0x00320000   0xE6070080
+
 # x18.sh111: class 111 ALU slot with the shift, plus the Y store
 # (fact 202, 206 / own-x18shr111, shl111, alu111, st111).
 x18.sh111  4   0x00000018   0x42040007   0x21100005   0xE00701E3

@@ -2232,7 +2232,8 @@ test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[2
         defer state.deinit(gpa);
         state.s[3] = 0x100;
         state.s[8] = 0x123;
-        const r = emu.runFrom(gpa, &state, &.{ 0x280011C1, 0x00000580, 0x28000020, 0xA00280A0, XXXXXXXX, c.w5, c.w6, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        const r = emu.runFrom(gpa, &state, &.{ 0x280011C1, 0x00000580, 0x28000020, 0xA00280A0, 0x00040002, // w4[12:9] cleared (669)
+            c.w5, c.w6, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         if (c.want) |v| {
             _ = try r;
             try testing.expectEqual(v, state.s[9] & 0xFFFFFF);
@@ -2290,7 +2291,7 @@ test "the 0x01 slot's xori and asr codes" {
         state.s[3] = c.a;
         state.s[8] = c.b;
         const head = (0x280011C1 & ~@as(u32, 0x3F << 5)) | (c.code << 5);
-        const r = emu.runFrom(gpa, &state, &.{ head, 0x00000580, 0x28000020 | (c.i << 6), 0xA00280A0, XXXXXXXX, 0x00200900 | (c.m << 27), 0x00300090, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        const r = emu.runFrom(gpa, &state, &.{ head, 0x00000580, 0x28000020 | (c.i << 6), 0xA00280A0, 0x00040002, 0x00200900 | (c.m << 27), 0x00300090, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         if (c.want) |v| {
             _ = try r;
             try testing.expectEqual(v, state.s[9] & 0xFFFFFF);
@@ -2358,14 +2359,14 @@ test "0x01 multiply mode 4 and the s slot's AGU10 rows" {
         defer state.deinit(gpa);
         state.s[8] = 0x4000;
         state.s[11] = 0x4000;
-        _ = try emu.runFrom(gpa, &state, &(.{ 0x28001001, 0x0000A580, 0x2800C000, 0xA00100E0, XXXXXXXX, 0x40200900, 0xB8080000 } ++ halt), 0, 16);
+        _ = try emu.runFrom(gpa, &state, &(.{ 0x28001001, 0x0000A580, 0x2800C000, 0xA00100E0, 0x00FE000C, 0x40200900, 0xB8080000 } ++ halt), 0, 16);
         try testing.expectEqual(@as(u32, 0x20), state.s[8]);
         // rounded (496): 0x4000 * 0x4100 = 2^28 + 2^22 gives 0x21
         state.s[8] = 0x4000;
         state.s[11] = 0x4100;
         state.pc = 0;
         state.halted = false;
-        _ = try emu.runFrom(gpa, &state, &(.{ 0x28001001, 0x0000A580, 0x2800C000, 0xA00100E0, XXXXXXXX, 0x40200900, 0xB8080000 } ++ halt), 0, 16);
+        _ = try emu.runFrom(gpa, &state, &(.{ 0x28001001, 0x0000A580, 0x2800C000, 0xA00100E0, 0x00FE000C, 0x40200900, 0xB8080000 } ++ halt), 0, 16);
         try testing.expectEqual(@as(u32, 0x21), state.s[8]);
     }
     for ([_]struct { w1: u32, want: u32 }{ .{ .w1 = 0x0002A585, .want = 0xFD }, .{ .w1 = 0x0002A505, .want = 0x103 } }) |c| {
@@ -5319,7 +5320,7 @@ test "x18 class 111 MAC high write rounds with w3[8] (fact 601)" {
         .{ .a = 0x1000, .b = 0x0C00, .round = 2, .floor = 1 },
         .{ .a = 0x1000, .b = 0x0BFF, .round = 1, .floor = 1 },
         .{ .a = 0x7000, .b = 0x0123, .round = 1, .floor = 0 },
-        .{ .a = 0x7000, .b = 0xFEDD, .round = 0xFFFF, .floor = 0xFFFF },
+        .{ .a = 0x7000, .b = 0xFFFEDD, .round = 0xFFFF, .floor = 0xFFFF }, // ldi sign-extends (665: 16-bit inputs)
         .{ .a = 0x1000, .b = 0x0C00, .s7 = 3, .round = 5, .floor = 4 },
     }) |k| {
         for ([_]u32{ 1, 0 }) |rnd| {
@@ -7006,7 +7007,7 @@ test "x17.sty writes e<2*w1[2:0] + h[31]> <- e<k> + 1; the template does not; ld
     try testing.expectEqual(@as(u32, 0x2E22), st.e[2]);
 }
 
-test "x17.sty keeps S1[27]; S1[28:27] = 00 stops after the store when p1 is set (648)" {
+test "x17.sty keeps S1[27]; S1[28:27] = 00 is a stop form keyed by S1[2:0] (648, 667)" {
     const t = try asm_mod.assembleOne("x17.sty e3, #3, #0");
     try testing.expectEqual(@as(u32, 1), (t.slice()[1] >> 27) & 3);
     const ti = try asm_mod.assembleOne("x17.styi e3, #3, #0, e3");
@@ -7017,13 +7018,53 @@ test "x17.sty keeps S1[27]; S1[28:27] = 00 stops after the store when p1 is set 
         st.e[3] = 0x2E40;
         st.s[3] = 0x99;
         st.p[1] = p1;
-        const prog = [_]u32{ t.slice()[0], t.slice()[1] & ~@as(u32, 1 << 27), t.slice()[2], 0x00000017, 0x31308000, 0xA0000000 };
+        const prog = [_]u32{ t.slice()[0], (t.slice()[1] & ~@as(u32, 1 << 27)) | 1, t.slice()[2], 0x00000017, 0x31308000, 0xA0000000 };
         const r = emu.runFrom(testing.allocator, &st, &prog, 0, 8);
         if (p1 == 1) try testing.expectError(emu.RunError.UnknownForm, r) else {
             _ = try r;
             try testing.expectEqual(@as(?u32, 0x99), st.y_mem.get(0x2E40));
         }
     }
+    // k = 3 runs away and k = 0, 2, 4..7 stop whatever p is (667): all refused
+    for ([_]u32{ 0, 2, 3, 7 }) |k| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        const prog = [_]u32{ t.slice()[0], (t.slice()[1] & ~@as(u32, 1 << 27)) | k, t.slice()[2], 0x00000017, 0x31308000, 0xA0000000 };
+        try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &prog, 0, 8));
+    }
+}
+
+test "x18.macf chains (hi, lo) exactly; x18.mac rounds hi only (665, 668)" {
+    const gpa = testing.allocator;
+    // 3 and 5 taps of 2 * 0x300 * 0x1000 = 0x600000 from X = 0
+    for ([_]struct { taps: u32, hi: u32, lo: u32 }{ .{ .taps = 3, .hi = 1, .lo = 0x200000 }, .{ .taps = 5, .hi = 1, .lo = 0xE00000 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        st.s[1] = 0x300;
+        st.s[2] = 0x1000;
+        const m = try asm_mod.assembleOne("x18.macf s4, #5, s1, s2, s4, s6, s6");
+        var prog: [23]u32 = undefined;
+        var n: usize = 0;
+        for (0..c.taps) |_| {
+            @memcpy(prog[n .. n + 4], m.slice()[0..4]);
+            n += 4;
+        }
+        prog[n..][0..3].* = .{ 0x00000017, 0x31308000, 0xA0000000 };
+        _ = try emu.runFrom(gpa, &st, prog[0 .. n + 3], 0, 16);
+        try testing.expectEqual(c.hi, st.s[4]);
+        try testing.expectEqual(c.lo, st.s[6]);
+    }
+    // X = {0, 0x900000}, P = 0: lo is unsigned, hi 0 (668)
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    st.s[6] = 0x900000;
+    const m = try asm_mod.assembleOne("x18.macf s4, #5, s1, s2, s4, s6, s6");
+    _ = try emu.runFrom(gpa, &st, &.{ m.slice()[0], m.slice()[1], m.slice()[2], m.slice()[3], 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
+    try testing.expectEqual(@as(u32, 0), st.s[4]);
+    try testing.expectEqual(@as(u32, 0x900000), st.s[6]);
+    // the rounded form's word is 665's own word
+    const r = try asm_mod.assembleOne("x18.mac s4, #5, s1, s2, s4, s6, s6");
+    try testing.expectEqualSlices(u32, &.{ 0x1C000018, 0x42070007, 0x21326006, 0xE60701D4 }, r.slice()[0..4]);
 }
 
 test "x17.styi steps its pointer in the store bundle (658)" {
@@ -7062,4 +7103,93 @@ test "x19alu sets p<w2[17:14]> under w3[23:20] = 0xE (647)" {
     // the assembler's x19.alu touches no predicate
     const w = try asm_mod.assembleOne("x19.alu s4, s4, s2, #23");
     try testing.expectEqual(@as(u32, 15), (w.slice()[2] >> 14) & 0xF);
+}
+
+test "x01 norm: the clean word leaves R5 and e alone; e<w4[12:9]> is refused (669)" {
+    const clean = [_]u32{ 0x28001381, 0x00000580, 0x280000e0, 0x000280a0, 0x00040002, 0x28200900, 0x00300090 };
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    for ([_]struct { b: u32, n: u32 }{ .{ .b = 0x100, .n = 14 }, .{ .b = 0xFFFF00, .n = 15 }, .{ .b = 0x7FFF, .n = 8 }, .{ .b = 0, .n = 24 }, .{ .b = 0xFFFFFF, .n = 23 }, .{ .b = 0xFFFFFE, .n = 22 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[8] = c.b;
+        st.r[5] = 0x40;
+        _ = try emu.runFrom(testing.allocator, &st, &(clean ++ halt), 0, 8);
+        try testing.expectEqual(c.n, st.s[9]);
+        try testing.expectEqual(@as(u32, 0x40), st.r[5]);
+    }
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    var w = clean;
+    w[4] |= 6 << 9;
+    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &(w ++ halt), 0, 8));
+}
+
+
+test "x03 mode 5 chains {hi:lo} exactly, and loads the next operand behind the multiply (670, 671)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const mac = [_]u32{ 0x80000003, 0x40006800, 0x01441485, 0x00000007, 0x00002c80, 0x00041202 };
+    for ([_]struct { n: usize, hi: u32, lo: u32 }{ .{ .n = 3, .hi = 1, .lo = 0x200000 }, .{ .n = 5, .hi = 1, .lo = 0xE00000 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[2] = 0x300;
+        st.s[4] = 0x1000;
+        var prog: [33]u32 = undefined;
+        for (0..c.n) |k| @memcpy(prog[6 * k .. 6 * k + 6], &mac);
+        @memcpy(prog[6 * c.n .. 6 * c.n + 3], &halt);
+        _ = try emu.runFrom(testing.allocator, &st, prog[0 .. 6 * c.n + 3], 0, 16);
+        try testing.expectEqual(c.hi, st.s[10]);
+        try testing.expectEqual(c.lo, st.s[9]);
+    }
+    {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[9] = 0x900000;
+        _ = try emu.runFrom(testing.allocator, &st, &(mac ++ halt), 0, 16);
+        try testing.expectEqual(@as(u32, 0), st.s[10]);
+    }
+    // w4[4] = 1: s2 <- X:[A2] after the multiply has read the old s2 (671)
+    const ld = [_]u32{ 0x80000003, 0x40006800, 0x01441485, 0x00000007, 0x00002c90, 0x00041202 };
+    for ([_]struct { n: usize, lo: u32 }{ .{ .n = 1, .lo = 0x600000 }, .{ .n = 2, .lo = 0x800000 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[2] = 0x300;
+        st.s[4] = 0x1000;
+        st.a[2] = 0x40;
+        st.a[7] = 0x40;
+        try st.x_mem.put(testing.allocator, 0x40, 0x100);
+        var prog: [15]u32 = undefined;
+        for (0..c.n) |k| @memcpy(prog[6 * k .. 6 * k + 6], &ld);
+        @memcpy(prog[6 * c.n .. 6 * c.n + 3], &halt);
+        _ = try emu.runFrom(testing.allocator, &st, prog[0 .. 6 * c.n + 3], 0, 16);
+        try testing.expectEqual(c.lo, st.s[9]);
+        try testing.expectEqual(@as(u32, 0x100), st.s[2]);
+    }
+}
+
+test "x03 one-bundle tap: X read, A post-step and running MAC (672)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const w = [_]u32{ 0x80000003, 0x40006800, 0x00041485, 0x00000002, 0x00002c90, 0x00041202 };
+    // the third bundle's read (X:0x102) is the dummy load; s2 is not checked there
+    for ([_]struct { n: usize, s2: ?u32, lo: u32 }{ .{ .n = 1, .s2 = 0x100, .lo = 0x600000 }, .{ .n = 2, .s2 = 0x80, .lo = 0x800000 }, .{ .n = 3, .s2 = null, .lo = 0x900000 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[2] = 0x300;
+        st.s[4] = 0x1000;
+        st.a[2] = 0x100;
+        try st.x_mem.put(testing.allocator, 0x100, 0x100);
+        try st.x_mem.put(testing.allocator, 0x101, 0x80);
+        var prog: [21]u32 = undefined;
+        for (0..c.n) |k| @memcpy(prog[6 * k .. 6 * k + 6], &w);
+        @memcpy(prog[6 * c.n .. 6 * c.n + 3], &halt);
+        _ = try emu.runFrom(testing.allocator, &st, prog[0 .. 6 * c.n + 3], 0, 16);
+        if (c.s2) |v| try testing.expectEqual(v, st.s[2]);
+        try testing.expectEqual(c.lo, st.s[9]);
+    }
+}
+
+test "x03 MAC row refuses the repeat class w2[31:29] = 011 (673)" {
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    const w = [_]u32{ 0x80000003, 0x40006800, 0x60041485, 0x00000002, 0x00002c90, 0x00041202, 0x00000017, 0x31308000, 0xA0000000 };
+    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &w, 0, 8));
 }

@@ -2624,12 +2624,13 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x18acc111",
-        // X + P on 40 bits, X_lo = sx(0x8000): hi s3 = 0x131, lo s5 = 0.
+        // X + P on 40 bits, X_lo = s6 = 0xFF8000 (ldi sign-extends 0x8000; X_lo is unsigned 24,
+        // 665): hi s3 = 0x131, lo s5 = 0.
         .pre = &.{
             .{ .bank = .s, .index = 1, .value = 0x4000 },
             .{ .bank = .s, .index = 2, .value = 0x6001 },
             .{ .bank = .s, .index = 4, .value = 0x100 },
-            .{ .bank = .s, .index = 6, .value = 0x8000 },
+            .{ .bank = .s, .index = 6, .value = 0xFF8000 },
         },
         .src =
         \\x18.mac s3, #5, s1, s2, s4, s6, s5
