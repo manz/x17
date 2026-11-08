@@ -5923,3 +5923,19 @@ test "x18 class 110 hi X under w3[21] = 1 is s<{w2[0], w1[31:29]}> (715)" {
         try testing.expectEqual(0x100 + c[2], st.s[7]);
     }
 }
+
+test "x18 class 110 hi X index 0 under w3[21] = 1 is the incoming xd << 8 (716)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // 714's word with index 0: clear w1[31:29] and w2[0].
+    const w1: u32 = 0x80005AA0 & 0x1FFFFFFF;
+    const w2: u32 = 0x00500E2B & ~@as(u32, 1);
+    for ([_]u32{ 0xC0741839, 0xC1741839 }) |w3| for ([_][2]u32{ .{ 0x12, 0x1200 }, .{ 0x34, 0x3400 }, .{ 0xF0, 0xF000 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x10;
+        st.s[1] = 0x10;
+        st.xd = c[0];
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, w1, w2, w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c[1], st.s[7]);
+    };
+}
