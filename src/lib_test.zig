@@ -131,11 +131,11 @@ fn stageAt(gpa: std.mem.Allocator, state: *emu.State, data: []const u8, base: u3
     for (0..data.len / 2) |i| try state.y_mem.put(gpa, base + @as(u32, @intCast(i)), @as(u32, data[2 * i]) << 8 | data[2 * i + 1]);
 }
 
-/// Every word the run touched lies in the mode-0 windows: X 0..0x1FFF (silicon stores only to 0x1BFF, fact 649; ALAC's stereo lanes still need the room), Y 0..0x2EFF and
+/// Every word the run touched lies in the mode-0 windows: X 0..0x1BFF (fact 649, 653), Y 0..0x2EFF and
 /// 0xFD80..0xFDFF (writes and the host's staging; the emulator's memory is sparse).
 fn expectMode0(state: *emu.State) !void {
     var xi = state.x_mem.keyIterator();
-    while (xi.next()) |k| if (k.* >= 0x2000) {
+    while (xi.next()) |k| if (k.* >= 0x1C00) {
         std.debug.print("X:{x} outside the mode-0 window\n", .{k.*});
         return error.OutsideWindow;
     };

@@ -6,39 +6,41 @@
 ; streams only: the header checks the reference makes (the 12 zero bits, n <= frame length,
 ; a CPE past the last channel) are not repeated. The status slot reports what stops it.
 ;
-;
-; Everything lives in the mode-0 windows (X 0..0x1FFF, Y 0..0x2E7F), for frames up to 4096
-; samples and two channels:
-;   X MIX0, MIX1   the two lanes, 4096 words each: Rice writes the residuals there and the
+; Everything lives in the mode-0 windows (X 0..0x1BFF, Y 0..0x2E7F), for frames up to 4096
+; samples and two channels. X holds one lane at a time:
+;   X MIX          the lane being decoded, 4096 words: Rice writes the residuals there and the
 ;                  predictor runs in place.
-;   Y COEFY        coefficients as read, reversed, 0x20 per lane. Before a lane's predictor
-;                  they go to an X scratch of 34 words (unpredict parks the bit reader at
-;                  +32): lane 0 uses MIX1, still empty; lane 1 uses MIX0[0..33], saved to
-;                  Y SAVE as (floor(w / 2^12), w mod 2^12) pairs and restored after.
+;   X CSCR         the lane's coefficients (34 words; unpredict parks the bit reader at +32).
+;   Y COEFY        coefficients as read, reversed, 0x20 per lane.
+;   Y UY           a pair's lane 0 once decoded, as its low 16 bits, so that lane 1 can take X;
+;                  unmix reads it back from here. The output is u + v - ... and its
+;                  difference with v, sign-extended from depth <= 16: only u mod 2^16 counts.
 ;   Y RING         the packet, staged by the host from Y:0x80 (bits_init(RING)), and the
 ;                  output ring over it: one entry of n * channels 16-bit samples,
-;                  channel-interleaved, written once the element has read every bit.
+;                  channel-interleaved, written once the element has read every bit. The
+;                  ring's second half overlays UY; each word lands behind the read of the
+;                  UY word it covers. A pair whose packet reaches UY is refused (status 6).
+;   An escape (verbatim) element at depth 16 with lanes = channels goes straight to the
+;   ring, each sample written behind its read. Other escape pairs take the UY route.
 ; Ring table (host contract, ours): Y:1 entries (1), Y:2 units (8192), Y:5 entry 0 owned,
 ; Y:6 its length in units; Y:0xFD95 = 0 then Y:0xFD94 = 1 when the output is ready.
 ;
 ; Y slots at PK, filled by the host: +0 frame length, +1 depth, +2 pb, +3 mb, +4 kb,
 ; +5 channels (<= 2). Written: +6 samples per channel, +7 status (0 ok, 1 a zero run
 ; overran, 2 an unsupported element, 3 pb * pb_factor / 4 above the Rice loop's 127, 4 a
-; depth above 16 or shifted low bytes, which 16-bit output cannot carry). The rest is
-; scratch, see the .consts. Mode != 0 integrates the lane first.
+; depth above 16 or shifted low bytes, which 16-bit output cannot carry, 6 a pair's packet
+; reaching UY). The rest is scratch, see the .consts.
+; Mode != 0 integrates the lane first.
 ;
 ; Needs lib/mem.sm (yat, yld, yst, amov, aimm).
 ; Loops that advance with x02.ainc count in s1: its bundle's multiply slot overwrites s2.
 
-.const MIX0  = 0x0000
-.const MIX1  = 0x1000
-.const CSCR0 = 0x1000           ; lane 0's coefficient scratch (in MIX1)
-.const CSCR1 = 0x0000           ; lane 1's (MIX0[0..33], saved)
-.const CSCRN = 34
+.const MIX   = 0x0000
+.const CSCR  = 0x1000
 .const RING  = 0x0080
 .const UNITS = 8192
+.const UY    = 0x1D00           ; 4096 words, up to COEFY
 .const COEFY = 0x2D00
-.const SAVE  = 0x2D40           ; 2 * CSCRN words
 .const RICE  = 0x2DA0
 .const PREDY = 0x2DC0
 .const UNMIX = 0x2DE0
@@ -255,7 +257,7 @@ alac_coefs_done:
         nop()
         nop()
 
-        ; each lane: Rice residuals into MIX0 / MIX1, then the predictor in place
+        ; each lane: Rice residuals into MIX, then the predictor in place
 alac_lanes:
         ldi s3, #0
         yst(PK_L)
@@ -303,8 +305,7 @@ alac_pbok:
         x17.sty e8, #3, #0
         yld(s3, PK_CB)
         x17.sty e9, #3, #0      ; max_bits = chan_bits
-        lanebase(MIX0, 0x1000)
-        amov(A6, s3)
+        aimm(A6, MIX)
         rice_decompress(RICE)
         rice_slots(RICE)
         ldy s3, e10
@@ -336,21 +337,11 @@ alac_rok:
         jmp #3, #3, alac_mode0
         nop()
         nop()
-        lanebase(MIX0, 0x1000)
-        amov(A2, s3)
+        aimm(A2, MIX)
         integrate()
 alac_mode0:
-        yld(s3, PK_L)
-        alu s4, s3, s0, #OP_ADD
-        ptst p3, s0, #EQ4, #PTST ; lane 0: its scratch is free
-        jmp #3, #3, alac_cs
-        nop()
-        nop()
-        alac_save()
-alac_cs:
         ; the coefficients into the lane's scratch
-        lanebase(CSCR0, CSCR1 - CSCR0)
-        amov(A4, s3)
+        aimm(A4, CSCR)
         ysub(3)
         ldy s1, e6              ; order
         lanebase(COEFY, 0x20)
@@ -371,19 +362,24 @@ alac_cc:
         nop()
         nop()
 alac_ccd:
-        lanebase(MIX0, 0x1000)
-        amov(A2, s3)
-        amov(A3, s3)
-        lanebase(CSCR0, CSCR1 - CSCR0)
-        amov(A10, s3)
+        aimm(A2, MIX)
+        aimm(A3, MIX)
+        aimm(A10, CSCR)
         unpredict()
+        ; a pair's lane 0 moves to Y UY, freeing X for lane 1
         yld(s3, PK_L)
         alu s4, s3, s0, #OP_ADD
-        ptst p3, s0, #EQ4, #PTST
+        ptst p3, s0, #EQ4, #PTST ; lane 0
+        jmp #IF_NOT, #3, alac_cr
+        nop()
+        nop()
+        yld(s3, PK_LN)
+        alu s4, s3, s14, #OP_SUB
+        ptst p3, s0, #EQ4, #PTST ; one lane: it stays in X
         jmp #3, #3, alac_cr
         nop()
         nop()
-        alac_restore()
+        alac_touy()
 alac_cr:
         yld(s3, PK_L)
         alu s3, s3, s14, #OP_ADD
@@ -403,8 +399,30 @@ alac_verb:
         ldi s3, #0
         yst(PK_BS)
         yst(PK_MXR)
-        aimm(A2, MIX0)
-        aimm(A3, MIX1)
+        ; depth 16 and lanes = channels: straight to the ring
+        yld(s3, PK_DEP)
+        ldi s4, #16
+        alu s4, s3, s4, #OP_SUB
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, alac_vl
+        nop()
+        nop()
+        yld(s3, PK_LN)
+        yld(s4, PK_NCH)
+        alu s4, s3, s4, #OP_SUB
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, alac_vl
+        nop()
+        nop()
+        alac_vdirect()
+        jmp #ALWAYS, #0, alac_next
+        nop()
+        nop()
+        ; otherwise lane 0 to X (one lane) or Y UY (a pair), lane 1 to X
+alac_vl:
+        aimm(A2, MIX)
+        aimm(A3, MIX)
+        lde e13, #UY
         yld(s1, PK_N)
 alac_vs:
         alu s4, s1, s14, #OP_SUB
@@ -414,19 +432,25 @@ alac_vs:
         nop()
         yld(s7, PK_DEP)
         readn(s3)
-        stx A2, s3
-        x02.ainc #2, #2
         yld(s4, PK_LN)
         alu s4, s4, s14, #OP_SUB
         alu s4, s4, s14, #OP_SUB
         ptst p3, s0, #LT4, #PTST ; one lane
-        jmp #3, #3, alac_vn
+        jmp #3, #3, alac_v1
         nop()
         nop()
+        x17.sty e13, #3, #0     ; a pair: lane 0 to Y UY
+        x18.eagu e13, e13, #AGU_INC
         yld(s7, PK_DEP)
         readn(s3)
         stx A3, s3
         x02.ainc #3, #3
+        jmp #ALWAYS, #0, alac_vn
+        nop()
+        nop()
+alac_v1:
+        stx A2, s3
+        x02.ainc #2, #2
 alac_vn:
         alu s1, s1, s14, #OP_SUB
         jmp #ALWAYS, #0, alac_vs
@@ -435,6 +459,25 @@ alac_vn:
 
         ; unmix into the ring at RING + ch, one gap of channels - lanes per frame
 alac_out:
+        ; a pair read its packet past UY after lane 0 landed there: refused
+        yld(s3, PK_LN)
+        alu s4, s3, s14, #OP_SUB
+        ptst p3, s0, #EQ4, #PTST ; one lane
+        jmp #3, #3, alac_uok
+        nop()
+        nop()
+        x03.esrc s3, e5
+        ldi s4, #UY
+        alu s12, s4, s3, #OP_SUB
+        ptst p3, s0, #LT12, #PTST ; e5 > UY
+        jmp #IF_NOT, #3, alac_uok
+        nop()
+        nop()
+        ldi s3, #6
+        jmp #ALWAYS, #0, alac_fail
+        nop()
+        nop()
+alac_uok:
         unmix_slots(UNMIX)
         yld(s3, PK_N)
         x17.sty e1, #3, #0
@@ -453,13 +496,15 @@ alac_out:
         yld(s4, PK_NCH)
         alu s3, s4, s3, #OP_SUB
         x17.sty e10, #3, #0     ; gap
-        aimm(A2, MIX0)
-        aimm(A3, MIX1)
+        aimm(A2, MIX)
+        aimm(A3, MIX)
+        lde e13, #UY
         yld(s3, PK_CH)
         ldi s4, #RING - 1
         alu s3, s3, s4, #OP_ADD
         x17.mve e11, s3         ; e11 = RING + ch
         unmix_y()
+alac_next:
         yld(s3, PK_CH)
         yld(s4, PK_LN)
         alu s3, s3, s4, #OP_ADD
@@ -508,49 +553,52 @@ alac_fail:
 alac_done:
 }
 
-; MIX0[0..CSCRN) to Y SAVE as (floor(w / 2^12), w mod 2^12) pairs, and back. Uses A4, e6, s1,
-; s3..s7.
-.macro alac_save() {
-        aimm(A4, CSCR1)
-        ldi s13, #SAVE - 1
-        x17.mve e6, s13
-        ldi s1, #CSCRN
-sv:     x19.xrd s3, #4
-        x02.ainc #4, #4
-        floorshr(s5, s3, 12)
-        ldi s4, #12
-        x19.alu s7, s5, s4, #SHIFT
-        alu s7, s3, s7, #OP_SUB
-        x17.sty e6, #5, #0
-        x18.eagu e6, e6, #AGU_INC
-        x17.sty e6, #7, #0
-        x18.eagu e6, e6, #AGU_INC
+; A pair's lane 0, X:[MIX..MIX + n), to Y:[UY..UY + n): the low 16 bits of each word. Uses A2,
+; e13, s1, s3, s12.
+.macro alac_touy() {
+        aimm(A2, MIX)
+        lde e13, #UY
+        yld(s1, PK_N)
+ty:     alu s12, s1, s0, #OP_ADD
+        ptst p3, s0, #EQ12, #PTST
+        jmp #3, #3, tydone
+        nop()
+        nop()
+        x19.xrd s3, #2
+        x02.ainc #2, #2
+        x17.sty e13, #3, #0
+        x18.eagu e13, e13, #AGU_INC
         alu s1, s1, s14, #OP_SUB
-        alu s4, s1, s0, #OP_ADD
-        ptst p3, s0, #EQ4, #PTST
-        jmp #IF_NOT, #3, sv
+        jmp #ALWAYS, #0, ty
         nop()
         nop()
+tydone:
 }
 
-.macro alac_restore() {
-        aimm(A4, CSCR1)
-        ldi s13, #SAVE - 1
-        x17.mve e6, s13
-        ldi s1, #CSCRN
-rs:     ldy s5, e6
-        x18.eagu e6, e6, #AGU_INC
-        ldy s7, e6
-        x18.eagu e6, e6, #AGU_INC
-        ldi s4, #12
-        x19.alu s5, s5, s4, #SHIFT
-        alu s5, s5, s7, #OP_ADD
-        stx A4, s5
-        x02.ainc #4, #4
+; An escape element at depth 16 with lanes = channels, straight into the ring at RING + ch:
+; each 16-bit sample is stored as read. The write trails the read by the element header
+; (more than 16 bits), so no unread packet word is overwritten. Uses e11, s1, s3, s4.
+.macro alac_vdirect() {
+        yld(s3, PK_CH)
+        ldi s4, #RING - 1
+        alu s3, s3, s4, #OP_ADD
+        x17.mve e11, s3         ; e11 = RING + ch
+        yld(s1, PK_N)
+        yld(s4, PK_LN)
+        alu s4, s4, s14, #OP_SUB
+        x19.alu s1, s1, s4, #SHIFT ; n * lanes = n << (lanes - 1)
+vd:     alu s12, s1, s0, #OP_ADD
+        ptst p3, s0, #EQ12, #PTST
+        jmp #3, #3, vddone
+        nop()
+        nop()
+        ldi s7, #16
+        readn(s3)
+        x17.sty e11, #3, #0
+        x18.eagu e11, e11, #AGU_INC
         alu s1, s1, s14, #OP_SUB
-        alu s4, s1, s0, #OP_ADD
-        ptst p3, s0, #EQ4, #PTST
-        jmp #IF_NOT, #3, rs
+        jmp #ALWAYS, #0, vd
         nop()
         nop()
+vddone:
 }
