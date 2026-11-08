@@ -3289,6 +3289,19 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     };
     state.s[(w2 >> 4) & 0xF] = xw.x;
     state.s[(w2 >> 27) & 0xF] = xw.muxed;
+    // 646: the ALU write is conditional on p1 through w1[23:20]: 0, 1, 3 write while p1 = 0;
+    // 2, 5, 7 while p1 = 1; 6 and 9 always.  4, 8 and 10-15 did not write in the one context
+    // measured, so they are refused until a program needs them.
+    if (r != null and dest_s != 0) {
+        const p1 = state.p[1] == 1;
+        const writes = switch ((w1 >> 20) & 0xF) {
+            0, 1, 3 => !p1,
+            2, 5, 7 => p1,
+            6, 9 => true,
+            else => return RunError.UnknownForm,
+        };
+        if (!writes) return;
+    }
     if (r) |x| state.s[dest_s] = @truncate(@as(u64, @bitCast(x)) & M24);
 }
 

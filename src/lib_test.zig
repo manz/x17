@@ -6564,3 +6564,34 @@ test "x18 class 011 codes 0x36-0x39 and the head's Y load (645)" {
     try ld.y_mem.put(testing.allocator, 0x700, 0x8000);
     try testing.expectError(error.UnknownForm, emu.runFrom(testing.allocator, &ld, &.{ 0x21c00018, 0x00001970, 0x30000014, 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "x19alu writes its ALU result per cond w1[23:20] and p1 (646)" {
+    // The probe bundle: x19alu s4 <- s4 << s2 (000006f9 0402_5808 00108101 81e18008) with
+    // s4 = 0x12, s2 = 8.  Cond 0 writes only while p1 = 0.
+    const Case = struct { cond: u32, p1: u8, want: u32 };
+    for ([_]Case{
+        .{ .cond = 0, .p1 = 0, .want = 0x1200 }, .{ .cond = 0, .p1 = 1, .want = 0x12 },
+        .{ .cond = 1, .p1 = 1, .want = 0x12 },   .{ .cond = 3, .p1 = 0, .want = 0x1200 },
+        .{ .cond = 2, .p1 = 0, .want = 0x12 },   .{ .cond = 2, .p1 = 1, .want = 0x1200 },
+        .{ .cond = 5, .p1 = 1, .want = 0x1200 }, .{ .cond = 7, .p1 = 0, .want = 0x12 },
+        .{ .cond = 6, .p1 = 0, .want = 0x1200 }, .{ .cond = 6, .p1 = 1, .want = 0x1200 },
+        .{ .cond = 9, .p1 = 1, .want = 0x1200 },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[4] = 0x12;
+        st.s[2] = 8;
+        st.p[1] = c.p1;
+        st.p[3] = 1; // other p never matter
+        _ = try emu.runFrom(testing.allocator, &st, &.{ 0x000006f9, 0x04025808 | (c.cond << 20), 0x00108101, 0x81e18008, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, st.s[4]);
+    }
+    for ([_]u32{ 4, 8, 10, 15 }) |cond| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        try testing.expectError(error.UnknownForm, emu.runFrom(testing.allocator, &st, &.{ 0x000006f9, 0x04025808 | (cond << 20), 0x00108101, 0x81e18008, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    }
+    // The assembler emits the always-write cond 6.
+    const w = try asm_mod.assembleOne("x19.alu s4, s4, s2, #23");
+    try testing.expectEqual(@as(u32, 6), (w.slice()[1] >> 20) & 0xF);
+}

@@ -451,6 +451,7 @@ Emulator:
 > H1 is yd at [23:8] (150).  x19a43 (fact 151): (0,4,3): s<head[24:21]> <- by w1[17:15]: 001 AGU3(x = A<w3[19:15]>,
 > i = (w3[14:0] << 1) | w2[31]), 100 H3[16:1], 101 H3[23:8], 111 0; w2[4] yd.  own-x19a43
 > x19aagu covers (0,4,2) too (152): same slot, i = (w3[14:0] << 1) | w2[31].  own-x19aagu42
+> x19alu write condition (646): the ALU write lands iff cond w1[23:20] holds on p1: 0, 1, 3 while p1 = 0; 2, 5, 7 while p1 = 1; 6, 9 always (the X writes are unconditional).  4, 8, 10-15 did not write in the one context measured: refused.  The assembler emits 6.
 > x19alu covers (0,4,4) too (153): w2[31] does not move the s write.  own-x19alu44
 > 154: H3 is not a register: mux 101 reads X:[x] (x19a43: A<w3[19:15]>); X:0 = 0x038A00 at harness start.  own-x19xrd
 > x02 (fact 155): 6 words; w4 slot s<w4[6:3]> <- mux w4[13:11] (101 X:[A<w4[21:17]>], 100 its 16:1, 111 0).  own-x02xrd
@@ -742,7 +743,7 @@ Emulator:
 ### `x19.alu`
 
 - Syllables: 4
-- Base: `00000419` `00005808` `XXXXXXXX` `81e18008`
+- Base: `00000419` `00605808` `XXXXXXXX` `81e18008`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -751,14 +752,15 @@ Emulator:
 | b_s | s | s1 | [19:16] |
 | code | imm | head | [9:5] |
 
-> x19.alu: 4-syllable low5 0x19 class (0,0,4) (fact 147 / own-x19alu):
+> x19.alu: 4-syllable low5 0x19 class (0,0,4) (fact 147 / own-x19alu).  w1[23:20] = 6, the
+> always-write condition (fact 646): 0 writes only while p1 = 0.
 >   s<w1[27:24]> <- OP[head[9:5]](a = s<w2[21:18]>, b = s<w1[19:16]>)
 > Only code 23 (sat24(a << b)) is measured.
 
 ### `x19.alum`
 
 - Syllables: 4
-- Base: `00000019` `00000000` `80008101` `81e18008`
+- Base: `00000019` `00600000` `80008101` `81e18008`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -853,7 +855,7 @@ Emulator:
 ### `x19.alu44`
 
 - Syllables: 4
-- Base: `00000419` `00005808` `80008101` `81e18008`
+- Base: `00000419` `00605808` `80008101` `81e18008`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
