@@ -121,49 +121,27 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(emu_t).step);
     const gates_t = b.addTest(.{ .root_module = gates_mod });
     test_step.dependOn(&b.addRunArtifact(gates_t).step);
-    const aac_bench = b.option(bool, "aac-bench-mode", "internal: lib tests report AAC stage costs") orelse false;
-    const lib_opts = b.addOptions();
-    lib_opts.addOption(bool, "bench", aac_bench);
     const lib_mod = b.createModule(.{
         .root_source_file = b.path("src/lib_test.zig"),
         .target = target,
-        .optimize = if (aac_bench) .ReleaseFast else optimize,
+        .optimize = optimize,
     });
-    lib_mod.addOptions("build_options", lib_opts);
     lib_mod.addImport("asm", asm_mod);
     lib_mod.addImport("emu", emu_mod);
-    lib_mod.addAnonymousImport("bits.sm", .{ .root_source_file = b.path("examples/lib/bits.sm") });
-    lib_mod.addAnonymousImport("mem.sm", .{ .root_source_file = b.path("examples/lib/mem.sm") });
-    lib_mod.addAnonymousImport("huffman.sm", .{ .root_source_file = b.path("examples/lib/huffman.sm") });
-    lib_mod.addAnonymousImport("sections.sm", .{ .root_source_file = b.path("examples/lib/sections.sm") });
-    lib_mod.addAnonymousImport("dequant.sm", .{ .root_source_file = b.path("examples/lib/dequant.sm") });
-    lib_mod.addAnonymousImport("imdct.sm", .{ .root_source_file = b.path("examples/lib/imdct.sm") });
     lib_mod.addAnonymousImport("handbook.md", .{ .root_source_file = b.path("docs/sm1/handbook.md") });
     lib_mod.addAnonymousImport("README.md", .{ .root_source_file = b.path("README.md") });
     lib_mod.addAnonymousImport("ARCHITECTURE.md", .{ .root_source_file = b.path("ARCHITECTURE.md") });
     lib_mod.addAnonymousImport("ASSEMBLY.md", .{ .root_source_file = b.path("ASSEMBLY.md") });
     lib_mod.addAnonymousImport("PROBES.md", .{ .root_source_file = b.path("PROBES.md") });
     lib_mod.addAnonymousImport("reference.md", .{ .root_source_file = b.path("docs/sm1/reference.md") });
-    lib_mod.addAnonymousImport("window.sm", .{ .root_source_file = b.path("examples/lib/window.sm") });
-    lib_mod.addAnonymousImport("stereo.sm", .{ .root_source_file = b.path("examples/lib/stereo.sm") });
-    lib_mod.addAnonymousImport("tns.sm", .{ .root_source_file = b.path("examples/lib/tns.sm") });
-    lib_mod.addAnonymousImport("pns.sm", .{ .root_source_file = b.path("examples/lib/pns.sm") });
-    lib_mod.addAnonymousImport("aac.sm", .{ .root_source_file = b.path("examples/lib/aac.sm") });
-    lib_mod.addAnonymousImport("books.txt", .{ .root_source_file = b.path("testdata/aac/books.txt") });
-    for ([_][]const u8{ "tone.aac_at", "sweep.ff_tns", "pink.ff_pns", "pink.ff_is", "clicks.aac_at" }) |f| {
-        lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/aac/{s}.pkts", .{f})) });
-    }
     lib_mod.addImport("host", host_mod);
-    // -Dtest-filter=<name>: run only the lib tests whose name contains it (mutation checks).
-    const test_filter = b.option([]const u8, "test-filter", "run only lib tests matching this");
-    const lib_filters: []const []const u8 = if (aac_bench) &.{ "as the model does", "huff_decode", "win_start", "aac_packet decodes", "aac stage bench report" } else if (test_filter) |f| b.dupeStrings(&.{f}) else &.{};
+    // -Dtest-filter=<name>: run only the ISA tests whose name contains it (mutation checks).
+    const test_filter = b.option([]const u8, "test-filter", "run only lib_test tests matching this");
+    const lib_filters: []const []const u8 = if (test_filter) |f| b.dupeStrings(&.{f}) else &.{};
     const lib_t = b.addTest(.{ .root_module = lib_mod, .filters = lib_filters });
-
-    // `zig build aac-bench -Daac-bench-mode`: the AAC stage tests with their costs printed.
     const lib_run = b.addRunArtifact(lib_t);
-    b.step("aac-bench", "Bundles per AAC stage (pass -Daac-bench-mode)").dependOn(&lib_run.step);
     test_step.dependOn(&lib_run.step);
-    b.step("test-lib", "Only the library tests (pair with -Dtest-filter)").dependOn(&lib_run.step);
+    b.step("test-lib", "Only lib_test.zig (pair with -Dtest-filter)").dependOn(&lib_run.step);
     const disasm_t = b.addTest(.{ .root_module = disasm_mod });
     test_step.dependOn(&b.addRunArtifact(disasm_t).step);
 }
