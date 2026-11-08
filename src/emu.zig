@@ -1021,7 +1021,12 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             // 0x01 (508, 509): rows 10/11 are y + i, y - i (y = R<head[30:27]>, i = head[26:11]).
             // The rest is w5[11] = 1: AGU10 (x = e<w4[8:5]>), 0: 234's table (512).
             2 => if (x01) try x01Table(state, h, w4, w5, op, imm) else try x00Op(x01, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
-            else => return RunError.UnknownForm,
+            // 0x00 sub-mux 3 reads D (595, 550's rule): w5[4] = 1 Y:[e<w4[8:5]>], 0 yd.
+            3 => if (x01) return RunError.UnknownForm else if ((w5 >> 4) & 1 == 0) state.yd & 0xFFFF else blk3: {
+                const ri: u32 = (w4 >> 5) & 0xF;
+                break :blk3 (state.getY(if (ri == 0) 0 else state.e[ri]) orelse 0) & 0xFFFF;
+            },
+            else => unreachable,
         };
         break :blk switch (src) {
             0, 7 => 0,

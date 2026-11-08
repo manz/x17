@@ -500,6 +500,7 @@ Emulator:
 > x02 mux 001/010 override (187): w5[29:28] 10 = e<w3[30:27]>, 01 per-run count (OPEN), 11 Y:0x40 (OPEN).  own-x02esrc
 > x02 Y side (545): Y:[e<w3[30:27]>] when w5[12], else yd; the memory mode reads it when w5[14] = 0, the 11 override always ("Y:0x40" was yd).  own-x02yd
 > x02 10 override (548): x01's T[w1[10:7]] (a = e<w3[30:27]>, y = R<w5[25:22]>, b = e<w3[26:23]>), fns 0-2 seen, rest refused.  own-x02ov
+> x00 s-slot sub-mux 11 (w5[24:23], via w6[3:1] = 1/2) reads D: Y:[e<w4[8:5]>] with w5[4], else yd (595).  Inert: w2[1], w0[20], w5[30].
 > x00 jump controls 1, 3, 0xE, 0x11, 0x13, 0x16, 0x17 (575, retracting 572-574): q + sx15({w2[0], w1[31:18]}), w2[0] the sign; two delay slots, no link.  Condition w4[31:28] (578, retracting 576/577): 0 taken in every state seen; the others read hidden state earlier runs change, not p1..p15; refused.
 > yd setters (571): yld10, x17 S2 101 with S1[28], x16alu mux 1/5 with S2[18], x02 R slot Y side (w5[12]), x19aagu byte load, x03 (565).  Y stores don't; x00 R slot unmeasured; same-bundle timing ASSUMED (set at the handler's end).
 > agu_xr wrap-once (566-568): M = R<k>, sum < 0 -> +M, sum >= M -> -M.  x02 A sum (k = w3[18:15], A<w2[21:17]>; the second A write with a wrap refused), x02 R slot w5[27:26] = 10, x16 S2 class 010 R slot with S1[24] (k = S2[5:2], any S1 class).

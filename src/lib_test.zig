@@ -5101,3 +5101,23 @@ test "aluWord: add at m 7 is |b|; sub at m 7 is refused (fact 238, after 594)" {
     try testing.expectEqual(@as(?u32, 0xBB3), try emu.aluWord((7 << 23), 0, -0xBB3));
     try testing.expectError(error.UnknownForm, emu.aluWord((0x10 << 5) | (7 << 23), 0, 0xBB3));
 }
+
+test "0x00's s-slot sub-mux 11 reads D (fact 595)" {
+    const gpa = testing.allocator;
+    // own-x00tab's bundle with w5[24:23] = 11: s1 <- Y:[e<w4[8:5]> = e1] with w5[4], else yd.
+    for ([_]struct { w4: u32 = 0x20, w5: u32, want: u32 }{
+        .{ .w5 = 0xC3800910, .want = 0x1234 },
+        .{ .w4 = 0x120, .w5 = 0xC3800910, .want = 0x7777 }, // w4[8:5] = 9
+        .{ .w5 = 0xC3800900, .want = 0xA050 }, // yd
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0x720;
+        state.e[9] = 0x760;
+        state.yd = 0xA050;
+        try state.y_mem.put(gpa, 0x720, 0x1234);
+        try state.y_mem.put(gpa, 0x760, 0x7777);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x28001000, 0x0002A005 | (3 << 7), 0xE8010000, 0x00000020, k.w4, k.w5, 0x35001002, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(k.want, state.s[1]);
+    }
+}
