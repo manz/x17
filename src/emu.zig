@@ -3295,11 +3295,16 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
 /// s<S1[28:25]> <- cell (head[29:27], S2[2:0]) of (a = s<S2[28:25]>, n = S1[31:29]), 24-bit
 /// wrapping.  Mux 0 even codes but 6 give a << n, odd but 7 (a & 0xF00) << n; mux 1 even codes
 /// a >> n (arithmetic); mux 2 a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN.  Outside
-/// the gate every shape is refused (580).
+/// the gate only the s<S2[7:4]> copy is measured (581).
 fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
-    // Any S2 bit in 0x01FFFFF8 is refused (580): S2[7:4] once picked s<S2[7:4]> but fits 5 of 13
-    // rows, and 92's "S2[6] alone writes 0" likely read s4 = 0.
-    if (s2 & 0x01FFFFF8 != 0) return RunError.UnknownForm;
+    // With S2 bits in 0x01FFFFF8 (580, 581): only S2[7:4] set, head[29:27] = 0, n = 0 and
+    // S2[2:0] in {0, 4} copy s<S2[7:4]>; every other shape is OPEN.
+    if (s2 & 0x01FFFFF8 != 0) {
+        const code_ok = s2 & 7 == 0 or s2 & 7 == 4;
+        if (s2 & 0x01FFFF08 != 0 or (h >> 27) & 7 != 0 or s1 >> 29 != 0 or !code_ok) return RunError.UnknownForm;
+        const src: u32 = (s2 >> 4) & 0xF;
+        return if (src == 0) 0 else state.s[src] & M24;
+    }
     const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
     const n: u5 = @intCast(s1 >> 29);
     const code: u32 = s2 & 7;

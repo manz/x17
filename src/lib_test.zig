@@ -2805,7 +2805,8 @@ test "the 0x16 class-100 row's s ALU: shifts, masked shift, add and subtract by 
             try testing.expectEqual(v, state.s[5]);
         } else try testing.expectError(error.UnknownForm, r);
     }
-    // 518: own-b16h31 (head[31] = 0 runs the same ALU); 580: any S2 bit in 0x01FFFFF8 refuses
+    // 518: own-b16h31 (head[31] = 0 runs the same ALU); 580, 581: outside the gate only
+    // s<S2[7:4]> with head[29:27] = 0, n = 0, S2[2:0] in {0, 4} is measured
     for ([_]struct { h: u32, s2: u32, want: ?u32 }{
         .{ .h = 0x001211d6, .s2 = 0x86000000, .want = 0x8080 },
         .{ .h = 0x801211d6, .s2 = 0x86000040, .want = null },
@@ -4628,5 +4629,30 @@ test "x19aagu's other slots (fact 271, 335, 341, 342)" {
         var o = emu.State{};
         defer o.deinit(gpa);
         try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x00000019, w1, 0x00000000, 0x40248008, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    }
+}
+
+test "the 0x16 class-100 s ALU copies s<S2[7:4]> outside its gate (fact 580, 581)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x46000096, s1: u32 = 0x0b000012, s2: u32 = 0x8a0000b4, want: ?u32 }{
+        .{ .want = 0xBB0B }, // the measured row: s5 <- s11
+        .{ .s2 = 0x8a000034, .want = 0x333 }, // S2[7:4] = 3, code 4
+        .{ .s2 = 0x8a0000b0, .want = 0xBB0B }, // code 0
+        .{ .h = 0x46000096 | 1 << 27, .want = null }, // head[29:27] != 0
+        .{ .s1 = 0x0b000012 | 1 << 29, .want = null }, // n != 0
+        .{ .s2 = 0x8a0000b1, .want = null }, // code 1
+        .{ .s2 = 0x8a0000bc, .want = null }, // S2[3] set
+        .{ .s2 = 0x8a0001b4, .want = null }, // S2[8] set
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[11] = 0xBB0B;
+        state.s[3] = 0x333;
+        state.s[5] = 0x5555;
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.s1, c.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
     }
 }
