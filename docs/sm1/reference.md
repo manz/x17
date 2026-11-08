@@ -471,7 +471,7 @@ Emulator:
 > x03 A slot (164): A<w3[14:10]> <- AGUA[w2[26:22]](x = A<w3[4:0]>, i = {w5[0], w4[31:17]}); AGUA fn 4 = i - x.  own-x03agu
 > x03 w2 slot (165): 0x02's multiply (156, 161), same fields.  own-x03mpy
 > x03 (166): inert class bits w3[29], w4[29], w5[31]; head[29], w2[31:29], w5[29] are fields (OPEN).
-> x18 (fact 167): 4 words.  X slot s<head[24:21]> <- mux w1[14:12] over X:[A<w2[21:17]>] if w2[23:22] = 01, else xd.  own-x18xrd
+> x18 (fact 167): 4 words.  X slot s<head[24:21]> <- mux w1[14:12] over X:[A<w2[21:17]>] if w2[23:22] = 01, else xd.  X words are 24 bits, stores sign-extend the 16-bit s, and the x18 X read returns [15:0] (692).  own-x18xrd
 > x18 multiply: P = s<w2[4:1]> * s<w2[8:5]> (w3[24] = 0: x2); lo -> s<w2[27:24]> by mode w3[20:18], hi = P >> 24 -> s<w2[12:9]>.  own-x18mpy
 > x18 unary (168, 491): s<w1[11:8]> <- op w1[17:15] of a = s<w2[5:2]>, b = s<w1[7:4]>: 0 a + b (491: 168's gates had b = s0), 1 a - b, 2 pass, 3 +1, 4 -1, 5/6 neg, 7 abs; head[30] zeroes it (OPEN).  own-x18una
 > x18 class 000 (169): X:[A<w2[12:8]>], mux w1[17:15], dsts s<head[24:21]> and s<w1[21:18]>, w2[14:13] memory/latch; e<w1[25:22]> <- op w1[29:26] of e<w3[28:25]>: 0/6/7/13 x, 2 x+1, 4 x-1, 3 1, 1/8-12/14/15 0, 5 OPEN.  own-x18eagu

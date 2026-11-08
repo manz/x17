@@ -6897,3 +6897,15 @@ test "one X latch: an x03 read sets the X that x18 class 110's mode uses; stores
     // X part 0x55 << 8; P = 2 * 0x6000 * 0x55 = 0x3FC000 rounds to 0 at bit 24
     try testing.expectEqual(@as(u32, 0x5500), st.s[11]);
 }
+
+test "x18 X read returns the word's low 16 bits (692)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    for ([_][2]u32{ .{ 0xFF8303, 0x8303 }, .{ 0x007303, 0x7303 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.a[3] = 0x40;
+        try st.x_mem.put(testing.allocator, 0x40, c[0]);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x00A00018, 0x00005000, (3 << 17) | (1 << 22), 0xC0000000 } ++ halt), 0, 8);
+        try testing.expectEqual(c[1], st.s[5]);
+    }
+}
