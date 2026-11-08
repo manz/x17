@@ -4857,6 +4857,8 @@ test "the 0x16 class-100 s ALU's cells 8-15 and S2[8] (fact 588)" {
         .{ .mx = 3, .c = 12, .a = 0x1234, .b = 2, .want = 0xFFEDCC },
         .{ .mx = 1, .c = 12, .want = 0xFFFE1E }, // (-a) >> b rounded
         .{ .mx = 1, .c = 12, .a = 0x1234, .b = 2, .want = 0xFFFB73 },
+        .{ .mx = 1, .c = 12, .a = 0x0F0C, .want = 0xFFFE1F }, // rounded, not 0xFFFE1E
+        .{ .mx = 1, .c = 12, .a = 0x1235, .b = 2, .want = 0xFFFB73 }, // not 0xFFFB72
         .{ .mx = 5, .c = 8, .want = 0xFFFFFC }, // ~b
         .{ .mx = 5, .c = 8, .a = 0x1234, .b = 2, .want = 0xFFFFFD },
         .{ .mx = 0, .c = 8, .want = 0x0F0E }, // a - 1
