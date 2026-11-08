@@ -3155,6 +3155,11 @@ fn x19AguS(state: *State, bundle: []const u32, agu: u32) RunError!u32 {
         if ((bundle[2] >> 25) & 1 == 1) return agu10Eval(fn_op, x, y);
         return agu10qEval(fn_op, x, y, if (qi == 0) 0 else state.e[qi]);
     }
+    if (mux == 3) {
+        // 637: Y:[e<w3[28:25]>][7:0] << 8, only with w2[26] = 1, w2[16] = 0, w3[1] = 0.
+        if ((bundle[2] >> 26) & 1 != 1 or (bundle[2] >> 16) & 1 != 0 or (bundle[3] >> 1) & 1 != 0) return RunError.UnknownForm;
+        return ((state.getY(state.e[(bundle[3] >> 25) & 0xF]) orelse 0) & 0xFF) << 8;
+    }
     if (mux != 4 and mux != 5) return RunError.UnknownForm;
     const x: u32 = if ((bundle[3] >> 1) & 1 == 0) state.yd else state.readX(state.a[(bundle[2] >> 17) & 0x1F]) orelse 0;
     return if (mux == 4) shl7(x) else x;

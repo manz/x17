@@ -6045,3 +6045,25 @@ test "x19agu s mux 2 runs AGU10Q with q = e<w2[7:4]> (fact 636)" {
     _ = try emu.runFrom(gpa, &a, &.{ 0x01200019, 0x06042000, 0x03000050, 0x0c001804, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0x3103), a.s[9]);
 }
+
+test "x19agu s mux 3 loads Y[7:0] << 8 under w2[26] (fact 637)" {
+    const gpa = testing.allocator;
+    // own-x19m3 01200019 00043000 04000000 0a000000: s9 <- Y:[e5 = 0x710][7:0] << 8.
+    for ([_]struct { y: u32, w2: u32 = 0x04000000, w3: u32 = 0x0a000000, want: ?u32 }{
+        .{ .y = 0x12AB, .want = 0xAB00 },
+        .{ .y = 0x3471, .want = 0x7100 },
+        .{ .y = 0x12AB, .w2 = 0x00000000, .want = null }, // w2[26] = 0
+        .{ .y = 0x12AB, .w2 = 0x04010000, .want = null }, // w2[16] = 1
+        .{ .y = 0x12AB, .w3 = 0x0a000002, .want = null }, // w3[1] = 1
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        st.e[5] = 0x710;
+        try st.y_mem.put(gpa, 0x710, c.y);
+        const r = emu.runFrom(gpa, &st, &.{ 0x01200019, 0x00043000, c.w2, c.w3, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, st.s[9]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
