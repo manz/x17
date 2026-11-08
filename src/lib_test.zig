@@ -131,7 +131,7 @@ fn stageAt(gpa: std.mem.Allocator, state: *emu.State, data: []const u8, base: u3
     for (0..data.len / 2) |i| try state.y_mem.put(gpa, base + @as(u32, @intCast(i)), @as(u32, data[2 * i]) << 8 | data[2 * i + 1]);
 }
 
-/// Every word the run touched lies in the mode-0 windows: X 0..0x1FFF, Y 0..0x2EFF and
+/// Every word the run touched lies in the mode-0 windows: X 0..0x1FFF (silicon stores only to 0x1BFF, fact 649; ALAC's stereo lanes still need the room), Y 0..0x2EFF and
 /// 0xFD80..0xFDFF (writes and the host's staging; the emulator's memory is sparse).
 fn expectMode0(state: *emu.State) !void {
     var xi = state.x_mem.keyIterator();
@@ -6875,6 +6875,21 @@ test "an x02.v X read into s0 reaches no other slot (652)" {
         try testing.expectEqual(@as(u32, 0), st.s[0]);
         try testing.expectEqual(@as(u32, 0), st.s[4]); // the multiply saw s0 = 0
         try testing.expectEqual(@as(u32, if (d == 8) 0x123456 else 0x55), st.s[8]);
+    }
+}
+
+test "stx refuses A0 and A31 (649)" {
+    for ([_]u32{ 0, 31, 7 }) |k| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.a[k] = 0x123;
+        st.s[3] = 0x55;
+        const w: u32 = 0x4030000A | (k << 11) | (3 << 16);
+        const r = emu.runFrom(testing.allocator, &st, &.{ w, 0x00000017, 0x31308000, 0xA0000000 }, 0, 4);
+        if (k == 7) {
+            _ = try r;
+            try testing.expectEqual(@as(?u32, 0x55), st.x_mem.get(0x123));
+        } else try testing.expectError(emu.RunError.UnknownForm, r);
     }
 }
 

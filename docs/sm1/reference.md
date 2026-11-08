@@ -600,7 +600,7 @@ Emulator:
 
 - Encoding: `word & 0xFFF007FF == 0x4030000A`
 - Evidence: MEASURED
-- Source: fact 69 pass 95: X:[A<[15:11]>] <- s<[19:16]> sign-extended to 24 bits.  own-stx.
+- Source: fact 69 pass 95: X:[A<[15:11]>] <- s<[19:16]> sign-extended to 24 bits.  own-stx.  A0 stores at the previous bundle's immediate or result, A31 at X:0; in mode 0 X stores land only at 0..0x1BFF (fact 649): A0 and A31 refused.
 
 | operand | kind | syllable | bits |
 |---|---|---|---|

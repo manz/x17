@@ -1384,9 +1384,14 @@ fn execPar(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const dest_r: u32 = (head >> 22) & 0xF;
     if ((head >> 9) & 1 == 0 and (k != 16 or dest_r != 0)) return RunError.UnknownForm;
     const xv: u32 = state.s[(head >> 16) & 0xF] & M24;
-    state.x_mem.put(gpa, state.a[(head >> 11) & 0x1F], xv) catch return RunError.OutOfMemory;
+    // The X store through A0 lands at the previous bundle's immediate or result, through A31
+    // at X:0 (fact 649): refused.
+    const xa: u32 = (head >> 11) & 0x1F;
+    if (xa == 0 or xa == 31) return RunError.UnknownForm;
+    state.x_mem.put(gpa, state.a[xa], xv) catch return RunError.OutOfMemory;
     if ((head >> 9) & 1 == 0) return;
     if (k < 16) return RunError.UnknownForm;
+    if ((head >> 5) & 0xF == 2) return RunError.UnknownForm; // ldy's e2 junk (fact 650)
     const yv: u32 = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
     state.s[k - 16] = yv;
     if (dest_r != 0) state.r[dest_r] = yv;
@@ -5313,8 +5318,11 @@ fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 }
 
 fn execStx(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
-    const a_idx: u32 = (head >> 11) & 0xF;
+    const a_idx: u32 = (head >> 11) & 0x1F;
     const src_s: u32 = (head >> 16) & 0xF;
+    // Through A0 the store lands at the previous bundle's immediate or result, through A31
+    // at X:0 (fact 649): neither is an address register here, so both are refused.
+    if (a_idx == 0 or a_idx == 31) return RunError.UnknownForm;
     const addr: u32 = state.a[a_idx];
     const v: u32 = state.s[src_s] & M24;
     try state.x_mem.put(gpa, addr, v);
