@@ -5889,3 +5889,37 @@ test "x17agu2 writes s<S1[22:19]> with the bare alu05 op (fact 629)" {
     defer o.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x18002a57, 0x284b0d00, 0x00002400, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "x17agu2's AGU x = e<S2[24:21]> and the e<k> <- e<j> - 1 write (fact 630, 631)" {
+    const gpa = testing.allocator;
+    // own-x17a2x 40002c17 2de83000 00a02400, e5 = 0x457: fn 0 gives s9 = 0x457, fn 2 0x458.
+    for ([_][2]u32{ .{ 0, 0x457 }, .{ 2, 0x458 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[5] = 0x457;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x40002c17, (0x2de83000 & ~@as(u32, 0x780)) | c[0] << 7, 0x00a02400, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c[1], state.s[9]);
+    }
+    // own-x17a2e 20001817 68000501 0014004d: e3 <- e5 - 1; S1[31:30] = 2 reads e6.  e2 (the
+    // AGU's own e write) takes y + i = R4 + 3.
+    for ([_]struct { s1: u32, want: u32 }{ .{ .s1 = 0x68000501, .want = 0x456 }, .{ .s1 = 0xA8000501, .want = 0x566 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[5] = 0x457;
+        state.e[6] = 0x567;
+        state.r[4] = 0x100;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x20001817, c.s1, 0x0014004d, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.e[3]);
+        try testing.expectEqual(@as(u32, 0x103), state.e[2]);
+    }
+    // j = 2 = the AGU's dest e2: the source is read before the write.
+    var pre = emu.State{};
+    defer pre.deinit(gpa);
+    pre.e[2] = 0x222;
+    _ = try emu.runFrom(gpa, &pre, &.{ 0x20001817, 0xA8000501, 0x0014004c, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x221), pre.e[3]);
+    // k = dest e2: unmeasured.
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x20001817, 0x68000501, 0x00140049, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}

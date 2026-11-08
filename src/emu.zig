@@ -4142,9 +4142,13 @@ fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const dest_s: u32 = (s2 >> 10) & 0xF;
     const dest_e: u32 = (2 * (s1 & 0x7)) & 0xF;
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
-    // Only fn 10 (y + i) is measured here.
-    if (fn_op != 10) return RunError.UnknownForm;
-    const result = try agu10ImmEval(fn_op, 0, y_val, imm);
+    // v = AGU10[S1[10:7]](x = e<S2[24:21]>, y = R<h[30:27]>, i = h[26:11]) (631).
+    const x_e: u32 = (s2 >> 21) & 0xF;
+    const result = try agu10ImmEval(fn_op, if (x_e == 0) 0 else state.e[x_e], y_val, imm);
+    // S2[5:2] = k != 0 (630): e<k> <- e<{S2[1:0], S1[31:30]}> - 1, read before the writes.
+    const dec_k: u32 = (s2 >> 2) & 0xF;
+    const dec_v: u32 = (state.e[((s2 & 3) << 2) | (s1 >> 30)] -% 1) & 0xFFFF;
+    if (dec_k != 0 and dec_k == dest_e) return RunError.UnknownForm;
     // s<S1[22:19]> <- the bare alu05 op h[10:5] (629): no h[25:19] modifiers (they are the
     // immediate).  Each class was measured on one code; the class's other codes are INFERRED.
     const alu_d: u32 = (s1 >> 19) & 0xF;
@@ -4153,6 +4157,7 @@ fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     if (alu_d != 0) state.s[alu_d] = alu_v;
     if (dest_s != 0) state.s[dest_s] = result;
     if (dest_e != 0) state.e[dest_e] = result;
+    if (dec_k != 0) state.e[dec_k] = dec_v;
     // R<S1[14:11]> takes it too, x17ld's R field (fact 540, own-x17a2r).
     const dest_r: u32 = (s1 >> 11) & 0xF;
     if (dest_r != 0) state.r[dest_r] = result;
