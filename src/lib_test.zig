@@ -7085,3 +7085,40 @@ test "x01.norm and x01.selneg on any registers (502, 666, 669)" {
         try testing.expectEqual(c[1], st.s[4]);
     }
 }
+
+test "unrolled 672 taps against coefficient registers give the exact dot product" {
+    // Each tap: s2 <- X:[A2], A2 += 1, {s10:s9} += 2 * s2 * s<coef>; the load lands after
+    // the multiply, so s2 is primed with d[0] and the last load is a dummy.
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const coef_regs = [_]u32{ 1, 3, 4, 5, 6, 7, 8, 11 };
+    var prng = std.Random.DefaultPrng.init(0x672);
+    const rnd = prng.random();
+    for (0..200) |_| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        var c: [8]i64 = undefined;
+        var d: [9]i64 = undefined;
+        for (&c, 0..) |*v, j| {
+            v.* = rnd.intRangeAtMost(i64, -0x8000, 0x7FFF);
+            st.s[coef_regs[j]] = @as(u32, @bitCast(@as(i32, @intCast(v.*)))) & 0xFFFFFF;
+        }
+        for (&d, 0..) |*v, j| {
+            v.* = rnd.intRangeAtMost(i64, -0x8000, 0x7FFF);
+            try st.x_mem.put(testing.allocator, @intCast(0x100 + j), @as(u32, @bitCast(@as(i32, @intCast(v.*)))) & 0xFFFFFF);
+        }
+        st.s[2] = st.x_mem.get(0x100).?; // prime
+        st.a[2] = 0x101;
+        var prog: [8 * 6 + 3]u32 = undefined;
+        for (coef_regs, 0..) |r, j| {
+            const w2: u32 = (0x00041485 & ~@as(u32, 0xF << 5)) | (r << 5);
+            prog[6 * j ..][0..6].* = .{ 0x80000003, 0x40006800, w2, 0x00000002, 0x00002c90, 0x00041202 };
+        }
+        prog[48..51].* = halt;
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 64);
+        var want: i64 = 0;
+        for (0..8) |j| want += 2 * c[j] * d[j];
+        const hi: i64 = @as(i16, @bitCast(@as(u16, @truncate(st.s[10]))));
+        const got: i64 = hi * (1 << 24) + st.s[9];
+        try testing.expectEqual(want, got);
+    }
+}
