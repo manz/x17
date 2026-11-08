@@ -5877,7 +5877,7 @@ test "x18 class 110 lo X term: s<w3[13:10]> in modes 5/6, xd << 8 for field 0 (7
     }
 }
 
-test "x18 class 110 hi X under w3[21] = 1 is s12, not xd; lo mode 7 is X - P (714)" {
+test "x18 class 110 hi X under w3[21] = 1 is the s at index 12 here, not xd; lo mode 7 is X - P (714)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
     const h = [_]u32{ 0x1E200018, 0x80005AA0, 0x00500E2B };
     const Case = struct { w3: u32, s12: u32, want: u32 };
@@ -5908,4 +5908,18 @@ test "x18 class 110 hi X under w3[21] = 1 is s12, not xd; lo mode 7 is X - P (71
     const w3 = (0xC0741839 & ~@as(u32, (7 << 18) | (0xF << 10))) | (7 << 18) | (6 << 10);
     _ = try emu.runFrom(testing.allocator, &st2, &([_]u32{ h[0], h[1], 0x0C500E2B & ~@as(u32, 0xF << 9), w3 } ++ halt), 0, 8);
     try testing.expectEqual(@as(u32, 0xE206), st2.s[12] & 0xFFFF);
+}
+
+test "x18 class 110 hi X under w3[21] = 1 is s<{w2[0], w1[31:29]}> (715)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // 714's word has index 12; w1[29] -> 13, w1[30] -> 14, w2[0] -> 4.
+    for ([_][3]u32{ .{ 0, 0, 12 }, .{ 1 << 29, 0, 13 }, .{ 1 << 30, 0, 14 }, .{ 0, 1, 4 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x10;
+        st.s[1] = 0x10;
+        for ([_]u32{ 4, 12, 13, 14 }) |k| st.s[k] = 0x100 + k;
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, 0x80005AA0 ^ c[0], 0x00500E2B ^ c[1], 0xC0741839 } ++ halt), 0, 8);
+        try testing.expectEqual(0x100 + c[2], st.s[7]);
+    }
 }

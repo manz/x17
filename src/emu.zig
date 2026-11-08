@@ -2360,21 +2360,24 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             else => xl -% lo,
         }) & M24;
     };
-    // w3[23] = 1 halves the X term (365, 714: s12 >> 1), unmodelled.
+    // w3[21] = 1 reads the X term from s<{w2[0], w1[31:29]}>, 599's store index (715); index 0
+    // is unmeasured.  w3[23] = 1 halves the term (365, 714), unmodelled.
+    const xs_idx: u32 = ((w2 & 1) << 3) | (bundle[1] >> 29);
+    if (w21 and hi_dest != 0 and mode != 4 and xs_idx == 0) return RunError.UnknownForm;
     if (hi_dest != 0 and mode != 4 and (bundle[3] >> 23) & 1 == 1) return RunError.UnknownForm;
     // Integer mode with the field (w3[21] = 0): hi has no X term at all (712, 713); with
-    // w3[21] = 1, modes 5 and 6 add / subtract s12 (714: 0x42, and 713's +-1).
+    // w3[21] = 1, modes 5 and 6 add / subtract that s (714, 715: 0x42, and 713's +-1).
     const hi_m: u32 = if (mode == 4 or hi_dest == 0 or (integer and x_from_s)) hi else blk: {
         if (integer) {
             if (!w21 or (mode != 5 and mode != 6)) return RunError.UnknownForm;
-            const s12: u32 = state.s[12];
-            break :blk (if (mode == 5) hi +% s12 else hi -% s12) & 0xFFFF;
+            const xv: u32 = state.s[xs_idx];
+            break :blk (if (mode == 5) hi +% xv else hi -% xv) & 0xFFFF;
         }
-        // The hi X term (714): w3[21] = 1 reads s12 (fixed on the measured word, 12 field flips
-        // inert); w3[21] = 0 the field s<w3[13:10]>, or for field 0 s0 as the xd latch << 8.
+        // The hi X term (714, 715): w3[21] = 1 reads s<{w2[0], w1[31:29]}>; w3[21] = 0 the
+        // field s<w3[13:10]>, or for field 0 s0 as the xd latch << 8.
         // All at acc[47:24].  Mode 3 under w3[21] = 1 is unpinned and refused.
         if (w21 and mode == 3) return RunError.UnknownForm;
-        const x: i64 = if (w21) @as(i64, sx24(state.s[12])) << 24 else if (x_from_s) @as(i64, sx24(state.s[x_reg])) << 24 else @as(i64, state.xd) << 32;
+        const x: i64 = if (w21) @as(i64, sx24(state.s[xs_idx])) << 24 else if (x_from_s) @as(i64, sx24(state.s[x_reg])) << 24 else @as(i64, state.xd) << 32;
         const sp: i64 = (@as(i64, sx24(state.s[a_s])) * sx24(state.s[b_s])) << 1;
         const acc: i64 = switch (mode) {
             0 => 0,
