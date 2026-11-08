@@ -1496,17 +1496,39 @@ fn execX02X3Pre(gpa: std.mem.Allocator, state: *State, bundle: []const u32, s_pr
     const dest_s: u32 = ((w5 & 3) << 2) | (w4 >> 30);
     if (dest_s == 0) return;
     const code: u32 = (bundle[0] >> 5) & 0x3F;
-    if (code == 7) {
-        // 627: asrrs, b = s<w4[29:26]> by a = s<w4[25:22]>, negated when w5[5]; w5[8:6] and
-        // w5[4:2] inert.  w5[16] = 1 unmeasured.
-        if ((w5 >> 16) & 1 == 1) return RunError.UnknownForm;
-        const a: u32 = s_pre[(w4 >> 22) & 0xF] & M24;
-        const n: u32 = if ((w5 >> 5) & 1 == 1) (0 -% a) & M24 else a;
-        state.s[dest_s] = alu05Shift(n, s_pre[(w4 >> 26) & 0xF] & M24, .asrrs);
+    if (ALU05[code] == .add) {
+        state.s[dest_s] = try x02X3Value(bundle, s_pre);
         return;
     }
-    if (ALU05[code] != .add) return RunError.UnknownForm;
-    state.s[dest_s] = try x02X3Value(bundle, s_pre);
+    state.s[dest_s] = try x02X3Other(code, w5, s_pre[(w4 >> 22) & 0xF] & M24, s_pre[(w4 >> 26) & 0xF] & M24);
+}
+
+/// x02 third slot XOR_M[w5[8:6]] (628); f5 OPEN.
+const X02_XOR_M = [8]?enum { xor, xnor, or_, and_, not_a, a }{ .xor, .xnor, .or_, .and_, .not_a, null, .a, .a };
+
+/// The third slot's non-adder head codes (627, 628), w5[16] = 0 only: 6 asr and 7 asrrs of
+/// b by a (w5[5] negates a), 22 / 31 XOR_M (22 then << w5[5:2]), 32 / 34 clear.
+fn x02X3Other(code: u32, w5: u32, a: u32, b: u32) RunError!u32 {
+    if ((w5 >> 16) & 1 == 1) return RunError.UnknownForm;
+    const n: u32 = if ((w5 >> 5) & 1 == 1) (0 -% a) & M24 else a;
+    return switch (code) {
+        6 => if ((w5 >> 2) & 7 != 0) RunError.UnknownForm else alu05Shift(n, b, .asr),
+        7 => alu05Shift(n, b, .asrrs),
+        22, 31 => blk: {
+            const v: u32 = switch (X02_XOR_M[(w5 >> 6) & 7] orelse return RunError.UnknownForm) {
+                .xor => a ^ b,
+                .xnor => ~(a ^ b),
+                .or_ => a | b,
+                .and_ => a & b,
+                .not_a => ~a,
+                .a => a,
+            };
+            const sh: u5 = if (code == 22) @intCast((w5 >> 2) & 0xF) else 0;
+            break :blk (v << sh) & M24;
+        },
+        32, 34 => 0,
+        else => RunError.UnknownForm,
+    };
 }
 
 /// The third slot's alu_word value (182, 549), also the R slot's source with w5[31:30] = 10.

@@ -521,6 +521,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # x16alu, S2 class 010 (fact 119 pass 145): the 116 ALU alone, s<S1[11:8]> <- by S1[15], S1[18:16]: 0: 4 a+b 5 a 6 a-1 7 -a; 1: 4 a-b 5 a+1 6 a 7 a
 # (a = s<S2[28:25]>, b = s<S1[7:4]>; the same table holds under class-111 S2); head[24:21] bit b zeroes s<1 << b>, S2[16:13] bit b zeroes R<1 << b>.  own-x16alu2
 # x19a3st s write (612): 529's mux too, 0 zero / 2 AGU3 (measured with w1[31:29] = 0 and 7, 1-6 INFERRED), others refused; w1[31:29] = 7: e<w1[6:3]> <- #head[20:5] (148), A<w1[26:22]> (x99 only) refused; others: R<w1[14:11]> <- AGU10[w1[10:7]](e<w3[28:25]>, R<w1[21:18]>) (144/149); the Y store reads s before it.  Mux 3 (any class) is not the raw AGU x: OPEN.
+# x02 third slot (628): code 6 asr (w5[5] negates a; w5[4:2] != 0 refused), codes 22/31 XOR_M[w5[8:6]] (f5 refused; 22 then << w5[5:2]), codes 32/34 clear; code 9 and other xor codes refused.  own-x02and
 # x02 third slot code 7 (627): s<t> <- asrrs(s<w4[29:26]> by s<w4[25:22]>), w5[5] negates the count; w5[8:6], w5[4:2] inert; w5[16] = 1 refused.  own-x02asr
 # x02 second A write (626): A<w3[14:10]> <- wrap(sum) + A<w3[9:5]>; only the sum wraps.  own-x02wrap
 # ytst (625): head classes 0/2/4/6; S1[8] and S1[3] both set store X:[A<{S1[2:0], head[31:30]}>] <- sx24 s<S1[7:4]>; head[24:21] != 0 writes s from an OPEN source: refused.  own-x14st

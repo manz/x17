@@ -4065,13 +4065,12 @@ test "x03's R slot refuses the w5[27] carry (fresh state only, 547)" {
 test "x02's third slot shifts by the head ALU code" {
     // fact 549: own-x02t3, s3 = 0x1230: m = 2 (b) with n = 4 under head code 3 (asr)
     // gives 0x123; code 1 shifts left, read back through a 16-bit Y store as 0x2300 (the upper
-    // byte is unpinned); codes 6 and 0x16 (not adder codes) refuse.
+    // byte is unpinned); code 6 with w5[4:2] != 0 refuses (628).
     const gpa = testing.allocator;
     for ([_]struct { h: u32, want: ?u32, w5: u32 = 0xc0020090 }{
         .{ .h = 0x01065062, .want = 0x123 },
         .{ .h = 0x01065022, .want = 0x2300 },
         .{ .h = 0x010650c2, .want = null },
-        .{ .h = 0x010652c2, .want = null, .w5 = 0xc0020080 }, // 0x16 xor: alu_word has it, the slot does not
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -5810,4 +5809,42 @@ test "x02's third slot with head code 7 is asrrs, w5[5] negating the count (fact
     var o = emu.State{};
     defer o.deinit(gpa);
     try testing.expectError(error.UnknownForm, runX02(gpa, &o, .{ 0x010650E2, 0x00002048, 0x00001432, 0x00000000, 0xD5000480, 0xc0030090 }));
+}
+
+test "x02's third slot: code 6 asr, codes 22/31 XOR_M, codes 32/34 clear (fact 628)" {
+    const gpa = testing.allocator;
+    // s3 <- f(a = s4, b = s5); head code in h[10:5]; w5 base 0xc0020000 (dest s3, w5[16] = 0).
+    const Row = struct { code: u32, w5lo: u32, a: u32, b: u32, want: ?u32 };
+    for ([_]Row{
+        .{ .code = 6, .w5lo = 0x20, .a = 0xFFFFFF, .b = 0x3303, .want = 0x1981 }, // no rounding
+        .{ .code = 6, .w5lo = 0x20, .a = 30, .b = 0x3303, .want = 0 }, // huge left
+        .{ .code = 6, .w5lo = 0x00, .a = 4, .b = 0x3303, .want = 0x330 },
+        .{ .code = 6, .w5lo = 0x04, .a = 4, .b = 0x3303, .want = null }, // w5[4:2] OPEN
+        .{ .code = 31, .w5lo = 0 << 6, .a = 0x1234, .b = 0x0F0F, .want = 0x1D3B },
+        .{ .code = 31, .w5lo = 1 << 6, .a = 0x1234, .b = 0x0F0F, .want = 0xFFE2C4 },
+        .{ .code = 31, .w5lo = 2 << 6, .a = 0x1234, .b = 0x0F0F, .want = 0x1F3F },
+        .{ .code = 31, .w5lo = 3 << 6 | 0x3C, .a = 0x1234, .b = 0x0F0F, .want = 0x0204 }, // w5[5:2] ignored
+        .{ .code = 31, .w5lo = 4 << 6, .a = 0x1234, .b = 0x0F0F, .want = 0xFFEDCB },
+        .{ .code = 31, .w5lo = 5 << 6, .a = 0x1234, .b = 0x0F0F, .want = null }, // f5 OPEN
+        .{ .code = 31, .w5lo = 6 << 6, .a = 0x1234, .b = 0x0F0F, .want = 0x1234 },
+        .{ .code = 31, .w5lo = 7 << 6, .a = 0x1234, .b = 0x0F0F, .want = 0x1234 },
+        .{ .code = 22, .w5lo = 3 << 6 | 4 << 2, .a = 0x1234, .b = 0x0F0F, .want = 0x2040 },
+        .{ .code = 22, .w5lo = 3 << 6, .a = 0x1234, .b = 0x0F0F, .want = 0x0204 },
+        .{ .code = 32, .w5lo = 0, .a = 0x1234, .b = 0x0F0F, .want = 0 },
+        .{ .code = 34, .w5lo = 0, .a = 0x1234, .b = 0x0F0F, .want = 0 },
+        .{ .code = 9, .w5lo = 0, .a = 0x1234, .b = 0x0F0F, .want = null },
+        .{ .code = 0x17, .w5lo = 0, .a = 0x1234, .b = 0x0F0F, .want = null }, // other xor codes
+        .{ .code = 31, .w5lo = 0x10000, .a = 0x1234, .b = 0x0F0F, .want = null }, // w5[16]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0x777;
+        state.s[4] = c.a;
+        state.s[5] = c.b;
+        const r = runX02(gpa, &state, .{ 0x01065002 | c.code << 5, 0x00002048, 0x00001432, 0x00000000, 0xD5000480, 0xc0020000 | c.w5lo });
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[3]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
 }
