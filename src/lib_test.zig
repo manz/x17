@@ -5758,3 +5758,28 @@ test "b16a's move reads a when S1[4:3] = 01 (fact 622, 623)" {
     defer o.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0xc6000016, 0x05002008, 0x86000042, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "ytst stores X with S1[8] and S1[3]; head[29] and head[24:21] refuse (fact 625)" {
+    const gpa = testing.allocator;
+    // own-x14st 00000014 0221016B: X:[A12] <- sx24 s6.
+    for ([_]struct { head: u32 = 0x00000014, s1: u32 = 0x0221016B, at: u32 = 0x300, want: ?u32 }{
+        .{ .want = 0xFF8123 },
+        .{ .head = 0x40000014, .at = 0x400, .want = 0xFF8123 }, // head class 2: A index {011, 01} = 13
+        .{ .s1 = 0x0221006B, .want = 0 }, // S1[8] = 0
+        .{ .s1 = 0x02210163, .want = 0 }, // S1[3] = 0
+        .{ .s1 = 0x02210763, .want = 0 }, // S1[10:9] alone
+        .{ .head = 0x20000014, .want = null }, // head[29]
+        .{ .head = XXXXXXXX, .want = null }, // head[24:21] = 1
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[6] = 0xFF8123;
+        state.a[12] = 0x300;
+        state.a[13] = 0x400;
+        const r = emu.runFrom(gpa, &state, &.{ c.head, c.s1, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.readX(c.at) orelse 0);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
