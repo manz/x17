@@ -1799,18 +1799,18 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
 /// The x16agu's 0x05 ALU word (fact 592): s<S1[27:24]> <- alu_word(code h[10:5],
 /// a = s<S1[19:16]>, b = s<S2[28:25]>, m = S1[13:11], #s = S1[23:20]); 0 means no write.
-/// Measured: add at m 0/2/3/6 (with #s only at m 2); sub, movb, mova, sel, asr and clr codes
-/// 0x20 / 0x22 at m 2 with #s = 0.  Read 16-bit, so the top byte is the alu_word's.
+/// Measured codes only: add 0 / 1 at m 0/2/3/6 (with #s only at m 2); at m 2 with #s = 0 sub
+/// 16, asr 6, mova 35, sel 42, movb 51, clr 32 / 34.  Read 16-bit, so the top byte is the
+/// alu_word's.
 fn x16AguAlu(state: *const State, h: u32, s1: u32, s2: u32) RunError!?struct { dest: u32, val: u32 } {
     const d: u32 = (s1 >> 24) & 0xF;
     if (d == 0) return null;
     const code: u32 = (h >> 5) & 0x3F;
     const m: u32 = (s1 >> 11) & 7;
     const sh: u32 = (s1 >> 20) & 0xF;
-    const ok = switch (ALU05[code]) {
-        .add => (m == 0 or m == 2 or m == 3 or m == 6) and (sh == 0 or m == 2),
-        .sub, .movb, .mova, .sel, .asr => m == 2 and sh == 0,
-        .clr => (code == 0x20 or code == 0x22) and m == 2 and sh == 0,
+    const ok = switch (code) {
+        0, 1 => (m == 0 or m == 2 or m == 3 or m == 6) and (sh == 0 or m == 2),
+        16, 6, 35, 42, 51, 32, 34 => m == 2 and sh == 0,
         else => false,
     };
     if (!ok) return RunError.UnknownForm;

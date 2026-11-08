@@ -5023,9 +5023,12 @@ test "x16agu carries the 0x05 ALU word in S1 (fact 592)" {
     for ([_]struct { code: u32, s1: u32 = 0x16045030, want: ?u32 }{
         .{ .code = 0x00, .want = 0xBB3 }, // add, m 2
         .{ .code = 0x10, .want = 0xFFF44D }, // sub
-        .{ .code = 0x30, .want = 0xBB3 }, // movb
+        .{ .code = 51, .want = 0xBB3 }, // movb
+        .{ .code = 0x30, .want = null }, // another movb code: unmeasured here
         .{ .code = 0x23, .want = 0x443 }, // mova
-        .{ .code = 0x26, .want = 0x443 }, // sel
+        .{ .code = 42, .want = 0x443 }, // sel
+        .{ .code = 1, .want = 0xBB3 }, // add code 1
+        .{ .code = 2, .want = null }, // add 2: unmeasured here
         .{ .code = 0x06, .want = 0 }, // asr
         .{ .code = 0x20, .want = 0 }, // clr
         .{ .code = 0x22, .want = 0 },
