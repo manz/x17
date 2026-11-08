@@ -6070,11 +6070,12 @@ test "x19agu s mux 3 loads Y[7:0] << 8 under w2[26] (fact 637)" {
 
 test "x16agu (120 form) s mux 3 loads Y[7:0] << 8 (fact 638)" {
     const gpa = testing.allocator;
-    // own-x16y 50000016 8941b202 a0a00148 with S1[31] cleared (INFERRED: the measured S1[31] = 1
-    // shape decodes as agumul here, OPEN): s9 <- Y:[e5 = 0x710][7:0] << 8.
-    for ([_]struct { y: u32, s1: u32 = 0x0941b202, want: u32 }{
+    // own-x16y 50000016 8941b202 a0a00148 (agumul's S1 class 100, see below): s9 <- Y:[e5 =
+    // 0x710][7:0] << 8; S1[31] cleared (class 000) runs the slot alone.
+    for ([_]struct { y: u32, s1: u32 = 0x8941b202, want: u32 }{
         .{ .y = 0x12AB, .want = 0xAB00 },
         .{ .y = 0x3471, .want = 0x7100 },
+        .{ .y = 0x12AB, .s1 = 0x0941b202, .want = 0xAB00 },
     }) |c| {
         var st = emu.State{};
         defer st.deinit(gpa);
@@ -6097,4 +6098,35 @@ test "x16mul's head immediate lands with S1[14:13] = 01; 10 refuses (fact 639)" 
             try testing.expectEqual(v, st.s[9]);
         } else try testing.expectError(error.UnknownForm, r);
     }
+}
+
+test "agumul with S1[30:28] = 000 also runs the 120 slot; both read the old s (fact 638)" {
+    const gpa = testing.allocator;
+    // own-x16y: s2 <- s1 * s2 >> 23 beside s9 <- Y[7:0] << 8.
+    for ([_][3]u32{ .{ 0x4000, 0x4000, 0x20 }, .{ 0x2000, 0x6000, 0x18 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        st.e[5] = 0x710;
+        try st.y_mem.put(gpa, 0x710, 0x12AB);
+        st.s[1] = c[0];
+        st.s[2] = c[1];
+        _ = try emu.runFrom(gpa, &st, &.{ 0x50000016, 0x8941b202, 0xa0a00148, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c[2], st.s[2]);
+        try testing.expectEqual(@as(u32, 0xAB00), st.s[9]);
+    }
+    // own-x16y with S1[12:9] = 1 (measured): the slot writes s1 = 0x5F00, the product still
+    // reads the old s1.
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    st.e[5] = 0x710;
+    try st.y_mem.put(gpa, 0x710, 0x125F);
+    st.s[1] = 0x4000;
+    st.s[2] = 0x4000;
+    _ = try emu.runFrom(gpa, &st, &.{ 0x50000016, 0x8941a202, 0xa0a00148, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x20), st.s[2]);
+    try testing.expectEqual(@as(u32, 0x5F00), st.s[1]);
+    // Slot dest = product dest s2: unmeasured.
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x50000016, 0x8941a402, 0xa0a00148, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }

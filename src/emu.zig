@@ -280,8 +280,6 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s1_class16 == 3 and s2_class == 0b000) return execX16Xld(state, bundle);
         if (s1_class16 == 3 and s2_class == 0b111) return execX16St2(gpa, state, bundle);
         if (s2_class == 0b101) {
-            // 638's own-x16y has S1[31] = 1, which is agumul's shape here; whether that bundle also
-            // runs the multiply is OPEN, so S1 class 100 stays agumul.
             if (s1_class16 == 0) return execX16Agu2(state, bundle);
             return execX16AguMul(state, bundle);
         }
@@ -1820,14 +1818,16 @@ fn execX16AguMul(state: *State, bundle: []const u32) RunError!void {
     const s1 = bundle[1];
     const s2 = bundle[2];
     const dest: u32 = ((s2 & 3) << 2) | ((s1 >> 30) & 3);
-    if (dest == 0) return;
-    if ((h >> 28) & 1 == 0) {
-        state.s[dest] = 0;
-        return;
-    }
+    // S1[30:28] = 000 also runs the 120 form's s slot, both reading the old s (638).
+    const slot = if ((s1 >> 28) & 7 == 0) try x16Agu2Slot(state, bundle) else null;
     const a: i64 = sx16(state.s[(s1 >> 1) & 0xF]);
     const b: i64 = sx16(state.s[(s2 >> 2) & 0xF]);
-    state.s[dest] = @truncate(@as(u64, @bitCast((a * b) >> 23)) & 0xFFFF);
+    const prod: u32 = if ((h >> 28) & 1 == 0) 0 else @truncate(@as(u64, @bitCast((a * b) >> 23)) & 0xFFFF);
+    if (slot) |w| {
+        if (w.dest != 0 and w.dest == dest) return RunError.UnknownForm;
+        if (w.dest != 0) state.s[w.dest] = w.val;
+    }
+    if (dest != 0) state.s[dest] = prod;
 }
 
 const AGU10B_TAB = [16]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 2, 2, 1, 1, 1, 8, 9, 10 };
@@ -1879,10 +1879,17 @@ fn agu10bEval(fn_op: u32, x: u32, y: u32) u32 {
 /// (S2[8] ? AGU10 : AGU10B)[S1[29:26]](e<S2[24:21]>, R<S1[21:18]>) into
 /// s<S1[12:9]>; mux 000 writes 0.
 fn execX16Agu2(state: *State, bundle: []const u32) RunError!void {
+    if (bundle[2] & 3 != 0) return RunError.UnknownForm;
+    const w = try x16Agu2Slot(state, bundle);
+    if (w.dest != 0) state.s[w.dest] = w.val;
+}
+
+/// The 120 form's s slot, s<S1[12:9]> <- mux S1[17:15]; also runs beside agumul (638).
+fn x16Agu2Slot(state: *State, bundle: []const u32) RunError!struct { dest: u32, val: u32 } {
     const s1 = bundle[1];
     const s2 = bundle[2];
     const mux: u32 = (s1 >> 15) & 7;
-    if ((s1 >> 13) & 1 == 0 or (s1 >> 30) & 1 == 1 or s2 & 3 != 0) return RunError.UnknownForm;
+    if ((s1 >> 13) & 1 == 0 or (s1 >> 30) & 1 == 1) return RunError.UnknownForm;
     const fn_op: u32 = (s1 >> 26) & 0xF;
     const x: u32 = state.e[(s2 >> 21) & 0xF];
     const y: u32 = state.r[(s1 >> 18) & 0xF];
@@ -1892,12 +1899,11 @@ fn execX16Agu2(state: *State, bundle: []const u32) RunError!void {
         // is measured.
         0 => if (dest != 0 and (bundle[0] >> 5) & 0x3F != 14) return RunError.UnknownForm else 0,
         1 => if ((s2 >> 8) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y),
-        // 638: Y:[x][7:0] << 8; no gate seen (not swept).  Measured with S1[31] = 1 only: at S1
-        // class 000 INFERRED.
+        // 638: Y:[x][7:0] << 8; no gate seen (not swept).
         3 => ((state.getY(x) orelse 0) & 0xFF) << 8,
         else => return RunError.UnknownForm,
     };
-    if (dest != 0) state.s[dest] = v;
+    return .{ .dest = dest, .val = v };
 }
 
 /// S1 class 011, S2 class 000: S2[3] latches xi <- S2[8:4], then
