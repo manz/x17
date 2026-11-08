@@ -2687,16 +2687,24 @@ fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
 fn execLdi2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len < 2) return RunError.UnknownForm;
     const head = bundle[0];
-    const dest_s: u32 = (head >> 21) & 0x1F;
-    const imm: u32 = (head >> 5) & 0xFFFF;
-    // S[20:19] = 11 stores Y:[e<S[28:25]>] <- s<S[24:21]> (fact 89).
     const sw = bundle[1];
-    if ((sw >> 19) & 3 == 3) {
+    // 634: h[31:30] = 00 and a second with S[20:19] = 11, S[18:0] = 0 (other nonzero S[18:0]
+    // wedges, S[20:19] = 00 OPEN), or own-ldi2's exact second 0x20040000 (no store).
+    if (head >> 30 != 0) return RunError.UnknownForm;
+    const store = sw & 0x1FFFFF == 0x180000;
+    if (!store and sw != 0x20040000) return RunError.UnknownForm;
+    const imm: u32 = (head >> 5) & 0xFFFF;
+    // Y:[e<S[28:25]>] <- s<S[24:21]>, s read before the head's write (fact 89, 634).
+    if (store) {
         const v: u32 = state.s[(sw >> 21) & 0xF] & 0xFFFF;
         state.y_mem.put(gpa, state.e[(sw >> 25) & 0xF], v) catch return RunError.OutOfMemory;
     }
-    if (dest_s == 0 or dest_s >= 16) return;
-    state.s[dest_s] = imm;
+    // s<h[24:21]> <- sx16 #, and A<h[29:25]> <- # (634).  A0 is skipped: INFERRED, A0 reads 0
+    // elsewhere and a write there is unmeasured.
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const dest_a: u32 = (head >> 25) & 0x1F;
+    if (dest_s != 0) state.s[dest_s] = sx16To24(imm);
+    if (dest_a != 0) state.a[dest_a] = imm;
 }
 
 fn execAgu10r(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

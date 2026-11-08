@@ -5947,3 +5947,30 @@ test "ptst op 0x1E tests a & b at c 14 (s10) and 15 (s12) (fact 632, 633)" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "ldi2 writes s and A from the head and stores Y from the old s (fact 634)" {
+    const gpa = testing.allocator;
+    // own-ldi2y 18006010 2a980000: Y:[e5 = 0x710] <- s4 = 0x1234; A12 <- 0x300.
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    st.e[5] = 0x710;
+    st.s[4] = 0x1234;
+    _ = try emu.runFrom(gpa, &st, &.{ 0x18006010, 0x2a980000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1234), st.getY(0x710).?);
+    try testing.expectEqual(@as(u32, 0x300), st.a[12]);
+    // Head s4 <- 0x8001 (sx16 -> 0xFF8001), A17 (h[29]) <- 0x8001; the store reads the old s4.
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    o.e[5] = 0x710;
+    o.s[4] = 0x1234;
+    _ = try emu.runFrom(gpa, &o, &.{ 0x22900030, 0x2a980000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1234), o.getY(0x710).?);
+    try testing.expectEqual(@as(u32, 0xFF8001), o.s[4]);
+    try testing.expectEqual(@as(u32, 0x8001), o.a[17]);
+    // Refused: h[31:30] != 0, S[18:0] != 0, S[20:19] = 00.
+    for ([_][2]u32{ .{ 0x58006010, 0x2a980000 }, .{ 0x18006010, 0x2a980001 }, .{ 0x18006010, 0x2a800000 } }) |c| {
+        var r = emu.State{};
+        defer r.deinit(gpa);
+        try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &r, &.{ c[0], c[1], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    }
+}
