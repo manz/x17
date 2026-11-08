@@ -3589,3 +3589,30 @@ Emulator:
 
 > ragu: ragu0c with its R operand (fact 378): R <- agu_xr(fn, A, R).
 
+### `x01.norm`
+
+- Syllables: 7
+- Base: `28001381` `00000580` `280000c0` `000280a0` `00040002` `28200900` `00300000`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| dest | s | s6 | [7:4] |
+| b | s | s2 | [5:2] |
+
+> x01.norm: the clean x01 norm word (fact 502, 666, 669): s<w6[7:4]> <- norm(s<w2[5:2]>), the
+> redundant sign bits at 24 bits (norm(0) = 24, norm(-1) = 23), xori code 0x1C with m = 5;
+> the R and e side writes cleared.
+
+### `x01.selneg`
+
+- Syllables: 7
+- Base: `28001381` `00000580` `28000000` `000280a0` `00040002` `38200900` `00300000`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| dest | s | s6 | [7:4] |
+| b | s | s2 | [5:2] |
+| i | imm | s2 | [9:6] |
+
+> x01.selneg: the same word with m = 7 (fact 502): s<w6[7:4]> <- b < 0 ? b : #w2[9:6].
+

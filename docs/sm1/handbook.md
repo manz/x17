@@ -294,7 +294,8 @@ Measured idioms, cheapest first:
   norm(0x7FFF) = 8, norm(0) = 24, norm(-1) = 23, norm(-2) = 22 (§502, §666, §669). A run of
   k >= 1 leading ones gives norm = k - 1; test the sign first for k = 0. The result is ready for
   the next bundle. Use the clean word with both side writes cleared (§669):
-  `28001381 00000580 280000e0 000280a0 00040002 28200900 00300090` = s9 <- norm(s8).
+  `28001381 00000580 280000e0 000280a0 00040002 28200900 00300090` = s9 <- norm(s8), written
+  `x01.norm s9, s8`. Its m = 7 sibling is `x01.selneg sD, sB, #i` = b < 0 ? b : i.
 - **Running MAC.** Mode 5 computes acc = hi * 2^24 + lo + 2ab with lo taken unsigned 24 bits,
   and returns lo' = acc mod 2^24. With rounding off, hi' = floor(acc / 2^24), so feeding
   (hi', lo') back is an exact running sum: one bundle per tap, round once at the end. Two forms

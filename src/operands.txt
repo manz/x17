@@ -1384,3 +1384,8 @@ ragu	dest_R	R	27	30	head
 ragu	x_A	A	12	16	head
 ragu	r_R	R	17	20	head
 ragu	fn	imm	7	11	head
+x01.norm	dest	s	4	7	s6
+x01.norm	b	s	2	5	s2
+x01.selneg	dest	s	4	7	s6
+x01.selneg	b	s	2	5	s2
+x01.selneg	i	imm	6	9	s2

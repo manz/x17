@@ -7055,3 +7055,33 @@ test "x03 mode 5 refuses operands past 16-bit magnitude (670's measured range)" 
     st.s[4] = 0x1000;
     try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &(mac ++ halt), 0, 8));
 }
+
+test "x01.norm and x01.selneg on any registers (502, 666, 669)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const n = try asm_mod.assembleOne("x01.norm s3, s12");
+    for ([_][2]u32{ .{ 0x100, 14 }, .{ 0xFFFF00, 15 }, .{ 0x7FFF, 8 }, .{ 0, 24 }, .{ 0xFFFFFF, 23 }, .{ 0x400000, 0 }, .{ 1, 22 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[12] = c[0];
+        st.r[5] = 0x40;
+        st.e[6] = 0x77;
+        var prog: [10]u32 = undefined;
+        @memcpy(prog[0..7], n.slice()[0..7]);
+        @memcpy(prog[7..10], &halt);
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        try testing.expectEqual(c[1], st.s[3]);
+        try testing.expectEqual(@as(u32, 0x40), st.r[5]);
+        try testing.expectEqual(@as(u32, 0x77), st.e[6]);
+    }
+    const sel = try asm_mod.assembleOne("x01.selneg s4, s7, #9");
+    for ([_][2]u32{ .{ 0xFFFFF0, 0xFFFFF0 }, .{ 5, 9 }, .{ 0, 9 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[7] = c[0];
+        var prog: [10]u32 = undefined;
+        @memcpy(prog[0..7], sel.slice()[0..7]);
+        @memcpy(prog[7..10], &halt);
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        try testing.expectEqual(c[1], st.s[4]);
+    }
+}
