@@ -5848,3 +5848,44 @@ test "x02's third slot: code 6 asr, codes 22/31 XOR_M, codes 32/34 clear (fact 6
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x17agu2 writes s<S1[22:19]> with the bare alu05 op (fact 629)" {
+    const gpa = testing.allocator;
+    // own-x17a2s 18002a57 284b0d00 00000000: s9 <- rsub(a = s6, b = s0) = -0x8123.
+    for ([_]struct { code: u32, want: ?u32 }{
+        .{ .code = 0x12, .want = 0xFF7EDD },
+        .{ .code = 0x23, .want = 0x8123 }, // mova
+        .{ .code = 0x00, .want = 0x8123 }, // add, h[25:19] not applied
+        .{ .code = 0x10, .want = 0x8123 },
+        .{ .code = 0x16, .want = 0x8123 },
+        .{ .code = 0x30, .want = 0 },
+        .{ .code = 0x09, .want = 0 },
+        .{ .code = 0x20, .want = 0 },
+        .{ .code = 0x06, .want = 0 }, // asr(0 >> a)
+        .{ .code = 0x14, .want = null }, // nadd
+        .{ .code = 0x26, .want = null }, // sel
+        .{ .code = 0x08, .want = null }, // lsr
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[6] = 0x8123;
+        const r = emu.runFrom(gpa, &state, &.{ (0x18002a57 & ~@as(u32, 0x7E0)) | c.code << 5, 0x284b0d00, 0x00000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[9]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+    // b = s5 = 0x0100 (S2[28:25] = 5), a = s6 = 0x0123.  Derived from 629's op list.
+    for ([_][2]u32{ .{ 0x00, 0x0223 }, .{ 0x10, 0x0023 }, .{ 0x12, 0xFFFFDD }, .{ 0x16, 0x0023 }, .{ 0x30, 0x0100 }, .{ 0x09, 0x0100 }, .{ 0x23, 0x0123 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[6] = 0x0123;
+        state.s[5] = 0x0100;
+        _ = try emu.runFrom(gpa, &state, &.{ (0x18002a57 & ~@as(u32, 0x7E0)) | c[0] << 5, 0x284b0d00, 0x0A000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c[1], state.s[9]);
+    }
+    // The ALU and AGU s writes on one register (S2[13:10] = 9): unmeasured.
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x18002a57, 0x284b0d00, 0x00002400, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}

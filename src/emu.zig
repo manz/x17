@@ -4114,6 +4114,23 @@ fn execX17Mve(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     state.e[dest_e] = (src_val +% 1) & M24;
 }
 
+/// x17agu2's bare alu05 op (fact 629); index 0 reads 0 (s0 is 0 here).
+fn x17Agu2Alu(head: u32, a_raw: u32, b_raw: u32) RunError!u32 {
+    const a = a_raw & M24;
+    const b = b_raw & M24;
+    return switch (ALU05[(head >> 5) & 0x3F]) {
+        .add => (a +% b) & M24,
+        .sub => (a -% b) & M24,
+        .rsub => (b -% a) & M24,
+        .xor_op => a ^ b,
+        .mova => a,
+        .movb, .addi => b,
+        .clr => 0,
+        .asr => alu05Shift(a, b, .asr),
+        else => RunError.UnknownForm,
+    };
+}
+
 fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     const head = bundle[0];
@@ -4128,10 +4145,15 @@ fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     // Only fn 10 (y + i) is measured here.
     if (fn_op != 10) return RunError.UnknownForm;
     const result = try agu10ImmEval(fn_op, 0, y_val, imm);
+    // s<S1[22:19]> <- the bare alu05 op h[10:5] (629): no h[25:19] modifiers (they are the
+    // immediate).  Each class was measured on one code; the class's other codes are INFERRED.
+    const alu_d: u32 = (s1 >> 19) & 0xF;
+    const alu_v: u32 = if (alu_d == 0) 0 else try x17Agu2Alu(head, state.s[(s1 >> 15) & 0xF], state.s[(s2 >> 25) & 0xF]);
+    if (alu_d != 0 and alu_d == dest_s) return RunError.UnknownForm;
+    if (alu_d != 0) state.s[alu_d] = alu_v;
     if (dest_s != 0) state.s[dest_s] = result;
     if (dest_e != 0) state.e[dest_e] = result;
-    // R<S1[14:11]> takes it too, x17ld's R field (fact 540, own-x17a2r).  The
-    // s<S1[22:19]> write's source is OPEN (not X17LD_OP): unmodelled.
+    // R<S1[14:11]> takes it too, x17ld's R field (fact 540, own-x17a2r).
     const dest_r: u32 = (s1 >> 11) & 0xF;
     if (dest_r != 0) state.r[dest_r] = result;
 }
