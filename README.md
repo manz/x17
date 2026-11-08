@@ -7,14 +7,13 @@ as the one source of truth:
 - **Assembler**: reads x17 source (`.s`), emits a `.bin` the sm1 loader
   takes.  isa.toml is embedded at compile time; a malformed table fails the
   build, not some codec's first run.
-- **Emulator**: CPU-side bit-exact oracle.  Ported from the Python RE
-  scratchpad (`RE tree/upstream/tools/sm1isa/model.py`) to Zig for CI-scale
-  throughput.
+- **Emulator**: CPU-side bit-exact oracle.  Ported from a Python ISA model
+  to Zig for CI-scale throughput.
 - **Bit-exact test harness**: pytest-shaped; feeds an input bitstream + our
   `.s` through assembler + emulator and diffs the PCM against
   libav/ffmpeg's reference decode.  Zero diff is the gate.
 
-End users (codec authors on the RE tree side) write `.s` files, commit them,
+End users (codec authors) write `.s` files, commit them,
 CI runs the harness.  Nobody but codec authors touches this repo.
 
 ## Using in CI
@@ -37,7 +36,7 @@ Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
       main.zig              CLI stub
       isa.zig               isa.toml -> comptime-typed layout table
     data/
-      isa.toml              single source of truth (synced from RE tree)
+      isa.toml              single source of truth
 
 ## Status (2026-11-06)
 
@@ -61,8 +60,7 @@ Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
 
 Every opcode and sub-form name in this repo is **reverse-engineered**,
 not vendored.  Samsung ships no datasheet for sm1; we coined the names
-while bit-sweeping silicon with the harness at
-`RE tree/upstream/tools/sm1isa/`.
+while bit-sweeping silicon with probe programs of our own.
 
 Two patterns:
 
@@ -75,15 +73,12 @@ Two patterns:
 - **Opcode-derived**: `x17` and `x19` from their low5 values (0x17,
   0x19), because each one is a family of VLIWs rather than one op.
 
-Every form row in `data/isa.toml` cites the `fact` pass it was
-recovered in.  If a Samsung datasheet ever surfaces, mnemonics are
+Every form row in `data/isa.toml` cites the fact number (`fact N`) of the
+silicon measurement it was recovered from.  If a Samsung datasheet ever surfaces, mnemonics are
 fair game to rename.
 
 ## Origin
 
-sm1 is reverse-engineered in the RE tree project; see
-`RE tree/the spec notes` and `upstream/tools/sm1isa/` for the ISA work
-and the Python emulator this rig ports from.
-
-Roadmap items live under RE tree/audio in the shared teach workspace:
-`build-the-x17-codec-dev-rig` (epic) and its three children.
+The ISA is measured on silicon with probe programs of our own; the numbered
+facts behind each rule are kept in a private lab notebook.  The emulator
+started as a port of a Python model of the same facts.

@@ -1,7 +1,7 @@
 //! Bundles per ALAC packet on the x17 emulator, split by stage: `zig build bench`.
 //! Each stage call is bracketed by marker bundles (alu s0, s0, s0: writes 0 to s0, a no-op)
 //! and the emulator's per-syllable profile is summed between them. Load is against the
-//! measured rate: one bundle of any form takes about 37.4 ns on silicon (26.7 M/s; Upstream,
+//! measured rate: one bundle of any form takes about 37.4 ns on silicon (26.7 M/s; measured,
 //! fact 379), so 100% is real time at the fixture's sample rate.
 const std = @import("std");
 const asm_mod = @import("asm");

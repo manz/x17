@@ -1466,7 +1466,7 @@ fn runSpliced(gpa: std.mem.Allocator, state: *emu.State, pre: []const u8, raw: [
 }
 
 test "a pc14 pair loading an immediate sets e0 to its [20:5]" {
-    // Upstream, fact 468: 16E29474 42382CD8 (s7 <- #0x14A3), then the st pair.
+    // fact 468: 16E29474 42382CD8 (s7 <- #0x14A3), then the st pair.
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
@@ -1479,7 +1479,7 @@ test "a pc14 pair loading an immediate sets e0 to its [20:5]" {
 }
 
 test "lde e7 passes the e0 latch through" {
-    // Upstream, fact 470: ldi s1 <- 0x1234, lde e7 <- 0x710, st pair: Y:0x1234.
+    // fact 470: ldi s1 <- 0x1234, lde e7 <- 0x710, st pair: Y:0x1234.
     const gpa = testing.allocator;
     const prog = try assemble(gpa,
         \\        ldi s1, #0x1234
@@ -1571,7 +1571,7 @@ test "pc14's head target takes !cond under mux 0 and the immediate under mux 1 a
 }
 
 test "an x18 branch word writes its p slot beside the branch" {
-    // fact, Upstream: 00000018 00000000 70006000 C0000100, branch on p7 = 0: p3 <- 1.
+    // measured on silicon: 00000018 00000000 70006000 C0000100, branch on p7 = 0: p3 <- 1.
     for ([_]u8{ 0, 1 }) |pre| {
         const gpa = testing.allocator;
         var state = emu.State{};
@@ -1604,7 +1604,7 @@ fn runX18(words: [4]u32, p1: u8, p5: u8) !emu.State {
     return state;
 }
 
-test "x18 class-110 p write on the multiply base: Upstream's gates" {
+test "x18 class-110 p write on the multiply base: the silicon gates" {
     // fact 469: own-x18pinv also writes s2 <- lo(s1 * s1 << 1), s1 <- hi.
     var st = try runX18(.{ 0x1C000018, 0x00000000, 0x02002222, 0xC4114001 }, 1, 1);
     defer st.deinit(testing.allocator);
@@ -4955,7 +4955,7 @@ test "the 0x16 class-100 s ALU's cells 8-15 and S2[8] (fact 588)" {
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st, &.{ 0x0E000096, 0x0b000012, 0x860001b4, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
 
-test "the 0x16 class-100 gate cell's top byte (Upstream, after fact 589)" {
+test "the 0x16 class-100 gate cell's top byte (after fact 589)" {
     const gpa = testing.allocator;
     for ([_]struct { mx: u32, c: u32, a: u32, n: u32, want: u32 }{
         .{ .mx = 0, .c = 1, .a = 0x123, .n = 1, .want = 0x024600 },
@@ -6179,12 +6179,23 @@ test "x19agu: w2[24]'s immediate goes to e only, w2[30] inert, s mux 6 writes 0 
     try testing.expectEqual(@as(u32, 0), m.s[9]);
 }
 
+const ScanFile = struct { path: []const u8, text: []const u8 };
+const libs_scan = blk: {
+    var out: [libs.len]ScanFile = undefined;
+    for (libs, 0..) |l, i| out[i] = .{ .path = l.path, .text = l.text };
+    break :blk out;
+};
+
 test "the ISA sources quote no image provenance" {
     // Facts here are bit semantics and our own programs.  Words copied from the image, or text
     // naming where a row came from, stay in the RE tree.  Phrases are split so this test does not
     // match itself.
-    const banned = [_][]const u8{ "App" ++ "le", "image " ++ "row", "image " ++ "pair", "image " ++ "word", "image" ++ "'s" };
-    const files = [_]struct { path: []const u8, text: []const u8 }{
+    const banned = [_][]const u8{
+        "App" ++ "le",   "image " ++ "row",     "image " ++ "pair", "image " ++ "word", "image" ++ "'s",
+        "sm1_" ++ "isa", "sm1_" ++ "spec",      "Chik" ++ "uma",    "chik" ++ "uma",    "ipod" ++ "-re",
+        "iPod" ++ "-re", "programs" ++ ".toml", "reports" ++ "/",
+    };
+    const files = [_]ScanFile{
         .{ .path = "src/isa.toml", .text = @embedFile("isa.toml") },
         .{ .path = "src/subforms.txt", .text = @embedFile("subforms.txt") },
         .{ .path = "src/operands.txt", .text = @embedFile("operands.txt") },
@@ -6193,7 +6204,16 @@ test "the ISA sources quote no image provenance" {
         .{ .path = "src/lib_test.zig", .text = @embedFile("lib_test.zig") },
         .{ .path = "src/silicon_gates.zig", .text = @embedFile("silicon_gates.zig") },
         .{ .path = "docs/sm1/handbook.md", .text = @embedFile("handbook.md") },
-    };
+        .{ .path = "docs/sm1/reference.md", .text = @embedFile("reference.md") },
+        .{ .path = "README.md", .text = @embedFile("README.md") },
+        .{ .path = "ARCHITECTURE.md", .text = @embedFile("ARCHITECTURE.md") },
+        .{ .path = "ASSEMBLY.md", .text = @embedFile("ASSEMBLY.md") },
+        .{ .path = "PROBES.md", .text = @embedFile("PROBES.md") },
+        .{ .path = "src/host.zig", .text = @embedFile("host.zig") },
+        .{ .path = "src/asm.zig", .text = @embedFile("asm.zig") },
+        .{ .path = "src/disasm.zig", .text = @embedFile("disasm.zig") },
+        .{ .path = "src/bench.zig", .text = @embedFile("bench.zig") },
+    } ++ libs_scan;
     for (files) |f| for (banned) |b| if (std.mem.indexOf(u8, f.text, b)) |at| {
         std.debug.print("{s}: offset {d} carries '{s}'\n", .{ f.path, at, b });
         return error.ProvenanceText;

@@ -34,7 +34,7 @@ pub const Layout = struct {
 pub const isa_toml = @embedFile("isa.toml");
 
 /// Bundle length from the head's low5.  isa.toml's `length` rows are
-/// [hi_low5, n]: the first row with low5 <= hi wins, as upstream's
+/// [hi_low5, n]: the first row with low5 <= hi wins, as the Python model's
 /// disasm.length_of reads them (0x00 -> 7, 0x05..0x0D -> 1, 0x0F -> 2).
 /// low5 0x1A..0x1F is never a head; null.
 pub fn bundleLen(head: u32) ?u8 {

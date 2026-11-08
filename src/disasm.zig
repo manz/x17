@@ -226,7 +226,7 @@ test "disasm st.wr through e0 says e0 is no register" {
     try testing.expectEqualStrings("st.wr #0x40, e0, s1 ; e0 = the previous word's h[20:5], not a register", s);
 }
 
-test "disasm pc14 and x18.pnot round-trip Upstream's gate words" {
+test "disasm pc14 and x18.pnot round-trip silicon gate words" {
     const a = try roundTrip("pc14 p13, s7, #0xb, #0xc, #0x2, s7, #0x0, #0x14a3");
     defer testing.allocator.free(a);
     try testing.expectEqualStrings("pc14 p13, s7, #0xb, #0xc, #0x2, s7, #0x0, #0x14a3", a);

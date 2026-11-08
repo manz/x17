@@ -10,7 +10,7 @@
 # All x17.* sub-forms are 3 syllables (head + S1 + S2); the `.halt` case
 # has no operand fields, the others have at least one.  Sources: the ref
 # strings in isa.toml plus the silicon-measured byte patterns in
-# the probe list (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
+# own probes (own-x17alu-shl, own-x17imm, own-x17ctl, ...).
 
 # x12.agu: 2-syllable low5 0x12 S class 001.  AGU output fans out to e, s,
 # R simultaneously (fact 231 / own-x12agu):
@@ -510,7 +510,7 @@ x17.e      3   0x00000017   0x00060200   0x80000000
 x17.estop  3   0x00000017   0x00000000   0x80000004
 
 # x17.agu: address-generation op in a continuing bundle.  S1 class 001
-# (with S1[28] = 1) + S2 class 010.  Semantics from upstream emu.py:
+# (with S1[28] = 1) + S2 class 010.  Semantics from the Python ISA model:
 #   dest_R <- AGU10[fn_op](x = e<S1[8:5]>, y = R<S2[4:1]>)
 # Base S1 = 0x30000000 (class 001 + S1[28]=1); base S2 = 0x40000000
 # (class 010 only; S2[4:1] is the y operand, S2[8:5] is dest).

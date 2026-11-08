@@ -12,8 +12,8 @@ choice only: nothing here assumes those parts behave like this one.
 
 Every fact carries one of three levels:
 
-- **Measured**: observed on silicon with a probe program of ours. The cite is `fact §N`, the
-  dirty-side lab notebook, or an x17 silicon gate (`src/silicon_gates.zig`, `own-*`).
+- **Measured**: observed on silicon with a probe program of ours. The cite is `§N` or `fact N`, a
+  numbered measurement, or an x17 silicon gate (`src/silicon_gates.zig`, `own-*`).
 - **Inferred**: follows from measured facts but was not observed directly. It is always labelled.
 - **Undefined**: either never measured, or measured to wedge or to be inconsistent. Programs must
   not rely on it. Appendix A lists these.
@@ -33,9 +33,8 @@ firmware's own sm1 programs, and it does not reproduce `isa.toml`'s `[tables.*]`
 - No interrupts, no traps, no flags register (none found). Hazards are the programmer's job.
 
 **Identity.** The block's PrimeCell ID registers (+0xFD0..+0xFFC) read designer 0x3B (ARM), part
-0x902, class 0xD (the spec notes §2). OpenOCD's part table names 0x902 "OptimoDE DESS" (§7), ARM's
-configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2, §11) and PICO/VLIW
-(§36). These corroborate the identity; no encoding in this handbook comes from them.
+0x902, class 0xD. OpenOCD's part table names 0x902 "OptimoDE DESS", ARM's
+configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2) and PICO/VLIW. These corroborate the identity; no encoding in this handbook comes from them.
 
 ## 2. Memory map
 
@@ -216,11 +215,11 @@ Offsets are from the sm1 block's MMIO base.
 
 - **Ownership lock +0x100C.** While the engine holds it, SRAM reads return a per-boot sentinel and
   host writes don't land. Writing 0 releases it (§13). After a run, uploads don't land until the
-  driver's release sequence (the spec notes "reconfigure").
+  driver's release sequence.
 - **Load.** The ARM copies the images in with plain CPU stores, in two passes. Pass 1 is data plus
   a 10-14-row stub at row 0; pass 2 is the main program at row 0x40 (§1, §2). How pass 2 is
   entered is undefined. Test programs enter at q 0 (§45).
-- **Arm order:** +0x988, +0x98C, +0x118, +0xA8C (the spec notes "arm answers").
+- **Arm order:** +0x988, +0x98C, +0x118, +0xA8C.
 - **Input:** a DMA descriptor chain at +0x100 feeds a stream port that is not visible in SRAM
   (§82).
 - **Status, +0xA98:**
@@ -258,8 +257,8 @@ guessing.
 
 ## Appendix B. Evidence
 
-- `fact §N`: the dirty-side notebook (not public); each entry holds the hypothesis, the
-  probe, and the verdict.
+- `§N` / `fact N`: a numbered silicon measurement, kept in a private lab notebook; each entry
+  holds the hypothesis, the probe, and the verdict.
 - `own-*`: an x17 silicon gate. The program and its expected end state are in
   `src/silicon_gates.zig`, and `zig build test` replays them against the emulator.
 - x99: the dirty side's harness that runs one bundle under canary presets.

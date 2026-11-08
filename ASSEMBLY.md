@@ -157,7 +157,7 @@ heads a 7-syllable bundle), so padding needs a measured no-op form first.
 
 **v2 (after the three decoders ask for them)**:
 - `.struct` for the sm1 descriptor / PCM ring layout (shared with
-  upstream kernel).
+  the host firmware).
 - `.assert cycles` once isa.toml grows a cycle-cost column.
 
 **Explicitly deferred**:
@@ -165,11 +165,3 @@ heads a 7-syllable bundle), so padding needs a measured no-op form first.
   leaving room without building it.
 - Scheduler, register allocator.  DSL-era.
 
-## Example: the "minimal" program
-
-From `RE tree/upstream/tools/sm1isa/the probe list`, the "minimal" program
-keeps 14 positions out of the stock stub and still completes with
-`Y:2 = 0x0800`.  Once disassembly is wired the hand-written version of
-this will live at `examples/minimal.s`; today it is the first assembler
-gate (assemble our source, byte-compare the bundles at those 14
-positions).

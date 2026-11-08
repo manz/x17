@@ -19,11 +19,9 @@
 //! (entry table, PCM buffers, status header), including the rule that the
 //! program must not write a buffer the host still owns.
 //!
-//! Y addresses are words.  Engine addresses map per load-map entry, not by
-//! one formula (Q5): the 0x2203FF00 page is Y:0xFD80 (FIRMWARE), so the
-//! status header 0x2203FF28 is Y:0xFD94 (INFERRED).  The entry table and PCM
-//! at Y:0 and Y:0x80 (0x22038000, 0x22038100) are INFERRED; the map stays a
-//! parameter.
+//! Y addresses are words.  The parameter block is Y:0xFD80 (FIRMWARE), so the
+//! status header is Y:0xFD94 (INFERRED).  The entry table and PCM at Y:0 and
+//! Y:0x80 are INFERRED; the map stays a parameter.
 
 const std = @import("std");
 const emu = @import("emu");
@@ -50,10 +48,10 @@ pub const Map = struct {
     /// PCM buffers, buffer i at + i * units, interleaved 16-bit.  MEASURED
     /// layout, Y word INFERRED.
     pcm: u32 = 0x0080,
-    /// Status header (0x2203FF28): +0 bit 0 output ready, +1 must be 0.
+    /// Status header: +0 bit 0 output ready, +1 must be 0.
     /// Y word INFERRED from the param page's.
     status: u32 = 0xFD94,
-    /// Parameter block (0x2203FF00 = Y:0xFD80, FIRMWARE): +0 flags, +3 rate
+    /// Parameter block (Y:0xFD80, FIRMWARE): +0 flags, +3 rate
     /// index (FF06).
     param: u32 = 0xFD80,
 };

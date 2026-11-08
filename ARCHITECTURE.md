@@ -7,13 +7,12 @@ DSP ISA with bundle instructions, cycle budgets, and no banks.
 ## Goals (and non-goals)
 
 **Goals**:
-- Assemble x17 source (`.s`) into a `.bin` the sm1 loader eats, exactly as
-  the stock blobs do.
+- Assemble x17 source (`.s`) into a `.bin` the sm1 loader eats.
 - Run that `.bin` through a bit-exact emulator for PCM output; diff it
   against a libav/ffmpeg reference decode.
 - Catch cycle-budget violations at ASSEMBLE TIME, not as silence on silicon.
 - Share `isa.toml` as the single source of truth across assembler + emulator
-  + Python RE scratchpad (`RE tree/.../sm1isa/model.py`).
+  + the Python ISA model.
 
 **Non-goals (v1)**:
 - No higher-level DSP language yet (that is the future epic
@@ -25,7 +24,7 @@ DSP ISA with bundle instructions, cycle budgets, and no banks.
   symbol resolution, late placement) so adding it later is a change, not
   a rewrite.  This is a direct lesson from a816, which did not need
   linking at the start and paid for the retrofit later.
-- No silicon runner here.  Silicon validation lives in the upstream tree.
+- No silicon runner here.  Silicon validation lives in the host firmware tree.
 
 ## The data flow (end to end)
 
@@ -169,10 +168,7 @@ hand-written encoding tables duplicated across tools.
   the compiler can share its backend without a Python-to-Zig port.
 - **Silicon test runner**: subprocess target from the test harness that
   pushes the `.bin` to a connected iPod and compares.  Lives in the
-  upstream tree (shiro has the transport); x17 just emits the `.bin`.
-- **Programs.toml roundtrip**: assemble a reversed stock blob
-  (`upstream/tools/sm1isa/the probe list` entry) and byte-compare with the
-  blob.  First gate of the assembler item.
+  host firmware tree; x17 just emits the `.bin`.
 
 ## Open questions (resolved when the spike grows into them)
 

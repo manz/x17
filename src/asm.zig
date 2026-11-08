@@ -1553,7 +1553,7 @@ test "diag: unknown x17 sub-form" {
 }
 
 test "round-trip gate: own-x17alu-shl bundle" {
-    // the probe list own-x17alu-shl, mid-program x17 at r3l0/r2l1/r3l1:
+    // own-x17alu-shl, mid-program x17 at r3l0/r2l1/r3l1:
     //   head = 0x00000017  (op = head[10:7] = 0, add)
     //   S1   = 0x31328000  (dest=s1 @27:24, n=3 @23:20, b=s2 @19:16)
     //   S2   = 0xF0000000  (a=s8 @28:25, class 111)
@@ -1565,7 +1565,7 @@ test "round-trip gate: own-x17alu-shl bundle" {
 }
 
 test "round-trip gate: own-x17alu-rsub bundle (op=4, a=s2, b=s4)" {
-    // the probe list own-x17alu-rsub, same base with head[10:7]=4 and b=s4;
+    // own-x17alu-rsub, same base with head[10:7]=4 and b=s4;
     // bytes: head 0x00000217, S1 0x31348000, S2 0xF0000000.
     const b = try okBundle("x17.alu s1, s8, s4, #4, #3");
     try testing.expectEqual(@as(u32, 0x0000_0217), b.words[0]);
@@ -1574,7 +1574,7 @@ test "round-trip gate: own-x17alu-rsub bundle (op=4, a=s2, b=s4)" {
 }
 
 test "x17.imm encodes dest into S1 and imm into head" {
-    // own-x17imm (the probe list): [0x005F7017, 0x60004280, 0xE0000000].
+    // own-x17imm: [0x005F7017, 0x60004280, 0xE0000000].
     //   head: 0x005F7017 = base 0x00000017 | (imm 0x0BEE << 11 = 0x005F7000)
     //   S1:   0x60004280 = base 0x60004000 | (dest_s=5 << 7 = 0x280)
     //   S2:   0xE0000000 = base 0xE0000000 (no operand fields)
@@ -1586,7 +1586,7 @@ test "x17.imm encodes dest into S1 and imm into head" {
 }
 
 test "round-trip gate: own-x17ctl tail bundle (x17.halt)" {
-    // the probe list own-x17ctl tail (r3l3, r4l0, r5l0) uses S1 = 0x11308001
+    // own-x17ctl tail (r3l3, r4l0, r5l0) uses S1 = 0x11308001
     // (the 011 S1 class, S1[0] set).  own-x17alu-shl tail (r2l1-r3l1-r2l0
     // actually... many entries) uses the S1 = 0x31308000 canonical form.
     // The three stable halt syllables are:
@@ -1600,7 +1600,7 @@ test "round-trip gate: own-x17ctl tail bundle (x17.halt)" {
 }
 
 test "round-trip gate: own-st3 reassembles byte-exact" {
-    // the probe list own-st3: three of OUR stores at r5l1..l3.
+    // own-st3: three of OUR stores at r5l1..l3.
     //   r5l1 = 0x2000200F  <- st.y Y:0x100
     //   r5l2 = 0x2000400F  <- st.y Y:0x200
     //   r5l3 = 0x2000600F  <- st.y Y:0x300

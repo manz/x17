@@ -141,6 +141,11 @@ pub fn build(b: *std.Build) void {
     lib_mod.addAnonymousImport("dequant.sm", .{ .root_source_file = b.path("examples/lib/dequant.sm") });
     lib_mod.addAnonymousImport("imdct.sm", .{ .root_source_file = b.path("examples/lib/imdct.sm") });
     lib_mod.addAnonymousImport("handbook.md", .{ .root_source_file = b.path("docs/sm1/handbook.md") });
+    lib_mod.addAnonymousImport("README.md", .{ .root_source_file = b.path("README.md") });
+    lib_mod.addAnonymousImport("ARCHITECTURE.md", .{ .root_source_file = b.path("ARCHITECTURE.md") });
+    lib_mod.addAnonymousImport("ASSEMBLY.md", .{ .root_source_file = b.path("ASSEMBLY.md") });
+    lib_mod.addAnonymousImport("PROBES.md", .{ .root_source_file = b.path("PROBES.md") });
+    lib_mod.addAnonymousImport("reference.md", .{ .root_source_file = b.path("docs/sm1/reference.md") });
     lib_mod.addAnonymousImport("window.sm", .{ .root_source_file = b.path("examples/lib/window.sm") });
     lib_mod.addAnonymousImport("stereo.sm", .{ .root_source_file = b.path("examples/lib/stereo.sm") });
     lib_mod.addAnonymousImport("tns.sm", .{ .root_source_file = b.path("examples/lib/tns.sm") });

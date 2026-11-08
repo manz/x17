@@ -1,7 +1,6 @@
 //! Silicon-measured gates: pre-state + .sm source + expected post-state.
 //!
-//! Each entry mirrors a program shipped on real hardware in the RE tree
-//! tree's `the probe list`.  The harness assembles the source with x17's
+//! Each entry mirrors a probe program of ours that ran on real hardware.  The harness assembles the source with x17's
 //! assembler, runs the bundles through x17's emulator, and asserts the
 //! final state matches what silicon wrote.  A failure here means one of:
 //!   * assembler regression,
@@ -47,7 +46,7 @@ const Gate = struct {
 const GATES = [_]Gate{
     .{
         .name = "own-x17alu-shl",
-        // the probe list own-x17alu-shl: s8 = 0x246, s2 = 1.
+        // own-x17alu-shl: s8 = 0x246, s2 = 1.
         .pre = &.{
             .{ .bank = .s, .index = 8, .value = 0x246 },
             .{ .bank = .s, .index = 2, .value = 1 },
@@ -83,7 +82,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-st3-lane2",
-        // the probe list own-st3 at lane 2: V[2] = 2 (fact 21).
+        // own-st3 at lane 2: V[2] = 2 (fact 21).
         .pre = &.{.{ .bank = .v, .index = 2, .value = 2 }},
         .src =
         \\st.y  Y:0x200
@@ -94,7 +93,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17agu",
-        // the probe list own-x17agu: e3 = 0x702, mid-program x17 agu writes
+        // own-x17agu: e3 = 0x702, mid-program x17 agu writes
         // R5 <- AGU10[2] = x + 1 = 0x703.  (Silicon also stored Y:0x700 =
         // 0x703 via a rop + st tail we don't model yet; this gate stops at
         // the R-file write.)
@@ -108,7 +107,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17e",
-        // the probe list own-x17e: pre e5 = 0x703.  The bundle writes
+        // own-x17e: pre e5 = 0x703.  The bundle writes
         //   e5 <- 0x0704, s5 <- 0x0704, e9 <- old e5 - 1 = 0x0702.
         .pre = &.{.{ .bank = .e, .index = 5, .value = 0x703 }},
         .src =
@@ -123,7 +122,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17ld",
-        // the probe list own-x17ld: pre s4 = 0x0E08, e8 = 0x705, Y:0x705 = 0x222.
+        // own-x17ld: pre s4 = 0x0E08, e8 = 0x705, Y:0x705 = 0x222.
         // Bundle: s<S1[22:19]> = s5 <- s<S2[28:25]> = s4 asr 1 = 0x0704,
         //         e<2*S1[2:0]> = e4 <- Y:[e8] = 0x222.
         .pre = &.{
@@ -143,7 +142,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17alu05",
-        // the probe list own-x17alu05: pre s5 = 0x555, s3 = 0x333.
+        // own-x17alu05: pre s5 = 0x555, s3 = 0x333.
         // Head is an ALU05 add word: s5 <- s3 + s5 = 0x888.
         .pre = &.{
             .{ .bank = .s, .index = 3, .value = 0x333 },
@@ -157,7 +156,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17mve",
-        // the probe list own-x17mve: pre s4 = 0x701.  Bundle: e5 <- s4 + 1 = 0x702.
+        // own-x17mve: pre s4 = 0x701.  Bundle: e5 <- s4 + 1 = 0x702.
         .pre = &.{.{ .bank = .s, .index = 4, .value = 0x701 }},
         .src =
         \\x17.mve e5, s4
@@ -167,7 +166,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17rsub",
-        // the probe list own-x17rsub: pre s3 = 0x333.
+        // own-x17rsub: pre s3 = 0x333.
         // Bundle: s5 <- 0xA - s3 = 0xA - 0x333 wrapped to 24 bits = 0xFFFCD7.
         .pre = &.{.{ .bank = .s, .index = 3, .value = 0x333 }},
         .src =
@@ -178,7 +177,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17xpm",
-        // the probe list own-x17xpm: pre A12 = 0x100, X:[0x100] = 0x222.
+        // own-x17xpm: pre A12 = 0x100, X:[0x100] = 0x222.
         // Bundle (S2[1:0] = 1 -> A12): s5 <- X:[A12] = 0x222.  The
         // secondary A-reg write at S1[25:22] is OPEN today.
         .pre = &.{.{ .bank = .a, .index = 12, .value = 0x100 }},
@@ -191,7 +190,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17xld-a10",
-        // the probe list own-x17xld-a10: pre A10 = 0x100, X:[0x100] = 0x222.
+        // own-x17xld-a10: pre A10 = 0x100, X:[0x100] = 0x222.
         // Bundle (S2[1:0] = 1, offset = 2 -> A10): s5 <- X:[A10] = 0x222.
         .pre = &.{.{ .bank = .a, .index = 10, .value = 0x100 }},
         .pre_mem = &.{.{ .kind = .x, .addr = 0x100, .value = 0x222 }},
@@ -203,7 +202,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17ctl-continue",
-        // the probe list own-x17ctl: a mid-program x17.cont must fall through
+        // own-x17ctl: a mid-program x17.cont must fall through
         // to the next bundle (silicon's "S1[22:20] = 000 continues" rule).
         // Verify by writing s5 AFTER the continue; if cont halted, s5 stays 0.
         .src =
@@ -215,7 +214,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x19ld",
-        // the probe list own-x19ld: pre e10 = 0x702, Y:[0x702] = 0x222, v[0] = 0x333.
+        // own-x19ld: pre e10 = 0x702, Y:[0x702] = 0x222, v[0] = 0x333.
         // Bundle: s5 <- Y:[e10] = 0x222; e10 <- AGU10[2](x = e10) = 0x703;
         //         st.y Y:[e10 = 0x703] <- v[0] = 0x333.
         .pre = &.{ .{ .bank = .e, .index = 10, .value = 0x702 }, .{ .bank = .v, .index = 0, .value = 0x333 } },
@@ -232,7 +231,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x19aagu",
-        // the probe list own-x19aagu: pre A9 = 0x100.
+        // own-x19aagu: pre A9 = 0x100.
         // Bundle (fn_op = 2, imm = 8): A9 <- A9 + 2*8 = 0x110.
         .pre = &.{.{ .bank = .a, .index = 9, .value = 0x100 }},
         .src =
@@ -243,7 +242,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x19mul",
-        // the probe list own-x19mul: pre s2 = 2, s4 = 0x381.
+        // own-x19mul: pre s2 = 2, s4 = 0x381.
         // Bundle (op = 4): e7, R5 <- low16(s2 * s4) = 0x702.
         .pre = &.{
             .{ .bank = .s, .index = 2, .value = 2 },
@@ -260,7 +259,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x19imm",
-        // the probe list own-x19imm: dest e3 <- R0 + 0x702 = 0x702 (fn_op 10).
+        // own-x19imm: dest e3 <- R0 + 0x702 = 0x702 (fn_op 10).
         .src =
         \\x19.imm #0x0702
         \\x17.halt
@@ -269,7 +268,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-alu11",
-        // the probe list own-alu11: pre s1 = 0x100, s3 = 0x23.
+        // own-alu11: pre s1 = 0x100, s3 = 0x23.
         // Head is an ALU05 add word; S side disabled (dest R0 / e0).
         .pre = &.{
             .{ .bank = .s, .index = 1, .value = 0x100 },
@@ -283,7 +282,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-agu11",
-        // the probe list own-agu11: pre e2 = 0x701.
+        // own-agu11: pre e2 = 0x701.
         // Head ALU side disabled (dest s0); S writes AGU10[2] result to R3 + e4.
         .pre = &.{.{ .bank = .e, .index = 2, .value = 0x701 }},
         .src =
@@ -307,7 +306,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-agu10r",
-        // the probe list own-agu10r: pre e3 = 0x700.
+        // own-agu10r: pre e3 = 0x700.
         // Bundle: s5 <- 0x0BEE and R3 <- AGU10[2](e3) = e3 + 1 = 0x701.
         .pre = &.{.{ .bank = .e, .index = 3, .value = 0x700 }},
         .src =
@@ -334,7 +333,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-rop",
-        // the probe list own-rop: pre e5 = 0x300.
+        // own-rop: pre e5 = 0x300.
         // Bundle 1: R3 <- fn0(x=e5) = 0x300.
         // Bundle 2: s1 <- fn6(x=e5, y=R3) = 0x300 + 0x300 = 0x600.
         .pre = &.{.{ .bank = .e, .index = 5, .value = 0x300 }},
@@ -350,7 +349,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-ptst",
-        // the probe list own-ptst: p1 <- (s5 < 0) with s5 = 0xF000 (negative when
+        // own-ptst: p1 <- (s5 < 0) with s5 = 0xF000 (negative when
         // interpreted as 24-bit signed via bit 23; here we use a 24-bit value
         // with bit 23 set to trigger c1 true).  Expected byte: 0x4420296D.
         .pre = &.{.{ .bank = .s, .index = 5, .value = 0x800000 }},
@@ -971,7 +970,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x19mac-combined",
-        // Upstream 2026-11-06: 140221D9 4000A000 20060284 C0048000; the multiply reads the old s4.
+        // measured 2026-11-06: 140221D9 4000A000 20060284 C0048000; the multiply reads the old s4.
         .pre = &.{
             .{ .bank = .s, .index = 4, .value = 0x100 },
             .{ .bank = .s, .index = 5, .value = 0x300 },
@@ -990,7 +989,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x19mac-a0",
-        // Upstream 2026-11-06: A0 reads 0 even after a write; x19mac A5 <- A0 + 1 = 1.
+        // measured 2026-11-06: A0 reads 0 even after a write; x19mac A5 <- A0 + 1 = 1.
         .pre = &.{
             .{ .bank = .a, .index = 0, .value = 0x55 },
             .{ .bank = .a, .index = 5, .value = 0x150 },
@@ -1058,7 +1057,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-alac-tap",
-        // Upstream 2026-11-06, silicon 2 of 2: the ALAC tap (predictor.sm, x17 d694cec), four terms.
+        // measured 2026-11-06, silicon 2 of 2: the ALAC tap (predictor.sm, x17 d694cec), four terms.
         // Loop jmp 447FFE6B, the word x17 emits.  s4 = 2 sum floor(256 c d / 2^24), s5 = sum
         // (cd)[15:0], d = o - top; R6 = A10 - R7 = 0x45.  Silicon read back 16 bits (Y).
         .pre = &.{
@@ -1102,7 +1101,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-alac-tap-2",
-        // Upstream 2026-11-06, silicon 2 of 2: the ALAC tap (predictor.sm, x17 d694cec), four terms.
+        // measured 2026-11-06, silicon 2 of 2: the ALAC tap (predictor.sm, x17 d694cec), four terms.
         // Loop jmp 447FFE6B, the word x17 emits.  s4 = 2 sum floor(256 c d / 2^24), s5 = sum
         // (cd)[15:0], d = o - top; R6 = A10 - R7 = 0x45.  Silicon read back 16 bits (Y).
         .pre = &.{
@@ -1202,7 +1201,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-ldy",
-        // the probe list own-ldy: s14 <- Y:[e5].  Pre e5 = 0xA21, Y[0xA21] = 0x1357.
+        // own-ldy: s14 <- Y:[e5].  Pre e5 = 0xA21, Y[0xA21] = 0x1357.
         // Expected byte: 0x780002AA.
         .pre = &.{.{ .bank = .e, .index = 5, .value = 0xA21 }},
         .pre_mem = &.{.{ .kind = .y, .addr = 0xA21, .value = 0x1357 }},
@@ -1214,7 +1213,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-ldysx",
-        // Upstream, fact 409 (3 of 3): ldy sign-extends; 0x8001 reads 0xFF8001, 0xFFFF
+        // fact 409 (3 of 3): ldy sign-extends; 0x8001 reads 0xFF8001, 0xFFFF
         // reads 0xFFFFFF (stx stores all 24 bits, controlled).
         .pre = &.{
             .{ .bank = .e, .index = 5, .value = 0x710 },
@@ -1236,7 +1235,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17st",
-        // Upstream, fact 410: 00000017 77018000 A0000042, Y:[e3] <- s7 (e3 read before
+        // fact 410: 00000017 77018000 A0000042, Y:[e3] <- s7 (e3 read before
         // the e slot's write of #0 to it).
         .pre = &.{
             .{ .bank = .e, .index = 3, .value = 0x720 },
@@ -1282,7 +1281,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17ysx",
-        // Upstream, fact 414 (3 of 3): mux 2 sign-extends, Y 0x8001 -> s2 = 0xFF8001.
+        // fact 414 (3 of 3): mux 2 sign-extends, Y 0x8001 -> s2 = 0xFF8001.
         .pre = &.{.{ .bank = .e, .index = 5, .value = 0x710 }},
         .pre_mem = &.{.{ .kind = .y, .addr = 0x710, .value = 0x8001 }},
         .src =
@@ -1293,7 +1292,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17mux4",
-        // Upstream, fact 436 (3 of 3): mux 4 loads the Y word as mux 2 does; the tail
+        // fact 436 (3 of 3): mux 4 loads the Y word as mux 2 does; the tail
         // store reads back 16 bits, so the top byte is unmeasured. Mux 0 would store 0.
         .pre = &.{
             .{ .bank = .e, .index = 5, .value = 0x710 },
@@ -1309,7 +1308,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17estop",
-        // Upstream, fact 448 (3 of 3): x17e S2[3:0] = 4 stops the program one bundle
+        // fact 448 (3 of 3): x17e S2[3:0] = 4 stops the program one bundle
         // later; the Y store after the nop never lands and the run ends cleanly.
         .pre = &.{
             .{ .bank = .s, .index = 1, .value = 0x55 },
@@ -1326,7 +1325,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-st0fe",
-        // Upstream, fact 437 (3 of 3): 0000E20F AE700032, e6 <- #0x710 beside the X store;
+        // fact 437 (3 of 3): 0000E20F AE700032, e6 <- #0x710 beside the X store;
         // the stk after it stores through e6.
         .src =
         \\stx0f.e #0, #2, s7, e6, #0x710
@@ -1341,7 +1340,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17styr",
-        // Upstream, fact 439 (3 of 3): 00000017 A902C800 66001202, R9 <- s3 << 2.
+        // fact 439 (3 of 3): 00000017 A902C800 66001202, R9 <- s3 << 2.
         .pre = &.{.{ .bank = .s, .index = 3, .value = 0x123 }},
         .src =
         \\x17.styr R9, s3, #2, e5, #0
@@ -1351,7 +1350,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17ldsyn",
-        // Upstream, fact 443/460 (3 of 3): 10040017 00001528 60000004, R2 <- R2 + 0x80
+        // fact 443/460 (3 of 3): 10040017 00001528 60000004, R2 <- R2 + 0x80
         // (AGU10 fn 10); silicon set R2 = 0x1000 with an agu10r first.
         .pre = &.{.{ .bank = .r, .index = 2, .value = 0x1000 }},
         .src =
@@ -1362,7 +1361,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x19syn",
-        // Upstream, fact 454/462 (3 of 3): 00000219 02014000 800C8101 81E18008, op 16 mode 8, b - a.
+        // fact 454/462 (3 of 3): 00000219 02014000 800C8101 81E18008, op 16 mode 8, b - a.
         .pre = &.{
             .{ .bank = .s, .index = 3, .value = 0x100 },
             .{ .bank = .s, .index = 1, .value = 0x23 },
@@ -1422,7 +1421,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x17mswedge-2",
-        // Upstream, fact 457/463/465 (3 of 3): 00000017 75218000 A0000042, own-x17st's
+        // fact 457/463/465 (3 of 3): 00000017 75218000 A0000042, own-x17st's
         // shape with S1[22:20] = 010. The slots run, then two shadow bundles, then no halt: a
         // store two nops later never lands.
         .pre = &.{
@@ -1499,7 +1498,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-sty0imm",
-        // Upstream, fact 466 (3 of 3): the wr's e0 is the previous word's [20:5], here
+        // fact 466 (3 of 3): the wr's e0 is the previous word's [20:5], here
         // ldi s5's 0x730; reading s4 would give 0x720.
         .src =
         \\ldi s1, #0x55
@@ -1528,7 +1527,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-lde101",
-        // Upstream, fact 479: e11 = 0x760, then lde class 101 e11 <- 0x740: the store lands
+        // fact 479: e11 = 0x760, then lde class 101 e11 <- 0x740: the store lands
         // at Y:0x740.
         .pre = &.{.{ .bank = .e, .index = 11, .value = 0x760 }},
         .src =
@@ -1541,7 +1540,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-pc14not",
-        // Upstream, fact 478: mux 00 loads s7 <- !(v even); s7 = 0x77 gives 1.
+        // fact 478: mux 00 loads s7 <- !(v even); s7 = 0x77 gives 1.
         .pre = &.{.{ .bank = .s, .index = 7, .value = 0x77 }},
         .src =
         \\pc14 p13, s7, #11, #12, #2, s7, #0, #0x14A3
@@ -1551,7 +1550,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-pc14-e0",
-        // Upstream, fact 468: a pc14 pair loading an immediate sets e0 to its [20:5].
+        // fact 468: a pc14 pair loading an immediate sets e0 to its [20:5].
         .src =
         \\ldi s1, #0x55
         \\pc14 p13, s7, #11, #12, #2, s7, #0, #0x14A3
@@ -1563,7 +1562,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x18pset",
-        // Upstream, fact 476: the pure class-110 base, p1 preset opposite the result.
+        // fact 476: the pure class-110 base, p1 preset opposite the result.
         .pre = &.{.{ .bank = .p, .index = 1, .value = 0 }},
         .src =
         \\x18.pset p1
@@ -1573,7 +1572,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x18pmov",
-        // Upstream, fact 476: the pure class-110 base, p1 preset opposite the result.
+        // fact 476: the pure class-110 base, p1 preset opposite the result.
         .pre = &.{ .{ .bank = .p, .index = 1, .value = 0 }, .{ .bank = .p, .index = 5, .value = 1 } },
         .src =
         \\x18.pmov p1, p5
@@ -1583,7 +1582,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x18pnot",
-        // Upstream, fact 476: the pure class-110 base, p1 preset opposite the result.
+        // fact 476: the pure class-110 base, p1 preset opposite the result.
         .pre = &.{ .{ .bank = .p, .index = 1, .value = 1 }, .{ .bank = .p, .index = 5, .value = 1 } },
         .src =
         \\x18.pnot p1, p5
@@ -1593,7 +1592,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x18pclr",
-        // Upstream, fact 476: the pure class-110 base, p1 preset opposite the result.
+        // fact 476: the pure class-110 base, p1 preset opposite the result.
         .pre = &.{.{ .bank = .p, .index = 1, .value = 1 }},
         .src =
         \\x18.pclr p1
@@ -1603,7 +1602,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-sty0x19",
-        // Upstream, fact 468 (3 of 3): an x19alu between (00000219 02014000 800C8101
+        // fact 468 (3 of 3): an x19alu between (00000219 02014000 800C8101
         // 81E18008, its [20:5] = 0x10) leaves e0 at ldi s5's 0x730.
         .src =
         \\ldi s1, #0x55
@@ -1665,7 +1664,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-stx",
-        // the probe list own-stx: X:[A6] <- s7 via low5 0x0A single syllable.
+        // own-stx: X:[A6] <- s7 via low5 0x0A single syllable.
         // Expected byte: 0x4037300A.  Pre s7 = 0xF77, A6 = 0x3A0.
         .pre = &.{
             .{ .bank = .s, .index = 7, .value = 0xF77 },
@@ -1679,7 +1678,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-xld10",
-        // the probe list own-xld10: s3 <- X:[A6], s5 <- 0xBEE.  Pre A6 = 0x330,
+        // own-xld10: s3 <- X:[A6], s5 <- 0xBEE.  Pre A6 = 0x330,
         // X[0x330] = 0x777.  Expected bytes: 0x80A17DD0 0x60640181.
         .pre = &.{.{ .bank = .a, .index = 6, .value = 0x330 }},
         .pre_mem = &.{.{ .kind = .x, .addr = 0x330, .value = 0x777 }},
@@ -1694,7 +1693,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-yld10",
-        // the probe list own-yld10: s5 <- Y:[e3].  Pre e3 = 0x780, Y[0x780] = 0x0BEE.
+        // own-yld10: s5 <- Y:[e3].  Pre e3 = 0x780, Y[0x780] = 0x0BEE.
         // Expected bytes: 0x00A00010 0xE6420080.
         .pre = &.{.{ .bank = .e, .index = 3, .value = 0x780 }},
         .pre_mem = &.{.{ .kind = .y, .addr = 0x780, .value = 0x0BEE }},
@@ -4416,7 +4415,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-mpysat-x19",
-        // Upstream, fact 402 (own-mpysat, 3 of 3): -1 * -1 saturates to 0x7FFFFF;
+        // fact 402 (own-mpysat, 3 of 3): -1 * -1 saturates to 0x7FFFFF;
         // 0x7FFFFF^2 and -0x800000 * 0x7FFFFF stay exact.
         .pre = &.{
             .{ .bank = .s, .index = 4, .value = 0x800000 }, .{ .bank = .s, .index = 2, .value = 0x800000 },
@@ -4449,7 +4448,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x02aa",
-        // Upstream, fact 403: 00000002 00000000 008E0000 000014C3 00000000 01400000.
+        // fact 403: 00000002 00000000 008E0000 000014C3 00000000 01400000.
         // fn 2: A7 <- A3 + R5 = 0x50; A5 <- that + A6 = 0x150.
         .pre = &.{
             .{ .bank = .a, .index = 3, .value = 0x40 },
@@ -5128,7 +5127,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-p010-true",
-        // the probe list own-p010-true: p3 <- cond 9 (constant true).
+        // own-p010-true: p3 <- cond 9 (constant true).
         // Expected bytes: 0x00000014 0x42000930.
         .src =
         \\condset p3, #9, #0
@@ -5138,7 +5137,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-yrm",
-        // the probe list own-yrm: pre e11 = 0x456; s6 <- 0x123, R5 <- e11.
+        // own-yrm: pre e11 = 0x456; s6 <- 0x123, R5 <- e11.
         // Expected bytes: 0x00C02474 0xB3600D05.
         .pre = &.{.{ .bank = .e, .index = 11, .value = 0x456 }},
         .src =
@@ -5174,7 +5173,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-xst",
-        // the probe list own-xst: X:[A11] <- s6 (sign-extended to 24 bits).
+        // own-xst: X:[A11] <- s6 (sign-extended to 24 bits).
         // Expected bytes: 0xC1000034 0x3200016A.
         .pre = &.{
             .{ .bank = .s, .index = 6, .value = 0x8BEE },
@@ -5188,7 +5187,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-0e",
-        // the probe list own-0e: s5 <- 0, A13 <- 0x300, via low5 0x0E.
+        // own-0e: s5 <- 0, A13 <- 0x300, via low5 0x0E.
         // Expected bytes: 0x9CA0600E 0x00040006.
         .src =
         \\ld0e s5, #0x300, #3
@@ -5201,7 +5200,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-pair",
-        // the probe list own-pair: e3 <- 0x70D via low5 0x10 S class 011.
+        // own-pair: e3 <- 0x70D via low5 0x10 S class 011.
         // Expected bytes: 0x0020E1B0 0x60448018.
         .src =
         \\pair #0x70D, #3
@@ -5211,7 +5210,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-ldi-k",
-        // the probe list own-ldi-k: ldi with [29:26] = 0xC; those bits are
+        // own-ldi-k: ldi with [29:26] = 0xC; those bits are
         // inert and our encoder emits them as 0, so this gate verifies
         // s1 state, not an exact byte match.
         .src =
@@ -5222,7 +5221,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-ldi2",
-        // the probe list own-ldi2: s13 <- 0x123 via the 2-syllable low5 0x10
+        // own-ldi2: s13 <- 0x123 via the 2-syllable low5 0x10
         // S-class-001 form.  Expected bytes: 0x01A02470 0x20040000.
         .src =
         \\ldi2 s13, #0x123
@@ -5232,7 +5231,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-lde",
-        // the probe list own-entry first bundle: e13 <- 0x70D.
+        // own-entry first bundle: e13 <- 0x70D.
         .src =
         \\lde e13, #0x70D
         \\x17.halt

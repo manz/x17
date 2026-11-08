@@ -26,7 +26,7 @@ pub fn render(out: *Writer) !void {
         \\emulator's handler notes. Do not edit: regenerate with `x17 doc > docs/sm1/reference.md`.
         \\The handbook (`handbook.md`) explains the machine; this file lists its forms.
         \\
-        \\Section numbers (`fact N`) cite the measurement behind a fact. Bits a form's notes call
+        \\Fact numbers (`fact N`) cite the silicon measurement behind a rule. Bits a form's notes call
         \\OPEN are undefined: the emulator refuses them.
         \\
         \\## One-syllable forms

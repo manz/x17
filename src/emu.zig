@@ -1,8 +1,8 @@
 //! x17 Zig emulator, v0.
 //!
 //! Built to be the CI oracle for the assembler: assemble a program, run it
-//! here, diff against the probe list's measured Y writes.  Follows the Python
-//! model (upstream/tools/sm1isa/model.py) on measured rules but starts fresh
+//! here, diff against the probes' measured Y writes.  Follows the Python
+//! model (the Python ISA model) on measured rules but starts fresh
 //! on the general shape so isa.toml stays the source of truth.
 //!
 //! What runs today:
@@ -45,14 +45,14 @@ pub const State = struct {
     a: [32]u32 = @splat(0),
     /// Predicate bits p0..p15 (1-bit each; stored as u8 for ergonomics).
     /// Written by ptst / plog; consumed by psel / jmp / bcc.  Survives
-    /// across bundles per fact.
+    /// across bundles (measured).
     /// p0 reads 1 (608: ld0e's cond; branch decode treats p<0> as unconditional); a write to
     /// it is unmeasured and refuses.
     p: [16]u8 = .{1} ++ @as([15]u8, @splat(0)),
     /// Y data memory, keyed by address.  Sparse: only addresses the program
     /// writes are present.  Caller inspects via `getY`.
     y_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
-    /// X data memory, keyed by address.  Separate bank from Y per facts.
+    /// X data memory, keyed by address.  Separate bank from Y (measured).
     x_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
     /// Pending branch state.  `jump_delay` counts down bundles until the
     /// jump fires; 0 means no pending jump.  `jump_target` is the syllable
@@ -172,7 +172,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     state.s[0] = 0;
     defer state.s[0] = 0;
     if (bundle.len == 0) return;
-    // A0 reads 0 and writes to it have no visible effect, like R0 (Upstream probe
+    // A0 reads 0 and writes to it have no visible effect, like R0 (silicon probe
     // 2026-11-06: lda A0 then a readback gives 0; an x19mac A0 source reads 0).
     state.a[0] = 0;
     defer state.a[0] = 0;
@@ -1700,7 +1700,7 @@ fn execX15Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 }
 
 /// ALU05 operation table, m = 0, s = 0 slice (fact 33 /
-/// upstream/tools/sm1isa/emu.py).  Codes outside the measured set yield
+/// the Python ISA model).  Codes outside the measured set yield
 /// UnknownForm so the gate harness flags them visibly.
 fn alu05Base(code: u32, a: u32, b: u32) RunError!u32 {
     const am: u32 = a & M24;
@@ -1718,7 +1718,7 @@ fn alu05Base(code: u32, a: u32, b: u32) RunError!u32 {
         0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38 => bm, // movb
         // Shift ops: a is the shift count (signed 24-bit), b is the value.
         // asr/asrrs treat b as signed; lsr unsigned.  Negative count shifts
-        // left.  fact 33, upstream/tools/sm1isa/emu.py `shift`.
+        // left.  fact 33, the Python ISA model `shift`.
         0x26, 0x2A, 0x2C, 0x2D => blk: {
             // sel: sign of (sx24(a) + sx24(b)) picks a (>=0) or b.
             const as: i32 = if (am & 0x800000 != 0)
@@ -3292,7 +3292,7 @@ fn execX19RAgua(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunE
 }
 
 /// x19mac (fact 145, 312, 384-386), one bundle, every read before any write
-/// (the multiply sees the old s when the head ALU writes it: Upstream 2026-11-06).
+/// (the multiply sees the old s when the head ALU writes it: measured 2026-11-06).
 ///   head ALU, w1 class 010/101: s<h[18:15]> <- ALU05[h[10:5]](s<h[14:11]>, s<h[29:26]>)
 ///   multiply, op w1[13:11] (0 -> 0, 4 -> P; others OPEN), x = s<w2[8:5]>, y = s<w2[4:1]>
 ///   (24-bit signed): P = low16(xy), doubled when w1[17] = 0; e<w1[6:3]> <- P (0 unless
@@ -4437,7 +4437,7 @@ fn execX17Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
 // ---------------------------------------------------------------------------
 // ALU05: the 64-entry class-05 ALU table shared across many sm1 forms.
-// Ported from upstream/tools/sm1isa/emu.py (RE tree e55e26d21, fact 66+).
+// Ported from the Python ISA model (fact 66+).
 // ---------------------------------------------------------------------------
 
 /// Op name for each of the 64 class-05 codes, as decoded in emu.py's ALU05.
@@ -4493,7 +4493,7 @@ const ALU05: [64]AluOp = blk: {
 };
 
 /// Evaluate an ALU05 op with no m/s modifiers (adder-m == 0, shift-s == 0).
-/// Mirrors upstream emu.py's `alu05()` with the shift ops dispatched through
+/// Mirrors the Python ISA model's `alu05()` with the shift ops dispatched through
 /// `aluShift`.  Returns the 24-bit wrapped result.
 pub fn alu05Eval(op: AluOp, a_s: i32, b_s: i32) u32 {
     const a24: u32 = @as(u32, @bitCast(a_s)) & M24;
@@ -4515,7 +4515,7 @@ pub fn alu05Eval(op: AluOp, a_s: i32, b_s: i32) u32 {
 }
 
 fn aluShift(op: AluOp, a_s: i32, b_s: i32) u32 {
-    // upstream shift(): n = sx24(a); v = (b & M24) if lsr else sx24(b).
+    // the Python model\'s shift(): n = sx24(a); v = (b & M24) if lsr else sx24(b).
     const n: i32 = a_s;
     const v: i64 = if (op == .lsr) @as(i64, @as(u32, @bitCast(b_s)) & M24) else @as(i64, b_s);
     if (n < 0) {
@@ -4534,7 +4534,7 @@ fn aluShift(op: AluOp, a_s: i32, b_s: i32) u32 {
     return @as(u32, @bitCast(@as(i32, @truncate(result)))) & M24;
 }
 
-// ADDER_M table rewrites the (x, y, c) tuple fed into x + y + c, per upstream
+// ADDER_M table rewrites the (x, y, c) tuple fed into x + y + c, per the Python model
 // emu.py.  7 entries; [25:23] of the ALU word picks one.  Returned fields
 // are 24-bit signed ints (as i64 because ~x can grow by a bit).
 const AdderTuple = struct { x: i64, y: i64, c: i64 };
@@ -4555,7 +4555,7 @@ fn adderM(m: u8, x: i64, y: i64, c: i64) AdderTuple {
 }
 
 /// XOR_M: for xor at code 0x16 with s = 0, [25:23] = m picks the combiner.
-/// Entry 5 is OPEN in upstream.  Returns null for OPEN.
+/// Entry 5 is OPEN in the Python model.  Returns null for OPEN.
 fn xorM(m: u8, a: u32, b: u32) ?u32 {
     return switch (m & 7) {
         0 => (a ^ b) & M24,
@@ -4570,10 +4570,10 @@ fn xorM(m: u8, a: u32, b: u32) ?u32 {
     };
 }
 
-/// Upstream emu.py's `alu_word`: one class-05 word with its [25:19]
-/// modifiers resolved.  Returns null for cases upstream marks OPEN (clr with
+/// the Python ISA model's `alu_word`: one class-05 word with its [25:19]
+/// modifiers resolved.  Returns null for cases the Python model marks OPEN (clr with
 /// modifiers), and `RunError.UnknownForm` for a (code, m, s) triple no rule
-/// in upstream covers either.
+/// in the Python model covers either.
 pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
     const code: u8 = @intCast((h >> 5) & 0x3F);
     const m: u8 = @intCast((h >> 23) & 0x7);
@@ -4586,7 +4586,7 @@ pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
     if (m == 0 and s_mod == 0) {
         return alu05Eval(op, a_s, b_s);
     }
-    // clr with modifiers: upstream marks the source OPEN.
+    // clr with modifiers: the Python model marks the source OPEN.
     if (op == .clr) return null;
     // mova/asr/asrrs/lsr with s == 0: modifier m is ignored.
     if ((op == .mova or op == .asr or op == .asrrs or op == .lsr) and s_mod == 0) {
@@ -4671,7 +4671,7 @@ fn execAlu(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 
 // ---------------------------------------------------------------------------
 // AGU10: address-generation ops indexed by a 4-bit FN field.  Ported from
-// upstream emu.py (fact 109).  Values compute over (x, y) and wrap at
+// the Python ISA model (fact 109).  Values compute over (x, y) and wrap at
 // 16 bits (the AGU is a 16-bit address unit, not a 24-bit ALU).
 // ---------------------------------------------------------------------------
 
@@ -4762,7 +4762,7 @@ fn execX17Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_s != 0) state.s[dest_s] = v;
 }
 
-/// sm1 ALU is 24-bit wrapping arithmetic.  Upstream's Python emu calls this
+/// sm1 ALU is 24-bit wrapping arithmetic.  the Python ISA model calls this
 /// mask `M24`; we spell it out.
 const M24: u32 = 0x00FF_FFFF;
 
@@ -4777,7 +4777,7 @@ fn sx24(v: u32) i32 {
     return @bitCast(masked);
 }
 
-/// Ported from upstream/tools/sm1isa/emu.py X17OP, as of RE tree e55e26d21.
+/// Ported from the Python ISA model X17OP.
 /// Ops marked OPEN in the python table raise UnknownForm here.
 fn x17opEval(op: u32, a: i32, b: i32, n: u32) RunError!u32 {
     const shift: u5 = @intCast(n & 0x1F);
@@ -5305,7 +5305,7 @@ fn execAset0b(state: *State, head: u32) RunError!void {
     if (dest != 0) state.s[dest] = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
 }
 
-/// 0x0C with [31] = 1 (fact 282, 378; Upstream 2026-11-06): one form.
+/// 0x0C with [31] = 1 (fact 282, 378; measured 2026-11-06): one form.
 /// R<[30:27]> <- agu_xr(fn = [11:7], x = A<[16:12]>, r = R<[20:17]>), and with
 /// R dest 0 the pcond rows: p<[24:21]> <- c22-27 R >0 >=0 <=0 <0 !=0 ==0,
 /// c28-31 R<A R>=A R!=A R==A (signed).  [5] = 1 required (without it, wedge
@@ -5519,7 +5519,7 @@ test "x17.halt executes as a noop" {
 test "x17.alu op=0 shl matches own-x17alu-shl silicon" {
     // Pre-state: s8 = 0x246, s2 = 1.  Program: x17.alu s1, s8, s2, #0, #3.
     //   op 0 = (a + b) << n = (0x246 + 1) << 3 = 0x247 * 8 = 0x1238.
-    // Silicon stored 0x1238 at Y:0x700 (the probe list own-x17alu-shl).
+    // Silicon stored 0x1238 at Y:0x700 (own-x17alu-shl).
     var state = State{};
     defer state.deinit(testing.allocator);
     state.s[8] = 0x246;
@@ -5671,7 +5671,7 @@ test "aluWord: add with s=3 code<=2 shifts left" {
 }
 
 test "aluWord: clr with modifiers is OPEN (null)" {
-    // code 0x20 is clr; m=1 -> OPEN per upstream.
+    // code 0x20 is clr; m=1 -> OPEN per the Python model.
     const h: u32 = (0x20 << 5) | (1 << 23);
     const r = try aluWord(h, 0x100, 0x200);
     try testing.expect(r == null);
@@ -5763,7 +5763,7 @@ test "runLinear runs the stop's two-bundle shadow, then halts" {
 }
 
 test "own-st3 reproduces silicon Y writes at lane 2" {
-    // the probe list own-st3: three stores at r5l1..l3 of OUR syllables;
+    // own-st3: three stores at r5l1..l3 of OUR syllables;
     // silicon-measured Y:0x100 = 0, Y:0x200 = 2, Y:0x300 = 0 (lanes 1, 2, 3).
     // Our emu runs one lane at a time; replay each lane separately.
     const lane_data = [_]struct { lane: u8, v: u32, addr: u16, expected: u32 }{
