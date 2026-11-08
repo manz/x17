@@ -5307,7 +5307,8 @@ test "x03 override 11 over mux 001/010 reads Y:[e] with w5[21], else yd (fact 60
 test "x03 product low half is (X op P)[15:0] (fact 603)" {
     const gpa = testing.allocator;
     // 80000003 00006800 01441485 00000007 00002C90 00041402 (w4 mode 5): s9 <- low; w2[12:9] = 0
-    // here (the measured row's 0xA high dest is OPEN and refuses), s2 = 3, s4 = 5 (P = 0x1E),
+    // here, DERIVED: the vectors ran with 0xA, whose high dest is OPEN and refuses (604: a carry
+    // runs low -> high only, so the low half should not depend on it), s2 = 3, s4 = 5 (P = 0x1E),
     // s<k> = 0x110 k + 1, X = s<w5[12:9]>, mode w1[13:11].
     for ([_]struct { w1: u32 = 0x00006800, k: u32 = 8, want: ?u32 }{
         .{ .want = 0x089F },
