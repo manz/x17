@@ -352,8 +352,13 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         try x03RYRead(state, bundle);
         const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
         if (w4_mode == 5) {
+            // The product low half runs beside the Xrd path (603), reading before it writes.
+            if ((bundle[4] >> 7) & 0xF != 0 and (bundle[5] >> 6) & 1 == 1) return RunError.UnknownForm;
+            const plo = try x03ProductLow(state, bundle);
             try execX03Xrd(gpa, state, bundle);
-            return execX03Agu(gpa, state, bundle);
+            try execX03Agu(gpa, state, bundle);
+            if (plo) |w| state.s[w.dest] = w.value;
+            return;
         }
         if (w4_mode == 0) {
             try execX03Mode0(gpa, state, bundle);
@@ -752,7 +757,6 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (bundle.len < 6) return RunError.UnknownForm;
     const w1 = bundle[1];
     const w2 = bundle[2];
-    const w4 = bundle[4];
     const dest_s: u32 = (w2 >> 9) & 0xF;
     const a_s: u32 = (w2 >> 1) & 0xF;
     const b_s: u32 = (w2 >> 5) & 0xF;
@@ -787,9 +791,32 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         };
         state.s[dest_s] = @truncate(@as(u64, @bitCast(v)) & M24);
     }
-    // x03.plo: w4[10:7] carries a second dest that gets (2P)[15:0].
-    const plo_dest: u32 = (w4 >> 7) & 0xF;
-    if (plo_dest != 0) state.s[plo_dest] = @truncate(@as(u64, @bitCast(prod *% 2)) & 0xFFFF);
+    if (try x03ProductLow(state, bundle)) |w| state.s[w.dest] = w.value;
+}
+
+/// x03's product low half s<w4[10:7]> (191, 603): (X op P)[15:0], P = a * b over
+/// s<w2[4:1]>, s<w2[8:5]> (<< 1 unless w1[17]), X = s<w5[12:9]>, op by mode w1[13:11]:
+/// 4 P, 5 X + P, 6 P - X, 7 X - P.  w1[14] = 0 is measured for mode 4 only (own-x03plo).
+fn x03ProductLow(state: *const State, bundle: []const u32) RunError!?SWrite {
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const dest: u32 = (bundle[4] >> 7) & 0xF;
+    if (dest == 0) return null;
+    const mode: u32 = (w1 >> 11) & 0x7;
+    if ((w1 >> 14) & 1 == 0 and mode != 4) return RunError.UnknownForm;
+    const b15: u32 = (w1 >> 15) & 1;
+    const b16: u32 = (w1 >> 16) & 1;
+    const prod: i64 = mpyOperand(state.s[(w2 >> 1) & 0xF], b15 != b16) * mpyOperand(state.s[(w2 >> 5) & 0xF], b15 == 1);
+    const pl: i64 = if ((w1 >> 17) & 1 == 1) prod else prod *% 2;
+    const x: i64 = sx24(state.s[(bundle[5] >> 9) & 0xF]);
+    const lv: i64 = switch (mode) {
+        4 => pl,
+        5 => x + pl,
+        6 => pl - x,
+        7 => x - pl,
+        else => return RunError.UnknownForm,
+    };
+    return .{ .dest = dest, .value = @truncate(@as(u64, @bitCast(lv)) & 0xFFFF) };
 }
 
 fn execX03Mode0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

@@ -5303,3 +5303,31 @@ test "x03 override 11 over mux 001/010 reads Y:[e] with w5[21], else yd (fact 60
         try testing.expectEqual(k.want, state.yd); // the fresh read sets yd (after 602)
     }
 }
+
+test "x03 product low half is (X op P)[15:0] (fact 603)" {
+    const gpa = testing.allocator;
+    // 80000003 00006800 01441485 00000007 00002C90 00041402 (w4 mode 5): s9 <- low, s2 = 3, s4 = 5 (P = 0x1E),
+    // s<k> = 0x110 k + 1, X = s<w5[12:9]>, mode w1[13:11].
+    for ([_]struct { w1: u32 = 0x00006800, k: u32 = 8, want: ?u32 }{
+        .{ .want = 0x089F },
+        .{ .k = 10, .want = 0x0ABF },
+        .{ .k = 12, .want = 0x0CDF },
+        .{ .k = 1, .want = 0x012F },
+        .{ .w1 = 0x00007800, .want = 0x0863 },
+        .{ .w1 = 0x00007000, .want = 0xF79D },
+        .{ .w1 = 0x00006000, .want = 0x001E },
+        .{ .w1 = 0x00026800, .want = 0x0890 }, // w1[17]: P not doubled
+        .{ .w1 = 0x00002800, .want = null }, // w1[14] = 0 with an X mode: OPEN
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |i| state.s[i] = 0x110 * @as(u32, @intCast(i)) + 1;
+        state.s[2] = 3;
+        state.s[4] = 5;
+        const r = emu.runFrom(gpa, &state, &.{ 0x80000003, c.w1, 0x01441485, 0x00000007, 0x00002C90, 0x00040002 | c.k << 9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[9]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
