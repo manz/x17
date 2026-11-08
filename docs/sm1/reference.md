@@ -3705,3 +3705,41 @@ Emulator:
 > and the e step.  s<w2[13:10]> <- Y:[e<w3[28:25]>]; e<2*w1[2:0] + head[31]> <- AGU10[w1[10:7]](e).
 > The Y-side coefficient load beside x03.tap.
 
+### `x18.or`
+
+- Syllables: 4
+- Base: `3a000018` `00010000` `00004000` `61d53805`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| dest_s | s | s1 | [11:8] |
+| a_s | s | s2 | [5:2] |
+| b_s | s | s1 | [7:4] |
+
+> x18.or / x18.max / x18.min: the x18.and bundle (class 011) at 24 bits (fact 644, 708).
+>   x18.or:  code 0x1D, op 2: s<w1[11:8]> <- s<w2[5:2]> | s<w1[7:4]>
+>   x18.max: code 0x26, op 6: signed 24-bit max;  x18.min: code 0x26, op 2: signed min.
+> Class 011 also writes the result to A<2 * w1[3:0] + head[31]>; the templates keep both 0.
+
+### `x18.max`
+
+- Syllables: 4
+- Base: `4c000018` `00030000` `00004000` `61d53805`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| dest_s | s | s1 | [11:8] |
+| a_s | s | s2 | [5:2] |
+| b_s | s | s1 | [7:4] |
+
+### `x18.min`
+
+- Syllables: 4
+- Base: `4c000018` `00010000` `00004000` `61d53805`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| dest_s | s | s1 | [11:8] |
+| a_s | s | s2 | [5:2] |
+| b_s | s | s1 | [7:4] |
+

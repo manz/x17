@@ -321,6 +321,10 @@ Measured idioms, cheapest first:
   relative and absolute (§230, §575), 0x04 (§304), §301/§302, and jmp/jmp-if (§661). None takes
   its target from a register or memory. Share code through absolute-jump dispatch, counted
   repeats and predicated jumps.
+- **24-bit logic, min/max and abs (§708).** `x18.or`, `x18.max` and `x18.min` (class 011,
+  signed 24-bit compares) and `x18.una sD, sA, #7` = |a| over 24 bits. abs wraps at -2^23:
+  abs(0x800000) = 0x800000, so a max|v| scan must treat 0x800000 as the largest magnitude.
+  x03's X store writes all 24 bits of s, so a counted loop copies 24-bit words.
 - **Selects without branches.** x19alu's write can be conditional on p1 (§646); the x01 slot's
   m = 7 gives b < 0 ? b : i (§502).
 - **Free R load.** x18 class 011 with w3[3] = 1 writes #head[20:5] to R<w3[10:7]> beside its

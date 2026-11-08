@@ -7363,3 +7363,47 @@ test "x19.ld stores nothing; w1[20] and w1[5] are inert (707)" {
         try testing.expectEqual(@as(?u32, 0xAAAA), st.getY(0x701));
     }
 }
+
+test "x18 class 011 or, max, min, abs and x03's X store at 24 bits (708)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const Case = struct { src: []const u8, a: u32, b: u32, want: u32 };
+    const cases = [_]Case{
+        .{ .src = "x18.or s3, s1, s2", .a = 0x400001, .b = 0x020000, .want = 0x420001 },
+        .{ .src = "x18.or s3, s1, s2", .a = 0x00C000, .b = 0x001000, .want = 0x00D000 },
+        .{ .src = "x18.max s3, s1, s2", .a = 0x00C000, .b = 0x001000, .want = 0x00C000 },
+        .{ .src = "x18.min s3, s1, s2", .a = 0x00C000, .b = 0x001000, .want = 0x001000 },
+        .{ .src = "x18.max s3, s1, s2", .a = 0xFF4000, .b = 0x000100, .want = 0x000100 },
+        .{ .src = "x18.min s3, s1, s2", .a = 0xFF4000, .b = 0x000100, .want = 0xFF4000 },
+        .{ .src = "x18.max s3, s1, s2", .a = 0x400000, .b = 0xC00000, .want = 0x400000 },
+        .{ .src = "x18.min s3, s1, s2", .a = 0x400000, .b = 0xC00000, .want = 0xC00000 },
+        .{ .src = "x18.una s3, s1, #7, R0, s0", .a = 0x00C000, .b = 0, .want = 0x00C000 },
+        .{ .src = "x18.una s3, s1, #7, R0, s0", .a = 0xFF4000, .b = 0, .want = 0x00C000 },
+        .{ .src = "x18.una s3, s1, #7, R0, s0", .a = 0xC00000, .b = 0, .want = 0x400000 },
+        .{ .src = "x18.una s3, s1, #7, R0, s0", .a = 0x800000, .b = 0, .want = 0x800000 },
+    };
+    for (cases) |c| {
+        const m = try asm_mod.assembleOne(c.src);
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = c.a;
+        st.s[2] = c.b;
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ m.slice()[0], m.slice()[1], m.slice()[2], m.slice()[3] } ++ halt), 0, 8);
+        try testing.expectEqual(c.want, st.s[3]);
+    }
+}
+
+test "x03's X store writes all 24 bits (708)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const m = try asm_mod.assembleOne("x03.xst #3, #1, #2, #0, #3");
+    for ([_]u32{ 0x401234, 0x00C000, 0xFFBB0B }) |v| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.a[8] = 0x3A0;
+        st.s[11] = v;
+        var prog: [9]u32 = undefined;
+        @memcpy(prog[0..6], m.slice()[0..6]);
+        @memcpy(prog[6..9], &halt);
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        try testing.expectEqual(@as(?u32, v), st.readX(0x3A0));
+    }
+}

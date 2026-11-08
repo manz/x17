@@ -2124,8 +2124,8 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x18una",
-        // s1 = 0x8001: abs -> s3 = 0x7FFF; +1 -> s5 = 0x8002.
-        .pre = &.{.{ .bank = .s, .index = 1, .value = 0x8001 }},
+        // s1 = 0x8001 by ldi, so 0xFF8001 (693): abs -> s3 = 0x7FFF (24-bit, 708); +1 -> 0xFF8002.
+        .pre = &.{.{ .bank = .s, .index = 1, .value = 0xFF8001 }},
         .src =
         \\x18.una s3, s1, #7, R13, s0
         \\x18.una s5, s1, #3, R13, s0
@@ -2133,7 +2133,7 @@ const GATES = [_]Gate{
         ,
         .post = &.{
             .{ .s_reg = .{ .index = 3, .value = 0x7FFF } },
-            .{ .s_reg = .{ .index = 5, .value = 0x8002 } },
+            .{ .s_reg = .{ .index = 5, .value = 0xFF8002 } },
         },
     },
     .{
@@ -5066,10 +5066,10 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x03xst",
-        // A8 = 0x3A0, s11 = 0xBB0B; X:0x3A0 <- sx24(s11) = 0xFFBB0B.
+        // A8 = 0x3A0, s11 = 0xBB0B by ldi, so 0xFFBB0B (693); the store keeps 24 bits (708).
         .pre = &.{
             .{ .bank = .a, .index = 8, .value = 0x3A0 },
-            .{ .bank = .s, .index = 11, .value = 0xBB0B },
+            .{ .bank = .s, .index = 11, .value = 0xFFBB0B },
         },
         .src =
         \\x03.xst #3, #1, #2, #0, #3

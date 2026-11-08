@@ -941,13 +941,12 @@ fn x03AIndex(bundle: []const u32) u32 {
     return (((bundle[1] & 0x7) << 2) | ((bundle[0] >> 30) & 0x3)) & 0xF;
 }
 
-/// w5[19:18] = 11: X:[A<{w1[2:0], head[31:30]}>] <- sx24 s<{w2[0], w1[31:29]}>
-/// (fact 255 / own-x03xst).  w5[18] alone stores nothing.
+/// w5[19:18] = 11: X:[A<{w1[2:0], head[31:30]}>] <- s<{w2[0], w1[31:29]}>, all 24 bits
+/// (fact 255 / own-x03xst, 708).  w5[18] alone stores nothing.
 fn execX03XStore(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (((bundle[5] >> 18) & 0x3) != 0b11) return;
     const src_s: u32 = ((bundle[2] & 1) << 3) | ((bundle[1] >> 29) & 0x7);
-    const raw: u32 = state.s[src_s] & 0xFFFF;
-    try state.x_mem.put(gpa, state.a[x03AIndex(bundle)], sx16To24(raw));
+    try state.x_mem.put(gpa, state.a[x03AIndex(bundle)], state.s[src_s] & M24);
 }
 
 /// x03's R slot Y read (fact 519, own-x03ry): w5[21] = 1 with w5[27:26] = 00 gives
@@ -2468,6 +2467,8 @@ fn x18C3SlotAlu(op: u32, a: u32, b: u32) RunError!u32 {
     return switch (op) {
         4 => (a -% 1) & M24,
         6 => @as(u32, @truncate(@as(u64, @bitCast(-sx16(a))))) & M24,
+        // |a| over 24 bits, wrapping at -2^23: abs(0x800000) = 0x800000 (708).
+        7 => @intCast(@abs(sx24(a)) & M24),
         else => x18SlotAlu(op, a, b),
     };
 }
