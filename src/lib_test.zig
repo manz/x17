@@ -3725,7 +3725,7 @@ test "psel also performs shape A's head write" {
 test "x19agu writes s<head[24:21]> through its w1[14:12] mux" {
     // fact 532: own-x19agx, X:[A3 = 0x310] = 0x567: mux 5 gives s5 = 0x567, mux 4
     // 0xB380, w3[1] = 0 the stale yd (0xA050); mux 0 zero, mux 1 the AGU value (R5's, e6 + 1);
-    // mux 2 refuses.
+    // mux 2 with w2[25] = 1 is AGU10 again (636).
     const gpa = testing.allocator;
     for ([_]struct { w1: u32, w3: u32, s5: ?u32, w2: u32 = 0x02460000 }{
         .{ .w1 = 0x02045004, .w3 = 0x0c232a82, .s5 = 0x567 },
@@ -3733,7 +3733,7 @@ test "x19agu writes s<head[24:21]> through its w1[14:12] mux" {
         .{ .w1 = 0x02045004, .w3 = 0x0c232a80, .s5 = 0xA050 },
         .{ .w1 = 0x02040004, .w3 = 0x0c232a82, .s5 = 0 },
         .{ .w1 = 0x02041004, .w3 = 0x0c232a82, .s5 = 0x101 },
-        .{ .w1 = 0x02042004, .w3 = 0x0c232a82, .s5 = null },
+        .{ .w1 = 0x02042004, .w3 = 0x0c232a82, .s5 = 0x101 },
         .{ .w1 = 0x02045004, .w3 = 0x0c232a82, .s5 = 0x777, .w2 = 0x02660000 }, // A19
     }) |c| {
         var state = emu.State{};
@@ -6012,4 +6012,36 @@ test "ldi2 admits the class-001 IMM10 seconds as no-store; A dest refused there 
         defer st.deinit(gpa);
         try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st, &.{ 0x01a02470, sw, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
     }
+}
+
+test "x19agu s mux 2 runs AGU10Q with q = e<w2[7:4]> (fact 636)" {
+    const gpa = testing.allocator;
+    // own-x19q 01200019 02042000 01000050 00001804: e5 = q = 0x457, fn 2 -> s9 = 0x457; fn 12
+    // gives y - q = 0x2BAC (R3 = 0x3003, derived from that row).  x = e0 reads 0.
+    const want = [16]u32{ 0, 0x3003, 0x457, 0, 0xCFFD, 0x458, 0x3003, 0xCFFD, 0, 0, 0x3003, 0x3003, 0x2BAC, 0xD454, 0x2BAD, 0x2BAB };
+    for (want, 0..) |v, f| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        st.e[5] = 0x457;
+        st.r[3] = 0x3003;
+        _ = try emu.runFrom(gpa, &st, &.{ 0x01200019, 0x00042000 | @as(u32, @intCast(f)) << 24, 0x01000050, 0x00001804, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(v, st.s[9]);
+    }
+    // x = e6 = 0x100 (w3[28:25] = 6): fn 0 x, fn 3 -x, fn 6 x + y, fn 7 x - y.
+    for ([_][2]u32{ .{ 0, 0x100 }, .{ 3, 0xFF00 }, .{ 6, 0x3103 }, .{ 7, 0xD0FD } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        st.e[5] = 0x457;
+        st.e[6] = 0x100;
+        st.r[3] = 0x3003;
+        _ = try emu.runFrom(gpa, &st, &.{ 0x01200019, 0x00042000 | c[0] << 24, 0x01000050, 0x0c001804, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c[1], st.s[9]);
+    }
+    // w2[25] = 1: AGU10 (fn 6 x + y).
+    var a = emu.State{};
+    defer a.deinit(gpa);
+    a.e[6] = 0x100;
+    a.r[3] = 0x3003;
+    _ = try emu.runFrom(gpa, &a, &.{ 0x01200019, 0x06042000, 0x03000050, 0x0c001804, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x3103), a.s[9]);
 }

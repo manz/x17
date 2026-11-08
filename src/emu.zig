@@ -1832,6 +1832,30 @@ const AGU10B_TAB = [16]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 2, 2, 1, 1, 1, 8, 9, 10 };
 
 /// AGU10B (fact 120, S2[8] = 0): x, y, 0, -x, -y, 1, x+y, x-y, 0, 0,
 /// y, y, y, -y, y+1, y-1.
+const Agu10QOp = enum { x, y, q, neg_x, neg_y, q_inc, add, x_sub_y, zero, y_sub_q, q_sub_y, y_sub_q_inc, y_sub_q_dec };
+
+/// AGU10Q (fact 636), 16 of 16 measured; AGU10B (120) is this table with q = 0.
+const AGU10Q = [16]Agu10QOp{ .x, .y, .q, .neg_x, .neg_y, .q_inc, .add, .x_sub_y, .zero, .zero, .y, .y, .y_sub_q, .q_sub_y, .y_sub_q_inc, .y_sub_q_dec };
+
+fn agu10qEval(fn_op: u32, x: u32, y: u32, q: u32) u32 {
+    const r: u32 = switch (AGU10Q[fn_op & 0xF]) {
+        .x => x,
+        .y => y,
+        .q => q,
+        .neg_x => 0 -% x,
+        .neg_y => 0 -% y,
+        .q_inc => q +% 1,
+        .add => x +% y,
+        .x_sub_y => x -% y,
+        .zero => 0,
+        .y_sub_q => y -% q,
+        .q_sub_y => q -% y,
+        .y_sub_q_inc => y -% q +% 1,
+        .y_sub_q_dec => y -% q -% 1,
+    };
+    return r & 0xFFFF;
+}
+
 fn agu10bEval(fn_op: u32, x: u32, y: u32) u32 {
     const r: u32 = switch (AGU10B_TAB[fn_op & 0xF]) {
         0 => x,
@@ -3100,7 +3124,10 @@ fn execX19Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const y_r: u32 = (w3 >> 11) & 0xF;
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
-    const v = try agu10Eval(fn_op, x_val, y_val);
+    // The AGU10 value feeds e, R and s mux 1; mux 2 (636) has its own function table, so a
+    // bundle using only mux 2 does not need AGU10[fn] to be known.
+    const needs_v = dest_e != 0 or dest_r != 0 or (bundle[1] >> 12) & 7 == 1;
+    const v = if (needs_v) try agu10Eval(fn_op, x_val, y_val) else 0;
     // w2[24] = 1: the e destination takes #head[20:5] (fact 270).
     const e_val: u32 = if ((bundle[2] >> 24) & 1 == 1) (bundle[0] >> 5) & 0xFFFF else v;
     const s_val = try x19AguS(state, bundle, v);
@@ -3116,6 +3143,18 @@ fn x19AguS(state: *State, bundle: []const u32, agu: u32) RunError!u32 {
     const mux: u32 = (bundle[1] >> 12) & 7;
     if (mux == 0) return 0;
     if (mux == 1) return agu;
+    if (mux == 2) {
+        // 636: (w2[25] ? AGU10 : AGU10Q)[w1[27:24]](x = e<w3[28:25]>, y = R<w3[14:11]>,
+        // q = e<w2[7:4]>); index 0 reads 0.  w2[24] inert here.
+        const fn_op: u32 = (bundle[1] >> 24) & 0xF;
+        const xi: u32 = (bundle[3] >> 25) & 0xF;
+        const yi: u32 = (bundle[3] >> 11) & 0xF;
+        const qi: u32 = (bundle[2] >> 4) & 0xF;
+        const x: u32 = if (xi == 0) 0 else state.e[xi];
+        const y: u32 = if (yi == 0) 0 else state.r[yi];
+        if ((bundle[2] >> 25) & 1 == 1) return agu10Eval(fn_op, x, y);
+        return agu10qEval(fn_op, x, y, if (qi == 0) 0 else state.e[qi]);
+    }
     if (mux != 4 and mux != 5) return RunError.UnknownForm;
     const x: u32 = if ((bundle[3] >> 1) & 1 == 0) state.yd else state.readX(state.a[(bundle[2] >> 17) & 0x1F]) orelse 0;
     return if (mux == 4) shl7(x) else x;
