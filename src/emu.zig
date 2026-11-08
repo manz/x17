@@ -2239,6 +2239,11 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
             7 => x - p,
             else => return RunError.UnknownForm,
         };
+        // w3[8] rounds the high write half up on the whole sum (601, measured for X + P).
+        // Other modes ASSUMED alike: refusing them would refuse own-x18st111 (mode 6,
+        // acc[23:0] = 0xFFFAAB), whose unchecked hi write is the only place it shows.
+        // Adding 2^23 leaves the low write [15:0] alone.
+        if ((w3 >> 8) & 1 == 1) acc += 1 << 23;
     }
     var alu_v: u32 = 0;
     if (alu_dest != 0) {

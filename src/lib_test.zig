@@ -5250,3 +5250,25 @@ test "x18 class 110 integer-mode hi: w3[22] is signedness (after fact 600)" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x18 class 111 MAC high write rounds with w3[8] (fact 601)" {
+    const gpa = testing.allocator;
+    // 80600018 72343004 32300006 e60481d6: s6 <- ({s7 : sx24 s6} + s2 * s3 << 1)[39:24].
+    for ([_]struct { a: u32, b: u32, s7: u32 = 0, round: ?u32, floor: u32 }{
+        .{ .a = 0x1000, .b = 0x0C00, .round = 2, .floor = 1 },
+        .{ .a = 0x1000, .b = 0x0BFF, .round = 1, .floor = 1 },
+        .{ .a = 0x7000, .b = 0x0123, .round = 1, .floor = 0 },
+        .{ .a = 0x7000, .b = 0xFEDD, .round = 0xFFFF, .floor = 0xFFFF },
+        .{ .a = 0x1000, .b = 0x0C00, .s7 = 3, .round = 5, .floor = 4 },
+    }) |k| {
+        for ([_]u32{ 1, 0 }) |rnd| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.s[2] = k.a;
+            state.s[3] = k.b;
+            state.s[7] = k.s7;
+            _ = try emu.runFrom(gpa, &state, &.{ 0x80600018, 0x72343004, 0x32300006, 0xE60480D6 | rnd << 8, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            try testing.expectEqual(if (rnd == 1) k.round.? else k.floor, state.s[6] & 0xFFFF);
+        }
+    }
+}
