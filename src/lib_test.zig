@@ -4501,10 +4501,16 @@ test "agu_xr's once-only wrap on x02's A sum and R slot (fact 566, 567)" {
         _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0, 0x00820000, 0x00018009, 0, 0x00000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c[1], state.a[1]);
     }
-    // The second A write's order against the wrap is OPEN.
-    var o = emu.State{};
-    defer o.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x00000002, 0, 0x00820000, 0x00019409, 0, 0x02400000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    // own-x02wrap (626): A1 <- (sum mod M) + A9, the add unwrapped.  fn 8, A9 = 0x200, R9 = 0x50.
+    for ([_][2]u32{ .{ 0x300, 0x450 }, .{ 0x40, 0x410 } }) |c| {
+        var w = emu.State{};
+        defer w.deinit(gpa);
+        w.a[9] = 0x200;
+        w.r[9] = 0x50;
+        w.r[3] = c[0];
+        _ = try emu.runFrom(gpa, &w, &.{ 0x00000002, 0, 0x02000000, 0x00018529, 0, 0x02400000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c[1], w.a[1]);
+    }
 }
 
 test "own-x16rmod: x16alu's R slot wraps by R<S2[5:2]> (fact 568)" {

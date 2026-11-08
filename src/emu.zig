@@ -642,10 +642,9 @@ fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const fn_op: u32 = (w2 >> 22) & 0x1F;
     const dest_a: u32 = (w2 >> 17) & 0x1F;
     const dest_b: u32 = (w3 >> 10) & 0x1F;
-    // Wrapped once by R<w3[18:15]> (567); the second write's order against the wrap is OPEN.
+    // Wrapped once by R<w3[18:15]> (567); the second write's add is not wrapped (626).
     const mk: u32 = (w3 >> 15) & 0xF;
     const sum = wrapOnce(state, aguXrEval(fn_op, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]), mk);
-    if (dest_b != 0 and mk != 0) return RunError.UnknownForm;
     if (dest_a != 0) state.a[dest_a] = if ((w5 >> 18) & 1 == 1) state.yd else sum;
     if (dest_b != 0) {
         if ((w5 >> 21) & 1 == 1) {
