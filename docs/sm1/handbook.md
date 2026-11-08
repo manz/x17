@@ -156,7 +156,7 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
   undefined (§12).
 - Memory stalls are not characterised.
 
-`zig build bench` turns emulator profiles into bundle counts per stage, using this rate.
+`x17 run --profile N` gives the bundle counts to set against this rate.
 
 ## 7. Arithmetic
 

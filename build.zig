@@ -133,11 +133,7 @@ pub fn build(b: *std.Build) void {
     lib_mod.addImport("asm", asm_mod);
     lib_mod.addImport("emu", emu_mod);
     lib_mod.addAnonymousImport("bits.sm", .{ .root_source_file = b.path("examples/lib/bits.sm") });
-    lib_mod.addAnonymousImport("rice.sm", .{ .root_source_file = b.path("examples/lib/rice.sm") });
-    lib_mod.addAnonymousImport("predictor.sm", .{ .root_source_file = b.path("examples/lib/predictor.sm") });
-    lib_mod.addAnonymousImport("unmix.sm", .{ .root_source_file = b.path("examples/lib/unmix.sm") });
     lib_mod.addAnonymousImport("mem.sm", .{ .root_source_file = b.path("examples/lib/mem.sm") });
-    lib_mod.addAnonymousImport("alac.sm", .{ .root_source_file = b.path("examples/lib/alac.sm") });
     lib_mod.addAnonymousImport("huffman.sm", .{ .root_source_file = b.path("examples/lib/huffman.sm") });
     lib_mod.addAnonymousImport("sections.sm", .{ .root_source_file = b.path("examples/lib/sections.sm") });
     lib_mod.addAnonymousImport("dequant.sm", .{ .root_source_file = b.path("examples/lib/dequant.sm") });
@@ -158,29 +154,11 @@ pub fn build(b: *std.Build) void {
         lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/aac/{s}.pkts", .{f})) });
     }
     lib_mod.addImport("host", host_mod);
-    for ([_][]const u8{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |f| {
-        lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/alac/{s}.pkts", .{f})) });
-    }
     // -Dtest-filter=<name>: run only the lib tests whose name contains it (mutation checks).
     const test_filter = b.option([]const u8, "test-filter", "run only lib tests matching this");
     const lib_filters: []const []const u8 = if (aac_bench) &.{ "as the model does", "huff_decode", "win_start", "aac_packet decodes", "aac stage bench report" } else if (test_filter) |f| b.dupeStrings(&.{f}) else &.{};
     const lib_t = b.addTest(.{ .root_module = lib_mod, .filters = lib_filters });
 
-    const bench_mod = b.createModule(.{
-        .root_source_file = b.path("src/bench.zig"),
-        .target = target,
-        .optimize = .ReleaseFast,
-    });
-    bench_mod.addImport("asm", asm_mod);
-    bench_mod.addImport("emu", emu_mod);
-    for ([_][]const u8{ "bits", "rice", "predictor", "unmix", "mem", "alac" }) |l| {
-        bench_mod.addAnonymousImport(b.fmt("{s}.sm", .{l}), .{ .root_source_file = b.path(b.fmt("examples/lib/{s}.sm", .{l})) });
-    }
-    for ([_][]const u8{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |f| {
-        bench_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/alac/{s}.pkts", .{f})) });
-    }
-    const bench = b.addExecutable(.{ .name = "bench", .root_module = bench_mod });
-    b.step("bench", "Bundles per ALAC packet, by stage").dependOn(&b.addRunArtifact(bench).step);
     // `zig build aac-bench -Daac-bench-mode`: the AAC stage tests with their costs printed.
     const lib_run = b.addRunArtifact(lib_t);
     b.step("aac-bench", "Bundles per AAC stage (pass -Daac-bench-mode)").dependOn(&lib_run.step);
