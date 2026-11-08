@@ -924,6 +924,8 @@ fn execX03Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const b_s: u32 = (head >> 26) & 0xF;
     const code: u32 = (head >> 5) & 0x3F;
     if (dest_s == 0) return;
+    // w5[16:14] can force an add (569, 570, 606), gated by head[22:19] with no rule: OPEN.
+    if ((bundle[5] >> 14) & 7 != 0) return RunError.UnknownForm;
     const av: u32 = if (a_s == 0) 0 else state.s[a_s];
     const bv: u32 = if (b_s == 0) 0 else state.s[b_s];
     const op = ALU05[code];

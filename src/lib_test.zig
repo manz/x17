@@ -5387,3 +5387,19 @@ test "x03 mode-5-path high dest: modes 6/7 and w1[15] rounding (after fact 605)"
         }
     }
 }
+
+test "x03 head ALU refuses w5[16:14] != 0 (fact 569, 570, 606)" {
+    const gpa = testing.allocator;
+    // s1 <- add(s11, s12); w5[16:14] forces an add under a head[22:19] gate with no rule.
+    for ([_]u32{ 0, 1, 2, 4 }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[11] = 0x0BB1;
+        state.s[12] = 0x0CC1;
+        const r = emu.runFrom(gpa, &state, &.{ 0x30008003 | 11 << 11, 0, 0, 0, 0, k << 14, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k == 0) {
+            _ = try r;
+            try testing.expectEqual(@as(u32, 0x1872), state.s[1]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
