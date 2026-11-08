@@ -3616,3 +3616,28 @@ Emulator:
 
 > x01.selneg: the same word with m = 7 (fact 502): s<w6[7:4]> <- b < 0 ? b : #w2[9:6].
 
+### `x03.tap`
+
+- Syllables: 6
+- Base: `00000003` `00006800` `00000000` `00000000` `00002800` `00040002`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| sL | s | s4 | [6:3] |
+| An | a4 | s1 | [2:0] |
+| sB | s | s2 | [8:5] |
+| sHi | s | s2 | [12:9] |
+| sLo | s | s4 | [10:7] |
+| =sL | s | s2 | [4:1] |
+| =An | a_reg | s2 | [21:17] |
+| =An | a_reg | s3 | [4:0] |
+| =sHi | imm | s1 | [31:29] |
+| =sHi>>3 | imm | s2 | [0:0] |
+| =sLo | s | s5 | [12:9] |
+
+> x03.tap: the one-bundle FIR tap (fact 670, 671, 672, 701), x03 mode 5 with w1[15] = 0:
+>   sL <- X:[An] (lands after the multiply reads sL), An <- An + 1 (A copy, fn w2[26:22] = 0),
+>   {sHi:sLo} <- {sHi:sLo} + 2 * sL * sB, a 48-bit exact running sum on 24-bit operands.
+> sL is both the load destination w4[6:3] and the multiplicand w2[4:1]; An is the X read
+> address and the A copy's destination and source; sHi and sLo are written and fed back.
+

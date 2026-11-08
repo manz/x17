@@ -7161,3 +7161,41 @@ test "Y words are 16 bits and ldy sign-extends Y[15] (700)" {
         try testing.expectEqual(c[1], st.s[14]);
     }
 }
+
+test "x03.tap: a 32-tap 16 x 18-bit dot product, exact (672, 701)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const coef_regs = [_]u32{ 1, 2, 4, 5, 6, 7, 8, 9 };
+    var taps: [8][6]u32 = undefined;
+    for (coef_regs, 0..) |r, j| {
+        var buf: [64]u8 = undefined;
+        const b = try asm_mod.assembleOne(try std.fmt.bufPrint(&buf, "x03.tap s3, #5, s{d}, s12, s11", .{r}));
+        @memcpy(&taps[j], b.slice()[0..6]);
+    }
+    var prng = std.Random.DefaultPrng.init(701);
+    const rnd = prng.random();
+    for (0..50) |_| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        var c: [8]i64 = undefined;
+        for (&c, 0..) |*v, j| {
+            v.* = rnd.intRangeAtMost(i64, -0x8000, 0x7FFF);
+            st.s[coef_regs[j]] = @as(u32, @truncate(@as(u64, @bitCast(v.*)))) & 0xFFFFFF;
+        }
+        var d: [33]i64 = undefined;
+        for (&d, 0..) |*v, j| {
+            v.* = rnd.intRangeAtMost(i64, -0x20000, 0x1FFFF);
+            try st.x_mem.put(testing.allocator, @intCast(0x200 + j), @as(u32, @truncate(@as(u64, @bitCast(v.*)))) & 0xFFFFFF);
+        }
+        st.s[3] = st.x_mem.get(0x200).?; // prime
+        st.a[5] = 0x201;
+        var prog: [32 * 6 + 3]u32 = undefined;
+        for (0..32) |k| prog[6 * k ..][0..6].* = taps[k % 8];
+        prog[192..195].* = halt;
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 256);
+        var want: i64 = 0;
+        for (0..32) |k| want += 2 * c[k % 8] * d[k];
+        const got: i64 = (@as(i64, @as(i24, @bitCast(@as(u24, @truncate(st.s[12]))))) << 24) + st.s[11];
+        try testing.expectEqual(want, got);
+        try testing.expectEqual(@as(u32, 0x221), st.a[5]);
+    }
+}

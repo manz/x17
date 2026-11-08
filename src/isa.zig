@@ -148,7 +148,61 @@ pub const Operand = struct {
     pub fn place(self: Operand, word: u32, value: u32) u32 {
         return (word & ~self.encode(0xFFFFFFFF)) | self.encode(value);
     }
+
+    /// A tie row, named `=src` or `=src>>n`: no source token; the field takes operand
+    /// `src`'s value shifted right by n, for a form that repeats one register in several fields.
+    pub fn isTie(self: Operand) bool {
+        return self.name.len > 1 and self.name[0] == '=';
+    }
+
+    pub fn tieSource(self: Operand) []const u8 {
+        const body = self.name[1..];
+        return if (std.mem.indexOf(u8, body, ">>")) |k| body[0..k] else body;
+    }
+
+    pub fn tieShift(self: Operand) u5 {
+        const body = self.name[1..];
+        const k = std.mem.indexOf(u8, body, ">>") orelse return 0;
+        return std.fmt.parseInt(u5, body[k + 2 ..], 10) catch 0;
+    }
+
+    /// The operand's value as written in source, read back from an encoded bundle.
+    pub fn valueIn(self: Operand, words: []const u32) u32 {
+        const field = (words[self.syll] & self.encode(0xFFFFFFFF)) >> @as(u5, @intCast(self.lo));
+        return switch (self.kind) {
+            .a4 => (field << 2) | (words[0] >> 30),
+            .eh => (field << 1) | (words[0] >> 31),
+            else => field,
+        };
+    }
 };
+
+/// Every tie row of `ops` written from its source operand into `words`.
+pub fn applyTies(ops: []const Operand, words: []u32) void {
+    for (ops) |t| {
+        if (!t.isTie()) continue;
+        const src = tieSourceOp(ops, t) orelse continue;
+        words[t.syll] = t.place(words[t.syll], src.valueIn(words) >> t.tieShift());
+    }
+}
+
+/// Whether every tie field of `words` agrees with its source operand.
+pub fn tiesHold(ops: []const Operand, words: []const u32) bool {
+    for (ops) |t| {
+        if (!t.isTie()) continue;
+        const src = tieSourceOp(ops, t) orelse return false;
+        if (t.syll >= words.len or src.syll >= words.len) return false;
+        if (t.valueIn(words) != t.encode(src.valueIn(words) >> t.tieShift()) >> @as(u5, @intCast(t.lo))) return false;
+    }
+    return true;
+}
+
+fn tieSourceOp(ops: []const Operand, t: Operand) ?Operand {
+    for (ops) |o| {
+        if (!o.isTie() and std.mem.eql(u8, o.name, t.tieSource())) return o;
+    }
+    return null;
+}
 
 pub const MAX_OPERANDS: usize = 1024;
 
@@ -264,7 +318,7 @@ pub fn matchSubForm(bundle: []const u32) ?*const SubForm {
                 break;
             }
         }
-        if (ok) return sf;
+        if (ok and tiesHold(ops, bundle)) return sf;
     }
     return null;
 }

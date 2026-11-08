@@ -1068,8 +1068,14 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
     while (si < sf.syllables) : (si += 1) b.words[si] = sf.base[si];
 
     const ops = isa.operandsFor(sf.name);
-    for (ops, 0..) |op, i| {
-        if (i > 0) {
+    var given: usize = 0;
+    var want: usize = 0;
+    for (ops) |o| want += @intFromBool(!o.isTie());
+    for (ops) |op| {
+        // Tie rows take no token; they are filled from their source after the loop.
+        if (op.isTie()) continue;
+        defer given += 1;
+        if (given > 0) {
             const cr = lex.next();
             const ct = switch (cr) {
                 .tok => |t| t,
@@ -1078,7 +1084,7 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
             if (ct.kind == .end) {
                 var d = Diagnostic{ .code = .e0005_missing_operand, .span = .{ .start = src.len, .end = src.len } };
                 var buf: [96]u8 = undefined;
-                const m = std.fmt.bufPrint(&buf, "missing operand {d}/{d} ({s})", .{ i + 1, ops.len, op.name }) catch buf[0..0];
+                const m = std.fmt.bufPrint(&buf, "missing operand {d}/{d} ({s})", .{ given + 1, want, op.name }) catch buf[0..0];
                 d.setMsg(m);
                 return .{ .err = d };
             }
@@ -1097,7 +1103,7 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
         if (tok.kind == .end) {
             var d = Diagnostic{ .code = .e0005_missing_operand, .span = .{ .start = src.len, .end = src.len } };
             var buf: [96]u8 = undefined;
-            const m = std.fmt.bufPrint(&buf, "missing operand {d}/{d} ({s})", .{ i + 1, ops.len, op.name }) catch buf[0..0];
+            const m = std.fmt.bufPrint(&buf, "missing operand {d}/{d} ({s})", .{ given + 1, want, op.name }) catch buf[0..0];
             d.setMsg(m);
             return .{ .err = d };
         }
@@ -1163,6 +1169,7 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
         }
         b.words[op.syll] = op.place(b.words[op.syll], field);
     }
+    isa.applyTies(ops, b.words[0..b.len]);
 
     const tail = switch (lex.next()) {
         .tok => |t| t,

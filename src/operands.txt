@@ -1389,3 +1389,14 @@ x01.norm	b	s	2	5	s2
 x01.selneg	dest	s	4	7	s6
 x01.selneg	b	s	2	5	s2
 x01.selneg	i	imm	6	9	s2
+x03.tap	sL	s	3	6	s4
+x03.tap	An	a4	0	2	s1
+x03.tap	sB	s	5	8	s2
+x03.tap	sHi	s	9	12	s2
+x03.tap	sLo	s	7	10	s4
+x03.tap	=sL	s	1	4	s2
+x03.tap	=An	A	17	21	s2
+x03.tap	=An	A	0	4	s3
+x03.tap	=sHi	imm	29	31	s1
+x03.tap	=sHi>>3	imm	0	0	s2
+x03.tap	=sLo	s	9	12	s5

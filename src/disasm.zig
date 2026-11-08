@@ -76,8 +76,11 @@ fn writeFormLine(
 ) DisasmError!usize {
     var cur: usize = 0;
     cur += printTo(out[cur..], "{s}", .{name});
-    for (ops, 0..) |op, i| {
-        const sep: []const u8 = if (i == 0) " " else ", ";
+    var shown: usize = 0;
+    for (ops) |op| {
+        if (op.isTie()) continue;
+        const sep: []const u8 = if (shown == 0) " " else ", ";
+        shown += 1;
         cur += printTo(out[cur..], "{s}", .{sep});
         if (op.syll >= bundle.len) return DisasmError.BundleTooShort;
         const word = bundle[op.syll];
@@ -286,4 +289,16 @@ test "x17.styi disassembles with its post-increment target (658)" {
         const n = try disasmBundle(&buf, b.slice());
         try testing.expectEqualStrings(line, buf[0..n]);
     }
+}
+
+test "x03.tap round-trips, and a word whose tied fields disagree is not a tap" {
+    const t = try roundTrip("x03.tap s3, #5, s7, s12, s11");
+    defer testing.allocator.free(t);
+    try testing.expectEqualStrings("x03.tap s3, #5, s7, s12, s11", t);
+    var b = try asm_mod.assembleOne("x03.tap s3, #5, s7, s12, s11");
+    b.words[5] ^= 1 << 9; // the fed-back lo is no longer sLo
+    var buf: [128]u8 = undefined;
+    if (disasmBundle(&buf, b.slice())) |n| {
+        try testing.expect(!std.mem.startsWith(u8, buf[0..n], "x03.tap"));
+    } else |_| {}
 }

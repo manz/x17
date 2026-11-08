@@ -304,7 +304,10 @@ Measured idioms, cheapest first:
   48-bit acc (§701): hi and lo are 24 bits each, and the sum is exact while |sum| < 2^47. A sum
   past 2^47 - 1 saturates to {0x7FFFFF, 0xFFFFFF}; the negative bound is unmeasured (refused).
   x18 chains of 4 or more wedged after the program's stores, values intact; x03 did not, so
-  prefer x03 for long sums. The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
+  prefer x03 for long sums. The one-bundle tap is written `x03.tap sL, #n, sB, sHi, sLo`:
+  sL <- X:[An] after the multiply reads sL, An += 1, {sHi:sLo} += 2 sL sB. All five are free
+  fields; the word repeats sL, An, sHi and sLo in further fields and the assembler fills them
+  (operand rows named `=x`). Prime sL before the first tap, and zero sHi and sLo. The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
   16-bit operands only.
 - **No computed jumps.** Every measured jump takes an immediate target: x00/x01 control
   relative and absolute (§230, §575), 0x04 (§304), §301/§302, and jmp/jmp-if (§661). None takes
