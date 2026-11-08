@@ -2354,8 +2354,8 @@ fn execX18Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_s: u32 = (head >> 21) & 0xF;
     const src_a: u32 = (w2 >> 17) & 0x1F;
     const a_val: u32 = if (src_a == 0) 0 else state.a[src_a];
-    // x18's X read returns the word's low 16 bits (692: a stored 0xFF8303 reads 0x8303).
-    const v: u32 = (state.readX(a_val) orelse 0) & 0xFFFF;
+    // The X read returns all 24 bits (693, revising 692's 16-bit reading).
+    const v: u32 = state.readX(a_val) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
 }
 

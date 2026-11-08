@@ -6898,9 +6898,9 @@ test "one X latch: an x03 read sets the X that x18 class 110's mode uses; stores
     try testing.expectEqual(@as(u32, 0x5500), st.s[11]);
 }
 
-test "x18 X read returns the word's low 16 bits (692)" {
+test "x18 X read returns all 24 bits of the word (693)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
-    for ([_][2]u32{ .{ 0xFF8303, 0x8303 }, .{ 0x007303, 0x7303 } }) |c| {
+    for ([_][2]u32{ .{ 0xFF8303, 0xFF8303 }, .{ 0x600000, 0x600000 } }) |c| {
         var st = emu.State{};
         defer st.deinit(testing.allocator);
         st.a[3] = 0x40;
