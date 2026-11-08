@@ -1010,6 +1010,8 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const imm: u32 = (h >> 11) & 0xFFFF;
 
     const s_dest: u32 = (w6 >> 12) & 0xF;
+    // A fresh Y read through sub-mux 11 sets yd (after 595), committed with the writes.
+    var yd_new: ?u32 = null;
     const s_val: u32 = if (s_dest == 0) 0 else blk: {
         const src: u32 = (w6 >> 1) & 7;
         const sub: u32 = (w5 >> 23) & 3;
@@ -1024,7 +1026,9 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             // 0x00 sub-mux 3 reads D (595, 550's rule): w5[4] = 1 Y:[e<w4[8:5]>], 0 yd.
             3 => if (x01) return RunError.UnknownForm else if ((w5 >> 4) & 1 == 0) state.yd & 0xFFFF else blk3: {
                 const ri: u32 = (w4 >> 5) & 0xF;
-                break :blk3 (state.getY(if (ri == 0) 0 else state.e[ri]) orelse 0) & 0xFFFF;
+                const v = (state.getY(if (ri == 0) 0 else state.e[ri]) orelse 0) & 0xFFFF;
+                yd_new = v;
+                break :blk3 v;
             },
             else => unreachable,
         };
@@ -1161,6 +1165,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (y_on) state.y_mem.put(gpa, y_addr, y_val) catch return RunError.OutOfMemory;
     if (x_on) state.x_mem.put(gpa, x_addr, x_val) catch return RunError.OutOfMemory;
     if (r_dest != 0) state.r[r_dest] = r_val;
+    if (yd_new) |v| state.yd = v;
     if (s_dest != 0) state.s[s_dest] = s_val;
     if (alu_dest != 0) state.s[alu_dest] = alu_val;
     if (mac_dest != 0) state.s[mac_dest] = mac_val;

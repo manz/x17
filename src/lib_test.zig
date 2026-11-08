@@ -5119,5 +5119,7 @@ test "0x00's s-slot sub-mux 11 reads D (fact 595)" {
         try state.y_mem.put(gpa, 0x760, 0x7777);
         _ = try emu.runFrom(gpa, &state, &.{ 0x28001000, 0x0002A005 | (3 << 7), 0xE8010000, 0x00000020, k.w4, k.w5, 0x35001002, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(k.want, state.s[1]);
+        // The fresh read sets yd; the yd copy leaves it.
+        try testing.expectEqual(k.want, state.yd);
     }
 }
