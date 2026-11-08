@@ -4971,11 +4971,21 @@ fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
         const word: u32 = (code << 5) | (m << 23);
         break :blk (try aluWord(word, sx24(state.s[(s1 >> 4) & 0xF]), sx24(state.s[(s1 >> 28) & 0xF]))) orelse return RunError.UnknownForm;
     };
-    // Head write s<head[24:21]> by mux S[14:12]: 1 / 6 #head[20:5]; 0 psel's cond, measured
-    // only at p0 with modifier 0 (own-0e reads 0); the rest OPEN.
+    // Head write s<head[24:21]> by mux S[14:12]: 1 / 6 #head[20:5]; 0 the cond on p<S[27:24]>
+    // (p0 reads 1) by modifier S[23:21]: 0 !p, 1 p, 2 0, 3 1 (608; 4-7 OPEN); the rest OPEN.
     const hv: u32 = if (dest_s == 0) 0 else switch ((s1 >> 12) & 7) {
         1, 6 => addr,
-        0 => if ((s1 >> 21) & 0x7F == 0) 0 else return RunError.UnknownForm,
+        0 => blk: {
+            const pi: u32 = (s1 >> 24) & 0xF;
+            const pv: u32 = if (pi == 0) 1 else @intFromBool(state.p[pi] != 0);
+            break :blk switch ((s1 >> 21) & 7) {
+                0 => pv ^ 1,
+                1 => pv,
+                2 => 0,
+                3 => 1,
+                else => return RunError.UnknownForm,
+            };
+        },
         else => return RunError.UnknownForm,
     };
     if (alu_dest != 0) state.s[alu_dest] = alu_val;

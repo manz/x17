@@ -67,7 +67,7 @@ Emulator:
 
 - Encoding: `word & 0x8000001F == 0x8000000E`
 - Evidence: MEASURED
-- Source: fact 607 (replacing 333's s <- 0): psel shape A's layout; ALU word s<S[11:8]> <- s<S[7:4]> op s<S[31:28]>, code head[30:25], m S[17:15] (codes 14 m0/m2, 22, 51, 6 measured; 16-21/35/36 OPEN); head write s<head[24:21]> by mux S[14:12]: 1/6 #head[20:5], 0 psel's cond (only p0 modifier 0 measured, reads 0).  fact 53 pass 79: head [31]=1, [25:21] dest s<sel>; the second syllable with [18] set and [0] clear loads A[4n+1] <- head [20:5], n = op[3:1] (4 and 5 load two registers, 6-7 none readable); own-0e
+- Source: fact 607 (replacing 333's s <- 0): psel shape A's layout; ALU word s<S[11:8]> <- s<S[7:4]> op s<S[31:28]>, code head[30:25], m S[17:15] (codes 14 m0/m2, 22, 51, 6 measured; 16-21/35/36 OPEN); head write s<head[24:21]> by mux S[14:12]: 1/6 #head[20:5], 0 the cond on p<S[27:24]> (p0 reads 1) by S[23:21]: 0 !p, 1 p, 2 0, 3 1, 4-7 refused (608).  fact 53 pass 79: head [31]=1, [25:21] dest s<sel>; the second syllable with [18] set and [0] clear loads A[4n+1] <- head [20:5], n = op[3:1] (4 and 5 load two registers, 6-7 none readable); own-0e
 
 | operand | kind | syllable | bits |
 |---|---|---|---|

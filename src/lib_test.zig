@@ -5418,7 +5418,7 @@ test "ld0e has psel shape A's ALU word and head mux (fact 607)" {
         .{ .code = 16, .alu = null }, // 569's override set: OPEN
         .{ .code = 35, .alu = null },
         .{ .m = 3, .alu = null },
-        .{ .mux = 0, .sp = 3 << 24, .alu = null }, // psel's cond, unmeasured on ld0e
+        .{ .mux = 0, .sp = 4 << 21, .alu = null }, // cond modifier 4: OPEN
         .{ .mux = 2, .alu = null },
     }) |c| {
         var state = emu.State{};
@@ -5433,5 +5433,26 @@ test "ld0e has psel shape A's ALU word and head mux (fact 607)" {
             try testing.expectEqual(v, state.s[9]);
             try testing.expectEqual(c.hd, state.s[3]);
         } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "ld0e mux 0 writes the cond on p<S[27:24]> by modifier S[23:21] (fact 608)" {
+    const gpa = testing.allocator;
+    for ([_]struct { p: u32, md: u32, want0: u32, want1: u32 }{
+        .{ .p = 12, .md = 0, .want0 = 1, .want1 = 0 },
+        .{ .p = 12, .md = 1, .want0 = 0, .want1 = 1 },
+        .{ .p = 12, .md = 2, .want0 = 0, .want1 = 0 },
+        .{ .p = 12, .md = 3, .want0 = 1, .want1 = 1 },
+        .{ .p = 5, .md = 0, .want0 = 1, .want1 = 0 },
+        .{ .p = 0, .md = 0, .want0 = 0, .want1 = 0 }, // p0 reads 1
+        .{ .p = 0, .md = 1, .want0 = 1, .want1 = 1 },
+    }) |c| {
+        for ([_]u8{ 0, 1 }) |pv| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            if (c.p != 0) state.p[c.p] = pv;
+            _ = try emu.runFrom(gpa, &state, &.{ 0x9C60000E, c.p << 24 | c.md << 21, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            try testing.expectEqual(if (pv == 1) c.want1 else c.want0, state.s[3]);
+        }
     }
 }
