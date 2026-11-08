@@ -296,6 +296,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
     if (low5 == 0x18 and bundle.len >= 4) {
         const w3_class: u32 = (bundle[3] >> 29) & 0x7;
         const w1_mode: u32 = (bundle[1] >> 12) & 0x7;
+        // Class 110's X store (599) is measured beside the p / multiply slots only.
+        const st110 = w3_class == 0b110 and (bundle[2] >> 22) & 3 == 3;
+        if (st110 and (((bundle[3] >> 8) & 1) == 1 or w1_mode == 5)) return RunError.UnknownForm;
         if (w3_class == 0b110 and ((bundle[3] >> 8) & 1) == 1) {
             // The class-110 p write and multiply slots run beside the branch (fact 470:
             // own-x18p1 carries w3[8] with branch predicate p0).
@@ -307,6 +310,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w3_class == 0b110) {
             // The ALU2 slot reads before the bundle writes, and writes last (527).
             const alu2 = try x18Alu110(state, bundle);
+            const st_s: u32 = ((bundle[2] & 1) << 3) | (bundle[1] >> 29);
+            const st_old: u32 = state.s[st_s];
             if (w1_mode == 5) {
                 try execX18Xrd(gpa, state, bundle);
             } else if (bundle[2] != 0) {
@@ -314,6 +319,12 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
                 try execX18Mpy(gpa, state, bundle);
             } else try execX18Imm(gpa, state, bundle);
             if (alu2) |w| state.s[w.dest] = w.value;
+            if (st110) {
+                // X:[A<w2[21:17]>] <- sx24 s<{w2[0], w1[31:29]}> (599); the old s, and only
+                // measured where nothing else in the bundle writes that s.
+                if (state.s[st_s] != st_old) return RunError.UnknownForm;
+                state.x_mem.put(gpa, state.a[(bundle[2] >> 17) & 0x1F], st_old & M24) catch return RunError.OutOfMemory;
+            }
             return;
         }
         // 485, 487: with w2[17], w2[18] and w3[7] all clear a class-000 bundle may stop two

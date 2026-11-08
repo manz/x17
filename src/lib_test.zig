@@ -5179,3 +5179,30 @@ test "x18 class 010's R slot refuses w2[27:24] != 0 (fact 598)" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x18 class 110 stores s<{w2[0], w1[31:29]}> at X:[A<w2[21:17]>] when w2[23:22] = 11 (fact 599)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = XXXXXXXX, w1: u32, w2: u32, w3: u32 = XXXXXXXX, ai: u5, addr: u32, si: u4, sv: u32, want: ?u32 }{
+        // the row XXXXXXXX 20001000 00cc0001 XXXXXXXX (x99: X:0x160 = 0xFF9909)
+        .{ .w1 = 0x20001000, .w2 = 0x00CC0001, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = 0xFF9909 },
+        .{ .w1 = 0xC0001000, .w2 = 0x00CA0000, .ai = 5, .addr = 0x300, .si = 6, .sv = 0x1234, .want = 0x001234 },
+        .{ .w1 = 0xC0001000, .w2 = 0x00CA0000, .ai = 5, .addr = 0x320, .si = 6, .sv = 0x0567, .want = 0x000567 },
+        .{ .w1 = 0xA0001000, .w2 = 0x00D80001, .ai = 12, .addr = 0x340, .si = 13, .sv = 0xFF8567, .want = 0xFF8567 },
+        .{ .w1 = 0x20001000, .w2 = 0x008C0001, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = 0 }, // 10: no store
+        .{ .w1 = 0x20005000, .w2 = 0x00CC0001, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = null }, // w1 mode 5
+        .{ .w1 = 0x20001000, .w2 = 0x00CC0001, .w3 = 0xC2000101, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = null }, // branch
+        .{ .w1 = 0xC0001000, .w2 = 0x00E80000, .ai = 20, .addr = 0x380, .si = 6, .sv = 0x0042, .want = 0x000042 }, // A20: 5-bit index
+        // the ALU2 slot writes s9 too: ordering unmeasured
+        .{ .h = 0x13200418, .w1 = 0x20001900, .w2 = 0x00CC0001, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = null },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[k.ai] = k.addr;
+        state.s[k.si] = k.sv;
+        const r = emu.runFrom(gpa, &state, &.{ k.h, k.w1, k.w2, k.w3, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.readX(k.addr) orelse 0);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
