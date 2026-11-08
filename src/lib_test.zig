@@ -6760,6 +6760,9 @@ test "x18 class 011: w3[3] clears the R dest; the load mux's 000 gives 0 (683)" 
         .{ .w1 = 0x00001970, .w3 = 0x740000c9, .s2 = 0x1234, .r1 = 0 },
         .{ .w1 = 0x00001970, .w3 = 0x740000c1, .s2 = 0x1234, .r1 = 0xFFFE },
         .{ .w1 = 0x00000970, .w3 = 0x740000c9, .s2 = 0, .r1 = 0 },
+        // 010 and 101 read Y too (369)
+        .{ .w1 = 0x00002970, .w3 = 0x740000c9, .s2 = 0x1234, .r1 = 0 },
+        .{ .w1 = 0x00005970, .w3 = 0x740000c9, .s2 = 0x1234, .r1 = 0 },
     }) |c| {
         var st = emu.State{};
         defer st.deinit(testing.allocator);

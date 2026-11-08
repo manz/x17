@@ -2600,14 +2600,15 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // The head's load slot (own-x18b and siblings, 645 note): s<head[24:21]> <- Y:[e<w3[28:25]>].
     // Only words below 0x8000 were loaded (sign unmeasured), and a dest shared with the slot's
     // dest or operands has no measured order: refuse those.
-    // The source mux w1[14:12] (683): 000 delivers 0, 001 the Y read, 110 the immediate
-    // head[20:5]; the others are OPEN.
+    // The source mux w1[14:12] (683, 369): 000 delivers 0, 001/010/101 the Y read, 110 the
+    // immediate head[20:5]; 011, 100, 111 are OPEN, and so is e1 under 010/101.
     const ld_dest: u32 = (h >> 21) & 0xF;
     var ld_val: u32 = 0;
     if (ld_dest != 0) {
         switch ((w1 >> 12) & 7) {
             0 => ld_val = 0,
-            1 => {
+            1, 2, 5 => |m| {
+                if (m != 1 and (w3 >> 25) & 0xF == 1) return RunError.UnknownForm;
                 ld_val = state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0;
                 if (ld_val & 0x8000 != 0) return RunError.UnknownForm;
             },
