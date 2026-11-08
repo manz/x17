@@ -92,8 +92,9 @@ pub const State = struct {
         self.x_mem.deinit(gpa);
     }
 
+    /// Y words are 16 bits (700): a store keeps s[15:0], so only those bits read back.
     pub fn getY(self: *const State, addr: u32) ?u32 {
-        return self.y_mem.get(addr);
+        return if (self.y_mem.get(addr)) |v| v & 0xFFFF else null;
     }
 
     pub fn getX(self: *const State, addr: u32) ?u32 {

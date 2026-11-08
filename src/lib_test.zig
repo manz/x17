@@ -7122,3 +7122,16 @@ test "unrolled 672 taps against coefficient registers give the exact dot product
         try testing.expectEqual(want, got);
     }
 }
+
+test "Y words are 16 bits and ldy sign-extends Y[15] (700)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const ld = try asm_mod.assembleOne("ldy s14, e5");
+    for ([_][2]u32{ .{ 0x401234, 0x001234 }, .{ 0x8000, 0xFF8000 }, .{ 0xFF7FFF, 0x007FFF } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.e[5] = 0x300;
+        try st.y_mem.put(testing.allocator, 0x300, c[0]);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ld.slice()[0]} ++ halt), 0, 8);
+        try testing.expectEqual(c[1], st.s[14]);
+    }
+}
