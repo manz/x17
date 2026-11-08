@@ -6932,6 +6932,24 @@ test "x02's undoubled low product holds P mod 2^24 (655); x18.and masks it (644,
     try testing.expectEqual(@as(u32, 0x55), st.s[12]);
 }
 
+test "x03's mode-5 A copy counts e<2*w4[2:0] + w3[31]> down; the template does not (349)" {
+    const t = try asm_mod.assembleOne("x03.agu A6, A14, #0, #0, A0");
+    for ([_]u32{ 4, 0 }) |lo| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.e[8] = 0x710;
+        st.a[14] = 0x123;
+        var prog: [9]u32 = undefined;
+        @memcpy(prog[0..6], t.slice()[0..6]);
+        prog[4] = (prog[4] & ~@as(u32, 7)) | lo;
+        prog[6..9].* = .{ 0x00000017, 0x31308000, 0xA0000000 };
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        try testing.expectEqual(@as(u32, if (lo == 4) 0x70F else 0x710), st.e[8]);
+        try testing.expectEqual(@as(u32, 0x123), st.a[6]);
+    }
+    try testing.expectEqual(@as(u32, 0), t.slice()[4] & 7);
+}
+
 test "ldy refuses e2 and reads e3 (650)" {
     for ([_]struct { e: u32, ok: bool }{ .{ .e = 2, .ok = false }, .{ .e = 3, .ok = true } }) |c| {
         var st = emu.State{};

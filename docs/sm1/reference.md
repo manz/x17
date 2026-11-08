@@ -537,6 +537,7 @@ Emulator:
 > x03 (190): w5[1] X / Y; w5[21] Y:[e<w3[30:27]>]; w5[29:28] 10 e<w3[30:27]>, 01 AGU fn(A<w3[4:0]>, i = 0).  x02 01 = A<w3[4:0]> + 1.  own-x03yrd, own-x03esrc, own-x02asrc
 > x03 (191): 0x02's product low half s<w4[10:7]> and >>24 signedness.  own-x03plo, own-x03u24
 > x03 (192): w5[6] = 0x02's w5[19]: the w2 slot reads X:[x].  own-x03xw2
+> x03 e counter (349): e<2 * w4[2:0] + w3[31]> <- e<w3[26:23]> - 1 (the step was -1 in every case measured), dest e0 off; measured on the mode-5 A copy (e8 0x710 -> 0x70F).  The mode-5 templates keep w4[2:0] = 0.
 > x03 (193): A<w2[21:17]> <- w5[5] ? yd : A<w3[4:0]>; yd beats the AGU on a shared A.  own-x03acp, own-x03ayd
 
 Emulator:
@@ -1159,7 +1160,7 @@ Emulator:
 ### `x03.xrd`
 
 - Syllables: 6
-- Base: `00000003` `00000000` `0140e000` `04002008` `00046804` `00140102`
+- Base: `00000003` `00000000` `0140e000` `04002008` `00046800` `00140102`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -1258,7 +1259,7 @@ Emulator:
 ### `x03.agu`
 
 - Syllables: 6
-- Base: `00000003` `00000002` `0140e000` `04002400` `0000683c` `00140102`
+- Base: `00000003` `00000002` `0140e000` `04002400` `00006838` `00140102`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -1271,6 +1272,8 @@ Emulator:
 > x03.agu: 6-syllable VLIW at low5 0x03 with the A-AGU slot active
 > (fact 164 / own-x03agu).
 >   A<w3[14:10]> <- AGU[w2[26:22]](x = A<w3[4:0]>, i = {w5[0], w4[31:17]})
+> The mode-5 templates keep w4[2:0] = 0: with w3[31] = 0 that is the e counter's off state
+> (fact 349, e<2 * w4[2:0] + w3[31]> <- e<w3[26:23]> - 1).
 
 ### `x04.agu`
 
@@ -2970,7 +2973,7 @@ Emulator:
 ### `x03.acp`
 
 - Syllables: 6
-- Base: `00000003` `00000002` `0140e000` `04000000` `0020683c` `00340100`
+- Base: `00000003` `00000002` `0140e000` `04000000` `00206838` `00340100`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|

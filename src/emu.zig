@@ -371,8 +371,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             // The w2[12:9] high dest is live here too (604, 605).
             const phi = try x03ProductHigh(state, bundle);
             const plo = try x03ProductLow(state, bundle);
+            const e_pre = state.e;
             try execX03Xrd(gpa, state, bundle);
-            try execX03Agu(gpa, state, bundle);
+            try execX03Agu(gpa, state, bundle, e_pre);
             if (phi) |w| state.s[w.dest] = w.value;
             if (plo) |w| state.s[w.dest] = w.value;
             return;
@@ -1448,7 +1449,7 @@ fn shiftM2(n: u32, a: u32, b: u32) u32 {
     };
 }
 
-fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32, e_pre: [16]u32) RunError!void {
     _ = gpa;
     const w2 = bundle[2];
     const w3 = bundle[3];
@@ -1468,6 +1469,10 @@ fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         state.a[dest_a] = (x_val +% i_val) & M24;
     }
     if (acp_dest != 0 and acp_dest != dest_a) state.a[acp_dest] = acp_val;
+    // The e counter (fact 349): e<2 * w4[2:0] + w3[31]> <- e<w3[26:23]> - 1, the source read
+    // before the bundle; e0 as the destination is off.  Measured on the mode-5 A copy.
+    const ec_dest: u32 = ((w4 & 7) << 1) | (w3 >> 31);
+    if (ec_dest != 0) state.e[ec_dest] = (e_pre[(w3 >> 23) & 0xF] -% 1) & 0xFFFF;
 }
 
 fn execX03Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
