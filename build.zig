@@ -10,7 +10,9 @@ pub fn build(b: *std.Build) void {
     });
     const clap_mod = clap_dep.module("clap");
 
-    const isa_mod = b.createModule(.{
+    // isa, asm, emu and host are public modules: a dependent package runs the assembler and
+    // the emulator from its own tests (b.dependency("x17", ...).module("asm")).
+    const isa_mod = b.addModule("isa", .{
         .root_source_file = b.path("src/isa.zig"),
         .target = target,
         .optimize = optimize,
@@ -24,7 +26,7 @@ pub fn build(b: *std.Build) void {
     });
     exe_mod.addImport("isa", isa_mod);
 
-    const asm_mod = b.createModule(.{
+    const asm_mod = b.addModule("asm", .{
         .root_source_file = b.path("src/asm.zig"),
         .target = target,
         .optimize = optimize,
@@ -42,7 +44,7 @@ pub fn build(b: *std.Build) void {
     run.step.dependOn(b.getInstallStep());
     b.step("run", "Run x17").dependOn(&run.step);
 
-    const emu_mod = b.createModule(.{
+    const emu_mod = b.addModule("emu", .{
         .root_source_file = b.path("src/emu.zig"),
         .target = target,
         .optimize = optimize,
@@ -96,7 +98,7 @@ pub fn build(b: *std.Build) void {
     gates_mod.addImport("asm", asm_mod);
     gates_mod.addImport("emu", emu_mod);
 
-    const host_mod = b.createModule(.{
+    const host_mod = b.addModule("host", .{
         .root_source_file = b.path("src/host.zig"),
         .target = target,
         .optimize = optimize,
