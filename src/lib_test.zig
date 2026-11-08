@@ -5228,3 +5228,25 @@ test "x18 class 110's doubled hi is P[39:24], rounded by w3[22] (fact 600)" {
         }
     }
 }
+
+test "x18 class 110 integer-mode hi: w3[22] is signedness (after fact 600)" {
+    const gpa = testing.allocator;
+    // x18.mpy's bundle (w3[24] = 1): s5 <- (s1 * s2) >> 24, no rounding.
+    for ([_]struct { a: u32, b: u32, signed: u32, want: ?u32 }{
+        .{ .a = 0x1000, .b = 0x1800, .signed = 1, .want = 1 },
+        .{ .a = 0x1000, .b = 0x1800, .signed = 0, .want = 1 },
+        .{ .a = 0x7000, .b = 0xFFFEDD, .signed = 1, .want = 0xFFFF },
+        .{ .a = 0x7000, .b = 0xFFFEDD, .signed = 0, .want = 0x6FFF },
+        .{ .a = 0xFFFEDD, .b = 0x7000, .signed = 0, .want = null }, // a negative: unmeasured
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = k.a;
+        state.s[2] = k.b;
+        const r = emu.runFrom(gpa, &state, &.{ 0x00000018, 0x00000000, 0x03000a42, 0xC1100001 | k.signed << 22, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5] & 0xFFFF);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

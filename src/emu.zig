@@ -2065,9 +2065,16 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const pp: u64 = if (integer) prod else prod << 1;
     const lo: u32 = @truncate(pp & 0xFFFF);
     // Doubled mode (600): hi = P[39:24] of the signed product, w3[22] = 1 rounding half up,
-    // 0 flooring.  Integer mode keeps the unsigned P >> 24 (own-x18mpy, w3[22] = 1, cannot
-    // tell rounding from flooring).
-    const hi: u32 = if (integer) @truncate((pp >> 24) & M24) else blk: {
+    // 0 flooring.  Integer mode (after 600): no rounding; w3[22] = 1 a signed product,
+    // 0 unsigned 24-bit (b measured negative, a only positive: a negative a refuses).
+    const hi: u32 = if (integer) blk: {
+        if ((bundle[3] >> 22) & 1 == 0) {
+            if (hi_dest != 0 and sx24(state.s[a_s]) < 0) return RunError.UnknownForm;
+            break :blk @truncate((pp >> 24) & M24);
+        }
+        const sp: i64 = @as(i64, sx24(state.s[a_s])) * sx24(state.s[b_s]);
+        break :blk @as(u32, @truncate(@as(u64, @bitCast(sp >> 24)))) & M24;
+    } else blk: {
         const sp: i64 = (@as(i64, sx24(state.s[a_s])) * sx24(state.s[b_s])) << 1;
         const half: i64 = if ((bundle[3] >> 22) & 1 == 1) 1 << 23 else 0;
         break :blk @as(u32, @truncate(@as(u64, @bitCast((sp + half) >> 24)))) & M24;
