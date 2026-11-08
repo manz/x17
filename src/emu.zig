@@ -3295,7 +3295,8 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     }
     if (s1_class == 0b011 and s2_class == 0b111) return execX17Imm(gpa, state, bundle);
     if (s2_class == 0b111) return execX17Alu(gpa, state, bundle);
-    // Any S1 class but 000 (x17mve's) with S1[28] (113; 609's row is class 010).
+    // Any S1 class but 000 (x17mve's) with S1[28]: 001 and 010 (609's row) measured, the rest
+    // INFERRED from 113's "any S1[31:29]".
     if (s1_class != 0b000 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
     // S1 classes 011 and 101 run as 001 (fact 551).
     if ((s1_class == 0b001 or s1_class == 0b011 or s1_class == 0b101) and s2_class == 0b000) return execX17Agu2(gpa, state, bundle);
