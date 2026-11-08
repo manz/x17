@@ -49,7 +49,13 @@ configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2) a
   Y:0xFD80..0xFDFF sits at 0x2203FF00, and the status mailbox is Y:0xFD94 = 0x2203FF28 (§18, §81).
 - **Program order.** The sequencer's q order runs column-major over row pairs:
   `q = 8*(row/2) + 2*lane + (row%2)` (§45). The pc counts syllables in q order.
-- **Mode 0** programs use X:0..0x1BFF (plan §0).
+- **Mode 0** programs use X:0..0x1BFF. X is 0x1C00 words with no alias: above it, stores vanish
+  and reads give 0 (§649, §653). Y:0..0x2E7F is 16-bit and host-visible in place (§653).
+  Y:0x2E80..0x2EFF is one 32-bit host word per address: a store keeps s[23:0] in bytes 0..2 and
+  leaves byte 3 untouched, so the host masks or sign-extends it (§656). 128 24-bit samples per
+  fill.
+- **Stores through A0 and A31.** `stx` via A0 lands at the previous bundle's immediate or result;
+  via A31 at X:0 (§649).
 - **Mirrors and wrap** above the top of any space: undefined. Runaway pcs reached 0xEDBB (§18).
 
 ## 3. Registers
@@ -112,13 +118,32 @@ a violated distance gives a lost or wrong value, never a trap.
 
 | Hazard | Minimum distance |
 |---|---|
-| `lda`, then a bundle using that A | 4 nops (§157) |
+| `ldi`, `lde`, `lda`, then a bundle reading that register | none: the next bundle sees it (§659; supersedes §157's 4 nops). Measured for ldy via a new e, an x19a43 read via a new A, and x17sty of a new s. Loads feeding a jump condition or an x02 A slot: undefined, keep padding |
+| x02's A step (A<k> + 1), then a bundle using A<k> | none; steps chain back to back, and the x02's own X read uses the old A (§660) |
 | x16ld's A write, then a load through it | 2 instructions (§122) |
 | x02, then x02 | 3 nops (§188) |
 | shifter bundle, then register writes | writes 2-4 instructions later are lost (§91) |
 | store, then two `ldi` | stalls (§46) |
 
-**Delay slots.** Every jump and branch executes the next 2 bundles (§83, §94, §302).
+**Delay slots.** Every jump and branch executes the next 2 bundles (§83, §94, §302), of any class
+and length: ldi, lde/ldy, x17sty, a 6-word x02, a 4-word x18 and a 4-word x19a43 read all run
+there, and the jump still lands right (§661). The target counts words from the jump, so long slot
+bundles add to the offset; labels handle it. Fill slots with work, not nops.
+
+**Side writes (§345, §349, §360, §429, §654, §658).** Several templates carry a second
+destination field that writes even when the program never asked for it. Zero it unless the
+write is meant:
+
+| Form | Side write |
+|---|---|
+| x19a43 | A<h[29:25]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, i) |
+| x18 class 011 | A<2*w1[3:0] + h[31]> <- the result |
+| x03 (A-copy mode) | e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1 |
+| x17sty, x17ld, x17agu2 | e<2*w1[2:0] + h[31]> <- AGU10[w1[10:7]](x = e<w1[18:15]>) |
+| x02 multiply templates naming A1 | A1 <- A1 + 1 |
+
+The assembler's templates clear these fields. Used on purpose, they are free post-increments and
+decrements: a pointer step rides on a compute or store bundle instead of costing an x18.eagu.
 
 ## 6. Timing
 
@@ -134,7 +159,12 @@ a violated distance gives a lost or wrong value, never a trap.
 
 **Wrap, not saturate.** The ALU wraps at 24 bits (§497, §518). The exceptions are listed below.
 
-- **Multiply (Q23):** rounds half up. Only -1 x -1 saturates, to 0x7FFFFF (§386, §402).
+- **Multiply (Q23):** rounds half up. Only -1 x -1 saturates, to 0x7FFFFF (§386, §402). x02's
+  >>23 form is floor(x + 1/2) on both signs; its >>24 form (the MAC high part) is a true floor
+  (§657).
+- **x02's low product.** The second destination holds 2P mod 2^24 (w1[17] = 0) or P mod 2^24
+  (w1[17] = 1): signed 24-bit, not masked to 16 (§655, §657). Mask with x18.and when 16 bits are
+  wanted. An X read into s0 is dropped (§652).
 - **MAC:** 40-bit accumulator; the widest measured (§203). The patent's 48 bits are corroboration
   only.
 - **Shifter (op 23):** left shifts saturate; right shifts round half up. Counts of 24 or more
