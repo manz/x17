@@ -2015,8 +2015,8 @@ fn x16AguAlu(state: *const State, h: u32, s1: u32, s2: u32) RunError!?struct { d
 /// ops give 0 (fact 118).
 /// x16mul, S1 class 000 + S2 class 110 (fact 118, 213, 538): s<S2[13:10]> <- the product
 /// of s<S2[4:1]> and s<S2[8:5]> (16-bit) >> 23, rounded with op S2[20:16] bit 2, 0 unless bit
-/// 0; s<h[24:21]> <- #h[20:5] when S1[14:13] is 00 or 11; with S1[28] and S2[9], Y:[e<S2[24:21]>]
-/// <- s<S1[27:24]>, read before the immediate lands.  Refused: S1[14:13] = 01/10, an s0 store
+/// 0; s<h[24:21]> <- #h[20:5] when S1[14:13] is 00, 01 (639) or 11; with S1[28] and S2[9],
+/// Y:[e<S2[24:21]>] <- s<S1[27:24]>, read before the immediate lands.  Refused: S1[14:13] = 10, an s0 store
 /// source (0xA400, OPEN), S1[11:8] (a gated s write, source OPEN) and one s for both writes.
 fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len < 3) return RunError.UnknownForm;
@@ -2024,10 +2024,7 @@ fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const s1 = bundle[1];
     const s2 = bundle[2];
     if ((s1 >> 8) & 0xF != 0) return RunError.UnknownForm;
-    switch ((s1 >> 13) & 3) {
-        0, 3 => {},
-        else => return RunError.UnknownForm,
-    }
+    if ((s1 >> 13) & 3 == 2) return RunError.UnknownForm;
     const store: bool = (s1 >> 28) & 1 == 1 and (s2 >> 9) & 1 == 1;
     const src: u32 = (s1 >> 24) & 0xF;
     if (store and src == 0) return RunError.UnknownForm;

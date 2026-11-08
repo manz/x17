@@ -6084,3 +6084,17 @@ test "x16agu (120 form) s mux 3 loads Y[7:0] << 8 (fact 638)" {
         try testing.expectEqual(c.want, st.s[9]);
     }
 }
+
+test "x16mul's head immediate lands with S1[14:13] = 01; 10 refuses (fact 639)" {
+    const gpa = testing.allocator;
+    // own-x16i 01224696 11042000 c0400200: s9 <- 0x1234.
+    for ([_]struct { s1: u32, want: ?u32 }{ .{ .s1 = 0x11042000, .want = 0x1234 }, .{ .s1 = 0x11044000, .want = null } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        const r = emu.runFrom(gpa, &st, &.{ 0x01224696, c.s1, 0xc0400200, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, st.s[9]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
