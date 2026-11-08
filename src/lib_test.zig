@@ -5993,3 +5993,23 @@ test "ytst's head writes s<h[24:21]> <- e<S1[24:21]> and A<h[28:25]> <- # (fact 
     defer o.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x18000014, 0x0221016B, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "ldi2 admits the class-001 IMM10 seconds as no-store; A dest refused there (fact 74, 634)" {
+    const gpa = testing.allocator;
+    for ([_]u32{ 0x20040000, 0x20400000, 0x20440000, 0x22463000 }) |sw| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        _ = try emu.runFrom(gpa, &st, &.{ 0x01a02470, sw, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u32, 0x123), st.s[13]);
+        try testing.expectEqual(@as(usize, 0), st.y_mem.count());
+        var a = emu.State{};
+        defer a.deinit(gpa);
+        try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &a, &.{ 0x03a02470, sw, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    }
+    // 20004001 / 20014000: not IMM10 seconds, refused.
+    for ([_]u32{ 0x20004001, 0x20014000 }) |sw| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st, &.{ 0x01a02470, sw, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    }
+}

@@ -2691,15 +2691,22 @@ fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     state.e[e_idx] = imm;
 }
 
+/// IMM10_SECONDS of class 001 (fact 74 pass 100); the class-011 ones decode elsewhere.
+const LDI2_IMM10_SECONDS = [_]u32{ 0x20040000, 0x20400000, 0x20440000, 0x22463000 };
+
 fn execLdi2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len < 2) return RunError.UnknownForm;
     const head = bundle[0];
     const sw = bundle[1];
-    // 634: h[31:30] = 00 and a second with S[20:19] = 11, S[18:0] = 0 (other nonzero S[18:0]
-    // wedges, S[20:19] = 00 OPEN), or own-ldi2's exact second 0x20040000 (no store).
+    // 634: h[31:30] = 00 and a second with S[20:19] = 11, S[18:0] = 0, or one of the class-001
+    // IMM10_SECONDS (74 pass 100: no extra write).  Other seconds wedge or are OPEN.  Whether
+    // the A load runs with an IMM10 second is unmeasured: A<h[29:25]> != 0 refused there.
     if (head >> 30 != 0) return RunError.UnknownForm;
     const store = sw & 0x1FFFFF == 0x180000;
-    if (!store and sw != 0x20040000) return RunError.UnknownForm;
+    if (!store) {
+        if (std.mem.indexOfScalar(u32, &LDI2_IMM10_SECONDS, sw) == null) return RunError.UnknownForm;
+        if ((head >> 25) & 0x1F != 0) return RunError.UnknownForm;
+    }
     const imm: u32 = (head >> 5) & 0xFFFF;
     // Y:[e<S[28:25]>] <- s<S[24:21]>, s read before the head's write (fact 89, 634).
     if (store) {
