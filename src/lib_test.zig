@@ -4265,7 +4265,7 @@ test "own-b16R: the class-100 row's R write muxes on S1[24]" {
         .{ .h = 0x1002a816, .s1 = 0x60005800, .s2 = 0x8a000002, .want = 0x120 }, // mx 2 c 2
         .{ .s1 = 0x20005800, .s2 = 0x8a000001, .want = 0x4600 }, // mx 0 c 1: a << (n + 8)
         .{ .h = 0x4002a816, .s1 = 0x20005800, .want = null }, // head[30] = 1: OPEN
-        .{ .s1 = 0x20005800, .s2 = 0x8a000030, .want = null }, // extra S2 bits: OPEN
+        .{ .s1 = 0x20005800, .s2 = 0x8a000030, .want = null }, // extra S2 bits at head[26:25] = 0
         .{ .h = 0x0202a816, .s1 = 0x20005800, .want = null }, // head[26:25] = 01: OPEN
     }) |c| {
         var state = emu.State{};
@@ -4961,5 +4961,29 @@ test "the 0x16 class-100 row is head[29:25] (fact 590)" {
         x.s[11] = 2;
         _ = try emu.runFrom(gpa, &x, &.{ 0x06000096 | m << 27, 0x0b000012, 0x860000b0, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(extra3[mx], x.s[5]);
+    }
+}
+
+test "the class-100 R feed takes the extra-S2 cell too (fact 591)" {
+    const gpa = testing.allocator;
+    // R11 <- cell with no s destination, S1[24] = 0; a = s3, b = s<S2[7:4]> = s11.
+    for ([_]struct { h: u32, s2: u32, want: ?[2]u32 }{
+        .{ .h = 0x46000096, .s2 = 0x860000b4, .want = .{ 2, 3 } }, // the move b
+        .{ .h = 0xC6000096, .s2 = 0x860000b4, .want = .{ 2, 3 } }, // head[31:30] = 11
+        .{ .h = 0x06000096, .s2 = 0x860000b0, .want = .{ 0x1236, 0x0F12 } }, // a + b
+        .{ .h = 0x40000096, .s2 = 0x860000b4, .want = null }, // head[26:25] = 0: OPEN row
+        .{ .h = 0x40000096, .s2 = 0x86000004, .want = null }, // gate cell, head[30] = 1
+    }) |k| {
+        for ([_][2]u32{ .{ 0x1234, 2 }, .{ 0x0F0F, 3 } }, 0..) |v, i| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.s[3] = v[0];
+            state.s[11] = v[1];
+            const r = emu.runFrom(gpa, &state, &.{ k.h, 0x00005800, k.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            if (k.want) |w| {
+                _ = try r;
+                try testing.expectEqual(w[i], state.r[11]);
+            } else try testing.expectError(error.UnknownForm, r);
+        }
     }
 }

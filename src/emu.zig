@@ -3275,10 +3275,7 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
     const alu_dest: u32 = (s1 >> 25) & 0xF;
     const rd: u32 = (s1 >> 11) & 0xF;
     const r_from_cell = rd != 0 and (s1 >> 24) & 1 == 0;
-    // 589: the cell runs without an s destination too, feeding R; measured only with
-    // head[30] = 0 and no extra S2 bits.
-    if (alu_dest == 0 and r_from_cell and ((h >> 30) & 1 == 1 or bundle[2] & 0x01FFFFF8 != 0))
-        return RunError.UnknownForm;
+    // 589, 591: the cell runs without an s destination too, feeding R.
     const alu_val: u32 = if (alu_dest == 0 and !r_from_cell) 0 else try x16Agu100Alu(state, h, s1, bundle[2]);
     const f: u32 = (s1 >> 7) & 0xF;
     const x: u32 = state.e[(s1 >> 15) & 0xF];
@@ -3477,8 +3474,9 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
         }
         return x16ExtraN(mx * 8 + c, a, b, n);
     }
-    // The row is head[29:25] (590); the gate grid holds at head[26:25] = 0 only.
-    if ((h >> 25) & 3 != 0) return RunError.UnknownForm;
+    // The row is head[29:25] (590); the gate grid holds at head[26:25] = 0 and head[30] = 0
+    // only (with head[30] = 1 its R feed read 0, 589).
+    if ((h >> 25) & 3 != 0 or (h >> 30) & 1 == 1) return RunError.UnknownForm;
     const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
     const n: u5 = @intCast(s1 >> 29);
     const code: u32 = s2 & 7;
