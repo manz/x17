@@ -6796,3 +6796,25 @@ test "x18 class 010 Q23 multiply: w3[0] = 1 rounds, 0 truncates (684)" {
         try testing.expectEqual(c.want, st.s[3]);
     }
 }
+
+test "x18 class 010 X mux 011: Y[7:0] << 8 with w1[28] = 1, refused with 0 (685)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    for ([_]struct { w1: u32, e: u32, want: ?u32 }{
+        .{ .w1 = 0x10003000, .e = 3, .want = 0x3300 },
+        .{ .w1 = 0x10003000, .e = 9, .want = 0x9900 },
+        .{ .w1 = 0x00003000, .e = 3, .want = null },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.e[3] = 0x40;
+        st.e[9] = 0x80;
+        try st.y_mem.put(testing.allocator, 0x40, 0x0A33);
+        try st.y_mem.put(testing.allocator, 0x80, 0x0A99);
+        const prog = [_]u32{ 0x00A00018, c.w1, 0x00000000, 0x40000001 | (c.e << 25) } ++ halt;
+        const r = emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, st.s[5]);
+        } else try testing.expectError(emu.RunError.UnknownForm, r);
+    }
+}

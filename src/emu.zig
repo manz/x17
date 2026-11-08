@@ -2739,6 +2739,8 @@ fn execX18C2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const dest_r: u32 = (w3 >> 7) & 0xF;
     const xs_val: u32 = if (dest_s == 0) 0 else switch ((w1 >> 12) & 7) {
         1 => x_e_val,
+        // 685: Y:[e<w3[28:25]>][7:0] << 8 with w1[28] = 1; w1[28] = 0 ignores the index (OPEN).
+        3 => if ((w1 >> 28) & 1 == 1) ((state.getY(x_e_val) orelse 0) & 0xFF) << 8 else return RunError.UnknownForm,
         6 => (h >> 5) & 0xFFFF,
         else => return RunError.UnknownForm,
     };
