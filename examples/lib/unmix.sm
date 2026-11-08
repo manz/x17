@@ -9,7 +9,7 @@
 ; Y slots (unmix_slots(base), which remaps e1..e4 and e7..e10; call each stage's slots
 ; macro before that stage):
 ;   e1  Y:base+0  n
-;   e12 Y:base+1  mix_bits (0..31) (not e2, fact 650)
+;   e12 Y:base+1  mix_bits (0..31)
 ;   e3  Y:base+2  mix_res as its 8 bits (0..255; read back signed)
 ;   e4  Y:base+3  shifted: 0, 8 or 16
 ;   e7  Y:base+4  depth (8..24)

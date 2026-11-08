@@ -558,7 +558,7 @@ Emulator:
 
 - Encoding: `word & 0x83FFFE1F == 0x0000020A`
 - Evidence: MEASURED
-- Source: fact 68 pass 94: s<[30:26]> (ldi numbering) <- Y:[e<[8:5]>]; bit 9 = 1 enables.  own-ldy.  Through e2 the word read is unrelated to Y:[e2] and changes run to run; stores through e2 land (fact 650): e2 refused.
+- Source: fact 68 pass 94: s<[30:26]> (ldi numbering) <- Y:[e<[8:5]>]; bit 9 = 1 enables.  own-ldy.  e2 reads like any other e (fact 658: 650's junk was x17sty's e2 write, see x17.sty).
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -2914,7 +2914,7 @@ Emulator:
 ### `x17.sty`
 
 - Syllables: 3
-- Base: `00000017` `00000109` `60003800`
+- Base: `00000017` `00000108` `60003800`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -2922,7 +2922,9 @@ Emulator:
 | src_lo | imm | s1 | [31:29] |
 | src_hi | imm | s2 | [0:0] |
 
-> x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275).
+> x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275). Also e<2*S1[2:0] + h[31]> <-
+> AGU10[S1[10:7]](x = e<k>, y = R<h[30:27]>, i) after the store (fact 658); the template clears
+> S1[2:0] and h[31].
 
 ### `x17.styr`
 

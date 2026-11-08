@@ -4019,6 +4019,7 @@ test "x17sty's R mux 7 is the AGU over the store's own address register" {
         if (c.r11) |v| {
             _ = try r;
             try testing.expectEqual(v, state.r[11]);
+            try testing.expectEqual(v, state.e[8]); // w1[2:0] = 4: e8 gets the same AGU value (658)
             try testing.expectEqual(@as(?u32, 0x55), state.getY(0x720));
         } else try testing.expectError(error.UnknownForm, r);
     }
@@ -6963,20 +6964,40 @@ test "x03's mode-5 A copy counts e<2*w4[2:0] + w3[31]> down; the template does n
     try testing.expectEqual(@as(u32, 0), t.slice()[4] & 7);
 }
 
-test "ldy refuses e2 and reads e3 (650)" {
-    for ([_]struct { e: u32, ok: bool }{ .{ .e = 2, .ok = false }, .{ .e = 3, .ok = true } }) |c| {
+test "x17.sty writes e<2*w1[2:0] + h[31]> <- e<k> + 1; the template does not; ldy reads e2 (658)" {
+    const t = try asm_mod.assembleOne("x17.sty e3, #3, #0");
+    try testing.expectEqual(@as(u32, 0), t.slice()[1] & 7);
+    try testing.expectEqual(@as(u32, 0), t.slice()[0] >> 31);
+    for ([_]struct { lo: u32, dest: usize }{ .{ .lo = 0, .dest = 0 }, .{ .lo = 1, .dest = 2 }, .{ .lo = 2, .dest = 4 } }) |c| {
         var st = emu.State{};
         defer st.deinit(testing.allocator);
-        st.e[c.e] = 0x2DB0;
-        try st.y_mem.put(testing.allocator, 0x2DB0, 0x1234);
-        var buf: [32]u8 = undefined;
-        const w = try asm_mod.assembleOne(try std.fmt.bufPrint(&buf, "ldy s9, e{d}", .{c.e}));
-        const r = emu.runFrom(testing.allocator, &st, &.{ w.slice()[0], 0x00000017, 0x31308000, 0xA0000000 }, 0, 4);
-        if (c.ok) {
-            _ = try r;
-            try testing.expectEqual(@as(u32, 0x1234), st.s[9]);
-        } else try testing.expectError(emu.RunError.UnknownForm, r);
+        st.e[3] = 0x2E10;
+        st.e[2] = 0x55;
+        st.e[4] = 0x66;
+        st.s[3] = 0x1234;
+        var prog: [6]u32 = undefined;
+        @memcpy(prog[0..3], t.slice()[0..3]);
+        prog[1] |= c.lo;
+        prog[3..6].* = .{ 0x00000017, 0x31308000, 0xA0000000 };
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        try testing.expectEqual(@as(?u32, 0x1234), st.y_mem.get(0x2E10));
+        try testing.expectEqual(@as(u32, if (c.dest == 2) 0x2E11 else 0x55), st.e[2]);
+        try testing.expectEqual(@as(u32, if (c.dest == 4) 0x2E11 else 0x66), st.e[4]);
     }
+    // through e2 with dest e2: two stores land at e2 and e2 + 1, and ldy reads e2
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    st.e[2] = 0x2E20;
+    st.s[3] = 0x77;
+    const w = try asm_mod.assembleOne("x17.sty e2, #3, #0");
+    var one: [3]u32 = undefined;
+    @memcpy(&one, w.slice()[0..3]);
+    one[1] |= 1;
+    const l = try asm_mod.assembleOne("ldy s9, e2");
+    _ = try emu.runFrom(testing.allocator, &st, &.{ one[0], one[1], one[2], one[0], one[1], one[2], l.slice()[0], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(?u32, 0x77), st.y_mem.get(0x2E20));
+    try testing.expectEqual(@as(?u32, 0x77), st.y_mem.get(0x2E21));
+    try testing.expectEqual(@as(u32, 0x2E22), st.e[2]);
 }
 
 test "x19alu sets p<w2[17:14]> under w3[23:20] = 0xE (647)" {

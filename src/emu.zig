@@ -1394,7 +1394,6 @@ fn execPar(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     state.x_mem.put(gpa, state.a[xa], xv) catch return RunError.OutOfMemory;
     if ((head >> 9) & 1 == 0) return;
     if (k < 16) return RunError.UnknownForm;
-    if ((head >> 5) & 0xF == 2) return RunError.UnknownForm; // ldy's e2 junk (fact 650)
     const yv: u32 = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
     state.s[k - 16] = yv;
     if (dest_r != 0) state.r[dest_r] = yv;
@@ -3815,12 +3814,18 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         0 => state.yd & 0xFFFF,
         else => null,
     };
+    // e<2*S1[2:0] + h[31]> <- AGU10[S1[10:7]](x = e<k>, y = R<h[30:27]>, i = #h[26:11]), the
+    // same value mux 7 gives R, written after the store (fact 658, 429).
+    const ec_dest: u32 = ((s1 & 7) << 1) | (h >> 31);
+    const k: u32 = (s1 >> 15) & 0xF;
+    const e_post: u32 = if (ec_dest == 0) 0 else try agu10ImmEval((s1 >> 7) & 0xF, state.e[k], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF);
     const v: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
-    state.y_mem.put(gpa, state.e[(s1 >> 15) & 0xF], v) catch return RunError.OutOfMemory;
+    state.y_mem.put(gpa, state.e[k], v) catch return RunError.OutOfMemory;
     if (r_val) |r| {
         const dest: u32 = (s1 >> 11) & 0xF;
         if (dest != 0) state.r[dest] = r;
     }
+    if (ec_dest != 0) state.e[ec_dest] = e_post;
 }
 
 /// (S1 class 100, S2 class 100) with S2[3:0] = 10 (fact 273):
@@ -5322,9 +5327,6 @@ fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         return;
     }
     const dest_s: u32 = dest_k - 16;
-    // Through e2 the load returns a word unrelated to Y:[e2], different run to run, while
-    // stores through e2 land (fact 650): refused.
-    if (src_e == 2) return RunError.UnknownForm;
     const addr: u32 = try yAddrE(state, src_e);
     const raw: u32 = (state.getY(addr) orelse 0) & 0xFFFF;
     // Sign-extends the 16-bit word (fact 409, own-ldysx).

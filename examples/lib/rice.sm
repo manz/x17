@@ -93,7 +93,7 @@ done:
 ; rice_slots(base) sets up; the caller fills them before the loop:
 ;
 ;   e1  Y:base+0  mean hi    the mean mb = hi * 2^15 + lo, lo in [0, 2^15)
-;   e12 Y:base+1  mean lo (not e2: ldy through e2 reads junk, fact 650)
+;   e12 Y:base+1  mean lo
 ;   e3  Y:base+2  zmode
 ;   e4  Y:base+3  samples left
 ;   e7  Y:base+4  pb (<= 127)

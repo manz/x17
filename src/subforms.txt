@@ -711,8 +711,10 @@ x17.ms     3   0x00000017   0x00000000   0xA0000000
 # x17.ms.stop (was x17.mswedge): x17.ms with S1[22:20] = 010, via the generic `.stop` suffix
 # (isa.stopBase; fact 457, 465, 478).
 
-# x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275).
-x17.sty    3   0x00000017   0x00000109   0x60003800
+# x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275). Also e<2*S1[2:0] + h[31]> <-
+# AGU10[S1[10:7]](x = e<k>, y = R<h[30:27]>, i) after the store (fact 658); the template clears
+# S1[2:0] and h[31].
+x17.sty    3   0x00000017   0x00000108   0x60003800
 
 # x17.styr: the x17sty row's R write, S2[3:1] = 1, S1[27] = 1, S2[12:11] = 10 (fact 439):
 # R<S1[14:11]> <- s<S2[28:25]> << S1[26:23] (X17LD_OP row 0, h[10:5] = 0).
