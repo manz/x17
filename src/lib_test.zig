@@ -6777,3 +6777,22 @@ test "x18 class 011: w3[3] clears the R dest; the load mux's 000 gives 0 (683)" 
         try testing.expectEqual(c.r1, st.r[1]);
     }
 }
+
+test "x18 class 010 Q23 multiply: w3[0] = 1 rounds, 0 truncates (684)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const q = try asm_mod.assembleOne("x18.q23 s3, s1, s2, #4");
+    for ([_]struct { b: u32, rnd: u32, want: u32 }{
+        .{ .b = 8141, .rnd = 1, .want = 0x10 }, // 15.9
+        .{ .b = 8141, .rnd = 0, .want = 0xF },
+        .{ .b = 6292, .rnd = 1, .want = 0xC }, // 12.29
+        .{ .b = 6292, .rnd = 0, .want = 0xC },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = 0x4000;
+        st.s[2] = c.b;
+        const w3 = (q.slice()[3] & ~@as(u32, 1)) | c.rnd;
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ q.slice()[0], q.slice()[1], q.slice()[2], w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c.want, st.s[3]);
+    }
+}

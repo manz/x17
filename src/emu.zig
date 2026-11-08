@@ -2295,8 +2295,10 @@ fn execX18Q23(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const av: u64 = state.s[a_s] & M24;
     const bv: u64 = state.s[b_s] & M24;
     const prod: u64 = av * bv;
+    // w3[0] = 1 rounds to nearest, 0 truncates (684).
+    const rnd = bundle[3] & 1 == 1;
     const v: u32 = switch (mode) {
-        4 => @truncate(@as(u64, @intCast(roundShr(@intCast(prod), 23))) & M24), // P: rounded
+        4 => @truncate((if (rnd) @as(u64, @intCast(roundShr(@intCast(prod), 23))) else prod >> 23) & M24),
         else => return RunError.UnknownForm,
     };
     if (dest_s != 0) state.s[dest_s] = v;

@@ -1137,7 +1137,7 @@ Emulator:
 > x18.q23: 4-syllable low5 0x18 w3 class 010 (fact 170 / own-x18q23).
 > Scalar multiply with mode in w2[30:28]:
 >   s<w2[15:12]> <- mode(round(s<w2[19:16]> * s<w2[23:20]> / 2^23))
-> Only mode 4 (P, rounded) measured.
+> Only mode 4 (P) measured; w3[0] = 1 rounds, 0 truncates (fact 684).
 
 ### `x18.mpy`
 
