@@ -4518,7 +4518,7 @@ test "the Y read forms that set yd (fact 571)" {
     }
 }
 
-test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 576)" {
+test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 578)" {
     const gpa = testing.allocator;
     for ([_]struct { ctl: u32, w1: u32, w2: u32 = 0, w4: u32 = 0, off: ?i32 }{
         .{ .ctl = 3, .w1 = 0xFFD80000, .w2 = 1, .off = -10 }, // the measured q - 10
@@ -4526,6 +4526,7 @@ test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 576)" {
         .{ .ctl = 1, .w1 = 0x0C << 18, .off = 12 },
         .{ .ctl = 0xE, .w1 = (1 << 26) | (4 << 18), .off = 260 }, // +256 per w1[26]
         .{ .ctl = 0x17, .w1 = 0x3FFF << 18, .w2 = 1, .off = -1 },
+        .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 1 << 28, .off = null }, // hidden state: OPEN
         .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 0xA << 28, .off = null },
         .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 2 << 28, .off = null }, // state-dependent
     }) |c| {
@@ -4628,47 +4629,4 @@ test "x19aagu's other slots (fact 271, 335, 341, 342)" {
         defer o.deinit(gpa);
         try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x00000019, w1, 0x00000000, 0x40248008, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
     }
-}
-
-test "x00 jump condition 1 follows a write to p1 in this program (fact 577)" {
-    const gpa = testing.allocator;
-    const jmp = [_]u32{ 0, 0x0C << 18, 0, 3, 1 << 28, 0, 0 };
-    // Fresh state: not taken, even with p1 preset to 1.
-    var f = emu.State{};
-    defer f.deinit(gpa);
-    f.p[1] = 1;
-    try emu.executeBundle(gpa, &f, &jmp);
-    try testing.expectEqual(@as(?i32, null), f.pending_jmp_offset);
-    // After a measured p1 write (plog / ptst), taken whatever the value.
-    for ([_]u16{ 2, 2 | 1 << 10 }) |w| {
-        var t = emu.State{};
-        defer t.deinit(gpa);
-        t.p_written = w;
-        try emu.executeBundle(gpa, &t, &jmp);
-        try testing.expectEqual(@as(?i32, 12), t.pending_jmp_offset);
-    }
-    // A write to p10 alone does not enable it; a p1 write by an unmeasured form is OPEN.
-    var q = emu.State{};
-    defer q.deinit(gpa);
-    q.p_written = 1 << 10;
-    try emu.executeBundle(gpa, &q, &jmp);
-    try testing.expectEqual(@as(?i32, null), q.pending_jmp_offset);
-    var o = emu.State{};
-    defer o.deinit(gpa);
-    o.p_written_open = 2;
-    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &o, &jmp));
-    // plog and ptst into p1 mark it.
-    for ([_]u32{ 0x000809CB, 0x4400016D }) |head| {
-        var m = emu.State{};
-        defer m.deinit(gpa);
-        try emu.executeBundle(gpa, &m, &.{head});
-        try testing.expectEqual(@as(u16, 2), m.p_written);
-    }
-    // A program start clears it.
-    var r = emu.State{};
-    defer r.deinit(gpa);
-    r.p_written = 2;
-    r.p_written_open = 2;
-    _ = try emu.runFrom(gpa, &r, &.{ 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
-    try testing.expectEqual(@as(u16, 0), r.p_written | r.p_written_open);
 }

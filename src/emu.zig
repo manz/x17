@@ -47,10 +47,6 @@ pub const State = struct {
     /// Written by ptst / plog; consumed by psel / jmp / bcc.  Survives
     /// across bundles per fact.
     p: [16]u8 = @splat(0),
-    /// p registers written since the program started (fact 577: jump condition 1 reads
-    /// p1's), by plog / ptst.  `p_written_open` marks writes by forms not measured to count.
-    p_written: u16 = 0,
-    p_written_open: u16 = 0,
     /// Y data memory, keyed by address.  Sparse: only addresses the program
     /// writes are present.  Caller inspects via `getY`.
     y_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
@@ -431,10 +427,7 @@ fn execPc14(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
         if (src == 3) return RunError.UnknownForm;
         state.s[s_dest] = if (src == 0) @intFromBool(bit == 0) else (h >> 5) & 0xFFFF;
     }
-    if (p_dest != 0) {
-        state.p[p_dest] = bit;
-        state.p_written_open |= @as(u16, 1) << @intCast(p_dest);
-    }
+    if (p_dest != 0) state.p[p_dest] = bit;
 }
 
 /// A class-011 pc14's p write is measured only for group 0 code 0, which sets it (487: the
@@ -1114,17 +1107,12 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const target: u32 = (w1 >> 18) & 0xFF;
     switch (ctl) {
         // q + sx15({w2[0], w1[31:18]}), two delay slots, no link (575, retracting 572-574).
-        // Condition w4[31:28] (576, 577): 0 is always taken; 1 is taken iff p1 was written
-        // since the program started, whatever the value.  The others are OPEN and refused.
+        // Condition w4[31:28] (578, retracting 576/577): 0 is taken in every state seen; the
+        // others read hidden state earlier runs change, not p1..p15, so they are refused.
         1, 3, 0xE, 0x11, 0x13, 0x16, 0x17 => {
-            const taken: bool = switch (bundle[4] >> 28) {
-                0 => true,
-                1 => state.p_written & 2 != 0 or
-                    if (state.p_written_open & 2 != 0) return RunError.UnknownForm else false,
-                else => return RunError.UnknownForm,
-            };
+            if (bundle[4] >> 28 != 0) return RunError.UnknownForm;
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
-            if (taken) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
+            state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
         4 => state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc)),
         0, 2, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
@@ -1987,7 +1975,6 @@ fn x18PWrite(state: *State, bundle: []const u32) RunError!void {
         return RunError.UnknownForm;
     };
     state.p[dest] = v;
-    state.p_written_open |= @as(u16, 1) << @intCast(dest);
 }
 
 fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -2115,10 +2102,7 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_s != 0) state.s[dest_s] = v;
     if (dest_r != 0) state.r[dest_r] = v & 0xFFFF;
-    if (((h >> 25) & 0xF) == 11) {
-        state.p[(w2 >> 14) & 0xF] = if (sx16(v) < 0) 1 else 0;
-        state.p_written_open |= @as(u16, 1) << @intCast((w2 >> 14) & 0xF);
-    }
+    if (((h >> 25) & 0xF) == 11) state.p[(w2 >> 14) & 0xF] = if (sx16(v) < 0) 1 else 0;
 }
 
 /// Class 111 (fact 174, 202, 203, 206).  40-bit MAC: P =
@@ -2395,10 +2379,7 @@ fn execYtst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     const addr: u32 = state.e[src_e];
     const yv: u32 = state.getY(addr) orelse 0;
     const v: u8 = if ((yv & 1) == 0) 1 else 0;
-    if (p_dest != 0) {
-        state.p[p_dest] = v;
-        state.p_written_open |= @as(u16, 1) << @intCast(p_dest);
-    }
+    if (p_dest != 0) state.p[p_dest] = v;
 }
 
 fn execXst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -4213,8 +4194,6 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
     var i: usize = start;
     var bundles_run: usize = 0;
     var shadow: ?u8 = null;
-    state.p_written = 0;
-    state.p_written_open = 0;
     // Inside x17.ms 010's shadow a Y store is lost or misaddressed (fact 465): refused.
     var wedge_shadow = false;
     // The gap since the latest halt-deadline armer (fact 98, 477, 484), null when none ran.
@@ -4427,10 +4406,7 @@ fn execPtst(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         7 => b == 0,
     };
     const v: u8 = @intFromBool(t);
-    if (p_dest != 0) {
-        state.p[p_dest] = v;
-        state.p_written |= @as(u16, 1) << @intCast(p_dest);
-    }
+    if (p_dest != 0) state.p[p_dest] = v;
 }
 
 fn execPlog(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
@@ -4455,10 +4431,7 @@ fn execPlog(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         9 => 0,
         else => 1,
     };
-    if (dest != 0) {
-        state.p[dest] = v;
-        state.p_written |= @as(u16, 1) << @intCast(dest);
-    }
+    if (dest != 0) state.p[dest] = v;
 }
 
 /// dld, low5 0x09 with [31] = 0 (fact 524): s<[25:22]> <- X:[A<[19:15]>] when [20] = 1;
@@ -4665,7 +4638,6 @@ fn execRagu0c(state: *State, head: u32) RunError!void {
         else => return RunError.UnknownForm,
     };
     state.p[slot] = @intFromBool(t);
-    state.p_written_open |= @as(u16, 1) << @intCast(slot);
 }
 
 /// agu_xr (fact 338, 385): the x19mac A slot and the 0x0C R form.

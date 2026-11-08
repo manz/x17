@@ -182,8 +182,8 @@ unknown.
   counted in words or cycles is undefined.
 - **Jumps:** relative on a predicate (§83, §94), or absolute (mode 4, §310). Two delay slots.
   The wide-bundle jump's offset is sx15({w2[0], w1[31:18]}) from q (§575); its condition
-  field w4[31:28] reacts to writes of p<c>, not their values (§576): 0 always jumps, 1 jumps
-  once p1 has been written by plog or ptst since the program started (§577); the rest are undefined.
+  field w4[31:28] is defined only at 0, always taken; the other codes read hidden state that
+  earlier runs change, not p1..p15 (§578).
 - **Loops:** "repeat this bundle while p" (§263, §452). DO-style hardware loops were disproved
   (§71, §449).
 - **Calls and returns:** undefined (§230, §310).
