@@ -180,7 +180,7 @@ x18.q23    4   0x00000018   0x20A40001   0x00000000   0x54510001
 # x18.mpy: 4-syllable low5 0x18 w3 class 110 with w2 non-zero (fact
 # 167 / own-x18mpy).  Integer multiply with split low/high dest:
 #   P = s<w2[4:1]> * s<w2[8:5]>
-#   s<w2[27:24]> <- P & 0xFFFF   (low)
+#   s<w2[27:24]> <- P mod 2^24   (low, fact 663; 167 read [15:0])
 #   s<w2[12:9]>  <- P >> 24       (high)
 x18.mpy    4   0x00000018   0x00000000   0x00000000   0xC1500001
 
