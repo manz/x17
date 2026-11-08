@@ -3273,7 +3273,13 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const s1 = bundle[1];
     const alu_dest: u32 = (s1 >> 25) & 0xF;
-    const alu_val: u32 = if (alu_dest == 0) 0 else try x16Agu100Alu(state, h, s1, bundle[2]);
+    const rd: u32 = (s1 >> 11) & 0xF;
+    const r_from_cell = rd != 0 and (s1 >> 24) & 1 == 0;
+    // 589: the cell runs without an s destination too, feeding R; measured only with
+    // head[30] = 0 and no extra S2 bits.
+    if (alu_dest == 0 and r_from_cell and ((h >> 30) & 1 == 1 or bundle[2] & 0x01FFFFF8 != 0))
+        return RunError.UnknownForm;
+    const alu_val: u32 = if (alu_dest == 0 and !r_from_cell) 0 else try x16Agu100Alu(state, h, s1, bundle[2]);
     const f: u32 = (s1 >> 7) & 0xF;
     const x: u32 = state.e[(s1 >> 15) & 0xF];
     const v: u32 = switch (f) {
@@ -3281,10 +3287,8 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
         5 => 0xFFFF,
         else => if (X16_FN100[f]) |d| (x +% @as(u32, @bitCast(@as(i32, d)))) & 0xFFFF else 0,
     };
-    // R<S1[14:11]> muxes on S1[24] (558): 1 the head's #imm, 0 the cell's value (OPEN with no
-    // cell).
-    const rd: u32 = (s1 >> 11) & 0xF;
-    const rv: u32 = if ((s1 >> 24) & 1 == 1) (h >> 5) & 0xFFFF else if (rd != 0 and alu_dest == 0) return RunError.UnknownForm else alu_val & 0xFFFF;
+    // R<S1[14:11]> muxes on S1[24] (558): 1 the head's #imm, 0 the cell's value (589).
+    const rv: u32 = if ((s1 >> 24) & 1 == 1) (h >> 5) & 0xFFFF else alu_val & 0xFFFF;
     const hd: u32 = (h >> 21) & 0xF;
     if (hd != 0) state.s[hd] = v;
     if (rd != 0) state.r[rd] = rv;
@@ -3293,8 +3297,8 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
 
 /// The class-100 row's s ALU (fact 517, 518), gated on S2 & 0x01FFFFF8 = 0 alone:
 /// s<S1[28:25]> <- cell (head[29:27], S2[2:0]) of (a = s<S2[28:25]>, n = S1[31:29]), 24-bit
-/// wrapping.  Mux 0 even codes but 6 give a << n, odd but 7 (a & 0xF00) << n; mux 1 even codes
-/// a >> n (arithmetic); mux 2 a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN.  Outside
+/// wrapping.  Mux 0 even codes but 6 give a << n, odd but 7 a << (n + 8) (589); mux 1 even codes
+/// a >> n (arithmetic, rounded half up, 589); mux 2 a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN.  Outside
 /// the gate X16_EXTRA (583) applies.
 const X16Op = enum { b, add, sub, add1, a, inc, dec, asr8, xor, xnor, or_, and_, xor8, xnor8, or8, and8, rsh_rnd, lsh, inc_lsh, rsh, nrsh, nlsh, add_rsh, sub_rsh, inc_rsh, rsh_rnd_pos, add_asr8, sub_asr8, inc_asr8, rsub, neg, neg_rsh_rnd, not_b, zero };
 
@@ -3472,8 +3476,9 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
     const n: u5 = @intCast(s1 >> 29);
     const code: u32 = s2 & 7;
     const r: u32 = switch ((h >> 27) & 7) {
-        0 => if (code == 6 or code == 7) return RunError.UnknownForm else if (code & 1 == 0) a << n else (a & 0xF00) << n,
-        1 => if (code & 1 == 0) @bitCast(@as(i32, @intCast(sx24(a))) >> n) else return RunError.UnknownForm,
+        // 589: odd cells are a << (n + 8); mx 1's >> rounds half up.
+        0 => if (code == 6 or code == 7) return RunError.UnknownForm else if (code & 1 == 0) a << n else a << (n + 8),
+        1 => if (code & 1 == 0) @truncate(@as(u64, @bitCast(try rshRound(sx24(a), n, false)))) else return RunError.UnknownForm,
         2 => switch (code >> 1) {
             0 => a +% n,
             1 => a -% n,

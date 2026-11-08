@@ -2780,7 +2780,7 @@ test "the 0x16 class-100 row's s ALU: shifts, masked shift, add and subtract by 
     for ([_]struct { s3: u32, mux: u32, code: u32, want: ?u32 }{
         .{ .s3 = 0x101, .mux = 0, .code = 0, .want = 0x8080 },
         .{ .s3 = 0x3303, .mux = 0, .code = 4, .want = 0x3303 << 7 },
-        .{ .s3 = 0x3303, .mux = 0, .code = 1, .want = 0x300 << 7 },
+        .{ .s3 = 0x3303, .mux = 0, .code = 1, .want = 0x818000 }, // 589: a << (n + 8), 24-bit wrap ASSUMED
         .{ .s3 = 0x3303, .mux = 1, .code = 2, .want = 0x3303 >> 7 },
         .{ .s3 = 0x3303, .mux = 2, .code = 1, .want = 0x3303 + 7 },
         .{ .s3 = 0x3303, .mux = 2, .code = 2, .want = 0x3303 - 7 },
@@ -4251,17 +4251,25 @@ test "own-x19al5 and own-x19aa5: x19alu and x19aagu with w2 class 001" {
 
 test "own-b16R: the class-100 row's R write muxes on S1[24]" {
     // fact 558: s5 = 0x123; 0002a816 26005800 8a000000 gives R11 = 0x246 (the cell,
-    // s5 << 1); with S1[24] set, R11 = #head[20:5] = 0x1540.  S1[24] = 0 with no cell is OPEN.
+    // s5 << 1); with S1[24] set, R11 = #head[20:5] = 0x1540.  589: with no s destination the
+    // cell still runs and feeds R (head[30] = 0, no extra S2 bits only).
     const gpa = testing.allocator;
-    for ([_]struct { s1: u32, want: ?u32 }{
+    for ([_]struct { h: u32 = 0x0002a816, s1: u32, s2: u32 = 0x8a000000, want: ?u32 }{
         .{ .s1 = 0x26005800, .want = 0x246 },
         .{ .s1 = 0x27005800, .want = 0x1540 },
-        .{ .s1 = 0x20005800, .want = null },
+        .{ .s1 = 0x20005800, .want = 0x246 }, // mx 0 c 0, n = 1
+        .{ .s1 = 0x00005800, .want = 0x123 }, // n = 0
+        .{ .h = 0x0802a816, .s1 = 0x40005800, .want = 0x49 }, // mx 1 c 0, n = 2: rounded
+        .{ .h = 0x1002a816, .s1 = 0x60005800, .want = 0x126 }, // mx 2 c 0, n = 3
+        .{ .h = 0x1002a816, .s1 = 0x60005800, .s2 = 0x8a000002, .want = 0x120 }, // mx 2 c 2
+        .{ .s1 = 0x20005800, .s2 = 0x8a000001, .want = 0x4600 }, // mx 0 c 1: a << (n + 8)
+        .{ .h = 0x4002a816, .s1 = 0x20005800, .want = null }, // head[30] = 1: OPEN
+        .{ .s1 = 0x20005800, .s2 = 0x8a000030, .want = null }, // extra S2 bits: OPEN
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
         state.s[5] = 0x123;
-        const r = emu.runFrom(gpa, &state, &.{ 0x0002a816, c.s1, 0x8a000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.s1, c.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         if (c.want) |v| {
             _ = try r;
             try testing.expectEqual(v, state.r[11]);

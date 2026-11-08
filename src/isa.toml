@@ -497,7 +497,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 #   s<head[24:21]> <- FN[S1 10:7](x = e<S1[18:15]>), table in disasm AGU16; R<S1[14:11]> <- head [20:5]
 #   when != 0; S1 [19], [21], [22] flipped wedge.  own-b16agu
 #   517 corrects "s<S1[28:25]> <- 0": with head[31] = 1 and S2 & 0x01FFFFF8 = 0 it is an s ALU, cell (head[29:27], S2[2:0])
-#   of (a = s<S2[28:25]>, n = S1[31:29]): mux 0 even (not 6) a << n, odd (not 7) (a & 0xF00) << n; mux 1 even a >> n;
+#   of (a = s<S2[28:25]>, n = S1[31:29]): mux 0 even (not 6) a << n, odd (not 7) a << (n + 8) (589, top byte ASSUMED); mux 1 even a >> n rounded (589);
 #   mux 2 a+n, a-n, a, a+1 by code pairs; the rest OPEN.  518: the gate is S2 & 0x01FFFFF8 = 0 alone (head[31] = 0 too,
 #   own-b16h31); >> is arithmetic, << and - wrap at 24 bits; outside the gate (580: S2[6] alone likely read s4 = 0), with S2 & 0x01FFFF08 = 0, cell X16_EXTRA[head[30]][head[29:27]][S2[2:0]] of (a = s<S2[28:25]>, b = s<S2[7:4]>) (581-584); signed variable shifts, rounded >> saturating << (582).  n = S1[31:29] != 0 (585, head[30] = 0): mx0 c0 (a+b)>>n, mx5 c0 (a^b)<<n, mx1 c1 (a+n)<<b, mx2 c2 ignores n; else refused.  586, 587: 24-bit operands and results (no 16-bit wrap), b copied raw; rounded >> arithmetic half up, >> 8 arithmetic, truncating >> b logical 24-bit; amounts >= 0x20 or >= 15 on a negative value OPEN.  588: S2[3] extends the cell to S2[3:0]; cells 8-15 per X16_EXTRA_HI (n = 0 only); S2[8] inert only alone at five cells; head[30] = 1 mx0 c2/4/6 with n in {2, 5, 6, 7} run mx2's cell, else the move.  own-b16shl
 # x16alu (0x16 S1 class 000, S2 class 111; fact 116 pass 142): S2[13] = 1 latches xi <- S2[12:8] (xi persists; 0 with S2[13] reads 0x38A?);
