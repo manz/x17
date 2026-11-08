@@ -2805,10 +2805,10 @@ test "the 0x16 class-100 row's s ALU: shifts, masked shift, add and subtract by 
             try testing.expectEqual(v, state.s[5]);
         } else try testing.expectError(error.UnknownForm, r);
     }
-    // 518: own-b16h31 (head[31] = 0 runs the same ALU); S2[6] alone writes 0; other shapes refuse
+    // 518: own-b16h31 (head[31] = 0 runs the same ALU); 580: any S2 bit in 0x01FFFFF8 refuses
     for ([_]struct { h: u32, s2: u32, want: ?u32 }{
         .{ .h = 0x001211d6, .s2 = 0x86000000, .want = 0x8080 },
-        .{ .h = 0x801211d6, .s2 = 0x86000040, .want = 0 },
+        .{ .h = 0x801211d6, .s2 = 0x86000040, .want = null },
         .{ .h = 0x801211d6, .s2 = 0x86000080, .want = null },
     }) |c| {
         var state = emu.State{};
