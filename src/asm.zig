@@ -1194,7 +1194,7 @@ const Collision = struct {
 fn collides(form: []const u8, operand: []const u8, v: u32) ?Collision {
     // x17.sty needs S1 class != 0 (fact 275); S1[31:29] is src_lo. Silicon has run
     // sources s1, s9, s5 and s3 only; class 000 there is unmeasured.
-    if (std.mem.eql(u8, form, "x17.sty") and std.mem.eql(u8, operand, "src_lo") and v & 7 == 0)
+    if ((std.mem.eql(u8, form, "x17.sty") or std.mem.eql(u8, form, "x17.styi")) and std.mem.eql(u8, operand, "src_lo") and v & 7 == 0)
         return .{
             .msg = "x17.sty from s0 or s8 makes S1 class 000: x17 decodes that as x17.ld, and silicon has never run it",
             .hint = "copy the value to a register whose index is not a multiple of 8 first (s1, s3, s5, s9 are measured)",
@@ -1266,6 +1266,19 @@ pub const FileOptions = struct {
     path: []const u8 = "",
     /// Reads included files; null refuses `.include`.
     loader: ?Loader = null,
+    /// When set, gets one entry per emitted bundle: where it came from (for profiles).
+    sites: ?*std.ArrayList(Site) = null,
+};
+
+/// The source of one emitted bundle: its word offset, the line that produced it (inside a
+/// macro body, that line), and the macro call it was expanded from, if any.
+pub const Site = struct {
+    pc: u32,
+    file: Fixed(96) = .{},
+    line: usize,
+    text: Fixed(96) = .{},
+    call_file: Fixed(96) = .{},
+    call_line: usize = 0,
 };
 
 pub const FileResult = union(enum) { ok: []u32, err: FileError };
@@ -1308,7 +1321,19 @@ pub fn assembleFileWith(gpa: std.mem.Allocator, source: []const u8, opts: FileOp
                 },
                 .none => {},
                 .bundle => |b| {
-                    if (!sizing) try list.appendSlice(gpa, b.slice());
+                    if (!sizing) {
+                        try list.appendSlice(gpa, b.slice());
+                        if (opts.sites) |out| {
+                            var site: Site = .{ .pc = pc, .line = l.site.line };
+                            site.file.set(l.site.file);
+                            site.text.set(std.mem.trim(u8, l.text, " \t"));
+                            if (l.call) |c| {
+                                site.call_file.set(c.site.file);
+                                site.call_line = c.site.line;
+                            }
+                            try out.append(gpa, site);
+                        }
+                    }
                     pc += b.len;
                 },
             }

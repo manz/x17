@@ -318,6 +318,7 @@ const run_params = clap.parseParamsComptime(
     \\-l, --lane <usize>       which lane to run (0..3), default 0
     \\    --v <usize>          initial value for this lane's V register
     \\    --steps <usize>      stop after N bundles and print the state there (word = pc)
+    \\    --profile <usize>    print the N bundles run most often, with their words and text
     \\<str>                    source file path (.sm)
     \\
 );
@@ -328,7 +329,7 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     defer parsed.deinit();
 
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 run [--lane N] [--v K] [--steps N] <file.sm>\n");
+        try out.writeAll("usage: x17 run [--lane N] [--v K] [--steps N] [--profile N] <file.sm>\n");
         return;
     }
     if (parsed.positionals[0] == null) {
@@ -342,7 +343,13 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     const src = try readSource(gpa, path);
     defer gpa.free(src);
 
-    const result = try assemblePath(gpa, src, path);
+    var sites: std.ArrayList(asm_mod.Site) = .empty;
+    defer sites.deinit(gpa);
+    const result = try asm_mod.assembleFileWith(gpa, src, .{
+        .path = path,
+        .loader = .{ .load = loadInclude },
+        .sites = if (parsed.args.profile != null) &sites else null,
+    });
     const words = switch (result) {
         .ok => |w| w,
         .err => |fe| {
@@ -356,6 +363,10 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     defer state.deinit(gpa);
     state.cur_lane = lane & 0x3;
     state.v[lane & 0x3] = v_init;
+    const profile: ?[]u64 = if (parsed.args.profile != null) try gpa.alloc(u64, words.len) else null;
+    defer if (profile) |p| gpa.free(p);
+    if (profile) |p| @memset(p, 0);
+    state.profile = profile;
 
     // Codec programs loop: allow a long run (a runaway still stops at the cap).  --steps stops
     // early on purpose, to compare against a probe at that point on silicon.
@@ -372,12 +383,57 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
         bundles, lane, lane, v_init,
     });
 
+    if (profile) |p| try printProfile(gpa, out, words, sites.items, p, parsed.args.profile.?);
+
     try printBank(out, "s regs", "s", &state.s);
     try printBank(out, "e regs", "e", &state.e);
     try printBank(out, "R regs", "R", &state.r);
     try printBank(out, "A regs", "A", &state.a);
     try printMemory(gpa, out, "Y mem", "Y", &state.y_mem);
     try printMemory(gpa, out, "X mem", "X", &state.x_mem);
+}
+
+/// The `top` bundles run most often: count, share of the run, word index, disassembly. Nops
+/// (`alu s0, s0, s0`) show as such, so unfilled delay slots stand out.
+fn printProfile(gpa: std.mem.Allocator, out: *Writer, words: []const u32, sites: []const asm_mod.Site, profile: []const u64, n_top: usize) !void {
+    var idx: std.ArrayList(usize) = .empty;
+    defer idx.deinit(gpa);
+    var total: u64 = 0;
+    for (profile, 0..) |c, i| if (c != 0) {
+        total += c;
+        try idx.append(gpa, i);
+    };
+    const Ctx = struct {
+        p: []const u64,
+        fn more(ctx: @This(), a: usize, b: usize) bool {
+            return ctx.p[a] > ctx.p[b] or (ctx.p[a] == ctx.p[b] and a < b);
+        }
+    };
+    std.mem.sort(usize, idx.items, Ctx{ .p = profile }, Ctx.more);
+    try out.print("profile: {d} bundles\n", .{total});
+    for (idx.items[0..@min(n_top, idx.items.len)]) |i| {
+        const len = emu.bundleLen(words[i]) orelse 1;
+        var buf: [256]u8 = undefined;
+        const n = disasm.disasmBundle(&buf, words[i..@min(words.len, i + len)]) catch 0;
+        const pct = 100.0 * @as(f64, @floatFromInt(profile[i])) / @as(f64, @floatFromInt(@max(total, 1)));
+        try out.print("  {d:>9} {d:>5.1}%  @{d:<5} {s}\n", .{ profile[i], pct, i, if (n == 0) "?" else buf[0..n] });
+        if (siteAt(sites, i)) |st| {
+            try out.print("{s:>26}{s}:{d}", .{ "", std.fs.path.basename(st.file.get()), st.line });
+            if (st.call_line != 0) try out.print(" (from {s}:{d})", .{ std.fs.path.basename(st.call_file.get()), st.call_line });
+            try out.print("  {s}\n", .{st.text.get()});
+        }
+    }
+    try out.writeAll("\n");
+}
+
+fn siteAt(sites: []const asm_mod.Site, pc: usize) ?*const asm_mod.Site {
+    var lo: usize = 0;
+    var hi: usize = sites.len;
+    while (lo < hi) {
+        const mid = (lo + hi) / 2;
+        if (sites[mid].pc < pc) lo = mid + 1 else hi = mid;
+    }
+    return if (lo < sites.len and sites[lo].pc == pc) &sites[lo] else null;
 }
 
 fn printBank(out: *Writer, label: []const u8, prefix: []const u8, regs: []const u32) !void {
