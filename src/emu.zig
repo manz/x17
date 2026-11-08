@@ -753,7 +753,7 @@ fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
 
 /// x03 jumps (394, 679, 680, 682): w2[28] = 1 is jr q + sext(w1[28:18]) on p<w5[17:14]>, if set
 /// with w2[27] = 1, if clear with w2[27] = 0; w2[31:29] is ignored; p0 reads 1, so k = 0 with
-/// w2[27] = 1 always jumps.  Two delay slots, both run on every pass of a loop (680).
+/// w2[27] = 1 always jumps.  w2[28:27] = 01 is unconditional (329).  Two delay slots, both run on every pass of a loop (680).
 /// With w2[28] = 1 the e counter e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1 (349) also writes
 /// p3 <- (e_new > 0, signed 16) after the jump has read p, so a jump on p3 sees it one pass late
 /// (675): an offset-0 jump on p3 with e = N - 1 and p3 = 1 runs the bundle and its slots N times.
@@ -766,17 +766,21 @@ fn x03CondJump(state: *State, bundle: []const u32) RunError!void {
     const mode: u32 = (bundle[4] >> 11) & 7;
     const off11: u32 = (bundle[1] >> 18) & 0x7FF;
     const off: i32 = @as(i32, @bitCast(off11 << 21)) >> 21;
-    // w2[28] = 0 with w2[27] = 1: 329's unconditional reading was k = 0 (682); OPEN.
-    if (!cond) return RunError.UnknownForm;
+    if (!cond) {
+        // w2[28:27] = 01: unconditional, mode 0 and the tap row (329, 679, 682); a jump to
+        // itself runs away.
+        if (off == 0 or (mode != 0 and mode != 5)) return RunError.UnknownForm;
+        state.pending_jmp_offset = off;
+        return;
+    }
     const k: u32 = (bundle[5] >> 14) & 0xF;
     // p0 reads 1 here whatever it holds (682).
     const p_set = k == 0 or state.p[k] != 0;
     const taken = p_set == sense;
     if (mode == 5) {
-        // The tap row (672) jumps like mode 0 with w2[27] = 1 and a nonzero offset; its
-        // counter's p3 write is not seen, so a jump to itself never ends (682).  w2[27] = 0
-        // on this row is OPEN.
-        if (!sense or off == 0) return RunError.UnknownForm;
+        // The tap row (672) jumps like mode 0, both senses; its counter's p3 write is not
+        // seen, so a jump to itself never ends (682).
+        if (off == 0) return RunError.UnknownForm;
         if (taken) state.pending_jmp_offset = off;
         return;
     }

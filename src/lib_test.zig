@@ -6728,6 +6728,12 @@ test "x03 jumps: p0 reads 1; the tap row jumps on p3 with a nonzero offset, refu
         .{ .w = tap, .p = 1, .k = 3, .jumps = true },
         .{ .w = tap, .p = 0, .k = 3, .jumps = false },
         .{ .w = st0, .p = 0, .k = 0, .jumps = true },
+        // w2[28:27] = 10 on the tap row: jump if clear; 01: unconditional
+        .{ .w = .{ tap[0], tap[1], tap[2] & ~@as(u32, 1 << 27), tap[3], tap[4], tap[5] }, .p = 0, .k = 3, .jumps = true },
+        .{ .w = .{ tap[0], tap[1], tap[2] & ~@as(u32, 1 << 27), tap[3], tap[4], tap[5] }, .p = 1, .k = 3, .jumps = false },
+        .{ .w = .{ tap[0], tap[1], tap[2] & ~@as(u32, 1 << 28), tap[3], tap[4], tap[5] }, .p = 1, .k = 3, .jumps = true },
+        .{ .w = .{ tap[0], tap[1], tap[2] & ~@as(u32, 1 << 28), tap[3], tap[4], tap[5] }, .p = 0, .k = 3, .jumps = true },
+        .{ .w = .{ st0[0], st0[1], st0[2] & ~@as(u32, 1 << 28), st0[3], st0[4], st0[5] | (3 << 14) }, .p = 0, .k = 3, .jumps = true },
     }) |c| {
         var st = emu.State{};
         defer st.deinit(testing.allocator);
