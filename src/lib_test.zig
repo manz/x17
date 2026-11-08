@@ -5689,3 +5689,46 @@ test "jr2's offset field is wider than 3 bits (fact 303; derived)" {
     try testing.expectEqual(@as(u32, 0x444), state.s[2]);
     try testing.expectEqual(@as(u32, 0), state.s[5]);
 }
+
+test "class aliases: x17agu2 S1 111, x17sub any S1, agu12 / agu13 S 011 (fact 618-621)" {
+    const gpa = testing.allocator;
+    const Case = struct { prog: []const u32, cls_word: usize, classes: []const u32 };
+    const cases = [_]Case{
+        // own-x17rsub: s5 <- 0xFFFCD7 from s3 = 0x333
+        .{ .prog = &.{ 0x00000017, 0x04a85a00, 0x26000000, 0x00000017, 0x31308000, 0xA0000000 }, .cls_word = 1, .classes = &.{ 0, 1, 2, 3, 4, 5, 6, 7 } },
+        // own-x17agu2: s5 = e2 = 0x702 from R3 = 0x700
+        .{ .prog = &.{ 0x18001017, 0x28001d01, 0x00001400, 0x00000017, 0x31308000, 0xA0000000 }, .cls_word = 1, .classes = &.{ 1, 3, 5, 7 } },
+        // own-x13agu: e9 = 0x350, R5 = 0x123
+        .{ .prog = &.{ 0x00006a13, 0x2a6cf300, 0x00000017, 0x31308000, 0xA0000000 }, .cls_word = 1, .classes = &.{ 1, 3 } },
+        // agu12 2bc000b2: s2 <- e5
+        .{ .prog = &.{ 0x2bc000b2, 0x72080001, 0x00000017, 0x31308000, 0xA0000000 }, .cls_word = 1, .classes = &.{3} },
+    };
+    for (cases) |c| {
+        var base: ?emu.State = null;
+        defer if (base) |*b| b.deinit(gpa);
+        for (c.classes) |cls| {
+            var state = emu.State{};
+            state.s[3] = 0x333;
+            state.r[3] = 0x700;
+            state.e[3] = 0x100;
+            state.r[7] = 0x23;
+            state.e[5] = 0x0345;
+            var prog: [8]u32 = undefined;
+            @memcpy(prog[0..c.prog.len], c.prog);
+            prog[c.cls_word] = (prog[c.cls_word] & 0x1FFFFFFF) | cls << 29;
+            _ = try emu.runFrom(gpa, &state, prog[0..c.prog.len], 0, 16);
+            if (base) |b| {
+                try testing.expectEqualSlices(u32, &b.s, &state.s);
+                try testing.expectEqualSlices(u32, &b.e, &state.e);
+                try testing.expectEqualSlices(u32, &b.r, &state.r);
+                state.deinit(gpa);
+            } else base = state;
+        }
+    }
+    // agu12 value check
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    st.e[5] = 0x0BCD;
+    _ = try emu.runFrom(gpa, &st, &.{ 0x2bc000b2, 0x72080001, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x0BCD), st.s[2]);
+}
