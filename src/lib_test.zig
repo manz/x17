@@ -5306,7 +5306,8 @@ test "x03 override 11 over mux 001/010 reads Y:[e] with w5[21], else yd (fact 60
 
 test "x03 product low half is (X op P)[15:0] (fact 603)" {
     const gpa = testing.allocator;
-    // 80000003 00006800 01441485 00000007 00002C90 00041402 (w4 mode 5): s9 <- low, s2 = 3, s4 = 5 (P = 0x1E),
+    // 80000003 00006800 01441485 00000007 00002C90 00041402 (w4 mode 5): s9 <- low; w2[12:9] = 0
+    // here (the measured row's 0xA high dest is OPEN and refuses), s2 = 3, s4 = 5 (P = 0x1E),
     // s<k> = 0x110 k + 1, X = s<w5[12:9]>, mode w1[13:11].
     for ([_]struct { w1: u32 = 0x00006800, k: u32 = 8, want: ?u32 }{
         .{ .want = 0x089F },
@@ -5324,10 +5325,13 @@ test "x03 product low half is (X op P)[15:0] (fact 603)" {
         for (1..16) |i| state.s[i] = 0x110 * @as(u32, @intCast(i)) + 1;
         state.s[2] = 3;
         state.s[4] = 5;
-        const r = emu.runFrom(gpa, &state, &.{ 0x80000003, c.w1, 0x01441485, 0x00000007, 0x00002C90, 0x00040002 | c.k << 9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        const r = emu.runFrom(gpa, &state, &.{ 0x80000003, c.w1, 0x01440085, 0x00000007, 0x00002C90, 0x00040002 | c.k << 9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         if (c.want) |v| {
             _ = try r;
             try testing.expectEqual(v, state.s[9]);
         } else try testing.expectError(error.UnknownForm, r);
     }
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x80000003, 0x00006800, 0x01441485, 0x00000007, 0x00002C90, 0x00041402, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }

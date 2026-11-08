@@ -354,6 +354,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w4_mode == 5) {
             // The product low half runs beside the Xrd path (603), reading before it writes.
             if ((bundle[4] >> 7) & 0xF != 0 and (bundle[5] >> 6) & 1 == 1) return RunError.UnknownForm;
+            // The w2[12:9] high dest is live here too (s10 changed on 603's row), its X index
+            // OPEN (not 254's s<w1[31:29]>): refused rather than left unwritten.
+            if ((bundle[2] >> 9) & 0xF != 0) return RunError.UnknownForm;
             const plo = try x03ProductLow(state, bundle);
             try execX03Xrd(gpa, state, bundle);
             try execX03Agu(gpa, state, bundle);
