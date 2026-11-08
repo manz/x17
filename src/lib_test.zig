@@ -4749,6 +4749,7 @@ test "the 0x16 class-100 s ALU table with head[30] = 1 (fact 584)" {
         }
     }.f;
     _ = gpa;
+    try testing.expectError(error.UnknownForm, run(5, 4, 0x1234, 0xFFFF)); // negative amount: OPEN here
     for ([_][4]u32{ .{ 7, 3, 0x048C, 0x01E1 }, .{ 7, 1, 0x048D, 0x01E2 }, .{ 5, 4, 0x048D, 0x01E2 }, .{ 4, 5, 0x0012, 0x000F } }) |v| {
         try testing.expectEqual(v[2], try run(v[0], v[1], 0x1234, 2));
         try testing.expectEqual(v[3], try run(v[0], v[1], 0x0F0F, 3));

@@ -3296,7 +3296,7 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
 /// wrapping.  Mux 0 even codes but 6 give a << n, odd but 7 (a & 0xF00) << n; mux 1 even codes
 /// a >> n (arithmetic); mux 2 a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN.  Outside
 /// the gate X16_EXTRA (583) applies.
-const X16Op = enum { b, add, sub, add1, a, inc, dec, asr8, xor, xnor, or_, and_, xor8, xnor8, or8, and8, rsh_rnd, lsh, inc_lsh, rsh, nrsh, nlsh, add_rsh, sub_rsh, inc_rsh, zero };
+const X16Op = enum { b, add, sub, add1, a, inc, dec, asr8, xor, xnor, or_, and_, xor8, xnor8, or8, and8, rsh_rnd, lsh, inc_lsh, rsh, nrsh, nlsh, add_rsh, sub_rsh, inc_rsh, rsh_rnd_pos, zero };
 
 /// The class-100 s ALU outside its gate by (head[30], head[29:27], S2[2:0]): fact 583
 /// (head[30] = 0) and 584 (head[30] = 1).
@@ -3315,15 +3315,15 @@ const X16_EXTRA = [2][8][8]X16Op{ .{
     .{ .b, .b, .b, .b, .b, .b, .b, .b },
     .{ .zero, .zero, .zero, .zero, .zero, .zero, .zero, .zero },
     .{ .a, .a, .a, .a, .a, .asr8, .a, .a },
-    .{ .a, .a, .lsh, .lsh, .rsh_rnd, .rsh_rnd, .a, .a },
+    .{ .a, .a, .lsh, .lsh, .rsh_rnd_pos, .rsh_rnd_pos, .a, .a },
     .{ .zero, .zero, .zero, .zero, .zero, .zero, .zero, .zero },
     .{ .add, .add_rsh, .sub, .sub_rsh, .a, .rsh, .inc, .inc_rsh },
 } };
 
 /// One X16_EXTRA cell on sx16 operands, 24-bit result.  Measured with a and b inside 16 bits;
 /// the result's top byte (sign extension here) and b's raw copy are ASSUMED, not measured.
-/// Variable shifts take b signed: a rounded >> with a negative b shifts left, saturating at
-/// 0x7FFFFF (582); other negative amounts and a negative overflow are OPEN.
+/// Variable shifts take b signed: head[30] = 0's rounded >> with a negative b shifts left,
+/// saturating at 0x7FFFFF (582); other negative amounts and a negative overflow are OPEN.
 fn x16Extra(op: X16Op, a_raw: u32, b_raw: u32) RunError!u32 {
     if (a_raw > 0xFFFF or b_raw > 0xFFFF) return RunError.UnknownForm;
     if (op == .b) return b_raw; // 581: d read back as s<S2[7:4]>'s value
@@ -3347,6 +3347,7 @@ fn x16Extra(op: X16Op, a_raw: u32, b_raw: u32) RunError!u32 {
         .or8 => (a | b) << 8,
         .and8 => (a & b) << 8,
         .rsh_rnd => if (b < 0) try satShl(a, -b) else if (b == 0) a else (a + (@as(i64, 1) << @intCast(@min(b - 1, 62)))) >> @intCast(@min(b, 63)),
+        .rsh_rnd_pos => if (b < 0) return RunError.UnknownForm else if (b == 0) a else (a + (@as(i64, 1) << @intCast(@min(b - 1, 62)))) >> @intCast(@min(b, 63)),
         .lsh => if (b < 0) return RunError.UnknownForm else try satShl(a, b),
         .inc_lsh => if (b < 0) return RunError.UnknownForm else try satShl(a + 1, b),
         .rsh => if (b < 0) return RunError.UnknownForm else a >> @intCast(@min(b, 63)),
