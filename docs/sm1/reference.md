@@ -3641,3 +3641,25 @@ Emulator:
 > sL is both the load destination w4[6:3] and the multiplicand w2[4:1]; An is the X read
 > address and the A copy's destination and source; sHi and sLo are written and fed back.
 
+### `x03.tap0`
+
+- Syllables: 6
+- Base: `00000003` `00006000` `00000000` `00000000` `00002800` `00040002`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| sL | s | s4 | [6:3] |
+| An | a4 | s1 | [2:0] |
+| sB | s | s2 | [8:5] |
+| sHi | s | s2 | [12:9] |
+| sLo | s | s4 | [10:7] |
+| =sL | s | s2 | [4:1] |
+| =An | a_reg | s2 | [21:17] |
+| =An | a_reg | s3 | [4:0] |
+| =sHi | imm | s1 | [31:29] |
+| =sHi>>3 | imm | s2 | [0:0] |
+| =sLo | s | s5 | [12:9] |
+
+> x03.tap0: x03.tap with mode 4 (fact 702): {sHi:sLo} <- 2 * sL * sB, the X registers ignored.
+> The first tap of a sum, with no zeroing; the load and the A step as in x03.tap.
+

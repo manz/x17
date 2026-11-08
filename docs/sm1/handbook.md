@@ -301,13 +301,14 @@ Measured idioms, cheapest first:
   (hi', lo') back is an exact running sum: one bundle per tap, round once at the end. Two forms
   are measured: x18 class 111 as `x18.macf` (w3[8] = 0; `x18.mac` adds 2^23 to hi only, §665,
   §668) and x03 mode 5 with w1[15] = 0 (§670). Both take full 24-bit signed a and b into a
-  48-bit acc (§701): hi and lo are 24 bits each, and the sum is exact while |sum| < 2^47. A sum
-  past 2^47 - 1 saturates to {0x7FFFFF, 0xFFFFFF}; the negative bound is unmeasured (refused).
+  48-bit acc (§701): hi and lo are 24 bits each, exact within [-2^47, 2^47 - 1] and saturating
+  at both ends, to {0x7FFFFF, 0xFFFFFF} and {0x800000, 0} (§702).
   x18 chains of 4 or more wedged after the program's stores, values intact; x03 did not, so
   prefer x03 for long sums. The one-bundle tap is written `x03.tap sL, #n, sB, sHi, sLo`:
   sL <- X:[An] after the multiply reads sL, An += 1, {sHi:sLo} += 2 sL sB. All five are free
   fields; the word repeats sL, An, sHi and sLo in further fields and the assembler fills them
-  (operand rows named `=x`). Prime sL before the first tap, and zero sHi and sLo. The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
+  (operand rows named `=x`). Prime sL before the first tap. `x03.tap0`, the same word in mode 4,
+  writes {sHi:sLo} <- 2 sL sB ignoring their old values (§702): use it as the first tap. The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
   16-bit operands only.
 - **No computed jumps.** Every measured jump takes an immediate target: x00/x01 control
   relative and absolute (§230, §575), 0x04 (§304), §301/§302, and jmp/jmp-if (§661). None takes

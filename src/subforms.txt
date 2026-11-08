@@ -872,3 +872,7 @@ x01.selneg 7   0x28001381   0x00000580   0x28000000   0x000280A0   0x00040002   
 # sL is both the load destination w4[6:3] and the multiplicand w2[4:1]; An is the X read
 # address and the A copy's destination and source; sHi and sLo are written and fed back.
 x03.tap    6   0x00000003   0x00006800   0x00000000   0x00000000   0x00002800   0x00040002
+
+# x03.tap0: x03.tap with mode 4 (fact 702): {sHi:sLo} <- 2 * sL * sB, the X registers ignored.
+# The first tap of a sum, with no zeroing; the load and the A step as in x03.tap.
+x03.tap0   6   0x00000003   0x00006000   0x00000000   0x00000000   0x00002800   0x00040002

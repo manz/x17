@@ -7059,9 +7059,11 @@ test "the running MAC is 24x24 into a 48-bit saturating acc on both forms (701)"
         .{ .a = 0x7FFFFF, .b = 0x7FFFFF, .n = 1 },
         .{ .a = -0x800000, .b = 0x400000, .n = 1 },
         .{ .a = 0x7FFFFF, .b = 0x7FFFFF, .n = 2 }, // saturates
+        .{ .a = -0x800000, .b = 0x7FFFFF, .n = 2 }, // saturates low (702)
+        .{ .a = -0x800000, .b = -0x800000, .n = 1 }, // +2^47 saturates (702)
     };
     for (cases) |c| {
-        const true_sum: i64 = @min(@as(i64, @intCast(c.n)) * 2 * c.a * c.b, (@as(i64, 1) << 47) - 1);
+        const true_sum: i64 = std.math.clamp(@as(i64, @intCast(c.n)) * 2 * c.a * c.b, -(@as(i64, 1) << 47), (@as(i64, 1) << 47) - 1);
         const want_hi: u32 = @truncate(@as(u64, @bitCast(true_sum >> 24)) & 0xFFFFFF);
         const want_lo: u32 = @truncate(@as(u64, @bitCast(true_sum)) & 0xFFFFFF);
         for (0..2) |form| {
@@ -7197,5 +7199,28 @@ test "x03.tap: a 32-tap 16 x 18-bit dot product, exact (672, 701)" {
         const got: i64 = (@as(i64, @as(i24, @bitCast(@as(u24, @truncate(st.s[12]))))) << 24) + st.s[11];
         try testing.expectEqual(want, got);
         try testing.expectEqual(@as(u32, 0x221), st.a[5]);
+    }
+}
+
+test "x03.tap0 starts the sum: 2ab, the X registers ignored (702)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const m = try asm_mod.assembleOne("x03.tap0 s2, #2, s4, s10, s9");
+    try testing.expectEqual(@as(u32, 0x40006000), m.slice()[1]);
+    for ([_][4]u32{
+        .{ 0x7FFFFF, 0x7FFFFF, 0x7FFFFE, 0x000002 },
+        .{ 0x800000, 0x7FFFFF, 0x800001, 0x000000 },
+        .{ 0x123456, 0xFFFF00, 0xFFFFDB, 0x975400 },
+        .{ 0xFF8001, 0x01FFFF, 0xFFFE00, 0x04FFFE },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[2] = c[0];
+        st.s[4] = c[1];
+        st.s[10] = 0x654321;
+        st.s[9] = 0x123456;
+        st.a[2] = 0x40;
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ m.slice()[0], m.slice()[1], m.slice()[2], m.slice()[3], m.slice()[4], m.slice()[5] } ++ halt), 0, 8);
+        try testing.expectEqual(c[2], st.s[10]);
+        try testing.expectEqual(c[3], st.s[9]);
     }
 }
