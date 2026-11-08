@@ -7328,3 +7328,20 @@ test "Y 0x8000: x18.ytap zero-extends, x19.ldn sign-extends and stores nothing (
     try testing.expectEqual(@as(u32, 0xFF8000), st.s[4]);
     try testing.expectEqual(@as(?u32, 0x1234), st.getY(0x41));
 }
+
+test "x18 class 110 code 11 op 1: w3[26:25] picks the relation (706)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const pts = [_][2]u32{ .{ 0x100, 0x200 }, .{ 0x300, 0x200 }, .{ 0x200, 0x200 }, .{ 0xFF8100, 0x200 } };
+    // rel 0 !=, 1 ==, 2 <=, 3 >=, per point
+    const want = [4][4]u8{ .{ 1, 1, 0, 1 }, .{ 0, 0, 1, 0 }, .{ 1, 0, 1, 1 }, .{ 0, 1, 1, 0 } };
+    for (0..4) |rel| for (pts, 0..) |pt, i| for (0..2) |pre| {
+        const w3: u32 = (0xCC500009 & ~@as(u32, 3 << 25)) | (@as(u32, @intCast(rel)) << 25);
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = pt[0];
+        st.s[5] = pt[1];
+        st.p[2] = @intCast(pre);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x16200018, 0x0000D050, 0x00444C46, w3 } ++ halt), 0, 8);
+        try testing.expectEqual(want[rel][i], st.p[2]);
+    };
+}

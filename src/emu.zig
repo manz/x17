@@ -328,6 +328,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             const st_s: u32 = ((bundle[2] & 1) << 3) | (bundle[1] >> 29);
             const st_old: u32 = state.s[st_s];
             if (w1_mode == 5) {
+                // The p write runs beside the X read too (706's word has w1 mode 5).
+                try x18PWrite(state, bundle);
                 // The multiply beside the X read reads xd before the read sets it (689).
                 if ((bundle[2] >> 9) & 0xF != 0 or (bundle[2] >> 24) & 0xF != 0) try execX18Mpy(gpa, state, bundle);
                 try execX18Xrd(gpa, state, bundle);
@@ -2253,7 +2255,8 @@ fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 /// p<w3[17:14]>, picked by code h[28:25], op w1[17:15], f w3[28:25] and w3[9:8].  Measured:
 /// w3[9:8] != 0 under op 0/2, and codes 0-10 under op 0, give 1; code 14 under op 0/2 maps f
 /// 0, 4, 10-15 to 1, 1, 3, 8 to p, 2, 5 to !p, 6, 7, 9 to 0; code 11 under op 0/2 maps f 0, 1,
-/// 5, 6, 12 to 1 and 2, 3, 9, 10 to 0.  Every other cell is refused.
+/// 5, 6, 12 to 1 and 2, 3, 9, 10 to 0; code 11 under op 1 a signed relation of two s (706).
+/// Every other cell is refused.
 fn x18PWrite(state: *State, bundle: []const u32) RunError!void {
     const dest: u32 = (bundle[2] >> 13) & 0xF;
     if (dest == 0) return;
@@ -2272,6 +2275,20 @@ fn x18PWrite(state: *State, bundle: []const u32) RunError!void {
             2, 5 => @intFromBool(p == 0),
             else => 0,
         };
+        // 706: op 1 (the subtract compare) under code 11 relates a = s<w3[6:3]> and
+        // b = s<w1[7:4]>, signed, by w3[26:25]: 00 !=, 01 ==, 10 <=, 11 >=.  Measured with
+        // w3[28:27] = 01 and w3[9:8] = 0 only.
+        if (op == 1 and code == 11) {
+            if ((w3 >> 27) & 3 != 1 or (w3 >> 8) & 3 != 0) return RunError.UnknownForm;
+            const a = sx24(state.s[(w3 >> 3) & 0xF]);
+            const b = sx24(state.s[(bundle[1] >> 4) & 0xF]);
+            break :blk @intFromBool(switch ((w3 >> 25) & 3) {
+                0 => a != b,
+                1 => a == b,
+                2 => a <= b,
+                else => a >= b,
+            });
+        }
         if (op02 and code == 11) break :blk switch (f) {
             0, 1, 5, 6, 12 => 1,
             2, 3, 9, 10 => 0,
