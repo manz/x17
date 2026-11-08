@@ -3797,14 +3797,8 @@ fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const y_src_e: u32 = (w3 >> 25) & 0xF;
     const fn_op: u32 = (w1 >> 7) & 0xF;
 
-    // w1 outside its operand fields: 0x8 is 143's word, which stores; 0x100028 is 705's, which
-    // does not (its exact sums leave Y:[e+1] alone).  Which of w1[20] / w1[5] gates the store is
-    // OPEN, so other patterns are refused.
-    const store: bool = switch (w1 & ~@as(u32, 0x787)) {
-        0x8 => true,
-        0x100028 => false,
-        else => return RunError.UnknownForm,
-    };
+    // w1 outside its operand fields: w1[3] set, w1[20] and w1[5] inert (707); others refused.
+    if (w1 & ~@as(u32, 0x1007A7) != 0x8) return RunError.UnknownForm;
 
     // 1) Load from Y memory using the pre-state element register, sign-extended (705).
     const src_e_val: u32 = if (y_src_e == 0) 0 else state.e[y_src_e];
@@ -3815,10 +3809,8 @@ fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const new_e = try agu10Eval(fn_op, src_e_val, src_e_val);
     state.e[dest_e] = new_e;
 
-    // 3) Store this lane's V to Y:[new_e].
-    if (!store) return;
-    const v = state.v[state.cur_lane & 0x3];
-    state.y_mem.put(gpa, new_e, v) catch return RunError.OutOfMemory;
+    // No store (707: 143's Y write came from its program's own trailing st.y).
+    _ = gpa;
 }
 
 /// st (fact 21, 47, 65, 75): Y:[head[20:5]] <- the lane's V; a second

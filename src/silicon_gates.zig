@@ -215,10 +215,10 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x19ld",
-        // own-x19ld: pre e10 = 0x702, Y:[0x702] = 0x222, v[0] = 0x333.
-        // Bundle: s5 <- Y:[e10] = 0x222; e10 <- AGU10[2](x = e10) = 0x703;
-        //         st.y Y:[e10 = 0x703] <- v[0] = 0x333.
-        .pre = &.{ .{ .bank = .e, .index = 10, .value = 0x702 }, .{ .bank = .v, .index = 0, .value = 0x333 } },
+        // own-x19ld: pre e10 = 0x702, Y:[0x702] = 0x222.
+        // Bundle: s5 <- Y:[e10] = 0x222; e10 <- AGU10[2](x = e10) = 0x703; no store (707:
+        // the old Y:0x703 = 0x333 was the original program's trailing st.y).
+        .pre = &.{.{ .bank = .e, .index = 10, .value = 0x702 }},
         .pre_mem = &.{.{ .kind = .y, .addr = 0x702, .value = 0x222 }},
         .src =
         \\x19.ld s5, #5, e10, #2
@@ -227,7 +227,6 @@ const GATES = [_]Gate{
         .post = &.{
             .{ .s_reg = .{ .index = 5, .value = 0x222 } },
             .{ .e_reg = .{ .index = 10, .value = 0x703 } },
-            .{ .y_mem = .{ .addr = 0x703, .value = 0x333 } },
         },
     },
     .{

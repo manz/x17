@@ -1924,10 +1924,9 @@ Emulator:
 > fact 143 / own-x19ld:
 >   s<w2[13:10]> <- Y:[e<w3[28:25]>]
 >   e<2*w1[2:0] + head[31]> <- AGU10[w1[10:7]](x = e<src>, y = e<src>)
->   st.y Y:[e<new>] <- v[cur_lane]
 > w1[3] = 1 is the measured enable; w3 bakes class 111 + the low 12 bits
-> measured on the gate.  The load sign-extends (705).  x19.ldn sets w1[20] and w1[5] and does
-> not store; which bit gates the store is OPEN.
+> measured on the gate.  The load sign-extends (705).  No store (707).  x19.ldn is 705's word,
+> with w1[20] and w1[5] set: inert, the same bundle.
 
 ### `x17.cont`
 
@@ -3702,7 +3701,7 @@ Emulator:
 | y_src_e | e | s3 | [28:25] |
 | fn_op | imm | s1 | [10:7] |
 
-> x19.ldn: x19.ld with w1[20] = w1[5] = 1 (fact 705): the load (sign-extended) and the e step,
-> no store.  s<w2[13:10]> <- Y:[e<w3[28:25]>]; e<2*w1[2:0] + head[31]> <- AGU10[w1[10:7]](e).
+> x19.ldn: x19.ld with w1[20] = w1[5] = 1 (fact 705, inert per 707): the load (sign-extended)
+> and the e step.  s<w2[13:10]> <- Y:[e<w3[28:25]>]; e<2*w1[2:0] + head[31]> <- AGU10[w1[10:7]](e).
 > The Y-side coefficient load beside x03.tap.
 

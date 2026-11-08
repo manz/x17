@@ -7345,3 +7345,21 @@ test "x18 class 110 code 11 op 1: w3[26:25] picks the relation (706)" {
         try testing.expectEqual(want[rel][i], st.p[2]);
     };
 }
+
+test "x19.ld stores nothing; w1[20] and w1[5] are inert (707)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const base = try asm_mod.assembleOne("x19.ld s5, #5, e10, #2");
+    for ([_]u32{ 0, 1 << 20, 1 << 5, (1 << 20) | (1 << 5) }) |extra| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.e[10] = 0x700;
+        st.v[0] = 0x333;
+        try st.y_mem.put(testing.allocator, 0x700, 0x111);
+        try st.y_mem.put(testing.allocator, 0x701, 0xAAAA);
+        const w = base.slice();
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ w[0], w[1] | extra, w[2], w[3] } ++ halt), 0, 8);
+        try testing.expectEqual(@as(u32, 0x111), st.s[5]);
+        try testing.expectEqual(@as(u32, 0x701), st.e[10]);
+        try testing.expectEqual(@as(?u32, 0xAAAA), st.getY(0x701));
+    }
+}
