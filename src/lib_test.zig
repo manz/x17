@@ -5477,3 +5477,26 @@ test "writes to p0 refuse (after fact 608)" {
         if (c.ok) _ = try r else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x17agu also copies its AGU value to s<S1[23:20]> (fact 609)" {
+    const gpa = testing.allocator;
+    // 00000017 50000100 402a8660: R3 <- AGU10[0](x = e8); s<S1[23:20]> too.
+    for ([_]struct { sd: u32, e8: u32 = 0x0123, fn_op: u32 = 0, want: ?u32 }{
+        .{ .sd = 5, .want = 0x0123 },
+        .{ .sd = 5, .e8 = 0x0BCD, .want = 0x0BCD },
+        .{ .sd = 9, .want = 0x0123 },
+        .{ .sd = 0, .want = 0x0123 }, // no s write
+        .{ .sd = 5, .fn_op = 2, .want = null }, // s copy measured for fn 0 only
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[8] = c.e8;
+        const r = emu.runFrom(gpa, &state, &.{ 0x00000017, 0x50000100 | c.sd << 20 | c.fn_op << 24, 0x402a8660, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.r[3]);
+            if (c.sd != 0) try testing.expectEqual(v, state.s[c.sd]);
+            for (1..16) |i| if (i != c.sd) try testing.expectEqual(@as(u32, 0), state.s[i]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
