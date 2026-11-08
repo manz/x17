@@ -3444,12 +3444,9 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
     // X16_EXTRA[head[30]][head[29:27]][c], 8-15 X16_EXTRA_HI (refused where null); n =
     // S1[31:29] != 0 only in 585's and 588's cells; S2[8] only alone at X16_S2B8_INERT.
     if (s2 & 0x01FFFFF8 != 0) {
-        // The row is head[29:25] (590): X16_EXTRA was measured at head[26:25] = 3, and 581's
-        // move (head[30] = 1, mx 0, c 0 / 4, n = 0, extras in S2[7:4]) also at 2.  The rest OPEN.
+        // The row is head[29:25] (590): X16_EXTRA was measured at head[26:25] = 3, a few cells at
+        // 2 (591).  The rest OPEN.
         if (s2 & 0x01FFFE00 != 0) return RunError.UnknownForm;
-        const move_581 = (h >> 25) & 0x3F == 0x22 and s1 >> 29 == 0 and s2 & 0x01FFFF0B == 0;
-        if (move_581) return if ((s2 >> 4) & 0xF == 0) 0 else state.s[(s2 >> 4) & 0xF] & M24;
-        if ((h >> 25) & 3 != 3) return RunError.UnknownForm;
         const src: u32 = (s2 >> 4) & 0xF;
         const b: u32 = if (src == 0) 0 else state.s[src] & M24;
         const h30: u32 = (h >> 30) & 1;
@@ -3457,6 +3454,22 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
         const c: u32 = s2 & 0xF;
         const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
         const n: u32 = s1 >> 29;
+        if ((h >> 25) & 3 == 2) {
+            // head[26:25] = 2 (581, 591), n = 0: the move (head[30] = 1, mx 0, c 0 / 4),
+            // a << b (mx 1 c 5), a (mx 3 c 4, S2[8] inert there), 0 (head[30] = 1, mx 0 c 12).
+            if (n != 0) return RunError.UnknownForm;
+            const b8 = (s2 >> 8) & 1 == 1;
+            const op: X16Op = switch (h30 * 128 + mx * 16 + c) {
+                128, 128 + 4 => .b,
+                16 + 5 => .lsh,
+                3 * 16 + 4 => .a,
+                128 + 12 => .zero,
+                else => return RunError.UnknownForm,
+            };
+            if (b8 and op != .a) return RunError.UnknownForm;
+            return x16Extra(op, a, b);
+        }
+        if ((h >> 25) & 3 != 3) return RunError.UnknownForm;
         if ((s2 >> 8) & 1 == 1) {
             if (s2 & 0x01FFFFF8 != 0x100 or n != 0) return RunError.UnknownForm;
             if (!x16S2b8Inert(h30, mx, c)) return RunError.UnknownForm;
@@ -3475,7 +3488,13 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
         return x16ExtraN(mx * 8 + c, a, b, n);
     }
     // The row is head[29:25] (590); the gate grid holds at head[26:25] = 0 and head[30] = 0
-    // only (with head[30] = 1 its R feed read 0, 589).
+    // only (with head[30] = 1 its R feed read 0, 589).  591 measured two more cells giving a:
+    // head[26:25] = 2 mx 3 c 4 n 0, and head[26:25] = 0 mx 4 c 4 n 7.
+    if ((h >> 30) & 1 == 0 and s2 & 7 == 4) {
+        const row: u32 = (h >> 25) & 0x1F;
+        if ((row == 3 * 4 + 2 and s1 >> 29 == 0) or (row == 4 * 4 and s1 >> 29 == 7))
+            return state.s[(s2 >> 25) & 0xF] & M24;
+    }
     if ((h >> 25) & 3 != 0 or (h >> 30) & 1 == 1) return RunError.UnknownForm;
     const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
     const n: u5 = @intCast(s1 >> 29);

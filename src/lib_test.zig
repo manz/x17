@@ -4929,7 +4929,7 @@ test "the 0x16 class-100 row is head[29:25] (fact 590)" {
         .{ .h = 0x44000096, .s2 = 0x8a0000b0, .want = 0xBB0B }, // c 0
         .{ .h = 0x44000096, .s2 = 0x8a0000b2, .want = null }, // c 2
         .{ .h = 0x44000096, .s1 = 0x2b000012, .want = null }, // n = 1
-        .{ .h = 0x44000096, .s2 = 0x8a0000bc, .want = null }, // S2[3]
+        .{ .h = 0x44000096, .s2 = 0x8a0000bc, .want = 0 }, // S2[3]: cell 12 writes 0 (591)
         .{ .h = 0x4C000096, .want = null }, // mx 1
         .{ .h = 0x04000096, .want = null }, // head[30] = 0
         .{ .h = 0x42000096, .want = null }, // head[26:25] = 1
@@ -4983,6 +4983,35 @@ test "the class-100 R feed takes the extra-S2 cell too (fact 591)" {
             if (k.want) |w| {
                 _ = try r;
                 try testing.expectEqual(w[i], state.r[11]);
+            } else try testing.expectError(error.UnknownForm, r);
+        }
+    }
+}
+
+test "the class-100 cells measured at head[26:25] = 2 and gate mx 4 c 4 (fact 591)" {
+    const gpa = testing.allocator;
+    // d = s5 here; a = s<S2[28:25]> = s3, b = s11.  Vectors (0x1234, 2) and (0xFF8F0F, 3).
+    for ([_]struct { h: u32, s1: u32 = 0x0b000012, s2: u32, want: ?[2]u32 }{
+        .{ .h = 0x1C000096, .s2 = 0x86000004, .want = .{ 0x1234, 0xFF8F0F } }, // gate, h2 mx 3 c 4
+        .{ .h = 0x20000096, .s1 = 0xEb000012, .s2 = 0x86000004, .want = .{ 0x1234, 0xFF8F0F } }, // gate, h0 mx 4 c 4 n 7
+        .{ .h = 0x0C000096, .s2 = 0x860000b5, .want = .{ 0x48D0, 0xFC7878 } }, // extra, h2 mx 1 c 5
+        .{ .h = 0x1C000096, .s2 = 0x860001b4, .want = .{ 0x1234, 0xFF8F0F } }, // extra, h2 mx 3 c 4, S2[8]
+        .{ .h = 0x1C000096, .s2 = 0x860000b4, .want = .{ 0x1234, 0xFF8F0F } }, // without S2[8]
+        .{ .h = 0x44000096, .s2 = 0x860000bc, .want = .{ 0, 0 } }, // extra, h30 = 1, h2 mx 0 c 12
+        .{ .h = 0x0C000096, .s2 = 0x860001b5, .want = null }, // S2[8] elsewhere at h2
+        .{ .h = 0x0C000096, .s2 = 0x860000b4, .want = null }, // unmeasured h2 cell
+        .{ .h = 0x1C000096, .s1 = 0x2b000012, .s2 = 0x86000004, .want = null }, // gate h2 mx 3 c 4, n 1
+        .{ .h = 0x0C000096, .s1 = 0x2b000012, .s2 = 0x860000b5, .want = null }, // extra h2 with n
+    }) |k| {
+        for ([_][2]u32{ .{ 0x1234, 2 }, .{ 0xFF8F0F, 3 } }, 0..) |v, i| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.s[3] = v[0];
+            state.s[11] = v[1];
+            const r = emu.runFrom(gpa, &state, &.{ k.h, k.s1, k.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            if (k.want) |w| {
+                _ = try r;
+                try testing.expectEqual(w[i], state.s[5]);
             } else try testing.expectError(error.UnknownForm, r);
         }
     }
