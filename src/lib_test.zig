@@ -7012,3 +7012,36 @@ test "x16mul, x16mul2 and x19alu's saturating shift work at 24 bits (698)" {
         try testing.expectEqual(c[2], st.s[7]);
     }
 }
+
+test "x19alu's 32 ops are 24 bits wide (699)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    var want: [32]u32 = undefined;
+    for (&want) |*w| w.* = 0;
+    for ([_]u32{ 3, 4, 28, 29 }) |c| want[c] = 0x400000;
+    for ([_]u32{ 5, 16, 17, 18, 19, 20, 21, 26 }) |c| want[c] = 0x3FFFFF;
+    for ([_]u32{ 6, 7, 10, 11, 12, 13 }) |c| want[c] = 0x4000FF;
+    want[31] = 0x400001;
+    want[23] = 0x7FFFFF;
+    var bad: u32 = 0;
+    for (0..32) |code| {
+        var buf: [64]u8 = undefined;
+        const src = try std.fmt.bufPrint(&buf, "x19.alu s7, s3, s6, #{d}", .{code});
+        const m = try asm_mod.assembleOne(src);
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[3] = 0x3FFFFF;
+        st.s[6] = 0x4000FF;
+        st.s[7] = 0xABCDEF;
+        const r = emu.runFrom(testing.allocator, &st, &([_]u32{ m.slice()[0], m.slice()[1], m.slice()[2], m.slice()[3] } ++ halt), 0, 8);
+        if (r) |_| {
+            if (st.s[7] != want[code]) {
+                std.debug.print("code {d}: got {x} want {x}\n", .{ code, st.s[7], want[code] });
+                bad += 1;
+            }
+        } else |e| {
+            std.debug.print("code {d}: {any}\n", .{ code, e });
+            bad += 1;
+        }
+    }
+    try testing.expectEqual(@as(u32, 0), bad);
+}

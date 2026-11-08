@@ -57,7 +57,8 @@ x19.agu    4   0x00000019   0x10040000   0x02C40000   0x00000000
 # always-write condition (fact 646): 0 writes only while p1 = 0.  w2[17:14] = 15: the
 # bundle sets p<w2[17:14]> (647), and 15 touches no predicate.
 #   s<w1[27:24]> <- OP[head[9:5]](a = s<w2[21:18]>, b = s<w1[19:16]>)
-# Only code 23 (sat24(a << b)) is measured.
+# Codes (147, 699, 24 bits): 0/1/2/8/9/14/15/22/24/25/27/30 zero, 3/4/28/29 a+1,
+# 5/16-21/26 a, 6/7/10-13 b, 31 a+2, 23 sat24(a << b).
 x19.alu    4   0x00000419   0x00605808   0x0003C101   0x81E18008
 
 # x19.alum: x19alu with its w1[14:11] mode and w1[3:0] clear (fact 454): 8 ops on a + b,

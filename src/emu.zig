@@ -3386,7 +3386,7 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const w1 = bundle[1];
     const w2 = bundle[2];
     // head[9:5] = 23 (shift op), a = s<w2[21:18]>, b = s<w1[19:16]>
-    // dest = s<w1[27:24]>.  Only the sat24-shift op is measured; others OPEN.
+    // dest = s<w1[27:24]>.  Mode 0xB: the 32-op table (147, 699).
     const code: u32 = (head >> 5) & 0x1F;
     const dest_s: u32 = (w1 >> 24) & 0xF;
     const a_s: u32 = (w2 >> 18) & 0xF;
@@ -3397,8 +3397,14 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // ops on a, 9 writes nothing; w1[2:0] != 0 beside 8/9/0xA is OPEN.
     const mode: u32 = (w1 >> 11) & 0xF;
     const xw = try x19AluX(state, w2, dest_s);
+    // Mode 0xB's 32 ops, 24 bits wide (147, 699).
     const r: ?i64 = if (mode == 0xB) switch (code) {
         23 => shift23(a_val, b_val),
+        0, 1, 2, 8, 9, 14, 15, 22, 24, 25, 27, 30 => 0,
+        3, 4, 28, 29 => a_val + 1,
+        5, 16, 17, 18, 19, 20, 21, 26 => a_val,
+        6, 7, 10, 11, 12, 13 => b_val,
+        31 => a_val + 2,
         else => return RunError.UnknownForm,
     } else blk: {
         // w1[2:0] != 0 beside 8/9/0xA is OPEN for the ALU result; with no ALU destination the
