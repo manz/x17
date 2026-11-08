@@ -6988,3 +6988,27 @@ test "mul13 multiplies 24x24 and the x16 ALU keeps 24 bits (697)" {
         try testing.expectEqual(c[2], st.s[3]);
     }
 }
+
+test "x16mul, x16mul2 and x19alu's saturating shift work at 24 bits (698)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    for ([_][]const u8{ "x16.mul s3, s1, s2, #5", "x16.mul s3, s1, s2, #1", "x16.mul2 #3, #0, s1, s2, #0, #1" }) |src| {
+        const m = try asm_mod.assembleOne(src);
+        for ([_][3]u32{ .{ 0x400000, 0x400000, 0x200000 }, .{ 0x400000, 0x4000, 0x2000 }, .{ 0x4000, 0x4000, 0x20 } }) |c| {
+            var st = emu.State{};
+            defer st.deinit(testing.allocator);
+            st.s[1] = c[0];
+            st.s[2] = c[1];
+            _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ m.slice()[0], m.slice()[1], m.slice()[2] } ++ halt), 0, 8);
+            try testing.expectEqual(c[2], st.s[3]);
+        }
+    }
+    const sh = try asm_mod.assembleOne("x19.alu s7, s3, s6, #23");
+    for ([_][3]u32{ .{ 0x400000, 1, 0x7FFFFF }, .{ 0x100000, 2, 0x400000 }, .{ 0x400000, 0xFFFFFF, 0x200000 }, .{ 0x400000, 0xFFFFEC, 4 }, .{ 0x7FFF, 0x010001, 0x7FFFFF } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[3] = c[0];
+        st.s[6] = c[1];
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ sh.slice()[0], sh.slice()[1], sh.slice()[2], sh.slice()[3] } ++ halt), 0, 8);
+        try testing.expectEqual(c[2], st.s[7]);
+    }
+}

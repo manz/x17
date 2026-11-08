@@ -1854,13 +1854,14 @@ fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         state.s[dest_s] = 0;
         return;
     }
-    const av: u32 = if (a_s == 0) 0 else state.s[a_s] & 0xFFFF;
-    const bv: u32 = if (b_s == 0) 0 else state.s[b_s] & 0xFFFF;
-    const prod: u32 = av *% bv;
-    const round_bias: u32 = if ((head >> 30) & 1 == 1) @as(u32, 1) << 22 else 0;
-    const shifted: u32 = (prod +% round_bias) >> 23;
-    const v: u32 = if (half) shifted >> 1 else shifted;
-    state.s[dest_s] = v & M24;
+    // 24-bit signed operands, 24-bit result (698).
+    const av: i64 = if (a_s == 0) 0 else sx24(state.s[a_s]);
+    const bv: i64 = if (b_s == 0) 0 else sx24(state.s[b_s]);
+    const prod: i64 = av * bv;
+    const round_bias: i64 = if ((head >> 30) & 1 == 1) @as(i64, 1) << 22 else 0;
+    const shifted: i64 = (prod + round_bias) >> 23;
+    const v: i64 = if (half) shifted >> 1 else shifted;
+    state.s[dest_s] = @as(u32, @truncate(@as(u64, @bitCast(v)))) & M24;
 }
 
 /// S1 class != 000 with S2 class 101: head[28] runs the multiply,
@@ -2090,8 +2091,9 @@ fn execX16Mul(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const imm_dest: u32 = (h >> 21) & 0xF;
     if (mul_dest != 0 and mul_dest == imm_dest) return RunError.UnknownForm;
     const op: u32 = (s2 >> 16) & 0x1F;
-    const prod: i64 = sx16(state.s[(s2 >> 1) & 0xF]) * sx16(state.s[(s2 >> 5) & 0xF]);
-    const v: u32 = if (op & 1 == 0) 0 else @truncate(@as(u64, @bitCast(if (op & 4 != 0) roundShr(prod, 23) else prod >> 23)) & 0xFFFF);
+    // 24-bit signed operands, 24-bit result (698).
+    const prod: i64 = @as(i64, sx24(state.s[(s2 >> 1) & 0xF])) * sx24(state.s[(s2 >> 5) & 0xF]);
+    const v: u32 = if (op & 1 == 0) 0 else @truncate(@as(u64, @bitCast(if (op & 4 != 0) roundShr(prod, 23) else prod >> 23)) & M24);
     if (store) state.y_mem.put(gpa, try yAddrE(state, (s2 >> 21) & 0xF), state.s[src] & 0xFFFF) catch return RunError.OutOfMemory;
     state.s[mul_dest] = v;
     state.s[imm_dest] = (h >> 5) & 0xFFFF;

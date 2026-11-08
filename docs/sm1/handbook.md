@@ -150,8 +150,16 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
 
 ## 6. Timing
 
-- About **37.4 ns per bundle** of any length (≈26.7 M bundles/s, §379).
-- A taken jump costs 3 bundle times (§379).
+- About **37.4 ns per bundle** (≈26.7 M bundles/s, §379), flat from 36.8 to 37.4 ns across a
+  1-word alu, the 6-word x02 multiply, a Y load, an X store and alu/ldy interleaved. Lengths 2-5
+  and 7, and a bundle reading X and storing together, are not timed.
+- A taken jump costs 3 bundle times: the jump and its two delay slots, no extra stall (§379).
+  The emulator's bundle count already includes them. A not-taken jump still runs its slots
+  (§680); its cost is untimed, so count 3.
+- One bundle stream: no second issue path or engine-side coprocessor is known. The packet feed
+  (§82) is filled from the host side and the engine waits on it: an I/O wait, not parallel work.
+- The four program "lanes" are interleaved banks that let one fetch cover a whole bundle, not
+  parallel execution units.
 - The clock rate (~27 MHz) is *inferred*: the clock registers were not read, and the clock gate is
   undefined (§12).
 - Memory stalls are not characterised.
