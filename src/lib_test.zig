@@ -5792,3 +5792,28 @@ test "x18 class 011 codes 0x22 and 0x23 ignore the op field (710)" {
     };
     try testing.expectEqual(@as(u32, 0), bad);
 }
+
+test "x18 class 110: w3[21] = 0 takes the hi MAC's X from s<w3[13:10]> (711)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const base = [_]u32{ 0x1E200018, 0x80005AA0, 0x00500E2B, 0xC0542C39 };
+    for ([_][2]u32{ .{ 5, 0x686 }, .{ 6, 0xF9BA }, .{ 7, 0x646 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = 0x4000;
+        st.s[5] = 0x4000;
+        st.s[6] = 0x666;
+        st.xd = 0x111;
+        const w3 = (base[3] & ~@as(u32, (7 << 18) | (0xF << 10))) | (c[0] << 18) | (6 << 10);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ base[0], base[1], base[2], w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c[1], st.s[7]);
+    }
+    // w3[21] = 1 ignores the field: X is xd again.
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    st.s[1] = 0x4000;
+    st.s[5] = 0x4000;
+    st.s[6] = 0x666;
+    const w3 = (base[3] & ~@as(u32, 0xF << 10)) | (6 << 10) | (1 << 21);
+    _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ base[0], base[1], base[2], w3 } ++ halt), 0, 8);
+    try testing.expectEqual(@as(u32, 0x20), st.s[7]);
+}
