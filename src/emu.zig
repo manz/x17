@@ -280,6 +280,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s1_class16 == 3 and s2_class == 0b000) return execX16Xld(state, bundle);
         if (s1_class16 == 3 and s2_class == 0b111) return execX16St2(gpa, state, bundle);
         if (s2_class == 0b101) {
+            // 638's own-x16y has S1[31] = 1, which is agumul's shape here; whether that bundle also
+            // runs the multiply is OPEN, so S1 class 100 stays agumul.
             if (s1_class16 == 0) return execX16Agu2(state, bundle);
             return execX16AguMul(state, bundle);
         }
@@ -1890,6 +1892,9 @@ fn execX16Agu2(state: *State, bundle: []const u32) RunError!void {
         // is measured.
         0 => if (dest != 0 and (bundle[0] >> 5) & 0x3F != 14) return RunError.UnknownForm else 0,
         1 => if ((s2 >> 8) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y),
+        // 638: Y:[x][7:0] << 8; no gate seen (not swept).  Measured with S1[31] = 1 only: at S1
+        // class 000 INFERRED.
+        3 => ((state.getY(x) orelse 0) & 0xFF) << 8,
         else => return RunError.UnknownForm,
     };
     if (dest != 0) state.s[dest] = v;

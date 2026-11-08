@@ -6067,3 +6067,20 @@ test "x19agu s mux 3 loads Y[7:0] << 8 under w2[26] (fact 637)" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x16agu (120 form) s mux 3 loads Y[7:0] << 8 (fact 638)" {
+    const gpa = testing.allocator;
+    // own-x16y 50000016 8941b202 a0a00148 with S1[31] cleared (INFERRED: the measured S1[31] = 1
+    // shape decodes as agumul here, OPEN): s9 <- Y:[e5 = 0x710][7:0] << 8.
+    for ([_]struct { y: u32, s1: u32 = 0x0941b202, want: u32 }{
+        .{ .y = 0x12AB, .want = 0xAB00 },
+        .{ .y = 0x3471, .want = 0x7100 },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        st.e[5] = 0x710;
+        try st.y_mem.put(gpa, 0x710, c.y);
+        _ = try emu.runFrom(gpa, &st, &.{ 0x50000016, c.s1, 0xa0a00148, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, st.s[9]);
+    }
+}
