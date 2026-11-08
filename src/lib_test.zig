@@ -4632,15 +4632,16 @@ test "x19aagu's other slots (fact 271, 335, 341, 342)" {
     }
 }
 
-test "the 0x16 class-100 s ALU copies s<S2[7:4]> outside its gate (fact 580, 581)" {
+test "the 0x16 class-100 s ALU copies s<S2[7:4]> outside its gate (fact 580, 581, 584)" {
     const gpa = testing.allocator;
     for ([_]struct { h: u32 = 0x46000096, s1: u32 = 0x0b000012, s2: u32 = 0x8a0000b4, want: ?u32 }{
         .{ .want = 0xBB0B }, // the measured row: s5 <- s11
         .{ .s2 = 0x8a000034, .want = 0x333 }, // S2[7:4] = 3, code 4
         .{ .s2 = 0x8a0000b0, .want = 0xBB0B }, // code 0
-        .{ .h = 0x46000096 | 1 << 27, .want = null }, // head[29:27] != 0
+        .{ .h = 0x46000096 | 2 << 27, .want = 0xBB0B }, // 584: mx 0-2 all move b
         .{ .s1 = 0x0b000012 | 1 << 29, .want = null }, // n != 0
-        .{ .s2 = 0x8a0000b1, .want = null }, // code 1
+        .{ .s2 = 0x8a0000b1, .want = 0xBB0B }, // 584: every cell
+        .{ .h = 0x46000096 | 3 << 27, .want = 0 }, // 584: mx 3 writes 0
         .{ .s2 = 0x8a0000bc, .want = null }, // S2[3] set
         .{ .s2 = 0x8a0001b4, .want = null }, // S2[8] set
     }) |c| {
@@ -4655,4 +4656,112 @@ test "the 0x16 class-100 s ALU copies s<S2[7:4]> outside its gate (fact 580, 581
             try testing.expectEqual(v, state.s[5]);
         } else try testing.expectError(error.UnknownForm, r);
     }
+}
+
+test "the 0x16 class-100 s ALU shifts by s<S2[7:4]> (fact 582, 583)" {
+    const gpa = testing.allocator;
+    // head[30] = 0, head[29:27] = 1, S2[2:0] = 4: s5 <- s3 >> s11, rounded (583).
+    for ([_]struct { a: u32, k: u32, want: ?u32, code: u32 = 4 }{
+        .{ .a = 0x1234, .k = 1, .want = 0x091A },
+        .{ .a = 0x1234, .k = 2, .want = 0x048D },
+        .{ .a = 0x0100, .k = 1, .want = 0x0080 },
+        .{ .a = 0x8000, .k = 4, .want = 0xFFF800 },
+        .{ .a = 0x8000, .k = 1, .want = 0xFFC000 },
+        .{ .a = 0x1234, .k = 15, .want = 0 },
+        .{ .a = 0x1234, .k = 0, .want = 0x1234 },
+        .{ .a = 0x1234, .k = 0xFFFF, .want = 0x2468 }, // -1
+        .{ .a = 0x1234, .k = 0xFFFE, .want = 0x48D0 },
+        .{ .a = 0x1234, .k = 0xFFFC, .want = 0x12340 },
+        .{ .a = 0x1234, .k = 0xFFF0, .want = 0x7FFFFF }, // saturates
+        .{ .a = 0x1234, .k = 0x8000, .want = 0x7FFFFF },
+        .{ .a = 0x0F0F, .k = 3, .want = 0x1E2 }, // rounds
+        .{ .a = 0x8000, .k = 0xFFF0, .want = null }, // negative overflow: OPEN
+        .{ .a = 0x10000, .k = 1, .want = null },
+        .{ .a = 0x1234, .k = 0xFFFF, .code = 5, .want = null }, // a << -1: OPEN
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = c.a;
+        state.s[11] = c.k;
+        state.s[5] = 0x5555;
+        const r = emu.runFrom(gpa, &state, &.{ 0x0E000096, 0x0b000012, 0x860000b0 | c.code, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "the 0x16 class-100 s ALU table outside its gate (fact 583)" {
+    const gpa = testing.allocator;
+    // s5 <- cell(head[29:27], S2[2:0]) of (a = s3, b = s11), head[30] = 0.
+    for ([_]struct { mx: u32, c: u32, r1: u32, r2: u32 }{
+        .{ .mx = 0, .c = 0, .r1 = 0x1236, .r2 = 0x0F12 },
+        .{ .mx = 0, .c = 1, .r1 = 0x0012, .r2 = 0x000F },
+        .{ .mx = 4, .c = 2, .r1 = 0x1237, .r2 = 0x0F13 },
+        .{ .mx = 5, .c = 2, .r1 = 0xEDC9, .r2 = 0xF0F3 },
+        .{ .mx = 6, .c = 3, .r1 = 0xB72C, .r2 = 0x8780 },
+        .{ .mx = 1, .c = 7, .r1 = 0x48D4, .r2 = 0x7880 },
+    }) |k| {
+        for ([_][3]u32{ .{ 0x1234, 2, k.r1 }, .{ 0x0F0F, 3, k.r2 } }) |v| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.s[3] = v[0];
+            state.s[11] = v[1];
+            _ = try emu.runFrom(gpa, &state, &.{ 0x06000096 | k.mx << 27, 0x0b000012, 0x860000b0 | k.c, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            try testing.expectEqual(v[2], state.s[5] & 0xFFFF);
+        }
+    }
+    // Every cell, (a, b) = (0x1234, 2), low 16 bits.
+    const want = [8][8]u32{
+        .{ 0x1236, 0x12, 0x1232, 0x12, 0x1234, 0x12, 0x1235, 0x12 },
+        .{ 0x48D, 0x48D0, 0x48D, 0x48D0, 0x48D, 0x48D0, 0x48D, 0x48D4 },
+        .{ 0x1236, 0x1236, 0x1232, 0x1232, 0x1234, 0x1234, 0x1235, 0x1235 },
+        .{ 0x1236, 0x1236, 0x1232, 0x1232, 0x1234, 0x1234, 0x1235, 0x1235 },
+        .{ 0x1232, 0x1232, 0x1237, 0x1237, 0x1234, 0x1234, 0x1233, 0x1233 },
+        .{ 0x1236, 0x3600, 0xEDC9, 0xC900, 0x1236, 0x3600, 0x0000, 0x0000 },
+        .{ 0x48D, 0x48D0, 0xFB72, 0xB72C, 0x48D, 0x48D0, 0, 0 },
+        .{ 0x1236, 0x1236, 0xEDC9, 0xEDC9, 0x1236, 0x1236, 0, 0 },
+    };
+    for (0..8) |mx| for (0..8) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0x1234;
+        state.s[11] = 2;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x06000096 | @as(u32, @intCast(mx)) << 27, 0x0b000012, 0x860000b0 | @as(u32, @intCast(c)), 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(want[mx][c], state.s[5] & 0xFFFF);
+    };
+}
+
+test "the 0x16 class-100 s ALU table with head[30] = 1 (fact 584)" {
+    const gpa = testing.allocator;
+    // (a, b) = (s3, s11): vectors at (0x1234, 2) and (0x0F0F, 3), then every cell at (0x1234, 2).
+    const run = struct {
+        fn f(mx: u32, c: u32, a: u32, b: u32) !u32 {
+            var state = emu.State{};
+            defer state.deinit(testing.allocator);
+            state.s[3] = a;
+            state.s[11] = b;
+            _ = try emu.runFrom(testing.allocator, &state, &.{ 0x46000096 | mx << 27, 0x0b000012, 0x860000b0 | c, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            return state.s[5] & 0xFFFF;
+        }
+    }.f;
+    _ = gpa;
+    for ([_][4]u32{ .{ 7, 3, 0x048C, 0x01E1 }, .{ 7, 1, 0x048D, 0x01E2 }, .{ 5, 4, 0x048D, 0x01E2 }, .{ 4, 5, 0x0012, 0x000F } }) |v| {
+        try testing.expectEqual(v[2], try run(v[0], v[1], 0x1234, 2));
+        try testing.expectEqual(v[3], try run(v[0], v[1], 0x0F0F, 3));
+    }
+    const want = [8][8]u32{
+        .{ 2, 2, 2, 2, 2, 2, 2, 2 },
+        .{ 2, 2, 2, 2, 2, 2, 2, 2 },
+        .{ 2, 2, 2, 2, 2, 2, 2, 2 },
+        .{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        .{ 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x12, 0x1234, 0x1234 },
+        .{ 0x1234, 0x1234, 0x48D0, 0x48D0, 0x48D, 0x48D, 0x1234, 0x1234 },
+        .{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        .{ 0x1236, 0x48D, 0x1232, 0x48C, 0x1234, 0x48D, 0x1235, 0x48D },
+    };
+    for (0..8) |mx| for (0..8) |c| {
+        try testing.expectEqual(want[mx][c], try run(@intCast(mx), @intCast(c), 0x1234, 2));
+    };
 }

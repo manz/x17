@@ -499,7 +499,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 #   517 corrects "s<S1[28:25]> <- 0": with head[31] = 1 and S2 & 0x01FFFFF8 = 0 it is an s ALU, cell (head[29:27], S2[2:0])
 #   of (a = s<S2[28:25]>, n = S1[31:29]): mux 0 even (not 6) a << n, odd (not 7) (a & 0xF00) << n; mux 1 even a >> n;
 #   mux 2 a+n, a-n, a, a+1 by code pairs; the rest OPEN.  518: the gate is S2 & 0x01FFFFF8 = 0 alone (head[31] = 0 too,
-#   own-b16h31); >> is arithmetic, << and - wrap at 24 bits; outside the gate (580: S2[6] alone likely read s4 = 0) only s<S2[7:4]> is measured, with head[29:27] = 0, n = 0, S2[2:0] in {0, 4} and S2 & 0x01FFFF08 = 0 (581).  own-b16shl
+#   own-b16h31); >> is arithmetic, << and - wrap at 24 bits; outside the gate (580: S2[6] alone likely read s4 = 0), with n = 0 and S2 & 0x01FFFF08 = 0, cell X16_EXTRA[head[30]][head[29:27]][S2[2:0]] of (a = s<S2[28:25]>, b = s<S2[7:4]>) (581-584); signed variable shifts, rounded >> saturating << (582).  own-b16shl
 # x16alu (0x16 S1 class 000, S2 class 111; fact 116 pass 142): S2[13] = 1 latches xi <- S2[12:8] (xi persists; 0 with S2[13] reads 0x38A?);
 # s<S1[11:8]> <- OP[S1[18:16]](a = s<S2[28:25]>, b = s<S1[7:4]>): 4 a+b, 5 none, 6 a-1, 7 -a, 0-3 wedge;
 # s<head[24:21]> <- by S1[14:12]: 101 X:[A<xi>] if S2[19] else yd, 001 yd, 100 0x4A00?, 111 0x8808?.  own-x16alu

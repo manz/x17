@@ -3295,15 +3295,87 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
 /// s<S1[28:25]> <- cell (head[29:27], S2[2:0]) of (a = s<S2[28:25]>, n = S1[31:29]), 24-bit
 /// wrapping.  Mux 0 even codes but 6 give a << n, odd but 7 (a & 0xF00) << n; mux 1 even codes
 /// a >> n (arithmetic); mux 2 a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN.  Outside
-/// the gate only the s<S2[7:4]> copy is measured (581).
+/// the gate X16_EXTRA (583) applies.
+const X16Op = enum { b, add, sub, add1, a, inc, dec, asr8, xor, xnor, or_, and_, xor8, xnor8, or8, and8, rsh_rnd, lsh, inc_lsh, rsh, nrsh, nlsh, add_rsh, sub_rsh, inc_rsh, zero };
+
+/// The class-100 s ALU outside its gate by (head[30], head[29:27], S2[2:0]): fact 583
+/// (head[30] = 0) and 584 (head[30] = 1).
+const X16_EXTRA = [2][8][8]X16Op{ .{
+    .{ .add, .asr8, .sub, .asr8, .a, .asr8, .inc, .asr8 },
+    .{ .rsh_rnd, .lsh, .rsh_rnd, .lsh, .rsh_rnd, .lsh, .rsh_rnd, .inc_lsh },
+    .{ .add, .add, .sub, .sub, .a, .a, .inc, .inc },
+    .{ .add, .add, .sub, .sub, .a, .a, .inc, .inc },
+    .{ .sub, .sub, .add1, .add1, .a, .a, .dec, .dec },
+    .{ .xor, .xor8, .xnor, .xnor8, .or_, .or8, .and_, .and8 },
+    .{ .rsh, .lsh, .nrsh, .nlsh, .rsh, .lsh, .zero, .zero },
+    .{ .xor, .xor, .xnor, .xnor, .or_, .or_, .and_, .and_ },
+}, .{
+    .{ .b, .b, .b, .b, .b, .b, .b, .b },
+    .{ .b, .b, .b, .b, .b, .b, .b, .b },
+    .{ .b, .b, .b, .b, .b, .b, .b, .b },
+    .{ .zero, .zero, .zero, .zero, .zero, .zero, .zero, .zero },
+    .{ .a, .a, .a, .a, .a, .asr8, .a, .a },
+    .{ .a, .a, .lsh, .lsh, .rsh_rnd, .rsh_rnd, .a, .a },
+    .{ .zero, .zero, .zero, .zero, .zero, .zero, .zero, .zero },
+    .{ .add, .add_rsh, .sub, .sub_rsh, .a, .rsh, .inc, .inc_rsh },
+} };
+
+/// One X16_EXTRA cell on sx16 operands, 24-bit result.  Measured with a and b inside 16 bits.
+/// Variable shifts take b signed: a rounded >> with a negative b shifts left, saturating at
+/// 0x7FFFFF (582); other negative amounts and a negative overflow are OPEN.
+fn x16Extra(op: X16Op, a_raw: u32, b_raw: u32) RunError!u32 {
+    if (a_raw > 0xFFFF or b_raw > 0xFFFF) return RunError.UnknownForm;
+    if (op == .b) return b_raw; // 581: d read back as s<S2[7:4]>'s value
+    const a: i64 = sx16(a_raw);
+    const b: i64 = sx16(b_raw);
+    const r: i64 = switch (op) {
+        .b => unreachable,
+        .add => a + b,
+        .sub => a - b,
+        .add1 => a + b + 1,
+        .a => a,
+        .inc => a + 1,
+        .dec => a - 1,
+        .asr8 => a >> 8,
+        .xor => a ^ b,
+        .xnor => ~(a ^ b),
+        .or_ => a | b,
+        .and_ => a & b,
+        .xor8 => (a ^ b) << 8,
+        .xnor8 => ~(a ^ b) << 8,
+        .or8 => (a | b) << 8,
+        .and8 => (a & b) << 8,
+        .rsh_rnd => if (b < 0) try satShl(a, -b) else if (b == 0) a else (a + (@as(i64, 1) << @intCast(@min(b - 1, 62)))) >> @intCast(@min(b, 63)),
+        .lsh => if (b < 0) return RunError.UnknownForm else try satShl(a, b),
+        .inc_lsh => if (b < 0) return RunError.UnknownForm else try satShl(a + 1, b),
+        .rsh => if (b < 0) return RunError.UnknownForm else a >> @intCast(@min(b, 63)),
+        .nrsh => if (b < 0) return RunError.UnknownForm else ~a >> @intCast(@min(b, 63)),
+        .nlsh => if (b < 0) return RunError.UnknownForm else try satShl(~a, b),
+        .add_rsh => if (b < 0) return RunError.UnknownForm else (a + b) >> @intCast(@min(b, 63)),
+        .sub_rsh => if (b < 0) return RunError.UnknownForm else (a - b) >> @intCast(@min(b, 63)),
+        .inc_rsh => if (b < 0) return RunError.UnknownForm else (a + 1) >> @intCast(@min(b, 63)),
+        .zero => 0,
+    };
+    return @truncate(@as(u64, @bitCast(r)) & M24);
+}
+
+fn satShl(v: i64, n: i64) RunError!i64 {
+    const r: i64 = v << @intCast(@min(n, 40));
+    if (r > 0x7FFFFF) return 0x7FFFFF;
+    if (r < -0x800000) return RunError.UnknownForm;
+    return r;
+}
+
 fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
-    // With S2 bits in 0x01FFFFF8 (580, 581): only S2[7:4] set, head[29:27] = 0, n = 0 and
-    // S2[2:0] in {0, 4} copy s<S2[7:4]>; every other shape is OPEN.
+    // With S2 bits in 0x01FFFFF8 (580-584): only S2[7:4] may be set, n = 0; the cell is
+    // X16_EXTRA[head[30]][head[29:27]][S2[2:0]].
     if (s2 & 0x01FFFFF8 != 0) {
-        const code_ok = s2 & 7 == 0 or s2 & 7 == 4;
-        if (s2 & 0x01FFFF08 != 0 or (h >> 27) & 7 != 0 or s1 >> 29 != 0 or !code_ok) return RunError.UnknownForm;
+        if (s2 & 0x01FFFF08 != 0 or s1 >> 29 != 0) return RunError.UnknownForm;
         const src: u32 = (s2 >> 4) & 0xF;
-        return if (src == 0) 0 else state.s[src] & M24;
+        const b: u32 = if (src == 0) 0 else state.s[src] & M24;
+        const mx: u32 = (h >> 27) & 7;
+        const c: u32 = s2 & 7;
+        return x16Extra(X16_EXTRA[(h >> 30) & 1][mx][c], state.s[(s2 >> 25) & 0xF] & M24, b);
     }
     const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
     const n: u5 = @intCast(s1 >> 29);
