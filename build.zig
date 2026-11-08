@@ -119,11 +119,15 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(emu_t).step);
     const gates_t = b.addTest(.{ .root_module = gates_mod });
     test_step.dependOn(&b.addRunArtifact(gates_t).step);
+    const aac_bench = b.option(bool, "aac-bench-mode", "internal: lib tests report AAC stage costs") orelse false;
+    const lib_opts = b.addOptions();
+    lib_opts.addOption(bool, "bench", aac_bench);
     const lib_mod = b.createModule(.{
         .root_source_file = b.path("src/lib_test.zig"),
         .target = target,
-        .optimize = optimize,
+        .optimize = if (aac_bench) .ReleaseFast else optimize,
     });
+    lib_mod.addOptions("build_options", lib_opts);
     lib_mod.addImport("asm", asm_mod);
     lib_mod.addImport("emu", emu_mod);
     lib_mod.addAnonymousImport("bits.sm", .{ .root_source_file = b.path("examples/lib/bits.sm") });
@@ -144,7 +148,7 @@ pub fn build(b: *std.Build) void {
     for ([_][]const u8{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |f| {
         lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/alac/{s}.pkts", .{f})) });
     }
-    const lib_t = b.addTest(.{ .root_module = lib_mod });
+    const lib_t = b.addTest(.{ .root_module = lib_mod, .filters = if (aac_bench) &.{ "as the model does", "huff_decode", "win_start", "aac stage bench report" } else &.{} });
 
     const bench_mod = b.createModule(.{
         .root_source_file = b.path("src/bench.zig"),
@@ -161,7 +165,10 @@ pub fn build(b: *std.Build) void {
     }
     const bench = b.addExecutable(.{ .name = "bench", .root_module = bench_mod });
     b.step("bench", "Bundles per ALAC packet, by stage").dependOn(&b.addRunArtifact(bench).step);
-    test_step.dependOn(&b.addRunArtifact(lib_t).step);
+    // `zig build aac-bench -Daac-bench-mode`: the AAC stage tests with their costs printed.
+    const lib_run = b.addRunArtifact(lib_t);
+    b.step("aac-bench", "Bundles per AAC stage (pass -Daac-bench-mode)").dependOn(&lib_run.step);
+    test_step.dependOn(&lib_run.step);
     const disasm_t = b.addTest(.{ .root_module = disasm_mod });
     test_step.dependOn(&b.addRunArtifact(disasm_t).step);
 }

@@ -5,6 +5,31 @@ const emu = @import("emu");
 
 const testing = std.testing;
 
+const build_options = @import("build_options");
+
+/// AAC stage costs for `zig build aac-bench`: the worst bundles per unit seen by each stage's
+/// model test.  Units: one code or codeword for the Huffman stages, one call for the IMDCT, one
+/// 1024-coefficient channel (or channel pair, stereo) for the rest.
+const StageCost = struct { name: []const u8, worst: u64 = 0 };
+var stage_costs = [_]StageCost{
+    .{ .name = "sections" },    .{ .name = "huffman" },  .{ .name = "spectral" },  .{ .name = "dequant" },
+    .{ .name = "stereo" },      .{ .name = "pns" },      .{ .name = "tns" },       .{ .name = "imdct long" },
+    .{ .name = "imdct short" }, .{ .name = "win_long" }, .{ .name = "win_other" },
+};
+
+fn stageBench(name: []const u8, bundles: u64, units: u64) void {
+    for (&stage_costs) |*c| if (std.mem.eql(u8, c.name, name)) {
+        c.worst = @max(c.worst, bundles / units);
+        return;
+    };
+    unreachable;
+}
+
+fn stageCost(name: []const u8) u64 {
+    for (stage_costs) |c| if (std.mem.eql(u8, c.name, name)) return c.worst;
+    unreachable;
+}
+
 const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/bits.sm", .text = @embedFile("bits.sm") },
     .{ .path = "lib/rice.sm", .text = @embedFile("rice.sm") },
@@ -797,7 +822,7 @@ test "huff_decode decodes what a bit-by-bit matcher decodes, through subtables" 
         try stage(gpa, &state, &data);
         for (t[0..n], 0..) |w, i| try state.y_mem.put(gpa, 0x1000 + @as(u32, @intCast(i)), w);
         state.a[6] = 0x100;
-        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 20);
+        stageBench("huffman", try emu.runFrom(gpa, &state, prog, 0, 1 << 20), 12);
         try testing.expect(state.halted);
 
         var pos: usize = skip;
@@ -900,7 +925,7 @@ test "the spectral macros unpack, sign and escape as the model does" {
             try stage(gpa, &state, &data);
             for (t[0..n], 0..) |w, i| try state.y_mem.put(gpa, 0x1000 + @as(u32, @intCast(i)), w);
             state.a[6] = 0x100;
-            _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 20);
+            stageBench("spectral", try emu.runFrom(gpa, &state, prog, 0, 1 << 20), 8);
             try testing.expect(state.halted);
 
             var pos: usize = 0;
@@ -1139,7 +1164,7 @@ test "aac_sections and aac_scalefactors decode as the model does" {
         defer state.deinit(gpa);
         try stage(gpa, &state, &w.buf);
         for (t[0..n], 0..) |x, i| try state.y_mem.put(gpa, 0x1000 + @as(u32, @intCast(i)), x);
-        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 22);
+        stageBench("sections", try emu.runFrom(gpa, &state, prog, 0, 1 << 22), 1);
         try testing.expect(state.halted);
 
         var pos: usize = 0;
@@ -1416,7 +1441,7 @@ test "dq_channel dequantises as the model does: words and exponent" {
             try putY(&state, gpa, 0x2000 + @as(u32, @intCast(i)), books[i]);
             try putY(&state, gpa, 0x2080 + @as(u32, @intCast(i)), sfs[i]);
         }
-        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 24);
+        stageBench("dequant", try emu.runFrom(gpa, &state, prog, 0, 1 << 24), 1);
         try testing.expect(state.halted);
         try testing.expectEqual(@as(u32, @bitCast(want_e)) & 0xFFFF, state.getY(0x215B) orelse 0xDEAD);
         for (0..1024) |k| {
@@ -2125,7 +2150,7 @@ fn imdctRuns(comptime n2: usize, call: []const u8, seed: u64) !void {
         }
         for (t.rev, 0..) |r, n| try py(&state, gpa, 0x2400 + n, 2 * @as(i64, r) - 2);
         try py(&state, gpa, 0x2390, e);
-        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 26);
+        stageBench(if (n2 == 1024) "imdct long" else "imdct short", try emu.runFrom(gpa, &state, prog, 0, 1 << 26), 1);
         try testing.expect(state.halted);
         for (want, 0..) |v, k| {
             try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF, state.readX(0x800 + @as(u32, @intCast(k))) orelse 0xDEAD);
@@ -2408,7 +2433,7 @@ test "win_long windows, overlaps and clamps as the model does" {
         for (wp, 0..) |v, k| try put(&state, gpa, 0x800 + k, v);
         for (wc, 0..) |v, k| try put(&state, gpa, 0xC00 + k, v);
         for (ovl, 0..) |v, k| try put(&state, gpa, 0x1000 + k, v);
-        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 22);
+        stageBench("win_long", try emu.runFrom(gpa, &state, prog, 0, 1 << 22), 1);
         try testing.expect(state.halted);
         for (0..1024) |n| {
             const b = imMul(t[n], wp[n]);
@@ -2478,7 +2503,7 @@ test "win_start, win_stop and win_short build the model's blocks" {
         for (ovl, 0..) |v, k| try put(&state, gpa, 0x1900 + k, v);
         // B starts as garbage: every word must be written
         for (0..2048) |k| try put(&state, gpa, 0x1100 + k, 0x5A5A5A);
-        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 23);
+        stageBench("win_other", try emu.runFrom(gpa, &state, prog, 0, 1 << 23), 1);
         try testing.expect(state.halted);
         for (0..1024) |n| {
             const v = std.math.clamp(rshr(ovl[n] + b[n], 5), -32768, 32767);
@@ -2730,7 +2755,7 @@ test "stereo_pair applies M/S and intensity as the model does" {
             try px(&state, gpa, 0x800 + k, b);
         }
         p.apply();
-        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 24);
+        stageBench("stereo", try emu.runFrom(gpa, &state, prog, 0, 1 << 24), 1);
         try testing.expect(state.halted);
         const sx16 = struct {
             fn f(v: ?u32) i64 {
@@ -3077,7 +3102,7 @@ test "tns_channel filters every window as the model does" {
         c.apply(&refl);
         halvings += c.halvings;
         gave_up += c.gave_up;
-        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 28);
+        stageBench("tns", try emu.runFrom(gpa, &state, prog, 0, 1 << 28), 1);
         try testing.expect(state.halted);
         const sx16 = struct {
             fn f(v: ?u32) i64 {
@@ -3385,7 +3410,7 @@ test "pns_channel fills noise bands as the model does, both modes" {
             try px(&state, gpa, 0x800 + k, b);
         }
         c.apply();
-        _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 28);
+        stageBench("pns", try emu.runFrom(gpa, &state, prog, 0, 1 << 28), 1);
         try testing.expect(state.halted);
         const sx16 = struct {
             fn f(v: ?u32) i64 {
@@ -6172,4 +6197,26 @@ test "the ISA sources quote no image provenance" {
         std.debug.print("{s}: offset {d} carries '{s}'\n", .{ f.path, at, b });
         return error.ProvenanceText;
     };
+}
+
+test "aac stage bench report" {
+    if (!build_options.bench) return;
+    // Runs last (declaration order) under `zig build aac-bench`, which filters to the AAC stage
+    // tests.  A long-block channel frame: sections + spectral codewords + dequant + tns + pns +
+    // imdct long + window, plus half a stereo pair.  Spectral is costed at 512 codewords (pair
+    // books, the worst case; quad books halve it).  Load at 26.7 M bundles/s (fact 379).
+    const p = std.debug.print;
+    p("\n{s:<12} {s:>10}  unit\n", .{ "stage", "bundles" });
+    for (stage_costs) |c| p("{s:<12} {d:>10}  {s}\n", .{ c.name, c.worst, if (std.mem.eql(u8, c.name, "huffman")) "code" else if (std.mem.eql(u8, c.name, "spectral")) "codeword" else if (std.mem.startsWith(u8, c.name, "imdct")) "call" else if (std.mem.eql(u8, c.name, "stereo")) "pair" else "channel" });
+    const frame: u64 = stageCost("sections") + 512 * stageCost("spectral") + stageCost("dequant") + stageCost("tns") + stageCost("pns") + stageCost("imdct long") + stageCost("win_long") + stageCost("stereo") / 2;
+    // TNS and PNS are optional tools, costed at their tests' worst (TNS order 12 over the whole
+    // block): the plain frame leaves them out.
+    const plain = frame - stageCost("tns") - stageCost("pns");
+    for ([_]struct { []const u8, u64 }{ .{ "worst", frame }, .{ "plain", plain } }) |f| {
+        p("{s} long-block channel frame: {d} bundles\n", .{ f[0], f[1] });
+        for ([_]u32{ 32000, 44100, 48000 }) |hz| for ([_]u32{ 1, 2 }) |ch| {
+            const ld = @as(f64, @floatFromInt(f[1] * ch)) * @as(f64, @floatFromInt(hz)) / 1024.0 * 37.4e-9;
+            p("  {d} Hz x{d}: {d:.0}%\n", .{ hz, ch, 100 * ld });
+        };
+    }
 }
