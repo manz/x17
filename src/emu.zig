@@ -1791,7 +1791,36 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         6 => (((head >> 11) & 0xFFFF) << 6) & 0xFFFF,
         else => return RunError.UnknownForm,
     };
+    const alu = try x16AguAlu(state, head, s1, s2);
+    if (alu) |w| if (dest_s != 0 and dest_s == w.dest) return RunError.UnknownForm;
     if (dest_s != 0) state.s[dest_s] = v;
+    if (alu) |w| state.s[w.dest] = w.val;
+}
+
+/// The x16agu's 0x05 ALU word (fact 592): s<S1[27:24]> <- alu_word(code h[10:5],
+/// a = s<S1[19:16]>, b = s<S2[28:25]>, m = S1[13:11], #s = S1[23:20]); 0 means no write.
+/// Measured: add at m 0/2/3/6 (with #s only at m 2); sub, movb, mova, sel, asr and clr codes
+/// 0x20 / 0x22 at m 2 with #s = 0.  Read 16-bit, so the top byte is the alu_word's.
+fn x16AguAlu(state: *const State, h: u32, s1: u32, s2: u32) RunError!?struct { dest: u32, val: u32 } {
+    const d: u32 = (s1 >> 24) & 0xF;
+    if (d == 0) return null;
+    const code: u32 = (h >> 5) & 0x3F;
+    const m: u32 = (s1 >> 11) & 7;
+    const sh: u32 = (s1 >> 20) & 0xF;
+    const ok = switch (ALU05[code]) {
+        .add => (m == 0 or m == 2 or m == 3 or m == 6) and (sh == 0 or m == 2),
+        .sub, .movb, .mova, .sel, .asr => m == 2 and sh == 0,
+        .clr => (code == 0x20 or code == 0x22) and m == 2 and sh == 0,
+        else => false,
+    };
+    if (!ok) return RunError.UnknownForm;
+    const a = sx24(state.s[(s1 >> 16) & 0xF]);
+    const b = sx24(state.s[(s2 >> 25) & 0xF]);
+    // m 2 left the non-adder ops as they are at m 0 (592): evaluate them unmodified.
+    if (ALU05[code] != .add and ALU05[code] != .sub) return .{ .dest = d, .val = alu05Eval(ALU05[code], a, b) };
+    const word: u32 = (code << 5) | (sh << 19) | (m << 23);
+    const v = (try aluWord(word, a, b)) orelse return RunError.UnknownForm;
+    return .{ .dest = d, .val = v };
 }
 
 /// op = S2[20:16]: op & 1 multiplies 16-bit signed, op & 4 rounds; even

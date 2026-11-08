@@ -5016,3 +5016,46 @@ test "the class-100 cells measured at head[26:25] = 2 and gate mx 4 c 4 (fact 59
         }
     }
 }
+
+test "x16agu carries the 0x05 ALU word in S1 (fact 592)" {
+    const gpa = testing.allocator;
+    // s6 <- alu(a = s4 = 0x443, b = s11 = 0xBB3); S1 base 0x16045030 (m 2), S2 class 011, b = S2[28:25].
+    for ([_]struct { code: u32, s1: u32 = 0x16045030, want: ?u32 }{
+        .{ .code = 0x00, .want = 0xBB3 }, // add, m 2
+        .{ .code = 0x10, .want = 0xFFF44D }, // sub
+        .{ .code = 0x30, .want = 0xBB3 }, // movb
+        .{ .code = 0x23, .want = 0x443 }, // mova
+        .{ .code = 0x26, .want = 0x443 }, // sel
+        .{ .code = 0x06, .want = 0 }, // asr
+        .{ .code = 0x20, .want = 0 }, // clr
+        .{ .code = 0x22, .want = 0 },
+        .{ .code = 0x00, .s1 = 0x16040030, .want = 0xFF6 }, // m 0: a + b
+        .{ .code = 0x00, .s1 = 0x16041830, .want = 0xBB4 }, // m 3
+        .{ .code = 0x00, .s1 = 0x16043030, .want = 0xFFF44D }, // m 6
+        .{ .code = 0x00, .s1 = 0x16145030, .want = 0x1766 }, // #s = 1
+        .{ .code = 0x00, .s1 = 0x16845030, .want = 0x0BB300 }, // #s = 8
+        .{ .code = 0x1c, .want = null }, // xori: OPEN
+        .{ .code = 0x10, .s1 = 0x16040030, .want = null }, // sub at m 0: unmeasured
+        .{ .code = 0x28, .want = null }, // other clr code
+        .{ .code = 0x00, .s1 = 0x16042030, .want = null }, // add at m 4: unmeasured
+        .{ .code = 0x00, .s1 = 0x16140030, .want = null }, // add #s at m 0: unmeasured
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[4] = 0x443;
+        state.s[11] = 0xBB3;
+        const r = emu.runFrom(gpa, &state, &.{ 0x00000016 | k.code << 5, k.s1, 0x76000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[6]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "x16agu's ALU and AGU writing one s is refused (fact 592)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    // AGU dest S2[6:3] = 6 and ALU dest S1[27:24] = 6.
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x00000016, 0x16045030, 0x76000030, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
