@@ -5876,3 +5876,36 @@ test "x18 class 110 lo X term: s<w3[13:10]> in modes 5/6, xd << 8 for field 0 (7
         if (c.int and !c.w21) try testing.expectEqual(@as(u32, 0), st.s[7]);
     }
 }
+
+test "x18 class 110 hi X under w3[21] = 1 is s12, not xd; lo mode 7 is X - P (714)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const h = [_]u32{ 0x1E200018, 0x80005AA0, 0x00500E2B };
+    const Case = struct { w3: u32, s12: u32, want: u32 };
+    for ([_]Case{
+        .{ .w3 = 0xC1741839, .s12 = 0x42, .want = 0x42 }, // integer mode 5
+        .{ .w3 = 0xC0741839, .s12 = 0xC2, .want = 0xC2 }, // fractional mode 5
+        .{ .w3 = 0xC1781839, .s12 = 1, .want = 0xFFFF }, // integer mode 6: -s12
+    }) |c| for ([_]u32{ 0x100, 0x1234, 0x8000 }) |xd| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x10;
+        st.s[1] = 0x10;
+        st.s[12] = c.s12;
+        st.xd = xd;
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ h[0], h[1], h[2], c.w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c.want, st.s[7]);
+    };
+    // w3[23] = 1 halves the term (365): refused.
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &([_]u32{ h[0], h[1], h[2], 0xC0741839 | (1 << 23) } ++ halt), 0, 8));
+    // lo mode 7, fractional, w3[21] = 1, field 6: lo = s6 - P.
+    var st2 = emu.State{};
+    defer st2.deinit(testing.allocator);
+    st2.s[5] = 0x123;
+    st2.s[1] = 0x10;
+    st2.s[6] = 0x666;
+    const w3 = (0xC0741839 & ~@as(u32, (7 << 18) | (0xF << 10))) | (7 << 18) | (6 << 10);
+    _ = try emu.runFrom(testing.allocator, &st2, &([_]u32{ h[0], h[1], 0x0C500E2B & ~@as(u32, 0xF << 9), w3 } ++ halt), 0, 8);
+    try testing.expectEqual(@as(u32, 0xE206), st2.s[12] & 0xFFFF);
+}

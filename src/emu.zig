@@ -2333,10 +2333,9 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         const half: i64 = if ((bundle[3] >> 22) & 1 == 1) 1 << 23 else 0;
         break :blk @as(u32, @truncate(@as(u64, @bitCast((sp + half) >> 24)))) & M24;
     };
-    // The hi output follows the mode w3[20:18] (687, 689), over acc[39:24] with X = xd as the
-    // bundle starts (the previous X read; this bundle's own read lands after) at acc[47:32] and
-    // a = s<w2[4:1]> at acc[47:24]: 0 zero, 1 a + X, 2 a - X, 3 ~X (never rounded), 4 P,
-    // 5 P + X, 6 P - X, 7 X - P; 16 bits wide.  Measured in the doubled form only.
+    // The hi output follows the mode w3[20:18] (687, 689) over acc[47:24]: 0 zero, 1 a + X,
+    // 2 a - X, 3 ~X (never rounded), 4 P, 5 P + X, 6 P - X, 7 X - P; 16 bits wide.  X is
+    // picked by w3[21] and w3[13:10] below (711-714).
     const mode: u32 = (bundle[3] >> 18) & 7;
     // w3[21] = 0 with w3[13:10] != 0 takes the X term from that s register, at acc[47:24]
     // (711: P + s6 = 0x20 + 0x666 = 0x686) in modes 1, 2 and 5-7 (711, 712); mode 3 ignores it
@@ -2347,19 +2346,35 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const x_from_s = !w21 and x_reg != 0 and mode != 3;
     // The lo output's X term (713), modes 5 (P + X) and 6 (P - X): X = s<w3[13:10]>, field 0
     // the xd latch << 8 (as 709's s0).  Fractional with w3[21] = 0 sends the field to hi and
-    // lo is P alone; integer mode adds it whatever w3[21].  Mode 7 on lo, and integer mode
-    // with field 0, are unmeasured and refused.
+    // lo is P alone; integer mode adds it whatever w3[21].  Mode 7 gives X - P (714's data:
+    // s6 - 0x2460 = 0xE206), measured fractional only; integer mode 7, and integer mode with
+    // field 0, are refused.
     const lo_m: u32 = if (lo_dest == 0 or (mode != 5 and mode != 6 and mode != 7)) lo else blk: {
         if (!integer and !w21) break :blk lo;
-        if (mode == 7 or (integer and x_reg == 0)) return RunError.UnknownForm;
+        if ((mode == 7 and integer) or (integer and x_reg == 0)) return RunError.UnknownForm;
         if (x_reg == 0 and state.xd > 0xFFFF) return RunError.UnknownForm;
         const xl: u32 = if (x_reg != 0) state.s[x_reg] else state.xd << 8;
-        break :blk (if (mode == 5) lo +% xl else lo -% xl) & M24;
+        break :blk (switch (mode) {
+            5 => lo +% xl,
+            6 => lo -% xl,
+            else => xl -% lo,
+        }) & M24;
     };
-    // Integer mode with the field (w3[21] = 0): hi has no X term at all (712, 713).
+    // w3[23] = 1 halves the X term (365, 714: s12 >> 1), unmodelled.
+    if (hi_dest != 0 and mode != 4 and (bundle[3] >> 23) & 1 == 1) return RunError.UnknownForm;
+    // Integer mode with the field (w3[21] = 0): hi has no X term at all (712, 713); with
+    // w3[21] = 1, modes 5 and 6 add / subtract s12 (714: 0x42, and 713's +-1).
     const hi_m: u32 = if (mode == 4 or hi_dest == 0 or (integer and x_from_s)) hi else blk: {
-        if (integer) return RunError.UnknownForm;
-        const x: i64 = if (x_from_s) @as(i64, sx24(state.s[x_reg])) << 24 else @as(i64, state.xd) << 32;
+        if (integer) {
+            if (!w21 or (mode != 5 and mode != 6)) return RunError.UnknownForm;
+            const s12: u32 = state.s[12];
+            break :blk (if (mode == 5) hi +% s12 else hi -% s12) & 0xFFFF;
+        }
+        // The hi X term (714): w3[21] = 1 reads s12 (fixed on the measured word, 12 field flips
+        // inert); w3[21] = 0 the field s<w3[13:10]>, or for field 0 s0 as the xd latch << 8.
+        // All at acc[47:24].  Mode 3 under w3[21] = 1 is unpinned and refused.
+        if (w21 and mode == 3) return RunError.UnknownForm;
+        const x: i64 = if (w21) @as(i64, sx24(state.s[12])) << 24 else if (x_from_s) @as(i64, sx24(state.s[x_reg])) << 24 else @as(i64, state.xd) << 32;
         const sp: i64 = (@as(i64, sx24(state.s[a_s])) * sx24(state.s[b_s])) << 1;
         const acc: i64 = switch (mode) {
             0 => 0,
