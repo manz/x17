@@ -2631,6 +2631,8 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
         // 644: 0x11 runs as 0x10.
         0x10, 0x11 => if (x18C3AluN(n)) x18C3SlotAlu(op, a, b) else x18C3TableB(op, a, b),
         0x23 => if (x18C3AluN(n)) x18C3SlotAlu(op, a, b) else b & M24,
+        // 710: 0 for every op (measured at n = 0 and 2).
+        0x22 => if (n <= 2) 0 else RunError.UnknownForm,
         else => |code| {
             const unary = op == 2 or op == 3 or op == 4 or op == 6 or op == 7;
             if (unary) {

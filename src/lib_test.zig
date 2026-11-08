@@ -5762,3 +5762,33 @@ test "x03.tap0 into s0 is a pure X load-and-step; stx from s0 stores xd << 8 (70
     for (1..15) |k| if (k != 3) try testing.expectEqual(@as(u32, @intCast(0x10 * k)), st.s[k]);
     try testing.expectEqual(@as(?u32, 0x022200), st.readX(0x80));
 }
+
+test "x18 class 011 codes 0x22 and 0x23 ignore the op field (710)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const base = try asm_mod.assembleOne("x18.and s3, s1, s2");
+    var bad: u32 = 0;
+    for ([_]u32{ 0x22, 0x23 }) |code| for ([_]u32{ 0, 2, 4 }) |n| for (0..8) |op| {
+        if (code == 0x22 and n == 4) continue;
+        if (code == 0x23 and n == 2) continue;
+        const w = base.slice();
+        const h = (w[0] & ~@as(u32, 0x3F << 25)) | (code << 25);
+        const w1 = (w[1] & ~@as(u32, 7 << 15)) | (@as(u32, @intCast(op)) << 15);
+        const w2 = (w[2] & ~@as(u32, 0xF << 6)) | (n << 6);
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = 0x123;
+        st.s[2] = 0x456;
+        st.s[3] = 0xABCDEF;
+        const want: u32 = if (code == 0x22) 0 else 0x456;
+        if (emu.runFrom(testing.allocator, &st, &([_]u32{ h, w1, w2, w[3] } ++ halt), 0, 8)) |_| {
+            if (st.s[3] != want) {
+                std.debug.print("code {x} n {d} op {d}: {x}\n", .{ code, n, op, st.s[3] });
+                bad += 1;
+            }
+        } else |e| {
+            std.debug.print("code {x} n {d} op {d}: {any}\n", .{ code, n, op, e });
+            bad += 1;
+        }
+    };
+    try testing.expectEqual(@as(u32, 0), bad);
+}
