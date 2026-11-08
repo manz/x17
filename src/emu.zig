@@ -2319,6 +2319,88 @@ fn x18SlotAlu(op: u32, a: u32, b: u32) RunError!u32 {
     };
 }
 
+/// x18 class 011 table B (641): head code 0x10 with n = w2[9:6] outside X18C3_ALU_N.
+fn x18C3TableB(op: u32, a: u32, b: u32) RunError!u32 {
+    return switch (op) {
+        0 => (b -% a) & M24,
+        1 => ~(a +% b) & M24,
+        2, 3 => (0 -% a) & M24,
+        4 => ~a & M24,
+        5 => (a +% b +% 1) & M24,
+        6 => (a +% 1) & M24,
+        // a < 0 at 16 or 24 bits is not separated: refuse where the two disagree.
+        7 => if ((sx16(a) < 0) != (sx24(a) < 0)) RunError.UnknownForm else if (sx24(a) < 0) (a +% 1) & M24 else (0 -% a) & M24,
+        else => unreachable,
+    };
+}
+
+/// v << n at 24 bits; a result past 24 bits is unmeasured and refused.
+fn x18C3Shl(v: u32, n: u32) RunError!u32 {
+    const r = @as(i64, sx24(v)) << @intCast(n);
+    if (r >= 1 << 23 or r < -(1 << 23)) return RunError.UnknownForm;
+    return @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
+}
+
+/// v >> n, arithmetic (floor), at 24 bits.
+fn x18C3Shr(v: u32, n: u32) RunError!u32 {
+    return @as(u32, @truncate(@as(u64, @bitCast(@as(i64, sx24(v)) >> @intCast(n))))) & M24;
+}
+
+/// (a + 2^(n-1)) >> n, n >= 1 (643, code 0x34); a sum past 24 bits is unmeasured and refused.
+fn x18C3Rnd(a: u32, n: u32) RunError!u32 {
+    const sum = @as(i64, sx24(a)) + (@as(i64, 1) << @intCast(n - 1));
+    if (sum >= 1 << 23) return RunError.UnknownForm;
+    return @as(u32, @truncate(@as(u64, @bitCast(sum >> @intCast(n))))) & M24;
+}
+
+/// The n values (w2[9:6]) under which head codes 0x10 and 0x23 run the slot ALU (641).
+fn x18C3AluN(n: u32) bool {
+    return n == 2 or n == 5 or n == 6 or n == 7 or n == 9;
+}
+
+/// The class-011 slot value (641, correcting 361): head code head[30:25] 0x10 and 0x23 run the
+/// slot ALU only for n = w2[9:6] in {2, 5, 6, 7, 9}; any other n runs table B (0x10) or writes
+/// b (0x23).  Unary ops (w1[17:15] 2, 3, 4, 6, 7) under codes 0x00-0x02 shift the result left
+/// by n, under 0x03-0x05 right, arithmetic (642, correcting 361's pre-shift of a).  Under
+/// 0x16-0x19, 0x30-0x35 and 0x3A (643) unary ops give LOGIC {2: a|b, 3: a&b, 4: ~b, 6/7: b}
+/// << n (0x16/0x17) or >> n (0x18/0x19); a << n / a (0x30-0x32), a >> n / a (0x33, 0x35),
+/// rounded a >> n / a (0x34) for ops 2/6/7 / 3/4; 0x3A a << n for ops 2/3, a >> n for 4/6/7.
+/// Any other n != 0 is refused (370 measures it only as a shift on binary ops).
+fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
+    const op = (w1 >> 15) & 7;
+    const n = (w2 >> 6) & 0xF;
+    return switch ((h >> 25) & 0x3F) {
+        0x10 => if (x18C3AluN(n)) x18SlotAlu(op, a, b) else x18C3TableB(op, a, b),
+        0x23 => if (x18C3AluN(n)) x18SlotAlu(op, a, b) else b & M24,
+        else => |code| {
+            const unary = op == 2 or op == 3 or op == 4 or op == 6 or op == 7;
+            if (unary) {
+                const logic: u32 = switch (op) {
+                    2 => a | b,
+                    3 => a & b,
+                    4 => ~b,
+                    else => b,
+                } & M24;
+                const shifting = op == 2 or op == 6 or op == 7; // 0x30-0x35: ops 3 / 4 give a
+                switch (code) {
+                    // 642: codes 0x00-0x02 shift the result left by n, 0x03-0x05 right (floor).
+                    0x00...0x02 => return x18C3Shl(try x18SlotAlu(op, a, b), n),
+                    0x03...0x05 => return x18C3Shr(try x18SlotAlu(op, a, b), n),
+                    // 643: the logic ops, shifted.
+                    0x16, 0x17 => return x18C3Shl(logic, n),
+                    0x18, 0x19 => return x18C3Shr(logic, n),
+                    0x30...0x32 => return if (shifting) x18C3Shl(a, n) else a & M24,
+                    0x33, 0x35 => return if (shifting) x18C3Shr(a, n) else a & M24,
+                    0x34 => return if (!shifting or n == 0) a & M24 else x18C3Rnd(a, n),
+                    0x3A => return if (op == 2 or op == 3) x18C3Shl(a, n) else x18C3Shr(a, n),
+                    else => {},
+                }
+            }
+            return if (n != 0) RunError.UnknownForm else x18SlotAlu(op, a, b);
+        },
+    };
+}
+
 /// Class 011 (fact 168, 179, 200, 206): the slot result goes to
 /// s<w1[11:8]> and R<w3[10:7]>, and p<w2[17:14]> <- cond head[28:25] of it.
 /// Only cond 11 (negative) is measured; other conds leave p alone.
@@ -2332,7 +2414,7 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (w3 & 1 == 0) return RunError.UnknownForm;
     const a: u32 = state.s[(w2 >> 2) & 0xF];
     const b: u32 = state.s[(w1 >> 4) & 0xF];
-    const v = try x18SlotAlu((w1 >> 15) & 0x7, a, b);
+    const v = try x18C3Value(h, w1, w2, a, b);
     const dest_s: u32 = (w1 >> 8) & 0xF;
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_s != 0) state.s[dest_s] = v;
