@@ -163,8 +163,9 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
 - **Multiply (Q23):** rounds half up. Only -1 x -1 saturates, to 0x7FFFFF (§386, §402). x02's
   >>23 form is floor(x + 1/2) on both signs; its >>24 form (the MAC high part) is a true floor
   (§657).
-- **x02's low product.** The second destination holds 2P mod 2^24 (w1[17] = 0) or P mod 2^24
-  (w1[17] = 1): signed 24-bit, not masked to 16 (§655, §657). Mask with x18.and when 16 bits are
+- **Low products.** Every low-product slot measured (x02's second destination, x03's, x18's)
+  holds 2P mod 2^24 (w1[17] = 0 on x02/x03) or P mod 2^24: signed 24-bit, not masked to 16
+  (§655, §657, §663). Mask with x18.and when 16 bits are
   wanted. An X read into s0 is dropped (§652).
 - **MAC:** 40-bit accumulator; the widest measured (§203). The patent's 48 bits are corroboration
   only.

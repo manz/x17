@@ -39,7 +39,7 @@ done:
         alu s8, s0, s14, #OP_SUB ; pre = -1: the delay slot counts each bit
 pfx:    alu s12, s10, s14, #OP_SUB ; sh = avail - 1
         ptst p3, s0, #LT12, #PTST ; cache empty
-        jmp #IF_NOT, #3, pbit
+pfx2:   jmp #IF_NOT, #3, pbit
         ldy s13, e5             ; (delay slot) next word
         nop()
         refill()
@@ -54,9 +54,9 @@ pbit:   x19.alu s13, s14, s12, #SHIFT ; 2^sh
         alu s9, s12, s0, #OP_ADD ; the 1 leaves the cache
         alu s12, s8, s7, #OP_SUB
         ptst p3, s0, #LT12, #PTST ; fewer than 9 ones so far
-        jmp #3, #3, pfx
-        nop()
-        nop()
+        jmp #3, #3, pfx2
+        alu s12, s10, s14, #OP_SUB ; (delay slot) pfx's two bundles; the escape path
+        ptst p3, s0, #LT12, #PTST ; (delay slot) resets s12 and p3 before use
         alu s7, s3, s0, #OP_ADD ; escape: n = escape width
         readn(dst)
         jmp #ALWAYS, #0, done
@@ -141,11 +141,9 @@ top:    ldy s7, e4
         alu s12, s7, s14, #OP_SUB
         ptst p3, s0, #LT12, #PTST ; p3 = no samples left
         jmp #3, #3, finish
-        nop()
-        nop()
         ; k = min(floor(log2(q + 3)), kb), q = floor(mb / 2^9) = hi * 2^6 + floor(lo / 2^9)
-        ldy s1, e1
-        ldi s5, #6
+        ldy s1, e1              ; (delay slot) finish ignores s1 and s5
+        ldi s5, #6              ; (delay slot)
         x19.alu s1, s1, s5, #SHIFT
         ldy s2, e12
         floorshr(s2, s2, 9)

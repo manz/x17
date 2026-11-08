@@ -170,8 +170,14 @@ finish:
         ldy s13, e7             ; depth
         sxr(x, s13)
         alu s3, x, s0, #OP_ADD
-        x17.sty e11, #3, #0
-        x18.eagu e11, e11, #AGU_INC
+        x17.styi e11, #3, #0, e11
+}
+
+; emit_y at depth 16: the store keeps the low 16 bits, which sign extension from 16 leaves
+; alone.
+.macro emit_y16(x) {
+        alu s3, x, s0, #OP_ADD
+        x17.styi e11, #3, #0, e11
 }
 
 .macro unmix_y() {
@@ -212,6 +218,59 @@ lanes:  emit_y(s7)
 mono:   x19.xrd s7, #2          ; u
         x02.ainc #2, #2
         emit_y(s7)
+gap:    ldy s3, e10
+skip:   alu s12, s3, s14, #OP_SUB
+        ptst p3, s0, #LT12, #PTST
+        jmp #3, #3, frame
+        nop()
+        nop()
+        x18.eagu e11, e11, #AGU_INC
+        alu s3, s3, s14, #OP_SUB
+        jmp #ALWAYS, #0, skip
+        nop()
+        nop()
+finish:
+}
+
+; unmix_y for depth 16 (emit_y16).
+.macro unmix_y16() {
+        ldy s3, e1
+        x17.sty e9, #3, #0      ; left = n
+frame:  ldy s3, e9
+        alu s12, s3, s14, #OP_SUB
+        ptst p3, s0, #LT12, #PTST
+        jmp #3, #3, finish
+        alu s3, s3, s14, #OP_SUB ; (delay slot)
+        x17.sty e9, #3, #0      ; (delay slot) left -= 1
+        ldy s3, e8
+        alu s12, s3, s14, #OP_SUB
+        alu s12, s12, s14, #OP_SUB
+        ptst p3, s0, #LT12, #PTST ; one lane
+        jmp #3, #3, mono
+        nop()
+        nop()
+        ldy s7, e13             ; u
+        x18.eagu e13, e13, #AGU_INC
+        x19.xrd s8, #3          ; v
+        x02.ainc #3, #3
+        ldy s3, e3
+        alu s12, s3, s14, #OP_SUB
+        ptst p3, s0, #LT12, #PTST ; mix_res == 0
+        jmp #3, #3, lanes
+        nop()
+        nop()
+        mulshr()
+        alu s7, s7, s8, #OP_ADD
+        alu s7, s7, s4, #OP_SUB ; l = u + v - floor(a * v / 2^s)
+        alu s8, s7, s8, #OP_SUB ; r = l - v
+lanes:  emit_y16(s7)
+        emit_y16(s8)
+        jmp #ALWAYS, #0, gap
+        nop()
+        nop()
+mono:   x19.xrd s7, #2          ; u
+        x02.ainc #2, #2
+        emit_y16(s7)
 gap:    ldy s3, e10
 skip:   alu s12, s3, s14, #OP_SUB
         ptst p3, s0, #LT12, #PTST

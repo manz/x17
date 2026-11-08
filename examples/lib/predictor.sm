@@ -203,10 +203,8 @@ sample: ldy s7, e15
         alu s12, s7, s14, #OP_SUB
         ptst p3, s0, #LT12, #PTST
         jmp #3, #3, finish
-        nop()
-        nop()
-        x19.xrd s7, #8          ; top
-        x19.aagu A9, A7, #5, #0
+        x19.xrd s7, #8          ; (delay slot) top; finish ignores s7 and A9
+        x19.aagu A9, A7, #5, #0 ; (delay slot)
         x19.aagu A11, A10, #5, #0
         ldi s11, #0x7FFF
         alu s11, s11, s11, #OP_ADD
@@ -265,9 +263,9 @@ sum:    floorshr(s3, s5, 15)
         jmp #3, #3, adn
         alu s4, s0, s1, #OP_SUB ; (delay slot) D = -res
         nop()
-        jmp #ALWAYS, #0, advance ; res == 0: no adaptation
-        nop()
-        nop()
+        jmp #ALWAYS, #0, sample ; res == 0: no adaptation
+        x02.ainc #7, #7         ; (delay slot) advance
+        x02.ainc #8, #8         ; (delay slot)
         ; adaptation: i = 0 .. order - 1 (k = order - 1 - i), weight w = i + 1, one loop per
         ; sign of res. With D = +-del0 both stop at D <= 0:
         ;   res > 0: dd > 0: c -= 1, D -= w * floor(dd / 2^ds); dd < 0: c += 1, -dd instead
@@ -307,9 +305,9 @@ pput:   stx A11, s13
         jmp #IF_NOT, #3, pstep
         nop()
         nop()
-        jmp #ALWAYS, #0, adone
-        nop()
-        nop()
+        jmp #ALWAYS, #0, sample
+        x02.ainc #7, #7         ; (delay slot) advance
+        x02.ainc #8, #8         ; (delay slot)
 pneg:   alu s12, s12, s9, #OP_SUB
         x19.alu s3, s12, s10, #SHIFT ; m = floor(-dd / 2^ds)
         alu s13, s13, s14, #OP_ADD ; c += 1
@@ -357,9 +355,9 @@ nput:   stx A11, s13
         jmp #IF_NOT, #3, nstep
         nop()
         nop()
-        jmp #ALWAYS, #0, adone
-        nop()
-        nop()
+        jmp #ALWAYS, #0, sample
+        x02.ainc #7, #7         ; (delay slot) advance
+        x02.ainc #8, #8         ; (delay slot)
 nneg:   alu s12, s3, s9, #OP_SUB
         x19.alu s3, s12, s10, #SHIFT ; m = floor(dd / 2^ds)
         alu s13, s13, s14, #OP_SUB ; c -= 1
@@ -374,11 +372,9 @@ nneg:   alu s12, s3, s9, #OP_SUB
         nop()
         nop()
 adone:
-advance: x02.ainc #7, #7
-        x02.ainc #8, #8
-        jmp #ALWAYS, #0, sample
-        nop()
-        nop()
+advance: jmp #ALWAYS, #0, sample
+        x02.ainc #7, #7         ; (delay slot)
+        x02.ainc #8, #8         ; (delay slot)
 finish: x03.agu A5, A10, #32, #0, A0 ; the bit reader back
         x19.xrd s9, #5
         x02.ainc #5, #5

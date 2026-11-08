@@ -195,14 +195,11 @@ alac_full:
 alac_hdr:
         ysub(0)
         getbits(s3, 4)          ; mode
-        x17.sty e6, #3, #0
-        x18.eagu e6, e6, #AGU_INC
+        x17.styi e6, #3, #0, e6
         getbits(s3, 4)          ; den_shift
-        x17.sty e6, #3, #0
-        x18.eagu e6, e6, #AGU_INC
+        x17.styi e6, #3, #0, e6
         getbits(s3, 3)          ; pb_factor
-        x17.sty e6, #3, #0
-        x18.eagu e6, e6, #AGU_INC
+        x17.styi e6, #3, #0, e6
         getbits(s3, 5)          ; order
         x17.sty e6, #3, #0
         alu s2, s3, s0, #OP_ADD ; coefficients left
@@ -439,8 +436,7 @@ alac_vs:
         jmp #3, #3, alac_v1
         nop()
         nop()
-        x17.sty e13, #3, #0     ; a pair: lane 0 to Y UY
-        x18.eagu e13, e13, #AGU_INC
+        x17.styi e13, #3, #0, e13 ; a pair: lane 0 to Y UY
         yld(s7, PK_DEP)
         readn(s3)
         stx A3, s3
@@ -503,7 +499,19 @@ alac_uok:
         ldi s4, #RING - 1
         alu s3, s3, s4, #OP_ADD
         x17.mve e11, s3         ; e11 = RING + ch
+        yld(s4, PK_DEP)
+        ldi s3, #16
+        alu s4, s4, s3, #OP_SUB
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, alac_u16
+        nop()
+        nop()
         unmix_y()
+        jmp #ALWAYS, #0, alac_next
+        nop()
+        nop()
+alac_u16:
+        unmix_y16()
 alac_next:
         yld(s3, PK_CH)
         yld(s4, PK_LN)
@@ -566,8 +574,7 @@ ty:     alu s12, s1, s0, #OP_ADD
         nop()
         x19.xrd s3, #2
         x02.ainc #2, #2
-        x17.sty e13, #3, #0
-        x18.eagu e13, e13, #AGU_INC
+        x17.styi e13, #3, #0, e13
         alu s1, s1, s14, #OP_SUB
         jmp #ALWAYS, #0, ty
         nop()
@@ -594,8 +601,7 @@ vd:     alu s12, s1, s0, #OP_ADD
         nop()
         ldi s7, #16
         readn(s3)
-        x17.sty e11, #3, #0
-        x18.eagu e11, e11, #AGU_INC
+        x17.styi e11, #3, #0, e11
         alu s1, s1, s14, #OP_SUB
         jmp #ALWAYS, #0, vd
         nop()
