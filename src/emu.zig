@@ -2184,8 +2184,11 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // of Y:[e<w3[28:25]>] (486: Y[7:0] << 8, (Y << 7)[15:0], Y) when w2[22:21] = 01.  Other
     // w2[22:21]: mux 3 takes yd[7:0] << 8 (597), muxes 4 / 5 are OPEN.
     const xs_dest: u32 = (h >> 21) & 0xF;
+    // Mux 3's fresh read sets yd (after 597); only yd[7:0] is measured, the rest follows x00.
+    var yd_new: ?u32 = null;
     const xs_val: u32 = if (xs_dest == 0) 0 else blk: {
         const fresh = (w2 >> 21) & 3 == 1;
+        if (fresh and (w1 >> 12) & 7 == 3) yd_new = (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF;
         const y: u32 = if (fresh) (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF else state.yd & 0xFFFF;
         break :blk switch ((w1 >> 12) & 7) {
             1, 2, 6 => (h >> 5) & 0xFFFF,
@@ -2222,6 +2225,7 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     }
     const acc_u: u64 = @bitCast(acc);
     if (xs_dest != 0) state.s[xs_dest] = xs_val;
+    if (yd_new) |v| state.yd = v;
     if (hi_dest != 0) state.s[hi_dest] = @truncate((acc_u >> 24) & 0xFFFF);
     if (lo_dest != 0) state.s[lo_dest] = @truncate(acc_u & 0xFFFF);
     if (alu_dest != 0) state.s[alu_dest] = alu_v;

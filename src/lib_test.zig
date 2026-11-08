@@ -1857,6 +1857,8 @@ test "x18 class 111 mux 3 takes yd[7:0] << 8 unless w2[22:21] = 01 (fact 597)" {
         if (c.want) |v| {
             _ = try r;
             try testing.expectEqual(v, state.s[2]);
+            // The fresh read (01) sets yd; the yd copies leave it.
+            try testing.expectEqual(@as(u32, if (c.w2 == 0x00200000) 0x12B6 else c.yd), state.yd);
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
