@@ -6909,3 +6909,16 @@ test "x18 X read returns all 24 bits of the word (693)" {
         try testing.expectEqual(c[1], st.s[5]);
     }
 }
+
+test "class-05 add is 24 bits wide and wraps at 2^24 (695)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const add = try asm_mod.assembleOne("alu s3, s1, s2, #14");
+    for ([_][3]u32{ .{ 0x7FFF, 0x7FFF, 0x00FFFE }, .{ 0x7FFF, 1, 0x008000 }, .{ 0xFFFFFF, 1, 0 }, .{ 0x600000, 0x600000, 0xC00000 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = c[0];
+        st.s[2] = c[1];
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{add.slice()[0]} ++ halt), 0, 8);
+        try testing.expectEqual(c[2], st.s[3]);
+    }
+}
