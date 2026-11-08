@@ -6827,3 +6827,32 @@ test "x18 class 010 X mux 011: Y[7:0] << 8 setting yd with w1[28] = 1, yd[7:0] <
     _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
     try testing.expectEqual(@as(u32, 0x3300), st.s[6]);
 }
+
+test "x18 class 110 hi output follows the mode w3[20:18] (687)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    for ([_]struct { mode: u32, want: ?u32 }{
+        .{ .mode = 4, .want = 0x0C },
+        .{ .mode = 5, .want = 0x1A0C },
+        .{ .mode = 6, .want = 0xE60C },
+        .{ .mode = 7, .want = 0x19F4 },
+        .{ .mode = 0, .want = 0 },
+        .{ .mode = 2, .want = 0x4600 },
+        .{ .mode = 3, .want = 0xE600 }, // ~X has ones below bit 24: the 2^23 carries
+        .{ .mode = 1, .want = null },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = 0x6000;
+        st.s[2] = 0x1000;
+        st.xd = 0xE01A;
+        // a = s1 (w2[4:1]), b = s2 (w2[8:5]), hi -> s4 (w2[12:9])
+        const w2: u32 = (1 << 1) | (2 << 5) | (4 << 9);
+        // doubled form (w3[24] = 0), rounding (w3[22] = 1)
+        const w3: u32 = (0xC1500001 & ~@as(u32, (7 << 18) | (1 << 24))) | (c.mode << 18);
+        const r = emu.runFrom(testing.allocator, &st, &([_]u32{ 0x00000018, 0, w2, w3 } ++ halt), 0, 8);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, st.s[4]);
+        } else try testing.expectError(emu.RunError.UnknownForm, r);
+    }
+}
