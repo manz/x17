@@ -5271,4 +5271,16 @@ test "x18 class 111 MAC high write rounds with w3[8] (fact 601)" {
             try testing.expectEqual(if (rnd == 1) k.round.? else k.floor, state.s[6] & 0xFFFF);
         }
     }
+    // Every mode, toward +inf (after 601): P = 0x1800000, X = 1 << 24, ties.
+    for ([_][3]u32{ .{ 4, 2, 1 }, .{ 6, 1, 0 }, .{ 7, 0, 0xFFFF } }) |k| {
+        for ([_]u32{ 1, 0 }) |rnd| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.s[2] = 0x1000;
+            state.s[3] = 0x0C00;
+            state.s[7] = 1;
+            _ = try emu.runFrom(gpa, &state, &.{ 0x80600018, 0x72343004, 0x32300006, 0xE6048006 | k[0] << 4 | rnd << 8, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            try testing.expectEqual(if (rnd == 1) k[1] else k[2], state.s[6] & 0xFFFF);
+        }
+    }
 }
