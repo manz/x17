@@ -46,6 +46,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/stereo.sm", .text = @embedFile("stereo.sm") },
     .{ .path = "lib/tns.sm", .text = @embedFile("tns.sm") },
     .{ .path = "lib/pns.sm", .text = @embedFile("pns.sm") },
+    .{ .path = "lib/aac.sm", .text = @embedFile("aac.sm") },
 };
 
 fn load(ctx: ?*anyopaque, gpa: std.mem.Allocator, path: []const u8) anyerror!?[]u8 {
@@ -6205,6 +6206,259 @@ test "x19agu: w2[24]'s immediate goes to e only, w2[30] inert, s mux 6 writes 0 
     m.s[9] = 0x777;
     _ = try emu.runFrom(gpa, &m, &.{ 0x01200199, 0x00e46000, 0x53000440, 0x0e001380, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0), m.s[9]);
+}
+
+/// sosumi ref/aac/huffman.zig `books`: values per codeword, the radix, the field width x17's
+/// spectral macros unpack (2 bits for quads, 5 for pairs).
+const AacBook = struct { dim: u3, mod: u5, fbits: u4 };
+const aac_books = [11]AacBook{
+    .{ .dim = 4, .mod = 3, .fbits = 2 },  .{ .dim = 4, .mod = 3, .fbits = 2 },  .{ .dim = 4, .mod = 3, .fbits = 2 },
+    .{ .dim = 4, .mod = 3, .fbits = 2 },  .{ .dim = 2, .mod = 9, .fbits = 5 },  .{ .dim = 2, .mod = 9, .fbits = 5 },
+    .{ .dim = 2, .mod = 8, .fbits = 5 },  .{ .dim = 2, .mod = 8, .fbits = 5 },  .{ .dim = 2, .mod = 13, .fbits = 5 },
+    .{ .dim = 2, .mod = 13, .fbits = 5 }, .{ .dim = 2, .mod = 17, .fbits = 5 },
+};
+
+/// The leaf a codeword index decodes to: its base-mod digits as fields, the first value highest;
+/// the scale factor code's leaf is the index.
+fn aacLeaf(book: usize, idx: usize) u16 {
+    if (book == 0) return @intCast(idx);
+    const b = aac_books[book - 1];
+    var v = idx;
+    var out: u16 = 0;
+    var shift: u4 = 0;
+    for (0..b.dim) |_| {
+        out |= @as(u16, @intCast(v % b.mod)) << shift;
+        v /= b.mod;
+        shift += b.fbits;
+    }
+    return out;
+}
+
+fn aacQ23(x: f64) i64 {
+    return @intFromFloat(std.math.clamp(@round(x * 0x1p23), -0x1p23, 0x1p23 - 1));
+}
+
+/// sosumi ref/aac/window.zig: the sine and KBD rising halves in Q23.
+fn aacSine(out: []i64) void {
+    const n: f64 = @floatFromInt(2 * out.len);
+    for (out, 0..) |*e, i| e.* = aacQ23(@sin(std.math.pi / n * (@as(f64, @floatFromInt(i)) + 0.5)));
+}
+
+fn aacBesselI0(x: f64) f64 {
+    var sum: f64 = 1;
+    var term: f64 = 1;
+    var k: f64 = 1;
+    while (term > 1e-17 * sum) : (k += 1) {
+        const r = x / (2 * k);
+        term *= r * r;
+        sum += term;
+    }
+    return sum;
+}
+
+fn aacKbd(out: []i64, alpha: f64) void {
+    var kernel: [1025]f64 = undefined;
+    const half = out.len;
+    const q: f64 = @floatFromInt(half / 2);
+    for (kernel[0 .. half + 1], 0..) |*k, p| {
+        const r = (@as(f64, @floatFromInt(p)) - q) / q;
+        k.* = aacBesselI0(std.math.pi * alpha * @sqrt(1 - r * r));
+    }
+    var total: f64 = 0;
+    for (kernel[0 .. half + 1]) |k| total += k;
+    var acc: f64 = 0;
+    for (out, 0..) |*e, i| {
+        acc += kernel[i];
+        e.* = aacQ23(@sqrt(acc / total));
+    }
+}
+
+fn aacPutX(st: *emu.State, gpa: std.mem.Allocator, addr: usize, v: i64) !void {
+    try st.x_mem.put(gpa, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFFFF);
+}
+
+fn aacPutY(st: *emu.State, gpa: std.mem.Allocator, addr: usize, v: i64) !void {
+    try st.y_mem.put(gpa, @intCast(addr), @as(u32, @truncate(@as(u64, @bitCast(v)))) & 0xFFFF);
+}
+
+/// Every table aac.sm reads, at its addresses (44.1 kHz).
+fn aacTables(gpa: std.mem.Allocator, st: *emu.State) !void {
+    // Huffman codes from Y 0x4800 on, the scale factor code first; AK_BOOKS + b points at book b
+    var codes: [12][300]HCode = undefined;
+    var counts: [12]usize = @splat(0);
+    var lines = std.mem.tokenizeScalar(u8, @embedFile("books.txt"), '\n');
+    while (lines.next()) |line| {
+        if (line[0] == '#') continue;
+        var f = std.mem.tokenizeScalar(u8, line, ' ');
+        const b = try std.fmt.parseInt(usize, f.next().?, 10);
+        const code = try std.fmt.parseInt(u32, f.next().?, 16);
+        const len = try std.fmt.parseInt(u5, f.next().?, 10);
+        codes[b][counts[b]] = .{ .code = code, .len = len, .v = aacLeaf(b, counts[b]) };
+        counts[b] += 1;
+    }
+    var addr: usize = 0x4800;
+    for (0..12) |b| {
+        var t: [8192]u16 = undefined;
+        var n: usize = 0;
+        _ = buildTables(&t, &n, codes[b][0..counts[b]], 0, 8);
+        try testing.expect(n <= 1024);
+        for (t[0..n], 0..) |w, i| try aacPutY(st, gpa, addr + i, w);
+        if (b > 0) try aacPutY(st, gpa, 0x3C40 + b, @intCast(addr));
+        addr += n;
+    }
+    try testing.expect(addr <= 0x5C00);
+    // dequantiser
+    const dq = dqTables();
+    for (0..129) |k| {
+        try aacPutX(st, gpa, 0x1800 + 2 * k, dq.dm[k]);
+        try aacPutX(st, gpa, 0x1801 + 2 * k, dq.de[k]);
+    }
+    for (dq.it, 0..) |v, j| try aacPutX(st, gpa, 0x1910 + j, v);
+    for (dq.g, 0..) |v, j| try aacPutX(st, gpa, 0x1960 + j, v);
+    for (0..8) |j| {
+        try aacPutY(st, gpa, 0x2140 + j, dq_ie[j]);
+        try aacPutY(st, gpa, 0x2148 + j, dq_ir[j] * 4);
+    }
+    // IMDCT, long and short, Z at X 0
+    const Tl = ImTables(1024);
+    const tl = try gpa.create(Tl);
+    defer gpa.destroy(tl);
+    tl.* = Tl.init();
+    for (tl.pre, tl.post, 0..) |a, c, k| {
+        try aacPutX(st, gpa, 0x1000 + 2 * k, a.re);
+        try aacPutX(st, gpa, 0x1001 + 2 * k, a.im);
+        try aacPutX(st, gpa, 0x1400 + 2 * k, c.re);
+        try aacPutX(st, gpa, 0x1401 + 2 * k, c.im);
+    }
+    for (tl.tw, 0..) |c, k| {
+        try aacPutX(st, gpa, 0x3000 + 2 * k, c.re);
+        try aacPutX(st, gpa, 0x3001 + 2 * k, c.im);
+    }
+    for (tl.rev, 0..) |r, n| try aacPutY(st, gpa, 0x2400 + n, 2 * @as(i64, r) - 2);
+    const ts = ImTables(128).init();
+    for (ts.pre, ts.post, 0..) |a, c, k| {
+        try aacPutX(st, gpa, 0x1A00 + 2 * k, a.re);
+        try aacPutX(st, gpa, 0x1A01 + 2 * k, a.im);
+        try aacPutX(st, gpa, 0x1A80 + 2 * k, c.re);
+        try aacPutX(st, gpa, 0x1A81 + 2 * k, c.im);
+    }
+    for (ts.tw, 0..) |c, k| {
+        try aacPutX(st, gpa, 0x1B00 + 2 * k, c.re);
+        try aacPutX(st, gpa, 0x1B01 + 2 * k, c.im);
+    }
+    for (ts.rev, 0..) |r, n| try aacPutY(st, gpa, 0x2D00 + n, 2 * @as(i64, r) - 2);
+    // window halves as rshr(w, 2): sine and KBD (alpha 4 long, 6 short)
+    var wl: [2][1024]i64 = undefined;
+    var ws: [2][128]i64 = undefined;
+    aacSine(&wl[0]);
+    aacKbd(&wl[1], 4);
+    aacSine(&ws[0]);
+    aacKbd(&ws[1], 6);
+    for (0..2) |s| {
+        for (wl[s], 0..) |w, k| try aacPutX(st, gpa, 0x4800 + 0x400 * s + k, rshr(w, 2));
+        for (ws[s], 0..) |w, k| try aacPutX(st, gpa, 0x5000 + 0x80 * s + k, rshr(w, 2));
+    }
+    // stereo T, PNS T and seeds, TNS reflection coefficients
+    for (0..4) |b| try aacPutX(st, gpa, 0x5100 + b, @intFromFloat(@round(std.math.pow(f64, 2.0, 22.0 - @as(f64, @floatFromInt(b)) / 4.0))));
+    for (0..4) |b| try aacPutX(st, gpa, 0x5104 + b, pnT(b));
+    for (0..6) |i| try aacPutX(st, gpa, 0x5108 + i, pnSeed(i));
+    for (tnsRefl(), 0..) |v, k| try aacPutX(st, gpa, 0x5110 + k, v);
+    // swb_offset, band counts, TNS_MAX_BANDS
+    for (0..64) |k| {
+        try aacPutY(st, gpa, 0x3D00 + k, swb_long_44[@min(k, swb_long_44.len - 1)]);
+        try aacPutY(st, gpa, 0x3D40 + k, swb_short_44[@min(k, swb_short_44.len - 1)]);
+    }
+    try aacPutY(st, gpa, 0x3C0A, swb_long_44.len - 1);
+    try aacPutY(st, gpa, 0x3C0B, swb_short_44.len - 1);
+    try aacPutY(st, gpa, 0x3C0C, 42);
+    try aacPutY(st, gpa, 0x3C0D, 14);
+}
+
+const AacRun = struct { ok: usize = 0, n: usize = 0, long_bundles: u64 = 0, short_bundles: u64 = 0 };
+
+/// Access units dumped from sosumi's fixed-point decoder (`aacdec`): the state snapshot first,
+/// then each unit in turn in one emulator state, its PCM against the reference's.
+fn checkAac(gpa: std.mem.Allocator, prog: []const u32, dump: []const u8, name: []const u8, limit: usize) !AacRun {
+    try testing.expectEqualSlices(u8, "AAPK", dump[0..4]);
+    try testing.expectEqual(@as(u32, 4), le32(dump, 4));
+    const nch = le32(dump, 8);
+    const count = le32(dump, 16);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try aacTables(gpa, &state);
+    try aacPutY(&state, gpa, 0x3C00, nch);
+    var p: usize = 20;
+    for (0..nch) |c| {
+        try aacPutY(&state, gpa, 0x3C0E + c, le32(dump, p));
+        p += 4;
+        for (0..1024) |k| try state.x_mem.put(gpa, @intCast(0x3C00 + 0x400 * c + k), le32(dump, p + 4 * k) & 0xFFFFFF);
+        p += 4096;
+    }
+    try state.x_mem.put(gpa, 0x5130, le32(dump, p) & 0xFFFFFF);
+    p += 4;
+    var run: AacRun = .{ .n = count };
+    for (0..@min(count, limit)) |k| {
+        const len = le32(dump, p);
+        const au = dump[p + 4 .. p + 4 + len];
+        p += 4 + len;
+        const pcm = dump[p .. p + 4 * 1024 * nch];
+        p += 4 * 1024 * nch;
+        for (0..(len + 1) / 2) |i| {
+            const hi: u32 = au[2 * i];
+            const lo: u32 = if (2 * i + 1 < len) au[2 * i + 1] else 0;
+            try state.y_mem.put(gpa, 0x4000 + @as(u32, @intCast(i)), hi << 8 | lo);
+        }
+        state.cur_lane = 0;
+        const bundles = try emu.runFrom(gpa, &state, prog, 0, 1 << 30);
+        try testing.expect(state.halted);
+        const status = state.getY(0x3C01).?;
+        if (status != 0) {
+            std.debug.print("{s} unit {d}: status {d}\n", .{ name, k, status });
+            return run;
+        }
+        // eight_short somewhere in the unit: the slot's FIN record keeps the last sequence
+        if (state.getY(0x6401) == 2) run.short_bundles = @max(run.short_bundles, bundles) else run.long_bundles = @max(run.long_bundles, bundles);
+        var bad: ?usize = null;
+        for (0..1024 * nch) |i| {
+            const want = le32(pcm, 4 * i) & 0xFFFF;
+            const got = state.getY(0x3400 + @as(u32, @intCast(i))) orelse 0xDEAD0000;
+            if (got != want and bad == null) {
+                bad = i;
+                std.debug.print("{s} unit {d}: sample {d} (frame {d} ch {d}) want {x} got {x}\n", .{ name, k, i, i / nch, i % nch, want, got });
+            }
+        }
+        if (bad == null) run.ok += 1;
+    }
+    return run;
+}
+
+test "aac_packet decodes fixture access units as the reference does" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/mem.sm"
+        \\.include "lib/huffman.sm"
+        \\.include "lib/sections.sm"
+        \\.include "lib/dequant.sm"
+        \\.include "lib/stereo.sm"
+        \\.include "lib/pns.sm"
+        \\.include "lib/tns.sm"
+        \\.include "lib/imdct.sm"
+        \\.include "lib/window.sm"
+        \\.include "lib/aac.sm"
+        \\        bits_init(0x4000)
+        \\        aac_packet()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var all = true;
+    inline for (.{ "tone.aac_at", "sweep.ff_tns", "pink.ff_pns", "pink.ff_is", "clicks.aac_at" }) |name| {
+        const r = try checkAac(gpa, prog, @embedFile(name ++ ".pkts"), name, 1000);
+        if (build_options.bench or r.ok != r.n) std.debug.print("{s}: {d}/{d} units bit for bit; worst bundles per unit: long {d}, short {d}\n", .{ name, r.ok, r.n, r.long_bundles, r.short_bundles });
+        all = all and r.ok == r.n;
+    }
+    try testing.expect(all);
 }
 
 const ScanFile = struct { path: []const u8, text: []const u8 };

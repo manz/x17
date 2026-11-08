@@ -153,13 +153,18 @@ pub fn build(b: *std.Build) void {
     lib_mod.addAnonymousImport("tns.sm", .{ .root_source_file = b.path("examples/lib/tns.sm") });
     lib_mod.addAnonymousImport("pns.sm", .{ .root_source_file = b.path("examples/lib/pns.sm") });
     lib_mod.addAnonymousImport("pcm.sm", .{ .root_source_file = b.path("examples/lib/pcm.sm") });
+    lib_mod.addAnonymousImport("aac.sm", .{ .root_source_file = b.path("examples/lib/aac.sm") });
+    lib_mod.addAnonymousImport("books.txt", .{ .root_source_file = b.path("testdata/aac/books.txt") });
+    for ([_][]const u8{ "tone.aac_at", "sweep.ff_tns", "pink.ff_pns", "pink.ff_is", "clicks.aac_at" }) |f| {
+        lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/aac/{s}.pkts", .{f})) });
+    }
     lib_mod.addImport("host", host_mod);
     for ([_][]const u8{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |f| {
         lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/alac/{s}.pkts", .{f})) });
     }
     // -Dtest-filter=<name>: run only the lib tests whose name contains it (mutation checks).
     const test_filter = b.option([]const u8, "test-filter", "run only lib tests matching this");
-    const lib_filters: []const []const u8 = if (aac_bench) &.{ "as the model does", "huff_decode", "win_start", "aac stage bench report" } else if (test_filter) |f| b.dupeStrings(&.{f}) else &.{};
+    const lib_filters: []const []const u8 = if (aac_bench) &.{ "as the model does", "huff_decode", "win_start", "aac_packet decodes", "aac stage bench report" } else if (test_filter) |f| b.dupeStrings(&.{f}) else &.{};
     const lib_t = b.addTest(.{ .root_module = lib_mod, .filters = lib_filters });
 
     const bench_mod = b.createModule(.{
