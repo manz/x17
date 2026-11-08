@@ -2829,7 +2829,8 @@ fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
 
 /// x19a3, classes (0,0,3) (fact 149, 529): with x = A<w3[19:15]>, y = R<w1[21:18]>, i =
 /// 2*w3[14:0], A<head[29:25]> <- AGU3[w3[24:20]] and s<head[24:21]> <- mux w1[17:15]: 1/2 the
-/// AGU3 value, 0 zero (5 and 6 OPEN, the rest unmeasured: refused).  R<w1[14:11]> <-
+/// AGU3 value, 0 and 7 zero, 5 D = X:[A<{w1[2:0], head[31:30]}>][15:0] read before the A write,
+/// 4 (D << 7)[15:0] (611; 4 and 7 from the x99 sweep), 3 and 6 OPEN.  R<w1[14:11]> <-
 /// AGU10[w1[10:7]](e<w3[28:25]>, y).  All read before any writes.
 fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
@@ -2840,9 +2841,12 @@ fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if ((w1 >> 27) & 1 == 0) return RunError.UnknownForm;
     const y: u32 = state.r[(w1 >> 18) & 0xF];
     const agu = agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], y, 2 * (w3 & 0x7FFF));
+    const d: u32 = (state.readX(state.a[((w1 & 7) << 2) | (head >> 30)]) orelse 0) & 0xFFFF;
     const s_val: u32 = switch ((w1 >> 15) & 7) {
         1, 2 => agu,
-        0 => 0,
+        0, 7 => 0,
+        5 => d,
+        4 => shl7(d),
         else => return RunError.UnknownForm,
     };
     const r_val = try agu10Eval((w1 >> 7) & 0xF, state.e[(w3 >> 25) & 0xF], y);

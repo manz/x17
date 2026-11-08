@@ -3673,13 +3673,12 @@ test "x17xld runs x17a05's head ALU slot beside its load" {
 
 test "x19a3's s write goes through the w1[17:15] mux; A always takes AGU3" {
     // fact 529: own-x19a3m, A14 = 0x300: s3 <- A14 - 0x100 = 0x200 (mux 1); mux 0
-    // gives 0; A5 takes the AGU3 value either way; muxes 5 and 6 refuse.
+    // gives 0; A5 takes the AGU3 value either way; mux 6 refuses (5 is 611's X read, below).
     const gpa = testing.allocator;
     for ([_]struct { w1: u32, s3: ?u32 }{
         .{ .w1 = 0x0814bb00, .s3 = 0x200 },
         .{ .w1 = 0x08143b00, .s3 = 0 },
         .{ .w1 = 0x08153b00, .s3 = 0x200 }, // mux 2
-        .{ .w1 = 0x0816bb00, .s3 = null }, // mux 5
         .{ .w1 = 0x08173b00, .s3 = null }, // mux 6
         .{ .w1 = 0x0014bb00, .s3 = null }, // w1[27] cleared wedges (559)
     }) |c| {
@@ -5513,5 +5512,28 @@ test "x16agu2 mux 0's s write is measured as 0 only at head code 14 (fact 610)" 
             _ = try r;
             try testing.expectEqual(@as(u32, 0), state.s[6]);
         } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "x19a3 s mux 5 reads X:[A<{w1[2:0], head[31:30]}>] before the A write; 4 and 7 (fact 611)" {
+    const gpa = testing.allocator;
+    // own-x19a3m's bundle; s3 <- mux; A<head[29:25]> <- AGU3 (A14 - 0x100).
+    for ([_]struct { head: u32, w1: u32 = 0x0816bb00, ai: u5, addr: u32, x: u32, want: u32 }{
+        .{ .head = 0x8a600019, .ai = 2, .addr = 0x300, .x = 0x1234, .want = 0x1234 },
+        .{ .head = 0x8a600019, .ai = 2, .addr = 0x300, .x = 0xFF8BCD, .want = 0x8BCD },
+        .{ .head = 0x8a600019, .ai = 2, .addr = 0x320, .x = 0x1234, .want = 0x1234 },
+        .{ .head = 0xca600019, .ai = 3, .addr = 0x340, .x = 0x5A31, .want = 0x5A31 }, // head[30]
+        .{ .head = 0x8a600019, .w1 = 0x0816bb02, .ai = 10, .addr = 0x360, .x = 0x0C3D, .want = 0x0C3D }, // w1[1]
+        .{ .head = 0x84600019, .ai = 2, .addr = 0x300, .x = 0x1234, .want = 0x1234 }, // A2 is also the A dest
+        .{ .head = 0x8a600019, .w1 = 0x08163b00, .ai = 2, .addr = 0x300, .x = 0x1234, .want = 0x1A00 }, // mux 4
+        .{ .head = 0x8a600019, .w1 = 0x0817bb00, .ai = 2, .addr = 0x300, .x = 0x1234, .want = 0 }, // mux 7
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[14] = 0x300;
+        state.a[c.ai] = c.addr;
+        try state.x_mem.put(gpa, c.addr, c.x);
+        _ = try emu.runFrom(gpa, &state, &.{ c.head, c.w1, 0x00002008, 0x7b570080, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.s[3]);
     }
 }
