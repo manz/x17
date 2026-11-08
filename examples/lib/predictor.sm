@@ -212,18 +212,20 @@ sample: ldy s7, e15
         ; the x02 floor >> 24 of (c << 8) * d and the undoubled low half of c * d (w1[17] = 1,
         ; fact 399). Four x02.v bundles a term, the X reads and A steps one term ahead, the
         ; hi add one term behind; no multiply reads an s its own bundle's X read writes.
+        ; The bundles with nothing to read still read X:[A0] (x02.v always does): into s8, which
+        ; is dead until the sum reloads it, never s0, since X:0 may hold samples.
         ; Operands: xrd_d, xrd_a, inc_d1, inc_d2, inc_s, mpy_d, mpy_a, mpy_b, plo, #sgn,
         ; #x3_d >> 2, #x3_d & 3, x3_a, x3_b, #op, #sh
         x02.v s1, A11, A11, A0, A11, s9, s0, s0, s0, #5, #1, #1, s0, s0, #0, #0 ; c; s9 = s5 = 0
         x02.v s3, A9, A9, A0, A9, s0, s0, s0, s0, #5, #3, #1, s1, s0, #0, #8 ; out; s13 = c << 8
-        x02.v s0, A0, A0, A0, A0, s4, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0 ; s2 = d; s4 = 0
+        x02.v s8, A0, A0, A0, A0, s4, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0 ; s2 = d; s4 = 0
 tap:    x02.v s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #1, #0, s4, s9, #0, #0 ; s12 = cd[15:0], hi += s9, next out
         x02.v s1, A11, A11, A0, A11, s9, s13, s2, s0, #5, #1, #1, s5, s12, #0, #0 ; s9 = floor(cd / 2^16), lo += s12, next c
         pcond p3, R6, A11, #30  ; terms left: A11 != R6
         jmp #3, #3, tap
-        x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #3, #1, s1, s0, #0, #8 ; (delay slot) c << 8
-        x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0 ; (delay slot) d
-        x02.v s0, A0, A0, A0, A0, s0, s0, s0, s0, #5, #1, #0, s4, s9, #0, #1 ; hi = 2 (hi + s9): units of 2^15
+        x02.v s8, A0, A0, A0, A0, s0, s0, s0, s0, #5, #3, #1, s1, s0, #0, #8 ; (delay slot) c << 8
+        x02.v s8, A0, A0, A0, A0, s0, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0 ; (delay slot) d
+        x02.v s8, A0, A0, A0, A0, s0, s0, s0, s0, #5, #1, #0, s4, s9, #0, #1 ; hi = 2 (hi + s9): units of 2^15
 sum:    floorshr(s3, s5, 15)
         alu s4, s4, s3, #OP_ADD
         ldi s12, #15

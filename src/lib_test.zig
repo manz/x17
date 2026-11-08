@@ -124,7 +124,26 @@ fn refGet(data: []const u8, pos: *usize, m: u32, k: u5, esc: u5) u32 {
 }
 
 fn stage(gpa: std.mem.Allocator, state: *emu.State, data: []const u8) !void {
-    for (0..data.len / 2) |i| try state.y_mem.put(gpa, 0x4000 + @as(u32, @intCast(i)), @as(u32, data[2 * i]) << 8 | data[2 * i + 1]);
+    try stageAt(gpa, state, data, 0x4000);
+}
+
+fn stageAt(gpa: std.mem.Allocator, state: *emu.State, data: []const u8, base: u32) !void {
+    for (0..data.len / 2) |i| try state.y_mem.put(gpa, base + @as(u32, @intCast(i)), @as(u32, data[2 * i]) << 8 | data[2 * i + 1]);
+}
+
+/// Every word the run touched lies in the mode-0 windows: X 0..0x1FFF, Y 0..0x2EFF and
+/// 0xFD80..0xFDFF (writes and the host's staging; the emulator's memory is sparse).
+fn expectMode0(state: *emu.State) !void {
+    var xi = state.x_mem.keyIterator();
+    while (xi.next()) |k| if (k.* >= 0x2000) {
+        std.debug.print("X:{x} outside the mode-0 window\n", .{k.*});
+        return error.OutsideWindow;
+    };
+    var yi = state.y_mem.keyIterator();
+    while (yi.next()) |k| if (k.* >= 0x2F00 and !(k.* >= 0xFD80 and k.* <= 0xFDFF)) {
+        std.debug.print("Y:{x} outside the mode-0 windows\n", .{k.*});
+        return error.OutsideWindow;
+    };
 }
 
 test "rice_get decodes what the model decodes: plain, zero-hi and escaped codewords" {
@@ -540,17 +559,26 @@ fn checkPackets(gpa: std.mem.Allocator, prog: []const u32, dump: []const u8, nam
         defer gpa.free(padded);
         @memcpy(padded[0..len], pkt);
         if (len & 1 != 0) padded[len] = 0;
-        try stage(gpa, &state, padded);
-        for (cfg, 0..) |v, i| try state.y_mem.put(gpa, 0x3300 + @as(u32, @intCast(i)), v);
+        try stageAt(gpa, &state, padded, 0x80);
+        for (cfg, 0..) |v, i| try state.y_mem.put(gpa, 0x2E00 + @as(u32, @intCast(i)), v);
         _ = try emu.runFrom(gpa, &state, prog, 0, 1 << 30);
         try testing.expect(state.halted);
-        const status = state.y_mem.get(0x3307).?;
+        try expectMode0(&state);
+        const status = state.y_mem.get(0x2E07).?;
+        if (cfg[1] > 16) {
+            // 16-bit output: deeper streams are refused, and nothing is written
+            try testing.expectEqual(@as(u32, 4), status);
+            try testing.expectEqual(@as(?u32, null), state.y_mem.get(0xFD94));
+            continue;
+        }
         if (status != 0) std.debug.print("{s} packet {d}: status {d}\n", .{ name, k, status });
         try testing.expectEqual(@as(u32, 0), status);
-        try testing.expectEqual(n, state.y_mem.get(0x3306).?);
+        try testing.expectEqual(n, state.y_mem.get(0x2E06).?);
+        try testing.expectEqual(@as(?u32, 1), state.y_mem.get(0xFD94));
+        try testing.expectEqual(@as(?u32, @intCast(n * nch)), state.y_mem.get(6));
         for (0..n * nch) |i| {
-            const want = le32(pcm, 4 * i) & 0xFFFFFF;
-            const got = state.x_mem.get(0x6000 + @as(u32, @intCast(i))) orelse 0xDEAD0000;
+            const want = le32(pcm, 4 * i) & 0xFFFF;
+            const got = state.y_mem.get(0x80 + @as(u32, @intCast(i))) orelse 0xDEAD0000;
             if (got != want) {
                 std.debug.print("{s} packet {d}: word {d} (frame {d} ch {d})\n", .{ name, k, i, i / nch, i % nch });
                 try testing.expectEqual(want, got);
@@ -568,7 +596,7 @@ test "alac_packet decodes fixture packets as the reference does" {
         \\.include "lib/unmix.sm"
         \\.include "lib/mem.sm"
         \\.include "lib/alac.sm"
-        \\        bits_init(0x4000)
+        \\        bits_init(0x80)
         \\        alac_packet()
         \\        x17.halt
         \\
@@ -657,7 +685,7 @@ test "the packet program has no long runs of 0x05 words" {
         \\.include "lib/unmix.sm"
         \\.include "lib/mem.sm"
         \\.include "lib/alac.sm"
-        \\        bits_init(0x4000)
+        \\        bits_init(0x80)
         \\        alac_packet()
         \\        x17.halt
         \\

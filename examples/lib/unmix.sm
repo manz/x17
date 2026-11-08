@@ -155,3 +155,65 @@ skip:   alu s12, s3, s14, #OP_SUB
         nop()
 finish:
 }
+
+; unmix_y: unmix with 16-bit output to Y:[e11] instead of X:[A7], for depth <= 16 and
+; shifted = 0 (the caller refuses the rest). The sample is sign-extended from depth, so its
+; low 16 bits are the sample. Gap words are skipped in Y. Uses e11 (the output pointer, set
+; with x17.mve e11 to the first address - 1) and emit's registers.
+.macro emit_y(x) {
+        ldy s13, e7             ; depth
+        sxr(x, s13)
+        alu s3, x, s0, #OP_ADD
+        x17.sty e11, #3, #0
+        x18.eagu e11, e11, #AGU_INC
+}
+
+.macro unmix_y() {
+        ldy s3, e1
+        x17.sty e9, #3, #0      ; left = n
+frame:  ldy s3, e9
+        alu s12, s3, s14, #OP_SUB
+        ptst p3, s0, #LT12, #PTST
+        jmp #3, #3, finish
+        alu s3, s3, s14, #OP_SUB ; (delay slot)
+        x17.sty e9, #3, #0      ; (delay slot) left -= 1
+        x19.xrd s7, #2          ; u
+        x02.ainc #2, #2
+        ldy s3, e8
+        alu s12, s3, s14, #OP_SUB
+        alu s12, s12, s14, #OP_SUB
+        ptst p3, s0, #LT12, #PTST ; one lane
+        jmp #3, #3, mono
+        nop()
+        nop()
+        x19.xrd s8, #3          ; v
+        x02.ainc #3, #3
+        ldy s3, e3
+        alu s12, s3, s14, #OP_SUB
+        ptst p3, s0, #LT12, #PTST ; mix_res == 0
+        jmp #3, #3, lanes
+        nop()
+        nop()
+        mulshr()
+        alu s7, s7, s8, #OP_ADD
+        alu s7, s7, s4, #OP_SUB ; l = u + v - floor(a * v / 2^s)
+        alu s8, s7, s8, #OP_SUB ; r = l - v
+lanes:  emit_y(s7)
+        emit_y(s8)
+        jmp #ALWAYS, #0, gap
+        nop()
+        nop()
+mono:   emit_y(s7)
+gap:    ldy s3, e10
+skip:   alu s12, s3, s14, #OP_SUB
+        ptst p3, s0, #LT12, #PTST
+        jmp #3, #3, frame
+        nop()
+        nop()
+        x18.eagu e11, e11, #AGU_INC
+        alu s3, s3, s14, #OP_SUB
+        jmp #ALWAYS, #0, skip
+        nop()
+        nop()
+finish:
+}
