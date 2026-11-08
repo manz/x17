@@ -317,6 +317,7 @@ const run_params = clap.parseParamsComptime(
     \\-h, --help               show help for `x17 run`
     \\-l, --lane <usize>       which lane to run (0..3), default 0
     \\    --v <usize>          initial value for this lane's V register
+    \\    --steps <usize>      stop after N bundles and print the state there (word = pc)
     \\<str>                    source file path (.sm)
     \\
 );
@@ -327,7 +328,7 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     defer parsed.deinit();
 
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 run [--lane N] [--v K] <file.sm>\n");
+        try out.writeAll("usage: x17 run [--lane N] [--v K] [--steps N] <file.sm>\n");
         return;
     }
     if (parsed.positionals[0] == null) {
@@ -356,8 +357,16 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     state.cur_lane = lane & 0x3;
     state.v[lane & 0x3] = v_init;
 
-    // Codec programs loop: allow a long run (a runaway still stops at the cap).
-    const bundles = try emu.runFrom(gpa, &state, words, 0, 1 << 24);
+    // Codec programs loop: allow a long run (a runaway still stops at the cap).  --steps stops
+    // early on purpose, to compare against a probe at that point on silicon.
+    const steps = parsed.args.steps;
+    const bundles = emu.runFrom(gpa, &state, words, 0, steps orelse 1 << 24) catch |e| switch (e) {
+        error.RunawayProgram => if (steps) |n| blk: {
+            try out.print("stopped after {d} bundles; next bundle at word {d}\n", .{ n, state.pc });
+            break :blk n;
+        } else return e,
+        else => return e,
+    };
 
     try out.print("ran {d} bundles on lane {d} (V[{d}] init = 0x{x})\n\n", .{
         bundles, lane, lane, v_init,
