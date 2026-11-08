@@ -6747,3 +6747,24 @@ test "x03 jumps: p0 reads 1; the tap row jumps on p3 with a nonzero offset, refu
     w[1] &= ~@as(u32, 0x7FF << 18);
     try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &(w ++ [_]u32{ nop, nop } ++ halt), 0, 50));
 }
+
+test "x18 class 011: w3[3] clears the R dest; the load mux's 000 gives 0 (683)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    for ([_]struct { w1: u32, w3: u32, s2: u32, r1: u32 }{
+        .{ .w1 = 0x00001970, .w3 = 0x740000c9, .s2 = 0x1234, .r1 = 0 },
+        .{ .w1 = 0x00001970, .w3 = 0x740000c1, .s2 = 0x1234, .r1 = 0xFFFE },
+        .{ .w1 = 0x00000970, .w3 = 0x740000c9, .s2 = 0, .r1 = 0 },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[4] = 5;
+        st.s[7] = 3;
+        st.s[2] = 0x99;
+        st.r[1] = 0x77;
+        st.e[10] = 0x50;
+        try st.y_mem.put(testing.allocator, 0x50, 0x1234);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x20400018, c.w1, 0x30000010, c.w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c.s2, st.s[2]);
+        try testing.expectEqual(c.r1, st.r[1]);
+    }
+}

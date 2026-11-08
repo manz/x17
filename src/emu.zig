@@ -2578,8 +2578,8 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
     };
 }
 
-/// Class 011 (fact 168, 179, 200, 206): the slot result goes to
-/// s<w1[11:8]> and R<w3[10:7]>, and p<w2[17:14]> <- cond head[28:25] of it.
+/// Class 011 (fact 168, 179, 200, 206, 683): the slot result goes to
+/// s<w1[11:8]> and R<w3[10:7]> (0 when w3[3] = 1), and p<w2[17:14]> <- cond head[28:25] of it.
 /// Only cond 11 (negative) is measured; other conds leave p alone.
 /// w3[0] = 0 is the branch form (178), not modelled.
 fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -2596,13 +2596,24 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // The head's load slot (own-x18b and siblings, 645 note): s<head[24:21]> <- Y:[e<w3[28:25]>].
     // Only words below 0x8000 were loaded (sign unmeasured), and a dest shared with the slot's
     // dest or operands has no measured order: refuse those.
+    // The source mux w1[14:12] (683): 000 delivers 0, 001 the Y read, 110 the immediate
+    // head[20:5]; the others are OPEN.
     const ld_dest: u32 = (h >> 21) & 0xF;
     var ld_val: u32 = 0;
     if (ld_dest != 0) {
-        ld_val = state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0;
-        if (ld_val & 0x8000 != 0) return RunError.UnknownForm;
+        switch ((w1 >> 12) & 7) {
+            0 => ld_val = 0,
+            1 => {
+                ld_val = state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0;
+                if (ld_val & 0x8000 != 0) return RunError.UnknownForm;
+            },
+            6 => ld_val = (h >> 5) & 0xFFFF,
+            else => return RunError.UnknownForm,
+        }
         if (ld_dest == dest_s or ld_dest == (w2 >> 2) & 0xF or ld_dest == (w1 >> 4) & 0xF) return RunError.UnknownForm;
     }
+    // w3[3] = 1 writes 0 to the R dest instead of the result (683).
+    const r_val: u32 = if ((w3 >> 3) & 1 == 1) 0 else v & 0xFFFF;
     const dest_r: u32 = (w3 >> 7) & 0xF;
     // The result also lands in A<2 * w1[3:0] + head[31]> (fact 345): measured with the and
     // (A2 <- s12 & s11). A31 is not a plain register (649): refused.
@@ -2610,7 +2621,7 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (dest_a == 31) return RunError.UnknownForm;
     if (dest_s != 0) state.s[dest_s] = v;
     if (ld_dest != 0) state.s[ld_dest] = ld_val;
-    if (dest_r != 0) state.r[dest_r] = v & 0xFFFF;
+    if (dest_r != 0) state.r[dest_r] = r_val;
     if (dest_a != 0) state.a[dest_a] = v;
     if (((h >> 25) & 0xF) == 11) {
         if ((w2 >> 14) & 0xF == 0) return RunError.UnknownForm; // p0 write: unmeasured
