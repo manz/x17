@@ -5403,3 +5403,35 @@ test "x03 head ALU refuses w5[16:14] != 0 (fact 569, 570, 606)" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "ld0e has psel shape A's ALU word and head mux (fact 607)" {
+    const gpa = testing.allocator;
+    // s9 <- a = s5 = 0x551 op b = s6 = 0x661; s3 <- mux S[14:12] (head dest 3).
+    for ([_]struct { code: u32 = 14, m: u32 = 0, mux: u32 = 1, imm: u32 = 0x14A1, sp: u32 = 0, alu: ?u32, hd: u32 = 0x14A1 }{
+        .{ .alu = 0xBB2 },
+        .{ .m = 2, .alu = 0x0661 },
+        .{ .code = 22, .alu = 0x0330 },
+        .{ .code = 51, .alu = 0x0661 },
+        .{ .code = 6, .alu = 0 },
+        .{ .mux = 6, .imm = 0x0BCD, .alu = 0xBB2, .hd = 0x0BCD },
+        .{ .mux = 0, .alu = 0xBB2, .hd = 0 }, // p0, modifier 0 (own-0e)
+        .{ .code = 16, .alu = null }, // 569's override set: OPEN
+        .{ .code = 35, .alu = null },
+        .{ .m = 3, .alu = null },
+        .{ .mux = 0, .sp = 3 << 24, .alu = null }, // psel's cond, unmeasured on ld0e
+        .{ .mux = 2, .alu = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[5] = 0x551;
+        state.s[6] = 0x661;
+        const head: u32 = 0x8000000E | c.code << 25 | 3 << 21 | c.imm << 5;
+        const sw: u32 = 6 << 28 | c.sp | c.m << 15 | c.mux << 12 | 9 << 8 | 5 << 4;
+        const r = emu.runFrom(gpa, &state, &.{ head, sw, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.alu) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[9]);
+            try testing.expectEqual(c.hd, state.s[3]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

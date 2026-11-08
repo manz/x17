@@ -4959,7 +4959,27 @@ fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     const dest_s: u32 = (head >> 21) & 0xF;
     const addr: u32 = (head >> 5) & 0xFFFF;
     const n: u32 = (s1 >> 1) & 0x7;
-    if (dest_s != 0) state.s[dest_s] = 0;
+    // psel shape A's layout (607, replacing 333's s <- 0).  ALU word s<S[11:8]> <- a = s<S[7:4]>
+    // op b = s<S[31:28]>, code head[30:25], m S[17:15]: measured codes 14 (m 0 / 2), 22, 51, 6
+    // at m 0; 16-21 / 35 / 36 read a + b (569's override set) and the rest are OPEN.
+    const alu_dest: u32 = (s1 >> 8) & 0xF;
+    const alu_val: u32 = if (alu_dest == 0) 0 else blk: {
+        const code: u32 = (head >> 25) & 0x3F;
+        const m: u32 = (s1 >> 15) & 7;
+        const ok = (code == 14 and (m == 0 or m == 2)) or ((code == 22 or code == 51 or code == 6) and m == 0);
+        if (!ok) return RunError.UnknownForm;
+        const word: u32 = (code << 5) | (m << 23);
+        break :blk (try aluWord(word, sx24(state.s[(s1 >> 4) & 0xF]), sx24(state.s[(s1 >> 28) & 0xF]))) orelse return RunError.UnknownForm;
+    };
+    // Head write s<head[24:21]> by mux S[14:12]: 1 / 6 #head[20:5]; 0 psel's cond, measured
+    // only at p0 with modifier 0 (own-0e reads 0); the rest OPEN.
+    const hv: u32 = if (dest_s == 0) 0 else switch ((s1 >> 12) & 7) {
+        1, 6 => addr,
+        0 => if ((s1 >> 21) & 0x7F == 0) 0 else return RunError.UnknownForm,
+        else => return RunError.UnknownForm,
+    };
+    if (alu_dest != 0) state.s[alu_dest] = alu_val;
+    if (dest_s != 0) state.s[dest_s] = hv;
     // op[0] = s1[0] adds 2 (fact 287): A<4n + 1 + 2*op[0]>.
     const a_idx: u32 = (4 * n + 1 + 2 * (s1 & 1)) & 0x1F;
     state.a[a_idx] = addr;
