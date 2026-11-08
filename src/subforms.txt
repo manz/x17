@@ -156,6 +156,10 @@ x18.edec   4   0x00000018   0x00040180   0x89E00000   0x86000001
 # own-x18una).  s <- op(s).  Measured: op 3 = +1, op 7 = abs.
 x18.una    4   0x1C000018   0x00000001   0x00004000   0x61D53805
 
+# x18.and: the x18.una bundle with code head[30:25] = 0x1D and op w1[17:15] = 3: LOGIC(a, b)
+# = a & b (fact 644).  s<w1[11:8]> <- s<w2[5:2]> & s<w1[7:4]>.
+x18.and    4   0x3A000018   0x00018001   0x00004000   0x61D53805
+
 # x18.xrd: 4-syllable low5 0x18 w3 class 110, w1 mode 5 (fact 167 /
 # own-x18xrd).  X-memory read into s:
 #   s<head[24:21]> <- X:[A<w2[21:17]>]

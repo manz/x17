@@ -272,6 +272,11 @@ x18.una	src_s	s	2	5	s2
 x18.una	op	imm	15	17	s1
 x18.una	dest_r	R	7	10	s3
 x18.una	b_s	s	4	7	s1
+# x18.and (4 syllables): s <- s & s.
+# Grammar: x18.and <dest_s>, <a_s>, <b_s>
+x18.and	dest_s	s	8	11	s1
+x18.and	a_s	s	2	5	s2
+x18.and	b_s	s	4	7	s1
 
 # x18.xrd (4 syllables): X-memory read.
 # Grammar: x18.xrd <dest_s>, #<src_a>

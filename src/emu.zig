@@ -698,9 +698,12 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // x02.plo: w4[10:7] carries a second dest that gets (2P)[15:0].
     const w4 = bundle[4];
     const plo_dest: u32 = (w4 >> 7) & 0xF;
-    // (2P)[15:0], or P[15:0] with w1[17] = 1 (fact 399, own-x02lo24).
-    const lo_p: i64 = if ((w1 >> 17) & 1 == 1) prod else prod *% 2;
-    if (plo_dest != 0) state.s[plo_dest] = @truncate(@as(u64, @bitCast(lo_p)) & 0xFFFF);
+    // (2P)[15:0] (fact 399); with w1[17] = 1, P's low 24 bits, a signed 24-bit word (fact
+    // 655: 399's own product sat under 2^16, so it showed no mask).
+    if (plo_dest != 0) state.s[plo_dest] = if ((w1 >> 17) & 1 == 1)
+        @truncate(@as(u64, @bitCast(prod)) & M24)
+    else
+        @truncate(@as(u64, @bitCast(prod *% 2)) & 0xFFFF);
 }
 
 fn mpyOperand(raw: u32, signed: bool) i64 {

@@ -6899,6 +6899,29 @@ test "stx refuses A0 and A31 (649)" {
     }
 }
 
+test "x02's undoubled low product holds P mod 2^24 (655); x18.and masks it (644)" {
+    for ([_]struct { c: u32, d: u32, want: u32 }{
+        .{ .c = 0x2AC, .d = 0xFFFF80, .want = 0xFEAA00 },
+        .{ .c = 0x2AC, .d = 0x80, .want = 0x015600 },
+        .{ .c = 0x7FFF, .d = 0xFFEDCC, .want = 0xE61234 },
+    }) |t| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = t.c;
+        st.s[2] = t.d;
+        st.s[11] = 0xFFFF;
+        const w = try asm_mod.assembleOne("x02.v s0, A1, A0, A0, A0, s0, s1, s2, s12, #5, #1, #0, s0, s0, #0, #0");
+        const m = try asm_mod.assembleOne("x18.and s13, s12, s11");
+        var prog: [13]u32 = undefined;
+        @memcpy(prog[0..6], w.slice()[0..6]);
+        @memcpy(prog[6..10], m.slice()[0..4]);
+        prog[10..13].* = .{ 0x00000017, 0x31308000, 0xA0000000 };
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        try testing.expectEqual(t.want, st.s[12]);
+        try testing.expectEqual(t.want & 0xFFFF, st.s[13]);
+    }
+}
+
 test "ldy refuses e2 and reads e3 (650)" {
     for ([_]struct { e: u32, ok: bool }{ .{ .e = 2, .ok = false }, .{ .e = 3, .ok = true } }) |c| {
         var st = emu.State{};

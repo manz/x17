@@ -19,7 +19,8 @@ const PreSet = struct { bank: RegBank, index: u8, value: u32 };
 const PreMem = struct { kind: enum { x, y }, addr: u32, value: u32 };
 
 const PostCheck = union(enum) {
-    s_reg: struct { index: u8, value: u32 },
+    /// mask: the bits silicon read back (a Y store sees 16); the rest went unobserved.
+    s_reg: struct { index: u8, value: u32, mask: u32 = 0xFFFFFF },
     e_reg: struct { index: u8, value: u32 },
     r_reg: struct { index: u8, value: u32 },
     a_reg: struct { index: u8, value: u32 },
@@ -1094,8 +1095,8 @@ const GATES = [_]Gate{
         \\x17.halt
         ,
         .post = &.{
-            .{ .s_reg = .{ .index = 4, .value = 0xAFFE } },
-            .{ .s_reg = .{ .index = 5, .value = 0x9000 } },
+            .{ .s_reg = .{ .index = 4, .value = 0xAFFE, .mask = 0xFFFF } },
+            .{ .s_reg = .{ .index = 5, .value = 0x9000, .mask = 0xFFFF } }, // P[23:16] reach s5 (655)
             .{ .r_reg = .{ .index = 6, .value = 0x45 } },
         },
     },
@@ -1138,8 +1139,8 @@ const GATES = [_]Gate{
         \\x17.halt
         ,
         .post = &.{
-            .{ .s_reg = .{ .index = 4, .value = 0x1E9E } },
-            .{ .s_reg = .{ .index = 5, .value = 0x3021F } }, // silicon: 0x021F, its low 16 bits
+            .{ .s_reg = .{ .index = 4, .value = 0x1E9E, .mask = 0xFFFF } },
+            .{ .s_reg = .{ .index = 5, .value = 0x021F, .mask = 0xFFFF } },
             .{ .r_reg = .{ .index = 6, .value = 0x45 } },
         },
     },
@@ -5303,7 +5304,7 @@ fn runGate(gpa: std.mem.Allocator, g: Gate) !void {
 
     for (g.post) |check| switch (check) {
         .s_reg => |sr| {
-            if (state.s[sr.index] != sr.value) {
+            if (state.s[sr.index] & sr.mask != sr.value & sr.mask) {
                 std.debug.print("gate '{s}': s{d} = 0x{x}, expected 0x{x}\n", .{ g.name, sr.index, state.s[sr.index], sr.value });
                 return error.GateFailed;
             }
