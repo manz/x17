@@ -382,32 +382,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         }
         if (w4_mode == 0) {
             try execX03Mode0(gpa, state, bundle);
-            // w3[31] re-issues the bundle while p<w5[17:14]> holds, the X address
-            // post-incrementing (fact 262-263).  w2[28] = 1 makes the e counter (349)
-            // e<2*w4[2:0] + 1> <- e<w3[26:23]> - 1 also write p3 <- (e_new > 0, signed 16),
-            // which the repeat sees one pass late (675): e = N - 1 with p3 = 1 runs N passes
-            // (at least 2), A stepping after every pass.  w2[28] = 0 or any p but p3 runs
-            // away: refused.
-            if (bundle[3] >> 31 == 1) {
-                const pi: u32 = (bundle[5] >> 14) & 0xF;
-                if ((bundle[2] >> 28) & 1 == 0 or pi != 3) return RunError.UnknownForm;
-                const ai = x03AIndex(bundle);
-                const ec_dest: u32 = ((bundle[4] & 7) << 1) | 1;
-                const ec_src: u32 = (bundle[3] >> 23) & 0xF;
-                var passes: u32 = 1;
-                while (true) {
-                    const seen = state.p[3];
-                    const e_new: u32 = (state.e[ec_src] -% 1) & 0xFFFF;
-                    state.e[ec_dest] = e_new;
-                    state.p[3] = @intFromBool(sx16(e_new) > 0);
-                    // the X address steps on every pass, the last included (675)
-                    state.a[ai] +%= 1;
-                    if (seen == 0) break;
-                    passes += 1;
-                    if (passes > 0x10000) return RunError.RunawayProgram;
-                    try execX03Mode0(gpa, state, bundle);
-                }
-            }
+            // The loop is 678's jump to self, not w3[31] (262-263's repeat reading): w3[31] is
+            // only the counter's index bit.  Without w2[28] a w3[31] = 1 row ran away (675).
+            if ((bundle[2] >> 28) & 1 == 1 and (bundle[1] >> 18) & 0x7FF == 0) return x03CountedLoop(gpa, state, bundle);
+            if (bundle[3] >> 31 == 1) return RunError.UnknownForm;
             return;
         }
         // Y path (w5[21] = 1): the read enters the 24-bit lane as D << 8;
@@ -774,18 +752,55 @@ fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
 }
 
 /// x03 w2[28] = 1 (fact 394): jr to q + sext(w1[28:18]), two delay slots, on
-/// p<w5[17:14]>: sense w2[31:29] 101 jumps if set, 000 / 100 if clear, 001 OPEN.
+/// p<w5[17:14]>: sense w2[31:29] 101 jumps if set, 000 / 100 if clear, 001 OPEN.  w2[27] = 1
+/// flips the 000 sense (678); its other rows are OPEN.  Offset 0 is the counted loop, run by
+/// the mode-0 path (x03CountedLoop); elsewhere a jump to self is refused.
 fn x03CondJump(state: *State, bundle: []const u32) RunError!void {
     if ((bundle[2] >> 28) & 1 == 0) return;
+    const flip = (bundle[2] >> 27) & 1 == 1;
+    if (flip and bundle[2] >> 29 != 0) return RunError.UnknownForm;
     const p_set = state.p[(bundle[5] >> 14) & 0xF] != 0;
     const taken = switch (bundle[2] >> 29) {
         5 => p_set,
-        0, 4 => !p_set,
+        0 => if (flip) p_set else !p_set,
+        4 => !p_set,
         else => return RunError.UnknownForm,
     };
     const off11: u32 = (bundle[1] >> 18) & 0x7FF;
     const off: i32 = @as(i32, @bitCast(off11 << 21)) >> 21;
+    if (off == 0) {
+        if ((bundle[4] >> 11) & 7 != 0 or bundle[2] >> 29 != 0) return RunError.UnknownForm;
+        return; // x03CountedLoop
+    }
+    // A flipped jump elsewhere also carries the counter's p3 write (678), not modelled here.
+    if (flip) return RunError.UnknownForm;
     if (taken) state.pending_jmp_offset = off;
+}
+
+/// The x03 counted loop (675, 678): w2[28] = 1 with offset w1[28:18] = 0 jumps to itself on
+/// p<w5[17:14]> (if set with w2[27] = 1, if clear with w2[27] = 0), and the e counter
+/// e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1 also writes p3 <- (e_new > 0, signed 16), which
+/// the jump sees one pass late.  Only p3 is modelled: the counter writes no other p, so any
+/// other predicate runs away or stops at once.  The X address steps on every pass, the last
+/// included.  Whether the two delay slots run on each pass is OPEN (measured with nops).
+fn x03CountedLoop(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    if ((bundle[5] >> 14) & 0xF != 3) return RunError.UnknownForm;
+    const want: u8 = @intCast((bundle[2] >> 27) & 1);
+    const ai = x03AIndex(bundle);
+    const ec_dest: u32 = ((bundle[4] & 7) << 1) | (bundle[3] >> 31);
+    const ec_src: u32 = (bundle[3] >> 23) & 0xF;
+    var passes: u32 = 1;
+    while (true) {
+        const seen = state.p[3];
+        const e_new: u32 = (state.e[ec_src] -% 1) & 0xFFFF;
+        if (ec_dest != 0) state.e[ec_dest] = e_new;
+        state.p[3] = @intFromBool(sx16(e_new) > 0);
+        state.a[ai] +%= 1;
+        if (seen != want) break;
+        passes += 1;
+        if (passes > 0x10000) return RunError.RunawayProgram;
+        try execX03Mode0(gpa, state, bundle);
+    }
 }
 
 fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

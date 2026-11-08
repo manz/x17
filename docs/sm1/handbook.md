@@ -255,11 +255,13 @@ Measured idioms, cheapest first:
 - **Fill both delay slots** (§661). Work from the fall-through path goes there when the taken
   path does not read what it writes; a loop's first bundles go there when the back edge jumps
   past them.
-- **Counted repeat.** x03 with w3[31] = 1 repeats its bundle while p<w5[17:14]>; with
-  w2[28] = 1 the e counter e<2*w4[2:0] + 1> <- e<w3[26:23]> - 1 also writes p3 <- (e > 0,
-  signed 16), seen by the repeat one pass late (§675). Preset e = N - 1 and p3 = 1 for N passes
-  (N >= 2); the loop leaves p3 = 0 and e = -1. Only p3 ends it: other predicates, or
-  w2[28] = 0, run away. Measured on a store row
+- **Counted loop.** x03 with w2[28] = 1 is a jr on p<w5[17:14]> by sext(w1[28:18]) with two
+  delay slots (§394); w2[27] = 1 flips the 000 sense to "jump while set" (§678). With offset
+  0 the bundle jumps to itself, and the e counter e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1
+  also writes p3 <- (e > 0, signed 16), seen one pass late (§675, §678). Preset e = N - 1 and
+  p3 = 1 for N passes (N >= 2); the loop leaves p3 = 0 and e = -1. Only p3 ends it. w3[31] is
+  not the loop: it is the counter's index bit. Whether the delay slots run on each pass is
+  unmeasured: keep nops after the loop bundle. Measured on a store row
   (`00000003 60000002 18106000 85800008 00004005 001CC000`: X:[A8] <- s3, A8 steps on every pass, ending at A8 + N);
   not yet on a MAC row.
 - **Loops.** There is no zero-overhead multi-bundle loop: x03 can repeat one bundle while a

@@ -6629,7 +6629,7 @@ test "x03 MAC row refuses the repeat class w2[31:29] = 011 (673)" {
     try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &w, 0, 8));
 }
 
-test "x03 counted repeat: w2[28] counter writes p3 one pass late (675)" {
+test "x03 counted loop: offset-0 jump on p3, counter writes p3 one pass late (675, 678)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
     const w = [_]u32{ 0x00000003, 0x60000002, 0x18106000, 0x85800008, 0x00004005, 0x001CC000 };
     for ([_]struct { e: u32, p3: u32, passes: u32 }{ .{ .e = 5, .p3 = 1, .passes = 6 }, .{ .e = 1, .p3 = 1, .passes = 2 }, .{ .e = 0, .p3 = 1, .passes = 2 }, .{ .e = 15, .p3 = 1, .passes = 16 }, .{ .e = 5, .p3 = 0, .passes = 1 } }) |c| {
@@ -6647,6 +6647,18 @@ test "x03 counted repeat: w2[28] counter writes p3 one pass late (675)" {
             try testing.expectEqual(@as(u8, 0), st.p[3]);
             try testing.expectEqual(@as(u32, (c.e -% (c.passes)) & 0xFFFF), st.e[11]);
         }
+    }
+    // w2[27] = 0: 394's sense, jump while clear: p3 = 0 at entry gives 2 passes, p3 = 1 one (678)
+    for ([_][2]u32{ .{ 0, 2 }, .{ 1, 1 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.e[11] = 5;
+        st.p[3] = @intCast(c[0]);
+        st.a[8] = 0x200;
+        st.s[3] = 0x55;
+        const b = [_]u32{ w[0], w[1], w[2] & ~@as(u32, 1 << 27), w[3], w[4], w[5] } ++ halt;
+        _ = try emu.runFrom(testing.allocator, &st, &b, 0, 8);
+        try testing.expectEqual(c[1], st.x_mem.count());
     }
     // w2[28] = 0 runs away, and so does any p but p3: refused
     for ([_][2]u32{ .{ 0x08106000, 0x001CC000 }, .{ 0x18106000, 0x001D0000 } }) |v| {
