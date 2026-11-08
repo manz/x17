@@ -356,7 +356,8 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     state.cur_lane = lane & 0x3;
     state.v[lane & 0x3] = v_init;
 
-    const bundles = try emu.runLinear(gpa, &state, words);
+    // Codec programs loop: allow a long run (a runaway still stops at the cap).
+    const bundles = try emu.runFrom(gpa, &state, words, 0, 1 << 24);
 
     try out.print("ran {d} bundles on lane {d} (V[{d}] init = 0x{x})\n\n", .{
         bundles, lane, lane, v_init,
@@ -366,8 +367,8 @@ fn cmdRun(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     try printBank(out, "e regs", "e", &state.e);
     try printBank(out, "R regs", "R", &state.r);
     try printBank(out, "A regs", "A", &state.a);
-    try printMemory(out, "Y mem", "Y", &state.y_mem);
-    try printMemory(out, "X mem", "X", &state.x_mem);
+    try printMemory(gpa, out, "Y mem", "Y", &state.y_mem);
+    try printMemory(gpa, out, "X mem", "X", &state.x_mem);
 }
 
 fn printBank(out: *Writer, label: []const u8, prefix: []const u8, regs: []const u32) !void {
@@ -384,6 +385,7 @@ fn printBank(out: *Writer, label: []const u8, prefix: []const u8, regs: []const 
 }
 
 fn printMemory(
+    gpa: std.mem.Allocator,
     out: *Writer,
     label: []const u8,
     prefix: []const u8,
@@ -394,16 +396,14 @@ fn printMemory(
         return;
     }
     try out.print("{s} ({d} writes):\n", .{ label, mem.count() });
-    var keys: [128]u32 = undefined;
+    // Every write, sorted: a codec run writes thousands, and a partial dump hides them.
+    const keys = try gpa.alloc(u32, mem.count());
+    defer gpa.free(keys);
     var n: usize = 0;
     var kit = mem.keyIterator();
-    while (kit.next()) |k| {
-        if (n >= keys.len) break;
-        keys[n] = k.*;
-        n += 1;
-    }
-    std.mem.sort(u32, keys[0..n], {}, std.sort.asc(u32));
-    for (keys[0..n]) |k| {
+    while (kit.next()) |k| : (n += 1) keys[n] = k.*;
+    std.mem.sort(u32, keys, {}, std.sort.asc(u32));
+    for (keys) |k| {
         const v = mem.get(k).?;
         try out.print("  {s}:0x{x:<4} = 0x{x:0>6}\n", .{ prefix, k, v });
     }
