@@ -2737,10 +2737,13 @@ fn execX18C2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const dest_s: u32 = (h >> 21) & 0xF;
     const dest_e: u32 = (w1 >> 20) & 0xF;
     const dest_r: u32 = (w3 >> 7) & 0xF;
+    // Mux 011 (685, 686): w1[28] = 1 reads Y:[e<w3[28:25]>] and sets yd to it; w1[28] = 0 takes
+    // yd.  Either way the slot gets [7:0] << 8, class 111's mux-3 rule (597).
+    const fresh3 = (w1 >> 12) & 7 == 3 and (w1 >> 28) & 1 == 1;
+    const y3: u32 = if (fresh3) (state.getY(x_e_val) orelse 0) & 0xFFFF else state.yd & 0xFFFF;
     const xs_val: u32 = if (dest_s == 0) 0 else switch ((w1 >> 12) & 7) {
         1 => x_e_val,
-        // 685: Y:[e<w3[28:25]>][7:0] << 8 with w1[28] = 1; w1[28] = 0 ignores the index (OPEN).
-        3 => if ((w1 >> 28) & 1 == 1) ((state.getY(x_e_val) orelse 0) & 0xFF) << 8 else return RunError.UnknownForm,
+        3 => (y3 & 0xFF) << 8,
         6 => (h >> 5) & 0xFFFF,
         else => return RunError.UnknownForm,
     };
@@ -2753,6 +2756,7 @@ fn execX18C2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const r_val: u32 = x18RSlot(state, w3);
     if (((w2 >> 28) & 7) == 4) try execX18Q23(gpa, state, bundle);
     if (dest_s != 0) state.s[dest_s] = xs_val;
+    if (fresh3 and dest_s != 0) state.yd = y3;
     if (dest_e != 0) state.e[dest_e] = e_val;
     if (dest_r != 0) state.r[dest_r] = r_val;
 }
