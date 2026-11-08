@@ -57,7 +57,7 @@ pcm_loop:
         nop()
         x19.alu s3, s3, s2, #SHIFT ; little-endian: hi = second byte
         alu s3, s3, s4, #OP_ADD
-        jmp #IF_NOT, #2, pcm_put
+        jmp #ALWAYS, #0, pcm_put
         nop()
         nop()
 pcm_be: x19.alu s4, s4, s2, #SHIFT ; big-endian: hi = first byte
@@ -66,7 +66,7 @@ pcm_put:
         x17.sty e7, #3, #0
         x18.eagu e7, e7, #AGU_INC
         alu s1, s1, s14, #OP_SUB
-        jmp #IF_NOT, #2, pcm_loop
+        jmp #ALWAYS, #0, pcm_loop
         nop()
         nop()
 pcm_done:

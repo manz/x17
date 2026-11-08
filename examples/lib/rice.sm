@@ -27,7 +27,7 @@
         getbits_s(s5)           ; the other n - 8
         x19.alu dst, dst, s11, #SHIFT
         alu dst, dst, s5, #OP_ADD
-        jmp #IF_NOT, #2, done
+        jmp #ALWAYS, #0, done
         nop()
         nop()
 short:  alu s11, s7, s0, #OP_ADD
@@ -59,7 +59,7 @@ pbit:   x19.alu s13, s14, s12, #SHIFT ; 2^sh
         nop()
         alu s7, s3, s0, #OP_ADD ; escape: n = escape width
         readn(dst)
-        jmp #IF_NOT, #2, done
+        jmp #ALWAYS, #0, done
         nop()
         nop()
 gotpre: ldi s5, #8
@@ -79,7 +79,7 @@ gotpre: ldi s5, #8
         alu s9, s9, s5, #OP_ADD
         alu s10, s10, s14, #OP_ADD
         alu dst, s8, s0, #OP_ADD ; base
-        jmp #IF_NOT, #2, done
+        jmp #ALWAYS, #0, done
         nop()
         nop()
 big:    alu dst, s7, s0, #OP_ADD
@@ -161,7 +161,7 @@ lgd:    x19.alu s7, s14, s2, #SHIFT ; 2^k
         alu s5, s2, s14, #OP_SUB ; (delay slot) k - 1
         nop()
         alu s2, s5, s0, #OP_ADD
-        jmp #IF_NOT, #2, lgd
+        jmp #ALWAYS, #0, lgd
         nop()
         nop()
 lg:     alu s5, s2, s14, #OP_ADD ; t = k + 1
@@ -175,7 +175,7 @@ lg:     alu s5, s2, s14, #OP_ADD ; t = k + 1
         nop()
         nop()
         alu s2, s5, s0, #OP_ADD ; k = t
-        jmp #IF_NOT, #2, lg
+        jmp #ALWAYS, #0, lg
         nop()
         nop()
 lgdone: x17.sty e6, #2, #0      ; keep k
@@ -211,7 +211,7 @@ even:   stx A6, s8
         x17.sty e1, #6, #1      ; hi = 1 (s14)
         ldi s5, #0x7FFF
         x17.sty e2, #5, #0
-        jmp #IF_NOT, #2, zchk
+        jmp #ALWAYS, #0, zchk
         nop()
         nop()
         ; mb += pb * nd - floor(pb * mb / 2^9), with
@@ -279,7 +279,7 @@ bl:     ldi s5, #7
         nop()
         nop()
         alu s3, s3, s14, #OP_ADD
-        jmp #IF_NOT, #2, bl
+        jmp #ALWAYS, #0, bl
         nop()
         nop()
 bldone: ldi s5, #16
@@ -295,7 +295,7 @@ bldone: ldi s5, #16
         jmp #3, #3, kbmin
         alu s1, s2, s0, #OP_ADD ; (delay slot) min = kz
         nop()
-        jmp #IF_NOT, #2, mz
+        jmp #ALWAYS, #0, mz
         nop()
         nop()
 kbmin:  alu s1, s8, s0, #OP_ADD ; min = kb
@@ -320,7 +320,7 @@ zrun:   alu s12, s7, s14, #OP_SUB
         stx A6, s8
         x02.ainc #6, #6
         alu s7, s7, s14, #OP_SUB
-        jmp #IF_NOT, #2, zrun
+        jmp #ALWAYS, #0, zrun
         nop()
         nop()
 zdone:  ldi s5, #0x7FFF
@@ -334,7 +334,7 @@ zdone:  ldi s5, #0x7FFF
         x17.sty e3, #5, #0      ; zmode = 0
 keepz:  x17.sty e1, #5, #0      ; mb = 0
         x17.sty e2, #5, #0
-        jmp #IF_NOT, #2, top
+        jmp #ALWAYS, #0, top
         nop()
         nop()
 overrun: x17.sty e10, #6, #1    ; error = 1

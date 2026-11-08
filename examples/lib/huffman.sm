@@ -45,7 +45,7 @@ have:   alu s7, s10, s11, #OP_SUB ; sh = avail - w
         x19.alu s12, s5, s7, #SHIFT ; pointer: consume w bits, t << sh
         alu s9, s9, s12, #OP_SUB ;          cache keeps the low sh bits
         alu s10, s7, s0, #OP_ADD ;          avail = sh
-        jmp #IF_NOT, #2, step
+        jmp #ALWAYS, #0, step
         nop()
         nop()
 leaf:   alu s11, s2, s0, #OP_ADD ; consume f bits
@@ -120,7 +120,7 @@ pre:    getbits(s8, 1)
         jmp #3, #3, fail
         nop()
         nop()
-        jmp #IF_NOT, #2, pre
+        jmp #ALWAYS, #0, pre
         nop()
         nop()
 word:   ldi s4, #4

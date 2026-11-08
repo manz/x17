@@ -6,7 +6,7 @@
 ; most 23. |q|^(4/3) = m * 2^em comes from a direct table to 128, above it from the reference's
 ; Q13 interpolation with s found by comparisons (dq_mant).
 ;
-; Needs lib/bits.sm (constants, nop, s14 = 1, p2 clear), lib/mem.sm and lib/sections.sm (the
+; Needs lib/bits.sm (constants, nop, s14 = 1), lib/mem.sm and lib/sections.sm (the
 ; band lists at AAC_BOOK and AAC_SF). Tables, loaded by the host:
 ;   X DQ_D   k^(4/3) for k = 0..128 as pairs m, em (m in [2^22, 2^23))
 ;   X DQ_IT  round(j^(4/3) * 2^13), j = 64..128
@@ -56,7 +56,7 @@
         x02.ainc #8, #8
         x19.xrd s3, #8          ; em
         alu s2, s4, s0, #OP_ADD
-        jmp #IF_NOT, #2, done
+        jmp #ALWAYS, #0, done
         ldi s5, #0              ; (delay slot) rem = 0
         nop()
 big:    ldi s6, #1              ; s
@@ -67,7 +67,7 @@ more:   alu s12, s1, s7, #OP_SUB
         nop()
         nop()
         alu s6, s6, s14, #OP_ADD
-        jmp #IF_NOT, #2, more
+        jmp #ALWAYS, #0, more
         alu s7, s7, s7, #OP_ADD ; (delay slot)
         nop()
 found:  alu s8, s6, s14, #OP_SUB
@@ -199,7 +199,7 @@ mx:     alu s4, s9, s0, #OP_ADD
         alu s9, s9, s14, #OP_SUB ; (delay slot)
         nop()
         alu s10, s1, s0, #OP_ADD
-mx2:    jmp #IF_NOT, #2, mx
+mx2:    jmp #ALWAYS, #0, mx
         nop()
         nop()
 mxd:    alu s3, s10, s0, #OP_ADD
@@ -211,7 +211,7 @@ mxd:    alu s3, s10, s0, #OP_ADD
         yld(s3, DQ_WL)
         alu s3, s3, s14, #OP_SUB
         yst(DQ_WL)
-        jmp #IF_NOT, #2, win
+        jmp #ALWAYS, #0, win
         nop()
         nop()
 wdone:  yld(s1, DQ_MQ)
@@ -237,7 +237,7 @@ bnext:  x18.eagu e7, e7, #AGU_INC
         yld(s3, DQ_SL)
         alu s3, s3, s14, #OP_SUB
         yst(DQ_SL)
-        jmp #IF_NOT, #2, band
+        jmp #ALWAYS, #0, band
         nop()
         nop()
 gdone:  ldy s5, e10
@@ -249,7 +249,7 @@ gw:     alu s4, s5, s0, #OP_ADD
         nop()
         nop()
         alu s3, s3, s6, #OP_ADD
-        jmp #IF_NOT, #2, gw
+        jmp #ALWAYS, #0, gw
         alu s5, s5, s14, #OP_SUB ; (delay slot)
         nop()
 gw2:    yst(DQ_WB)
@@ -351,7 +351,7 @@ nok:    alu s12, s0, s12, #OP_SUB
         alu s6, s0, s6, #OP_SUB
 put:    stx A3, s6
 cnext:  x02.ainc #3, #3
-        jmp #IF_NOT, #2, co
+        jmp #ALWAYS, #0, co
         alu s9, s9, s14, #OP_SUB ; (delay slot)
         nop()
 cod:    yld(s3, DQ_CW)
@@ -361,7 +361,7 @@ cod:    yld(s3, DQ_CW)
         yld(s3, DQ_WL)
         alu s3, s3, s14, #OP_SUB
         yst(DQ_WL)
-        jmp #IF_NOT, #2, win
+        jmp #ALWAYS, #0, win
         nop()
         nop()
 bnext:  x18.eagu e7, e7, #AGU_INC
@@ -371,7 +371,7 @@ bnext:  x18.eagu e7, e7, #AGU_INC
         yld(s3, DQ_SL)
         alu s3, s3, s14, #OP_SUB
         yst(DQ_SL)
-        jmp #IF_NOT, #2, band
+        jmp #ALWAYS, #0, band
         nop()
         nop()
 gdone:  ldy s5, e10
@@ -383,7 +383,7 @@ gw:     alu s4, s5, s0, #OP_ADD
         nop()
         nop()
         alu s3, s3, s6, #OP_ADD
-        jmp #IF_NOT, #2, gw
+        jmp #ALWAYS, #0, gw
         alu s5, s5, s14, #OP_SUB ; (delay slot)
         nop()
 gw2:    yst(DQ_WB)
@@ -420,7 +420,7 @@ clr:    stx A3, s0
         nop()
         ldi s3, #0
         yst(DQ_E)
-        jmp #IF_NOT, #2, end
+        jmp #ALWAYS, #0, end
         nop()
         nop()
 run2:   dq_pass2()

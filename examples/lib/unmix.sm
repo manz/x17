@@ -73,7 +73,7 @@ apos:   alu s2, s8, s0, #OP_ADD
         x19.alu s4, s4, s11, #SHIFT
         floorn(s12, s5, s3)
         alu s4, s4, s12, #OP_ADD
-        jmp #IF_NOT, #2, done
+        jmp #ALWAYS, #0, done
         nop()
         nop()
 big:    alu s11, s0, s11, #OP_SUB ; s > 15: floor(hi / 2^(s - 15))
@@ -98,7 +98,7 @@ done:
         x19.xrd s3, #4
         x02.ainc #4, #4
         alu x, x, s3, #OP_ADD
-        jmp #IF_NOT, #2, store
+        jmp #ALWAYS, #0, store
         nop()
         nop()
 plain:  sxr(x, s13)
@@ -138,7 +138,7 @@ frame:  ldy s3, e9
         alu s8, s7, s8, #OP_SUB ; r = l - v
 lanes:  emit(s7)
         emit(s8)
-        jmp #IF_NOT, #2, gap
+        jmp #ALWAYS, #0, gap
         nop()
         nop()
 mono:   emit(s7)
@@ -150,7 +150,7 @@ skip:   alu s12, s3, s14, #OP_SUB
         nop()
         x02.ainc #7, #7
         alu s3, s3, s14, #OP_SUB
-        jmp #IF_NOT, #2, skip
+        jmp #ALWAYS, #0, skip
         nop()
         nop()
 finish:

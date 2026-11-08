@@ -107,7 +107,7 @@ isp:    alu s4, s8, s14, #OP_SUB
         nop()
         ldi s4, #5
         alu s3, s4, s3, #OP_SUB ; 2 <-> 3
-isd:    jmp #IF_NOT, #2, kst
+isd:    jmp #ALWAYS, #0, kst
         ldi s1, #1              ; (delay slot)
         nop()
 notis:  alu s4, s8, s0, #OP_ADD
@@ -135,7 +135,7 @@ kst:    x17.sty e10, #3, #0
         x18.eagu e8, e8, #AGU_INC
         x18.eagu e9, e9, #AGU_INC
         x18.eagu e10, e10, #AGU_INC
-        jmp #IF_NOT, #2, kl
+        jmp #ALWAYS, #0, kl
         alu s9, s9, s14, #OP_SUB ; (delay slot)
         nop()
 kdone:  alu s3, s10, s0, #OP_ADD
@@ -186,13 +186,13 @@ rw:     alu s4, s1, s0, #OP_ADD
         x17.sty e7, #4, #1      ; s12
         x18.eagu e7, e7, #AGU_INC
         alu s13, s13, s11, #OP_ADD
-        jmp #IF_NOT, #2, rw
+        jmp #ALWAYS, #0, rw
         alu s1, s1, s14, #OP_SUB ; (delay slot)
         nop()
 rwend:  alu s12, s12, s14, #OP_ADD
         x18.eagu e9, e9, #AGU_INC
         x18.eagu e11, e11, #AGU_INC
-        jmp #IF_NOT, #2, rb
+        jmp #ALWAYS, #0, rb
         alu s7, s7, s14, #OP_SUB ; (delay slot)
         nop()
 rgend:  alu s4, s8, s0, #OP_ADD
@@ -202,7 +202,7 @@ rgw:    ptst p3, s0, #EQ4, #PTST
         nop()
         alu s10, s10, s11, #OP_ADD
         alu s8, s8, s14, #OP_SUB
-        jmp #IF_NOT, #2, rgw
+        jmp #ALWAYS, #0, rgw
         alu s4, s8, s0, #OP_ADD ; (delay slot)
         nop()
 rgw2:   x18.eagu e10, e10, #AGU_INC
@@ -237,7 +237,7 @@ mz:     stx A4, s0
         jmp #IF_NOT, #3, mz
         nop()
         nop()
-        jmp #IF_NOT, #2, mdone
+        jmp #ALWAYS, #0, mdone
         nop()
         nop()
 mshift: x19.xrd s1, #4
@@ -353,7 +353,7 @@ msw:    x19.xrd s1, #4
         jmp #IF_NOT, #3, msw
         nop()
         nop()
-        jmp #IF_NOT, #2, msrun
+        jmp #ALWAYS, #0, msrun
         nop()
         nop()
 msdone:
@@ -419,7 +419,7 @@ isf:    alu s4, s9, s0, #OP_ADD
         jmp #IF_NOT, #3, isf
         nop()
         nop()
-        jmp #IF_NOT, #2, isf
+        jmp #ALWAYS, #0, isf
         alu s10, s5, s0, #OP_ADD ; (delay slot)
         nop()
 isfd:   alu s5, s10, s0, #OP_ADD
@@ -492,7 +492,7 @@ isput:  stx A6, s5
         jmp #IF_NOT, #3, isw
         nop()
         nop()
-        jmp #IF_NOT, #2, isrun
+        jmp #ALWAYS, #0, isrun
         nop()
         nop()
 isdone:

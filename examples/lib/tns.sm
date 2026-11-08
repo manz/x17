@@ -110,14 +110,14 @@ st:     alu s4, s9, s0, #OP_ADD
         tn_small(s8, FAIL)
         stx A10, s8
         x02.ainc #10, #10
-        jmp #IF_NOT, #2, st
+        jmp #ALWAYS, #0, st
         alu s9, s9, s14, #OP_SUB ; (delay slot)
         nop()
 sdone:  stx A10, s1             ; b_0 = y
         stx A4, s1
         x18.rag101 s0, R3, A4, R2, #2
         x12.aset #2, R3
-        jmp #IF_NOT, #2, ls
+        jmp #ALWAYS, #0, ls
         alu s10, s10, s14, #OP_SUB ; (delay slot)
         nop()
 ldone:
@@ -137,7 +137,7 @@ cl:     alu s4, s9, s0, #OP_ADD
         x02.ainc #4, #4
         stx A8, s1
         x02.ainc #8, #8
-        jmp #IF_NOT, #2, cl
+        jmp #ALWAYS, #0, cl
         alu s9, s9, s14, #OP_SUB ; (delay slot)
         nop()
 cdone:
@@ -157,7 +157,7 @@ hl:     alu s4, s9, s0, #OP_ADD
         x19.alu s1, s1, s12, #SHIFT
         stx A4, s1
         x02.ainc #4, #4
-        jmp #IF_NOT, #2, hl
+        jmp #ALWAYS, #0, hl
         alu s9, s9, s14, #OP_SUB ; (delay slot)
         nop()
 hdone:
@@ -201,7 +201,7 @@ fwd:    amov(A4, s1)
         ldi s7, #22
         x19.alu s7, s14, s7, #SHIFT ; 2^22 (amov is done with s7)
         tn_lattice(fail)
-        jmp #IF_NOT, #2, rdone
+        jmp #ALWAYS, #0, rdone
         nop()
         nop()
 fail:   ldi s3, #TN_SAVE
@@ -230,7 +230,7 @@ fail:   ldi s3, #TN_SAVE
         yld(s3, TN_HALV)
         alu s3, s3, s14, #OP_ADD
         yst(TN_HALV)
-        jmp #IF_NOT, #2, again
+        jmp #ALWAYS, #0, again
         nop()
         nop()
 giveup: ldi s1, #TN_W
@@ -339,7 +339,7 @@ cl:     alu s4, s2, s0, #OP_ADD
         stx A12, s6
         x18.rag101 s0, R3, A12, R5, #2
         x12.aset #6, R3
-        jmp #IF_NOT, #2, cl
+        jmp #ALWAYS, #0, cl
         nop()
         nop()
 cdone:  yld(s11, TN_LEN)
@@ -396,7 +396,7 @@ filt:   yld(s4, TN_NF)
         nop()
         nop()
         tn_run()
-        jmp #IF_NOT, #2, filt
+        jmp #ALWAYS, #0, filt
         nop()
         nop()
 wnext:  yld(s3, TN_WI)
@@ -406,7 +406,7 @@ wnext:  yld(s3, TN_WI)
         yld(s4, TN_WLEN)
         alu s3, s3, s4, #OP_ADD
         yst(TN_WB)
-        jmp #IF_NOT, #2, win
+        jmp #ALWAYS, #0, win
         nop()
         nop()
 done:

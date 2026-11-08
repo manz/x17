@@ -95,13 +95,13 @@ rw:     alu s4, s1, s0, #OP_ADD
         x17.sty e7, #4, #1      ; s12
         x18.eagu e7, e7, #AGU_INC
         alu s13, s13, s11, #OP_ADD
-        jmp #IF_NOT, #2, rw
+        jmp #ALWAYS, #0, rw
         alu s1, s1, s14, #OP_SUB ; (delay slot)
         nop()
 rwend:  alu s12, s12, s14, #OP_ADD
         x18.eagu e9, e9, #AGU_INC
         x18.eagu e8, e8, #AGU_INC
-        jmp #IF_NOT, #2, rb
+        jmp #ALWAYS, #0, rb
         alu s7, s7, s14, #OP_SUB ; (delay slot)
         nop()
 rgend:  alu s4, s8, s0, #OP_ADD
@@ -111,7 +111,7 @@ rgw:    ptst p3, s0, #EQ4, #PTST
         nop()
         alu s10, s10, s11, #OP_ADD
         alu s8, s8, s14, #OP_SUB
-        jmp #IF_NOT, #2, rgw
+        jmp #ALWAYS, #0, rgw
         alu s4, s8, s0, #OP_ADD ; (delay slot)
         nop()
 rgw2:   x18.eagu e10, e10, #AGU_INC
@@ -165,7 +165,7 @@ sl:     alu s4, s10, s11, #OP_SUB
         ldi s12, #2             ; (delay slot)
         nop()
         x19.alu s11, s11, s12, #SHIFT
-        jmp #IF_NOT, #2, sl
+        jmp #ALWAYS, #0, sl
         alu s9, s9, s12, #OP_ADD ; (delay slot)
         nop()
 sdone:  pn_yst(PN_SH, 1, 1)     ; s9
@@ -201,7 +201,7 @@ gen:    alu s4, s10, s0, #OP_ADD
         ptst p3, s0, #LT4, #PTST
         alu s5, s0, s4, #OP_SUB
         psel s11, s5, s11, p3, #1, #4 ; big < |v|: big + (|v| - big)
-        jmp #IF_NOT, #2, gen
+        jmp #ALWAYS, #0, gen
         alu s10, s10, s14, #OP_SUB ; (delay slot)
         nop()
 gdone:  stx A6, s1              ; the state back
@@ -221,7 +221,7 @@ kl:     alu s4, s11, s12, #OP_SUB
         nop()
         nop()
         alu s11, s11, s11, #OP_ADD
-        jmp #IF_NOT, #2, kl
+        jmp #ALWAYS, #0, kl
         alu s6, s6, s14, #OP_ADD ; (delay slot)
         nop()
 kdone:                          ; pass 2: scale, and acc = sum rshr(rnd(v^2 / 2^23), s)
@@ -245,7 +245,7 @@ sq:     alu s4, s10, s0, #OP_ADD
         x02.mpy s5, s1, s1
         x19.alu s5, s5, s9, #SHIFT
         alu s11, s11, s5, #OP_ADD
-        jmp #IF_NOT, #2, sq
+        jmp #ALWAYS, #0, sq
         alu s10, s10, s14, #OP_SUB ; (delay slot)
         nop()
 sqdone: ldi s3, #PN_NONE
@@ -265,7 +265,7 @@ pl:     alu s4, s11, s12, #OP_SUB
         nop()
         nop()
         x19.alu s11, s11, s5, #SHIFT
-        jmp #IF_NOT, #2, pl
+        jmp #ALWAYS, #0, pl
         alu s10, s10, s14, #OP_ADD ; (delay slot)
         nop()
 pdone:                          ; z = seed[floor(m / 2^20) - 2], then three Newton steps
@@ -331,7 +331,7 @@ sc:     alu s4, s10, s0, #OP_ADD
         x02.mpy s1, s1, s6
         stx A4, s1
         x02.ainc #4, #4
-        jmp #IF_NOT, #2, sc
+        jmp #ALWAYS, #0, sc
         alu s10, s10, s14, #OP_SUB ; (delay slot)
         nop()
 scdone: yld(s3, PN_TO)
@@ -370,7 +370,7 @@ cp:     alu s4, s10, s0, #OP_ADD
         x02.mpy s1, s1, s6
         stx A4, s1
         x02.ainc #4, #4
-        jmp #IF_NOT, #2, cp
+        jmp #ALWAYS, #0, cp
         alu s10, s10, s14, #OP_SUB ; (delay slot)
         nop()
 cpdone: yld(s3, PN_EL)
@@ -402,7 +402,7 @@ dl:     alu s4, s10, s0, #OP_ADD
         x19.alu s1, s1, s9, #SHIFT
         stx A4, s1
         x02.ainc #4, #4
-        jmp #IF_NOT, #2, dl
+        jmp #ALWAYS, #0, dl
         alu s10, s10, s14, #OP_SUB ; (delay slot)
         nop()
 ddone:
@@ -479,11 +479,11 @@ ra:     yld(s13, PN_RI)
         ldy s5, e6
         alu s6, s6, s5, #OP_SUB ; d = sfR - sfL
         pn_copy()
-        jmp #IF_NOT, #2, aput
+        jmp #ALWAYS, #0, aput
         nop()
         nop()
 anoise: pn_noise()
-        jmp #IF_NOT, #2, aput
+        jmp #ALWAYS, #0, aput
         nop()
         nop()
 anone:  ldi s3, #PN_NONE
@@ -497,7 +497,7 @@ aput:   x18.eagu e9, e9, #AGU_INC ; e9 steps once per run: PE in run order
         nop()
         nop()
         yst(PN_TOP)
-        jmp #IF_NOT, #2, ra
+        jmp #ALWAYS, #0, ra
         nop()
         nop()
 adone:  yld(s3, PN_TOP)
@@ -588,7 +588,7 @@ rbk:    yld(s13, PN_RI)
         yld(s9, PN_TO)
         alu s9, s9, s5, #OP_SUB
         pn_down(PN_W, PN_S)
-        jmp #IF_NOT, #2, rbk
+        jmp #ALWAYS, #0, rbk
         nop()
         nop()
 done:

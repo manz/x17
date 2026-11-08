@@ -20,7 +20,7 @@
 ;          exp(-j 2 pi i (n4 / size) / n4) for i = 0 .. size/2 - 1 (n4 - 1 pairs in all)
 ;   Y REV  Z + 2 rev(n) - 2 for n = 0 .. n4 - 1 (rev: log2 n4 bits reversed)
 ;   Y ESLOT E
-; Needs lib/bits.sm (s0 = 0, s14 = 1, p2 clear) and lib/mem.sm. x02.ainc's template also writes
+; Needs lib/bits.sm (s0 = 0, s14 = 1) and lib/mem.sm. x02.ainc's template also writes
 ; s2 (its w2 multiply slot) and x02.mpy steps A1, so nothing lives in s2 or A1 here. Uses every s register but s0
 ; and s14 (s15 is left 16 for bits.sm), e6, e7, R1..R3, R7, A2..A6, A8..A10, A12, A14 and Y
 ; IM_Y .. IM_Y + 7.
@@ -79,10 +79,10 @@ mm:     x19.xrd s1, #8
         jmp #3, #3, one
         nop()
         nop()
-        jmp #IF_NOT, #2, done
+        jmp #ALWAYS, #0, done
         ldi s6, #0              ; (delay slot)
         nop()
-two:    jmp #IF_NOT, #2, done
+two:    jmp #ALWAYS, #0, done
         ldi s6, #2              ; (delay slot)
         nop()
 one:    ldi s6, #1
@@ -133,7 +133,7 @@ clr:    stx A9, s0
         jmp #IF_NOT, #3, clr
         nop()
         nop()
-        jmp #IF_NOT, #2, SILENT
+        jmp #ALWAYS, #0, SILENT
         nop()
         nop()
 nonzero: im_decide(s10, s11)
@@ -152,7 +152,7 @@ dbl:    alu s4, s5, s3, #OP_SUB
         nop()
         nop()
         alu s5, s5, s5, #OP_ADD
-        jmp #IF_NOT, #2, dbl
+        jmp #ALWAYS, #0, dbl
         alu s6, s6, s14, #OP_ADD ; (delay slot)
         nop()
 scale:  yld(s3, ESLOT)

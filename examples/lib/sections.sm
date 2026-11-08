@@ -49,7 +49,7 @@ fill:   alu s4, s7, s0, #OP_ADD
         x17.sty e7, #5, #0
         x18.eagu e7, e7, #AGU_INC
         alu s7, s7, s14, #OP_SUB
-        jmp #IF_NOT, #2, fill
+        jmp #ALWAYS, #0, fill
         nop()
         nop()
 gdone:  alu s1, s1, s14, #OP_SUB
@@ -111,7 +111,7 @@ band:   ldy s2, e7
         readn(s3)
         ldi s4, #256
         alu s3, s3, s4, #OP_SUB
-        jmp #IF_NOT, #2, acc
+        jmp #ALWAYS, #0, acc
         nop()
         nop()
 dec:    ldi s1, #tab
@@ -135,7 +135,7 @@ add:    x17.mve e6, s13
         ldy s5, e6
         alu s5, s5, s3, #OP_ADD
         x17.sty e6, #5, #0
-        jmp #IF_NOT, #2, put
+        jmp #ALWAYS, #0, put
         nop()
         nop()
 sfac:   x17.mve e6, s13
@@ -154,7 +154,7 @@ sfac:   x17.mve e6, s13
 put:    x17.sty e8, #5, #0
         x18.eagu e8, e8, #AGU_INC
         x18.eagu e7, e7, #AGU_INC
-        jmp #IF_NOT, #2, band
+        jmp #ALWAYS, #0, band
         nop()
         nop()
 done:

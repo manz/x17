@@ -113,7 +113,7 @@ alac_elem:
         nop()
         nop()
         ldi s3, #2
-        jmp #IF_NOT, #2, alac_fail
+        jmp #ALWAYS, #0, alac_fail
         nop()
         nop()
 alac_two:
@@ -203,7 +203,7 @@ alac_cpos:
         stx A10, s3
         alu s1, s1, s14, #OP_SUB
         alu s2, s2, s14, #OP_SUB
-        jmp #IF_NOT, #2, alac_coef
+        jmp #ALWAYS, #0, alac_coef
         nop()
         nop()
 alac_coefs_done:
@@ -247,7 +247,7 @@ alac_sb:
         stx A4, s3
         x02.ainc #4, #4
         alu s1, s1, s14, #OP_SUB
-        jmp #IF_NOT, #2, alac_sb
+        jmp #ALWAYS, #0, alac_sb
         nop()
         nop()
 
@@ -268,7 +268,7 @@ alac_pbm:
         nop()
         alu s3, s3, s1, #OP_ADD
         alu s2, s2, s14, #OP_SUB
-        jmp #IF_NOT, #2, alac_pbm
+        jmp #ALWAYS, #0, alac_pbm
         nop()
         nop()
 alac_pbd:
@@ -280,7 +280,7 @@ alac_pbd:
         nop()
         nop()
         ldi s3, #3
-        jmp #IF_NOT, #2, alac_fail
+        jmp #ALWAYS, #0, alac_fail
         nop()
         nop()
 alac_pbok:
@@ -309,7 +309,7 @@ alac_pbok:
         nop()
         nop()
         ldi s3, #1
-        jmp #IF_NOT, #2, alac_fail
+        jmp #ALWAYS, #0, alac_fail
         nop()
         nop()
 alac_rok:
@@ -349,7 +349,7 @@ alac_mode0:
         jmp #3, #3, alac_lane
         nop()
         nop()
-        jmp #IF_NOT, #2, alac_out
+        jmp #ALWAYS, #0, alac_out
         nop()
         nop()
 
@@ -384,7 +384,7 @@ alac_vs:
         x02.ainc #3, #3
 alac_vn:
         alu s1, s1, s14, #OP_SUB
-        jmp #IF_NOT, #2, alac_vs
+        jmp #ALWAYS, #0, alac_vs
         nop()
         nop()
 
@@ -420,10 +420,10 @@ alac_out:
         yld(s4, PK_LN)
         alu s3, s3, s4, #OP_ADD
         yst(PK_CH)
-        jmp #IF_NOT, #2, alac_elem
+        jmp #ALWAYS, #0, alac_elem
         nop()
         nop()
-        jmp #IF_NOT, #2, alac_end
+        jmp #ALWAYS, #0, alac_end
         nop()
         nop()
 alac_fail:

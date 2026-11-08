@@ -4,7 +4,8 @@
 ;   e5   address of the next packet word
 ;   s9   cache: the `avail` unread bits, right-aligned (below 2^23)
 ;   s10  avail
-;   s14  1, s15 16 (constants); p2 clear, so `jmp #IF_NOT, #2` always jumps
+;   s14  1, s15 16 (constants); unconditional jumps use mode 1 (`jmp #ALWAYS, #0`):
+;        an x19alu sets p2 on silicon, so no predicate is assumed clear
 ;   s6, s11, s12, s13 scratch; s0 stays 0
 ;
 ; refill(): cache = cache * 2^16 + the word in s13 (ldy sign-extends, fact 409, so a
@@ -33,6 +34,7 @@
 .const EQ8    = 30              ; s8 == 0
 .const EQ12   = 31              ; s12 == 0
 .const IF_NOT = 2               ; jmp mode: taken when the predicate is clear
+.const ALWAYS = 1               ; jmp mode: always taken (fact 94)
 
 .macro bits_init(base) {
         ldi s13, #base - 1
@@ -105,7 +107,7 @@ full:   alu s7, s12, s0, #OP_ADD
         getbits_s(s5)
         x19.alu dst, dst, s11, #SHIFT ; dst << taken
         alu dst, dst, s5, #OP_ADD
-        jmp #IF_NOT, #2, more
+        jmp #ALWAYS, #0, more
         nop()
         nop()
 done:
