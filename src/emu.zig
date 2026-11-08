@@ -2061,9 +2061,17 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // half is P >> 24.
     // w3[24] = 0 doubles the product first (fact 469: 0x123 * 0x123 gave lo 0x9592,
     // hi 0); only a hi of 0 is measured there.
-    const pp: u64 = if ((bundle[3] >> 24) & 1 == 1) prod else prod << 1;
+    const integer = (bundle[3] >> 24) & 1 == 1;
+    const pp: u64 = if (integer) prod else prod << 1;
     const lo: u32 = @truncate(pp & 0xFFFF);
-    const hi: u32 = @truncate((pp >> 24) & M24);
+    // Doubled mode (600): hi = P[39:24] of the signed product, w3[22] = 1 rounding half up,
+    // 0 flooring.  Integer mode keeps the unsigned P >> 24 (own-x18mpy, w3[22] = 1, cannot
+    // tell rounding from flooring).
+    const hi: u32 = if (integer) @truncate((pp >> 24) & M24) else blk: {
+        const sp: i64 = (@as(i64, sx24(state.s[a_s])) * sx24(state.s[b_s])) << 1;
+        const half: i64 = if ((bundle[3] >> 22) & 1 == 1) 1 << 23 else 0;
+        break :blk @as(u32, @truncate(@as(u64, @bitCast((sp + half) >> 24)))) & M24;
+    };
     if (lo_dest != 0) state.s[lo_dest] = lo;
     if (hi_dest != 0) state.s[hi_dest] = hi;
 }

@@ -5206,3 +5206,25 @@ test "x18 class 110 stores s<{w2[0], w1[31:29]}> at X:[A<w2[21:17]>] when w2[23:
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x18 class 110's doubled hi is P[39:24], rounded by w3[22] (fact 600)" {
+    const gpa = testing.allocator;
+    // x18.mpy's bundle with w3[24] = 0: s5 <- hi(s1 * s2 << 1); w3[22] picks round / floor.
+    for ([_]struct { a: u32, b: u32, round: u32, floor: u32 }{
+        .{ .a = 0x7000, .b = 0x0123, .round = 1, .floor = 0 },
+        .{ .a = 0x1000, .b = 0x0C00, .round = 2, .floor = 1 },
+        .{ .a = 0x1000, .b = 0x0BFF, .round = 1, .floor = 1 },
+        .{ .a = 0x1234, .b = 0x5678, .round = 0xC, .floor = 0xC },
+        .{ .a = 0x7000, .b = 0xFFFEDD, .round = 0xFFFF, .floor = 0xFFFF },
+        .{ .a = 0x4000, .b = 0x4000, .round = 0x20, .floor = 0x20 },
+    }) |k| {
+        for ([_]u32{ 1, 0 }) |rnd| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.s[1] = k.a;
+            state.s[2] = k.b;
+            _ = try emu.runFrom(gpa, &state, &.{ 0x00000018, 0x00000000, 0x03000a42, 0xC0100001 | rnd << 22, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            try testing.expectEqual(if (rnd == 1) k.round else k.floor, state.s[5] & 0xFFFF);
+        }
+    }
+}
