@@ -6837,6 +6837,22 @@ test "x19alu writes its ALU result per cond w1[23:20] and p1 (646)" {
     try testing.expectEqual(@as(u32, 6), (w.slice()[1] >> 20) & 0xF);
 }
 
+test "ldy refuses e2 and reads e3 (650)" {
+    for ([_]struct { e: u32, ok: bool }{ .{ .e = 2, .ok = false }, .{ .e = 3, .ok = true } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.e[c.e] = 0x2DB0;
+        try st.y_mem.put(testing.allocator, 0x2DB0, 0x1234);
+        var buf: [32]u8 = undefined;
+        const w = try asm_mod.assembleOne(try std.fmt.bufPrint(&buf, "ldy s9, e{d}", .{c.e}));
+        const r = emu.runFrom(testing.allocator, &st, &.{ w.slice()[0], 0x00000017, 0x31308000, 0xA0000000 }, 0, 4);
+        if (c.ok) {
+            _ = try r;
+            try testing.expectEqual(@as(u32, 0x1234), st.s[9]);
+        } else try testing.expectError(emu.RunError.UnknownForm, r);
+    }
+}
+
 test "x19alu sets p<w2[17:14]> under w3[23:20] = 0xE (647)" {
     for ([_]struct { pk: u32, s4: u32 }{ .{ .pk = 2, .s4 = 0x12 }, .{ .pk = 3, .s4 = 0 }, .{ .pk = 15, .s4 = 0x12 } }) |c| {
         var st = emu.State{};

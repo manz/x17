@@ -9,7 +9,7 @@
 ; Y slots (unmix_slots(base), which remaps e1..e4 and e7..e10; call each stage's slots
 ; macro before that stage):
 ;   e1  Y:base+0  n
-;   e2  Y:base+1  mix_bits (0..31)
+;   e12 Y:base+1  mix_bits (0..31) (not e2, fact 650)
 ;   e3  Y:base+2  mix_res as its 8 bits (0..255; read back signed)
 ;   e4  Y:base+3  shifted: 0, 8 or 16
 ;   e7  Y:base+4  depth (8..24)
@@ -24,7 +24,7 @@
         ldi s5, #base - 1
         x17.mve e1, s5
         ldi s5, #base
-        x17.mve e2, s5
+        x17.mve e12, s5
         ldi s5, #base + 1
         x17.mve e3, s5
         ldi s5, #base + 2
@@ -59,7 +59,7 @@ apos:   alu s2, s8, s0, #OP_ADD
         x19.alu s5, s5, s3, #SHIFT ; lo
         floorshr(s3, s5, 14)
         alu s4, s4, s3, #OP_SUB ; hi
-        ldy s3, e2
+        ldy s3, e12
         ldi s11, #15
         alu s11, s11, s3, #OP_SUB ; 15 - s
         alu s12, s11, s0, #OP_ADD

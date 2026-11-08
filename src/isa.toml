@@ -436,7 +436,7 @@ name = "ldy"
 mask = "0x83FFFE1F"
 value = "0x0000020A"
 evidence = "MEASURED"
-ref = "fact 68 pass 94: s<[30:26]> (ldi numbering) <- Y:[e<[8:5]>]; bit 9 = 1 enables.  own-ldy."
+ref = "fact 68 pass 94: s<[30:26]> (ldi numbering) <- Y:[e<[8:5]>]; bit 9 = 1 enables.  own-ldy.  Through e2 the word read is unrelated to Y:[e2] and changes run to run; stores through e2 land (fact 650): e2 refused."
 
 [[form]]
 name = "dld"

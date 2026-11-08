@@ -93,7 +93,7 @@ done:
 ; rice_slots(base) sets up; the caller fills them before the loop:
 ;
 ;   e1  Y:base+0  mean hi    the mean mb = hi * 2^15 + lo, lo in [0, 2^15)
-;   e2  Y:base+1  mean lo
+;   e12 Y:base+1  mean lo (not e2: ldy through e2 reads junk, fact 650)
 ;   e3  Y:base+2  zmode
 ;   e4  Y:base+3  samples left
 ;   e7  Y:base+4  pb (<= 127)
@@ -110,7 +110,7 @@ done:
         ldi s5, #base - 1
         x17.mve e1, s5
         ldi s5, #base
-        x17.mve e2, s5
+        x17.mve e12, s5
         ldi s5, #base + 1
         x17.mve e3, s5
         ldi s5, #base + 2
@@ -147,7 +147,7 @@ top:    ldy s7, e4
         ldy s1, e1
         ldi s5, #6
         x19.alu s1, s1, s5, #SHIFT
-        ldy s2, e2
+        ldy s2, e12
         floorshr(s2, s2, 9)
         alu s1, s1, s2, #OP_ADD
         ldi s5, #3
@@ -210,7 +210,7 @@ even:   stx A6, s8
         nop()
         x17.sty e1, #6, #1      ; hi = 1 (s14)
         ldi s5, #0x7FFF
-        x17.sty e2, #5, #0
+        x17.sty e12, #5, #0
         jmp #ALWAYS, #0, zchk
         nop()
         nop()
@@ -225,7 +225,7 @@ grow:   ldy s6, e7
         ldy s5, e7
         alu s1, s1, s5, #OP_ADD ; pb * nd
         ldy s7, e1              ; hi
-        ldy s8, e2              ; lo
+        ldy s8, e12             ; lo
         x19.alu s2, s7, s11, #SHIFT
         x02.mpy s3, s6, s2
         ldi s5, #6
@@ -246,7 +246,7 @@ grow:   ldy s6, e7
         x19.alu s3, s3, s5, #SHIFT ; carry << 15 (s5 = 15)
         alu s2, s2, s3, #OP_SUB
         x17.sty e1, #1, #0
-        x17.sty e2, #2, #0
+        x17.sty e12, #2, #0
         ; a zero run follows when mb < 128 and samples are left
 zchk:   ldi s5, #0
         x17.sty e3, #5, #0      ; zmode = 0
@@ -254,7 +254,7 @@ zchk:   ldi s5, #0
         alu s12, s1, s14, #OP_SUB
         ptst p3, s0, #LT12, #PTST ; p3 = hi == 0
         jmp #IF_NOT, #3, top
-        ldy s2, e2              ; (delay slot) lo
+        ldy s2, e12             ; (delay slot) lo
         ldi s5, #128            ; (delay slot)
         alu s12, s2, s5, #OP_SUB
         ptst p3, s0, #LT12, #PTST ; p3 = lo < 128
@@ -333,7 +333,7 @@ zdone:  ldi s5, #0x7FFF
         nop()
         x17.sty e3, #5, #0      ; zmode = 0
 keepz:  x17.sty e1, #5, #0      ; mb = 0
-        x17.sty e2, #5, #0
+        x17.sty e12, #5, #0
         jmp #ALWAYS, #0, top
         nop()
         nop()

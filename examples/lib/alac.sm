@@ -296,7 +296,7 @@ alac_pbok:
         alu s3, s2, s0, #OP_ADD
         x17.sty e7, #3, #0      ; pb
         yld(s3, PK_MB)
-        x17.sty e2, #3, #0
+        x17.sty e12, #3, #0
         yld(s3, PK_N)
         x17.sty e4, #3, #0
         yld(s3, PK_KB)
@@ -439,7 +439,7 @@ alac_out:
         yld(s3, PK_N)
         x17.sty e1, #3, #0
         yld(s3, PK_MXB)
-        x17.sty e2, #3, #0
+        x17.sty e12, #3, #0
         yld(s3, PK_MXR)
         x17.sty e3, #3, #0
         yld(s3, PK_BS)

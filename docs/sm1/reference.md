@@ -555,7 +555,7 @@ Emulator:
 
 - Encoding: `word & 0x83FFFE1F == 0x0000020A`
 - Evidence: MEASURED
-- Source: fact 68 pass 94: s<[30:26]> (ldi numbering) <- Y:[e<[8:5]>]; bit 9 = 1 enables.  own-ldy.
+- Source: fact 68 pass 94: s<[30:26]> (ldi numbering) <- Y:[e<[8:5]>]; bit 9 = 1 enables.  own-ldy.  Through e2 the word read is unrelated to Y:[e2] and changes run to run; stores through e2 land (fact 650): e2 refused.
 
 | operand | kind | syllable | bits |
 |---|---|---|---|

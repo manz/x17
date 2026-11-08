@@ -5297,6 +5297,9 @@ fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         return;
     }
     const dest_s: u32 = dest_k - 16;
+    // Through e2 the load returns a word unrelated to Y:[e2], different run to run, while
+    // stores through e2 land (fact 650): refused.
+    if (src_e == 2) return RunError.UnknownForm;
     const addr: u32 = try yAddrE(state, src_e);
     const raw: u32 = (state.getY(addr) orelse 0) & 0xFFFF;
     // Sign-extends the 16-bit word (fact 409, own-ldysx).
