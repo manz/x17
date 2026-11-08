@@ -54,14 +54,15 @@ x17.agu2   3   0x00000017   0x28001800   0x00000000
 x19.agu    4   0x00000019   0x10040000   0x02C40000   0x00000000
 
 # x19.alu: 4-syllable low5 0x19 class (0,0,4) (fact 147 / own-x19alu).  w1[23:20] = 6, the
-# always-write condition (fact 646): 0 writes only while p1 = 0.
+# always-write condition (fact 646): 0 writes only while p1 = 0.  w2[17:14] = 15: the
+# bundle sets p<w2[17:14]> (647), and 15 touches no predicate.
 #   s<w1[27:24]> <- OP[head[9:5]](a = s<w2[21:18]>, b = s<w1[19:16]>)
 # Only code 23 (sat24(a << b)) is measured.
-x19.alu    4   0x00000419   0x00605808   XXXXXXXX   0x81E18008
+x19.alu    4   0x00000419   0x00605808   0x0003C101   0x81E18008
 
 # x19.alum: x19alu with its w1[14:11] mode and w1[3:0] clear (fact 454): 8 ops on a + b,
 # 0xA ops on a, 9 writes nothing.
-x19.alum   4   0x00000019   0x00600000   0x80008101   0x81E18008
+x19.alum   4   0x00000019   0x00600000   0x8003C101   0x81E18008
 
 # x19.e: 4-syllable low5 0x19 class (2,0,0) (fact 148 / own-x19e):
 #   e<w1[23:20]> <- head[20:5]
@@ -89,7 +90,7 @@ x19.aagu42 4   0x00000019   0x06000000   0x80000000   0x40000000
 
 # x19.alu44: 4-syllable low5 0x19 class (0,4,4) (fact 153 /
 # own-x19alu44).  Same op as x19.alu with w2[31] set.
-x19.alu44  4   0x00000419   0x00605808   0x80008101   0x81E18008
+x19.alu44  4   0x00000419   0x00605808   0x8003C101   0x81E18008
 
 # x19.a43: 4-syllable low5 0x19 class (0,4,3), w1[17:15]=1 (AGU3 source).
 # s <- AGU3[25]((w3[14:0] << 1) | w2[31]).  fact 151 / own-x19a43.

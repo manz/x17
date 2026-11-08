@@ -3303,6 +3303,10 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         if (!writes) return;
     }
     if (r) |x| state.s[dest_s] = @truncate(@as(u64, @bitCast(x)) & M24);
+    // 647: with w3[23:20] = 0xE the bundle sets p<w2[17:14]> <- 1, whatever the result; 15
+    // touches no predicate.  Other w3[23:20] values leave p alone here (OPEN).
+    const pk = (w2 >> 14) & 0xF;
+    if ((bundle[3] >> 20) & 0xF == 0xE and pk != 15) state.p[pk] = 1;
 }
 
 /// x19alu's two X writes (fact 533), both from X = X:[A<w2[26:22]>]: s<w2[7:4]> <- X and

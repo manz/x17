@@ -6595,3 +6595,19 @@ test "x19alu writes its ALU result per cond w1[23:20] and p1 (646)" {
     const w = try asm_mod.assembleOne("x19.alu s4, s4, s2, #23");
     try testing.expectEqual(@as(u32, 6), (w.slice()[1] >> 20) & 0xF);
 }
+
+test "x19alu sets p<w2[17:14]> under w3[23:20] = 0xE (647)" {
+    for ([_]struct { pk: u32, s4: u32 }{ .{ .pk = 2, .s4 = 0x12 }, .{ .pk = 3, .s4 = 0 }, .{ .pk = 15, .s4 = 0x12 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[4] = c.s4;
+        st.s[2] = 8;
+        const w2 = (0x00108101 & ~@as(u32, 0xF << 14)) | (c.pk << 14);
+        _ = try emu.runFrom(testing.allocator, &st, &.{ 0x000006f9, 0x04625808, w2, 0x81e18008, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u8, @intFromBool(c.pk == 2)), st.p[2]);
+        try testing.expectEqual(@as(u8, @intFromBool(c.pk == 3)), st.p[3]);
+    }
+    // the assembler's x19.alu touches no predicate
+    const w = try asm_mod.assembleOne("x19.alu s4, s4, s2, #23");
+    try testing.expectEqual(@as(u32, 15), (w.slice()[2] >> 14) & 0xF);
+}
