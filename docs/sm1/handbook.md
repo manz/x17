@@ -325,6 +325,10 @@ Measured idioms, cheapest first:
   signed 24-bit compares) and `x18.una sD, sA, #7` = |a| over 24 bits. abs wraps at -2^23:
   abs(0x800000) = 0x800000, so a max|v| scan must treat 0x800000 as the largest magnitude.
   x03's X store writes all 24 bits of s, so a counted loop copies 24-bit words.
+- **s0 is not a zero source for stores (§709).** `stx An, s0` stores the xd latch << 8 (the
+  last X word read, shifted), not 0. To zero memory, store a register cleared by `ldi #0` or an
+  ALU result. As a destination, s0 drops writes: `x03.tap0 sL, #n, s0, s0, s0` is a pure X load
+  and step.
 - **Selects without branches.** x19alu's write can be conditional on p1 (§646); the x01 slot's
   m = 7 gives b < 0 ? b : i (§502).
 - **Free R load.** x18 class 011 with w3[3] = 1 writes #head[20:5] to R<w3[10:7]> beside its
