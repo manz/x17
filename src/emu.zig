@@ -3296,7 +3296,7 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
 /// wrapping.  Mux 0 even codes but 6 give a << n, odd but 7 (a & 0xF00) << n; mux 1 even codes
 /// a >> n (arithmetic); mux 2 a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN.  Outside
 /// the gate X16_EXTRA (583) applies.
-const X16Op = enum { b, add, sub, add1, a, inc, dec, asr8, xor, xnor, or_, and_, xor8, xnor8, or8, and8, rsh_rnd, lsh, inc_lsh, rsh, nrsh, nlsh, add_rsh, sub_rsh, inc_rsh, rsh_rnd_pos, add_asr8, sub_asr8, inc_asr8, zero };
+const X16Op = enum { b, add, sub, add1, a, inc, dec, asr8, xor, xnor, or_, and_, xor8, xnor8, or8, and8, rsh_rnd, lsh, inc_lsh, rsh, nrsh, nlsh, add_rsh, sub_rsh, inc_rsh, rsh_rnd_pos, add_asr8, sub_asr8, inc_asr8, rsub, neg, neg_rsh_rnd, not_b, zero };
 
 /// The class-100 s ALU outside its gate by (head[30], head[29:27], S2[2:0]): fact 583
 /// (head[30] = 0) and 584 (head[30] = 1).
@@ -3319,6 +3319,33 @@ const X16_EXTRA = [2][8][8]X16Op{ .{
     .{ .zero, .zero, .zero, .zero, .zero, .zero, .zero, .zero },
     .{ .add, .add_rsh, .sub, .sub_rsh, .a, .rsh, .inc, .inc_rsh },
 } };
+
+/// fact 588: cells 8-15 (S2[3] set) by (head[30], head[29:27], S2[2:0]); null is OPEN.
+const X16_EXTRA_HI = blk: {
+    var t: [2][8][8]?X16Op = @splat(@splat(@splat(null)));
+    for ([_]u32{ 0, 2 }) |mx| {
+        t[0][mx][0] = .dec;
+        t[0][mx][2] = .rsub;
+    }
+    t[0][0][4] = .neg;
+    t[0][3][4] = .neg;
+    t[0][0][6] = .a;
+    t[0][1][4] = .neg_rsh_rnd;
+    t[0][5][0] = .not_b;
+    t[0][7][4] = .b;
+    t[0][7][6] = .b;
+    t[1][0][4] = .b;
+    break :blk t;
+};
+
+/// fact 588: S2[8] measured inert, alone and with n = 0, at these (head[30], mx, cell).
+fn x16S2b8Inert(h30: u32, mx: u32, c: u32) bool {
+    const k = h30 * 64 + mx * 8 + c;
+    return switch (k) {
+        0, 1 * 8 + 4, 3 * 8 + 2, 7 * 8 + 4, 64 + 4 => true,
+        else => false,
+    };
+}
 
 /// One X16_EXTRA cell on 24-bit operands, 24-bit result (586, 587).  Rounded >> is arithmetic,
 /// half up; >> 8 is arithmetic, truncating; every truncating >> b is logical in 24 bits; a
@@ -3360,6 +3387,10 @@ fn x16Extra(op: X16Op, a_raw: u32, b_raw: u32) RunError!u32 {
         .add_rsh => try lsr24(a + b, b),
         .sub_rsh => try lsr24(a - b, b),
         .inc_rsh => try lsr24(a + 1, b),
+        .rsub => b - a,
+        .neg => -a,
+        .neg_rsh_rnd => if (b < 0) return RunError.UnknownForm else try rshRound(-a, b, -a < 0 and b >= 15),
+        .not_b => ~b,
         .zero => 0,
     };
     return in24(r);
@@ -3408,18 +3439,33 @@ fn satShl(v: i64, n: i64) RunError!i64 {
 }
 
 fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
-    // With S2 bits in 0x01FFFFF8 (580-585): only S2[7:4] may be set; the cell is
-    // X16_EXTRA[head[30]][head[29:27]][S2[2:0]], and n = S1[31:29] != 0 only in 585's cells.
+    // With S2 bits in 0x01FFFFF8 (580-588): b = s<S2[7:4]>, cell S2[3:0].  Cells 0-7 are
+    // X16_EXTRA[head[30]][head[29:27]][c], 8-15 X16_EXTRA_HI (refused where null); n =
+    // S1[31:29] != 0 only in 585's and 588's cells; S2[8] only alone at X16_S2B8_INERT.
     if (s2 & 0x01FFFFF8 != 0) {
-        if (s2 & 0x01FFFF08 != 0) return RunError.UnknownForm;
+        if (s2 & 0x01FFFE00 != 0) return RunError.UnknownForm;
         const src: u32 = (s2 >> 4) & 0xF;
         const b: u32 = if (src == 0) 0 else state.s[src] & M24;
+        const h30: u32 = (h >> 30) & 1;
         const mx: u32 = (h >> 27) & 7;
-        const c: u32 = s2 & 7;
+        const c: u32 = s2 & 0xF;
         const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
         const n: u32 = s1 >> 29;
-        if (n == 0) return x16Extra(X16_EXTRA[(h >> 30) & 1][mx][c], a, b);
-        if ((h >> 30) & 1 == 1) return RunError.UnknownForm;
+        if ((s2 >> 8) & 1 == 1) {
+            if (s2 & 0x01FFFFF8 != 0x100 or n != 0) return RunError.UnknownForm;
+            if (!x16S2b8Inert(h30, mx, c)) return RunError.UnknownForm;
+        }
+        if (c >= 8) {
+            if (n != 0) return RunError.UnknownForm;
+            return x16Extra(X16_EXTRA_HI[h30][mx][c - 8] orelse return RunError.UnknownForm, a, b);
+        }
+        if (n == 0) return x16Extra(X16_EXTRA[h30][mx][c], a, b);
+        if (h30 == 1) {
+            // 588: mx 0 c 2/4/6 with n in {2, 5, 6, 7} runs mx 2's cell, else the move.
+            if (mx != 0 or c & 1 == 1 or c == 0) return RunError.UnknownForm;
+            const alu = n == 2 or n >= 5;
+            return x16Extra(if (alu) X16_EXTRA[0][2][c] else .b, a, b);
+        }
         return x16ExtraN(mx * 8 + c, a, b, n);
     }
     const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;

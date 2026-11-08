@@ -4641,10 +4641,12 @@ test "the 0x16 class-100 s ALU copies s<S2[7:4]> outside its gate (fact 580, 581
         .{ .s2 = 0x8a000034, .want = 0x333 }, // S2[7:4] = 3, code 4
         .{ .s2 = 0x8a0000b0, .want = 0xBB0B }, // code 0
         .{ .h = 0x46000096 | 2 << 27, .want = 0xBB0B }, // 584: mx 0-2 all move b
-        .{ .s1 = 0x0b000012 | 1 << 29, .want = null }, // n != 0 with head[30] = 1
+        .{ .s1 = 0x0b000012 | 1 << 29, .want = 0xBB0B }, // 588: n = 1 keeps the move
+        .{ .s1 = 0x0b000012 | 2 << 29, .want = 0x5555 }, // 588: n = 2 runs mx 2's c 4 (a = s5)
+        .{ .s1 = 0x0b000012 | 2 << 29, .s2 = 0x8a0000b1, .want = null }, // odd cell
         .{ .s2 = 0x8a0000b1, .want = 0xBB0B }, // 584: every cell
         .{ .h = 0x46000096 | 3 << 27, .want = 0 }, // 584: mx 3 writes 0
-        .{ .s2 = 0x8a0000bc, .want = null }, // S2[3] set
+        .{ .s2 = 0x8a0000bc, .want = 0xBB0B }, // 588: cell 12 moves b too
         .{ .s2 = 0x8a0001b4, .want = null }, // S2[8] set
     }) |c| {
         var state = emu.State{};
@@ -4843,4 +4845,47 @@ test "the 0x16 class-100 s ALU on 24-bit operands (fact 586)" {
     st.s[3] = 0xFF8000;
     _ = try emu.runFrom(gpa, &st, &.{ 0x06000096, 0x8b000012, 0x860000b0, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0xFFF800), st.s[5]);
+}
+
+test "the 0x16 class-100 s ALU's cells 8-15 and S2[8] (fact 588)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h30: u32 = 0, mx: u32, c: u32, a: u32 = 0x0F0F, b: u32 = 3, n: u32 = 0, b8: u32 = 0, want: ?u32 }{
+        .{ .mx = 0, .c = 10, .want = 0xFFF0F4 }, // b - a
+        .{ .mx = 0, .c = 10, .a = 0x1234, .b = 2, .want = 0xFFEDCE },
+        .{ .mx = 2, .c = 10, .want = 0xFFF0F4 },
+        .{ .mx = 0, .c = 12, .want = 0xFFF0F1 }, // -a
+        .{ .mx = 3, .c = 12, .a = 0x1234, .b = 2, .want = 0xFFEDCC },
+        .{ .mx = 1, .c = 12, .want = 0xFFFE1E }, // (-a) >> b rounded
+        .{ .mx = 1, .c = 12, .a = 0x1234, .b = 2, .want = 0xFFFB73 },
+        .{ .mx = 5, .c = 8, .want = 0xFFFFFC }, // ~b
+        .{ .mx = 5, .c = 8, .a = 0x1234, .b = 2, .want = 0xFFFFFD },
+        .{ .mx = 0, .c = 8, .want = 0x0F0E }, // a - 1
+        .{ .mx = 2, .c = 8, .want = 0x0F0E },
+        .{ .mx = 0, .c = 14, .want = 0x0F0F }, // a
+        .{ .mx = 7, .c = 12, .want = 3 }, // b
+        .{ .mx = 7, .c = 14, .want = 3 },
+        .{ .h30 = 1, .mx = 0, .c = 12, .want = 3 },
+        .{ .mx = 4, .c = 8, .want = null }, // unmeasured cell 8-15
+        .{ .mx = 0, .c = 9, .want = null },
+        .{ .mx = 0, .c = 10, .n = 1, .want = null }, // S2[3] with n
+        // S2[8] inert alone at its measured cells only (b = s0 there)
+        .{ .mx = 1, .c = 4, .b8 = 1, .want = 0x0F0F }, // a >> 0 rounded
+        .{ .h30 = 1, .mx = 0, .c = 4, .b8 = 1, .want = 0 }, // the move of s0
+        .{ .mx = 2, .c = 0, .b8 = 1, .want = null },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = k.a;
+        state.s[11] = k.b;
+        const src: u32 = if (k.b8 == 1) 0 else 0xB0;
+        const r = emu.runFrom(gpa, &state, &.{ 0x06000096 | k.h30 << 30 | k.mx << 27, 0x0b000012 | k.n << 29, 0x86000000 | k.b8 << 8 | src | k.c, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+    // S2[8] with other extra bits: refused.
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st, &.{ 0x0E000096, 0x0b000012, 0x860001b4, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
