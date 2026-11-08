@@ -2805,14 +2805,15 @@ test "the 0x16 class-100 row's s ALU: shifts, masked shift, add and subtract by 
             try testing.expectEqual(v, state.s[5]);
         } else try testing.expectError(error.UnknownForm, r);
     }
-    // 518: own-b16h31 (head[31] = 0 runs the same ALU); 580, 581: outside the gate only
-    // s<S2[7:4]> with head[29:27] = 0, n = 0, S2[2:0] in {0, 4} is measured
+    // 518: own-b16h31 (head[31] = 0 runs the same ALU).  Outside the gate X16_EXTRA holds only
+    // at head[26:25] = 11, where 585's mx 0 c 0 with n = 7 is (a + b) >> n.
     for ([_]struct { h: u32, s2: u32, want: ?u32 }{
         .{ .h = 0x001211d6, .s2 = 0x86000000, .want = 0x8080 },
-        // 585: mx 0 c 0 with n = 7 is (a + b) >> n: (0x101 + s4 = 0) >> 7, (0x101 + s8 = 0) >> 7
-        .{ .h = 0x801211d6, .s2 = 0x86000040, .want = 2 },
-        .{ .h = 0x801211d6, .s2 = 0x86000080, .want = 2 },
-        .{ .h = 0x801211d6, .s2 = 0x86000081, .want = null },
+        .{ .h = 0x861211d6, .s2 = 0x86000040, .want = 2 }, // (0x101 + s4 = 0) >> 7
+        .{ .h = 0x861211d6, .s2 = 0x86000080, .want = 2 },
+        .{ .h = 0x861211d6, .s2 = 0x86000081, .want = null },
+        .{ .h = 0x801211d6, .s2 = 0x86000040, .want = null }, // head[26:25] = 00: OPEN
+        .{ .h = 0x861211d6, .s2 = 0x86000000, .want = null }, // gate cell at 11: rows move
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -4265,6 +4266,7 @@ test "own-b16R: the class-100 row's R write muxes on S1[24]" {
         .{ .s1 = 0x20005800, .s2 = 0x8a000001, .want = 0x4600 }, // mx 0 c 1: a << (n + 8)
         .{ .h = 0x4002a816, .s1 = 0x20005800, .want = null }, // head[30] = 1: OPEN
         .{ .s1 = 0x20005800, .s2 = 0x8a000030, .want = null }, // extra S2 bits: OPEN
+        .{ .h = 0x0202a816, .s1 = 0x20005800, .want = null }, // head[26:25] = 01: OPEN
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -4898,4 +4900,66 @@ test "the 0x16 class-100 s ALU's cells 8-15 and S2[8] (fact 588)" {
     var st = emu.State{};
     defer st.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &st, &.{ 0x0E000096, 0x0b000012, 0x860001b4, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
+
+test "the 0x16 class-100 gate cell's top byte (Upstream, after fact 589)" {
+    const gpa = testing.allocator;
+    for ([_]struct { mx: u32, c: u32, a: u32, n: u32, want: u32 }{
+        .{ .mx = 0, .c = 1, .a = 0x123, .n = 1, .want = 0x024600 },
+        .{ .mx = 0, .c = 1, .a = 0x3303, .n = 7, .want = 0x818000 }, // wraps at 24
+        .{ .mx = 0, .c = 5, .a = 0x123, .n = 0, .want = 0x012300 },
+        .{ .mx = 0, .c = 0, .a = 0x3303, .n = 7, .want = 0x198180 },
+        .{ .mx = 1, .c = 0, .a = 0xFF8000, .n = 4, .want = 0xFFF800 },
+        .{ .mx = 1, .c = 0, .a = 0xFF8001, .n = 1, .want = 0xFFC001 },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[5] = k.a;
+        // s3 <- cell(a = s5, n = S1[31:29]); head base 0x0002a816.
+        _ = try emu.runFrom(gpa, &state, &.{ 0x0002a816 | k.mx << 27, 0x06000000 | k.n << 29, 0x8a000000 | k.c, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(k.want, state.s[3]);
+    }
+}
+
+test "the 0x16 class-100 row is head[29:25] (fact 590)" {
+    const gpa = testing.allocator;
+    // 581's move holds at head[26:25] = 2 too; other ops there are OPEN.
+    for ([_]struct { h: u32, s1: u32 = 0x0b000012, s2: u32 = 0x8a0000b4, want: ?u32 }{
+        .{ .h = 0x44000096, .want = 0xBB0B }, // head[30] = 1, mx 0, head[26:25] = 2, c 4
+        .{ .h = 0x44000096, .s2 = 0x8a0000b0, .want = 0xBB0B }, // c 0
+        .{ .h = 0x44000096, .s2 = 0x8a0000b2, .want = null }, // c 2
+        .{ .h = 0x44000096, .s1 = 0x2b000012, .want = null }, // n = 1
+        .{ .h = 0x44000096, .s2 = 0x8a0000bc, .want = null }, // S2[3]
+        .{ .h = 0x4C000096, .want = null }, // mx 1
+        .{ .h = 0x04000096, .want = null }, // head[30] = 0
+        .{ .h = 0x42000096, .want = null }, // head[26:25] = 1
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[11] = 0xBB0B;
+        state.s[5] = 0x5555;
+        const r = emu.runFrom(gpa, &state, &.{ k.h, k.s1, k.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+    // 590's evidence rows at cell 0, a = 0x3303: the gate grid at head[26:25] = 0 (n = 3) and
+    // X16_EXTRA at 3 (b = 2, n = 0).
+    const grid0 = [8]u32{ 0x19818, 0x660, 0x3306, 0x3303, 0xFFCCFD, 0xFFCCFB, 0x660, 0x3300 };
+    const extra3 = [8]u32{ 0x3305, 0xCC1, 0x3305, 0x3305, 0x3301, 0x3301, 0xCC0, 0x3301 };
+    for (0..8) |mx| {
+        const m: u32 = @intCast(mx);
+        var g = emu.State{};
+        defer g.deinit(gpa);
+        g.s[5] = 0x3303;
+        const rg = emu.runFrom(gpa, &g, &.{ 0x0002a816 | m << 27, 0x66000000, 0x8a000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (rg) |_| try testing.expectEqual(grid0[mx], g.s[3]) else |e| try testing.expectEqual(error.UnknownForm, e);
+        var x = emu.State{};
+        defer x.deinit(gpa);
+        x.s[3] = 0x3303;
+        x.s[11] = 2;
+        _ = try emu.runFrom(gpa, &x, &.{ 0x06000096 | m << 27, 0x0b000012, 0x860000b0, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(extra3[mx], x.s[5]);
+    }
 }

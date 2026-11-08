@@ -3447,7 +3447,12 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
     // X16_EXTRA[head[30]][head[29:27]][c], 8-15 X16_EXTRA_HI (refused where null); n =
     // S1[31:29] != 0 only in 585's and 588's cells; S2[8] only alone at X16_S2B8_INERT.
     if (s2 & 0x01FFFFF8 != 0) {
+        // The row is head[29:25] (590): X16_EXTRA was measured at head[26:25] = 3, and 581's
+        // move (head[30] = 1, mx 0, c 0 / 4, n = 0, extras in S2[7:4]) also at 2.  The rest OPEN.
         if (s2 & 0x01FFFE00 != 0) return RunError.UnknownForm;
+        const move_581 = (h >> 25) & 0x3F == 0x22 and s1 >> 29 == 0 and s2 & 0x01FFFF0B == 0;
+        if (move_581) return if ((s2 >> 4) & 0xF == 0) 0 else state.s[(s2 >> 4) & 0xF] & M24;
+        if ((h >> 25) & 3 != 3) return RunError.UnknownForm;
         const src: u32 = (s2 >> 4) & 0xF;
         const b: u32 = if (src == 0) 0 else state.s[src] & M24;
         const h30: u32 = (h >> 30) & 1;
@@ -3472,6 +3477,8 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
         }
         return x16ExtraN(mx * 8 + c, a, b, n);
     }
+    // The row is head[29:25] (590); the gate grid holds at head[26:25] = 0 only.
+    if ((h >> 25) & 3 != 0) return RunError.UnknownForm;
     const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
     const n: u5 = @intCast(s1 >> 29);
     const code: u32 = s2 & 7;
