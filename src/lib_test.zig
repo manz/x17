@@ -5732,3 +5732,29 @@ test "class aliases: x17agu2 S1 111, x17sub any S1, agu12 / agu13 S 011 (fact 61
     _ = try emu.runFrom(gpa, &st, &.{ 0x2bc000b2, 0x72080001, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0x0BCD), st.s[2]);
 }
+
+test "b16a's move reads a when S1[4:3] = 01 (fact 622, 623)" {
+    const gpa = testing.allocator;
+    // c6000016 0500201c 86000044: head[30] = 1, mx 0, cell 4; a = s3, b = s4, dest s2.
+    for ([_]struct { s1lo: u32, want: ?u32 }{
+        .{ .s1lo = 0x00, .want = 0x777 },
+        .{ .s1lo = 0x04, .want = 0x777 },
+        .{ .s1lo = 0x10, .want = 0x777 },
+        .{ .s1lo = 0x14, .want = 0x777 },
+        .{ .s1lo = 0x18, .want = 0x777 },
+        .{ .s1lo = 0x1C, .want = 0x777 },
+        .{ .s1lo = 0x08, .want = 0x333 },
+        .{ .s1lo = 0x0C, .want = 0x333 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0x333;
+        state.s[4] = 0x777;
+        _ = try emu.runFrom(gpa, &state, &.{ 0xc6000016, 0x05002000 | c.s1lo, 0x86000044, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want.?, state.s[2]);
+    }
+    // Another cell (head[30] = 1, mx 0, cell 2) with S1[4:3] = 01: unmeasured.
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0xc6000016, 0x05002008, 0x86000042, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}

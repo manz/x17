@@ -3656,6 +3656,13 @@ fn satShl(v: i64, n: i64) RunError!i64 {
 }
 
 fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
+    // S1[4:3] = 01 (623): head[30] = 1's mx 0 cell 4 move reads a instead of b; every other cell
+    // is unmeasured there and refuses.  S1[2] is inert.
+    if ((s1 >> 3) & 3 == 1) {
+        const move = (h >> 30) & 1 == 1 and (h >> 25) & 0x1F == 3 and s2 & 0x01FFFF0F == 4 and s1 >> 29 == 0;
+        if (!move) return RunError.UnknownForm;
+        return state.s[(s2 >> 25) & 0xF] & M24;
+    }
     // With S2 bits in 0x01FFFFF8 (580-588): b = s<S2[7:4]>, cell S2[3:0].  Cells 0-7 are
     // X16_EXTRA[head[30]][head[29:27]][c], 8-15 X16_EXTRA_HI (refused where null); n =
     // S1[31:29] != 0 only in 585's and 588's cells; S2[8] only alone at X16_S2B8_INERT.
