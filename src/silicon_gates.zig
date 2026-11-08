@@ -2075,7 +2075,7 @@ const GATES = [_]Gate{
         \\x17.halt
         ,
         .post = &.{
-            .{ .s_reg = .{ .index = 3, .value = 0x2003 } },
+            .{ .s_reg = .{ .index = 3, .value = 0x2003, .mask = 0xFFFF } }, // [15:0] read (663)
             .{ .s_reg = .{ .index = 5, .value = 0x18 } },
         },
     },

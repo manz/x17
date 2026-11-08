@@ -129,7 +129,11 @@ rgw2:   x18.eagu e10, e10, #AGU_INC
 
 ; s1 = the next LCG state, s3 = its sample. s7 = a, s13 = a << 8, s8 = c. Uses s4, s5, s6, s12.
 .macro pn_next() {
-        x03.mpy s0, s7, s1, s4, #4, #1, #0, #0 ; s4 = (2 a x)[15:0]
+        x03.mpy s0, s7, s1, s4, #4, #1, #0, #0 ; s4 = (2 a x) mod 2^24 (fact 663)
+        ldi s12, #0x7FFF
+        alu s12, s12, s12, #OP_ADD
+        alu s12, s12, s14, #OP_ADD
+        x18.and s4, s4, s12     ; (2 a x)[15:0]
         ldi s12, #-1
         x19.alu s4, s4, s12, #SHIFT ; lo = (a x)[14:0] (exact on an even word)
         ldi s12, #8192

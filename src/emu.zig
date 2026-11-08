@@ -843,7 +843,7 @@ fn x03ProductHigh(state: *const State, bundle: []const u32) RunError!?SWrite {
     return .{ .dest = dest, .value = @truncate(@as(u64, @bitCast(acc >> 24)) & 0xFFFF) };
 }
 
-/// x03's product low half s<w4[10:7]> (191, 603): (X op P)[15:0], P = a * b over
+/// x03's product low half s<w4[10:7]> (191, 603): (X op P) mod 2^24, unmasked (663), P = a * b over
 /// s<w2[4:1]>, s<w2[8:5]> (<< 1 unless w1[17]), X = s<w5[12:9]>, op by mode w1[13:11]:
 /// 4 P, 5 X + P, 6 P - X, 7 X - P.  w1[14] = 0 is measured for mode 4 only (own-x03plo).
 fn x03ProductLow(state: *const State, bundle: []const u32) RunError!?SWrite {
@@ -865,7 +865,7 @@ fn x03ProductLow(state: *const State, bundle: []const u32) RunError!?SWrite {
         7 => x - pl,
         else => return RunError.UnknownForm,
     };
-    return .{ .dest = dest, .value = @truncate(@as(u64, @bitCast(lv)) & 0xFFFF) };
+    return .{ .dest = dest, .value = @truncate(@as(u64, @bitCast(lv)) & M24) };
 }
 
 fn execX03Mode0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -2228,7 +2228,9 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // hi 0); only a hi of 0 is measured there.
     const integer = (bundle[3] >> 24) & 1 == 1;
     const pp: u64 = if (integer) prod else prod << 1;
-    const lo: u32 = @truncate(pp & 0xFFFF);
+    // 24 bits, unmasked (fact 663, doubled mode: 2P = 0x2AC00 reads 0x02AC00); 167 and 469
+    // read [15:0] only. Integer mode taken as P mod 2^24 like x02's (655).
+    const lo: u32 = @truncate(pp & M24);
     // Doubled mode (600): hi = P[39:24] of the signed product, w3[22] = 1 rounding half up,
     // 0 flooring.  Integer mode (after 600): no rounding; w3[22] = 1 a signed product,
     // 0 unsigned 24-bit (b measured negative, a only positive: a negative a refuses).

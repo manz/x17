@@ -1637,7 +1637,7 @@ test "x18 class-110 p write on the multiply base: the silicon gates" {
     var st = try runX18(.{ 0x1C000018, 0x00000000, 0x02002222, 0xC4114001 }, 1, 1);
     defer st.deinit(testing.allocator);
     try testing.expectEqual(@as(u8, 0), st.p[1]);
-    try testing.expectEqual(@as(u32, 0x9592), st.s[2]);
+    try testing.expectEqual(@as(u32, 0x029592), st.s[2]); // 469 read [15:0]; 24 bits (663)
     try testing.expectEqual(@as(u32, 0), st.s[1]);
     // 470 own-x18p1: op 2 with w3[9:8] != 0 writes 1.
     var st2 = try runX18(.{ 0x1C000018, 0x00010000, 0x02002222, 0xC4114101 }, 0, 1);
@@ -5365,7 +5365,7 @@ test "x03 override 11 over mux 001/010 reads Y:[e] with w5[21], else yd (fact 60
     }
 }
 
-test "x03 product low half is (X op P)[15:0] (fact 603)" {
+test "x03 product low half is (X op P) mod 2^24 (fact 603, 663)" {
     const gpa = testing.allocator;
     // 80000003 00006800 01441485 00000007 00002C90 00041402 (w4 mode 5): s9 <- low, s2 = 3, s4 = 5 (P = 0x1E),
     // s<k> = 0x110 k + 1, X = s<w5[12:9]>, mode w1[13:11].
@@ -5377,7 +5377,7 @@ test "x03 product low half is (X op P)[15:0] (fact 603)" {
         .{ .k = 12, .want = 0x0CDF },
         .{ .k = 1, .want = 0x012F },
         .{ .w1 = 0x00007800, .want = 0x0863 },
-        .{ .w1 = 0x00007000, .want = 0xF79D },
+        .{ .w1 = 0x00007000, .want = 0xFFF79D }, // 603 read 0xF79D: the slot keeps 24 bits (663)
         .{ .w1 = 0x00006000, .want = 0x001E },
         .{ .w1 = 0x00026800, .w2 = 0x01440085, .want = 0x0890 }, // w1[17]: P not doubled
         .{ .w1 = 0x00002800, .want = null }, // w1[14] = 0 with an X mode: OPEN
