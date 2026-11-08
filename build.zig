@@ -150,7 +150,10 @@ pub fn build(b: *std.Build) void {
     for ([_][]const u8{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |f| {
         lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/alac/{s}.pkts", .{f})) });
     }
-    const lib_t = b.addTest(.{ .root_module = lib_mod, .filters = if (aac_bench) &.{ "as the model does", "huff_decode", "win_start", "aac stage bench report" } else &.{} });
+    // -Dtest-filter=<name>: run only the lib tests whose name contains it (mutation checks).
+    const test_filter = b.option([]const u8, "test-filter", "run only lib tests matching this");
+    const lib_filters: []const []const u8 = if (aac_bench) &.{ "as the model does", "huff_decode", "win_start", "aac stage bench report" } else if (test_filter) |f| b.dupeStrings(&.{f}) else &.{};
+    const lib_t = b.addTest(.{ .root_module = lib_mod, .filters = lib_filters });
 
     const bench_mod = b.createModule(.{
         .root_source_file = b.path("src/bench.zig"),
@@ -171,6 +174,7 @@ pub fn build(b: *std.Build) void {
     const lib_run = b.addRunArtifact(lib_t);
     b.step("aac-bench", "Bundles per AAC stage (pass -Daac-bench-mode)").dependOn(&lib_run.step);
     test_step.dependOn(&lib_run.step);
+    b.step("test-lib", "Only the library tests (pair with -Dtest-filter)").dependOn(&lib_run.step);
     const disasm_t = b.addTest(.{ .root_module = disasm_mod });
     test_step.dependOn(&b.addRunArtifact(disasm_t).step);
 }
