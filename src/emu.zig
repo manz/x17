@@ -3235,10 +3235,13 @@ fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const head = bundle[0];
     const w1 = bundle[1];
     const dest_s: u32 = (head >> 21) & 0xF;
-    // The read index is A<{w1[2:0], head[31:30]}>; w3[19:15] is inert (fact 651, which
-    // revises 154). A0 and A31 are not plain address registers (649): refused.
+    // The read index is A<{w1[2:0], head[31:30]}> (fact 651, which revises 154); w3[19:15]
+    // feeds the A write below, not the read. A0 and A31 are not plain address registers (649): refused.
     const src_a: u32 = ((w1 & 7) << 2) | (head >> 30);
     if (src_a == 0 or src_a == 31) return RunError.UnknownForm;
+    // The bundle also writes A<head[29:25]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, i) (fact
+    // 654), unmodelled here: only the no-write form, head[29:25] = 0, runs.
+    if ((head >> 25) & 0x1F != 0) return RunError.UnknownForm;
     const v: u32 = state.readX(state.a[src_a]) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
 }

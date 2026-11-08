@@ -71,9 +71,10 @@ x19.alum   4   0x00000019   0x00600000   0x8003C101   0x81E18008
 x19.e      4   0x00000019   0x42040000   0x01C20000   0x00000000
 
 # x19.xrd: 4-syllable low5 0x19 class (0,4,3) (fact 154 / own-x19xrd); read index
-# A<{w1[2:0], head[31:30]}>, w3[19:15] inert (fact 651).
+# A<{w1[2:0], head[31:30]}> (fact 651). The bundle also writes A<head[29:25]> <-
+# AGU3[w3[24:20]](x = A<w3[19:15]>, i) (fact 654): the template keeps head[29:25] = 0.
 # X-memory read into s: s<head[24:21]> <- X:[A<k>].
-x19.xrd    4   0xC8000019   0x08028002   0x80003000   0x61500554
+x19.xrd    4   0xC0000019   0x08028002   0x80003000   0x61500554
 
 # x19.a3: 4-syllable low5 0x19 class (0,0,3) (fact 149 / own-x19a3).
 # Parallel s load from AGU3 and R load from AGU10.  Only AGU3 fn 25

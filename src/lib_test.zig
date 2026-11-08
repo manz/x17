@@ -6837,13 +6837,13 @@ test "x19alu writes its ALU result per cond w1[23:20] and p1 (646)" {
     try testing.expectEqual(@as(u32, 6), (w.slice()[1] >> 20) & 0xF);
 }
 
-test "x19.xrd reads A<{w1[2:0], head[31:30]}>, w3[19:15] inert (651)" {
-    // the old template word with w3[19:15] = 2 reads A11
+test "x19.xrd reads A<{w1[2:0], head[31:30]}> (651)" {
+    // the old template word, its A write (head[29:25] = 4) cleared, reads A11
     var st = emu.State{};
     defer st.deinit(testing.allocator);
     for (1..31) |k| st.a[k] = 0x40 + @as(u32, @intCast(k));
     for (1..31) |k| try st.x_mem.put(testing.allocator, 0x40 + @as(u32, @intCast(k)), 0x100 + @as(u32, @intCast(k)));
-    _ = try emu.runFrom(testing.allocator, &st, &.{ 0xc8e00019, 0x08028002, 0x80003000, 0x61510554, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
+    _ = try emu.runFrom(testing.allocator, &st, &.{ 0xc0e00019, 0x08028002, 0x80003000, 0x61510554, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
     try testing.expectEqual(@as(u32, 0x10B), st.s[7]);
     // the assembler splits k across w1[2:0] and head[31:30]
     for ([_]u32{ 1, 2, 8, 11, 19, 30 }) |k| {
@@ -6853,6 +6853,12 @@ test "x19.xrd reads A<{w1[2:0], head[31:30]}>, w3[19:15] inert (651)" {
     }
     try testing.expectError(error.AssemblyFailed, asm_mod.assembleOne("x19.xrd s7, #0"));
     try testing.expectError(error.AssemblyFailed, asm_mod.assembleOne("x19.xrd s7, #31"));
+    // the assembled word writes no A (654); one that does is refused
+    const w = try asm_mod.assembleOne("x19.xrd s7, #11");
+    try testing.expectEqual(@as(u32, 0), (w.slice()[0] >> 25) & 0x1F);
+    var st2 = emu.State{};
+    defer st2.deinit(testing.allocator);
+    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st2, &.{ 0xc8e00019, 0x08028002, 0x80003000, 0x61510554, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8));
 }
 
 test "an x02.v X read into s0 reaches no other slot (652)" {
