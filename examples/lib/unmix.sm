@@ -45,8 +45,8 @@
         ldy s1, e3
         ldi s3, #128
         alu s12, s1, s3, #OP_SUB
-        ptst p1, s0, #LT12, #PTST ; below 128: positive
-        jmp #3, #1, apos
+        ptst p3, s0, #LT12, #PTST ; below 128: positive
+        jmp #3, #3, apos
         ldi s3, #256            ; (delay slot)
         nop()
         alu s1, s1, s3, #OP_SUB ; a -= 256
@@ -63,8 +63,8 @@ apos:   alu s2, s8, s0, #OP_ADD
         ldi s11, #15
         alu s11, s11, s3, #OP_SUB ; 15 - s
         alu s12, s11, s0, #OP_ADD
-        ptst p1, s0, #LT12, #PTST
-        jmp #3, #1, big
+        ptst p3, s0, #LT12, #PTST
+        jmp #3, #3, big
         nop()
         nop()
         ldi s13, #9             ; s <= 15: hi << (15 - s) + floor(lo / 2^s), hi
@@ -88,8 +88,8 @@ done:
 .macro emit(x) {
         ldy s3, e4
         alu s12, s3, s14, #OP_SUB
-        ptst p1, s0, #LT12, #PTST ; shifted == 0
-        jmp #3, #1, plain
+        ptst p3, s0, #LT12, #PTST ; shifted == 0
+        jmp #3, #3, plain
         ldy s13, e7             ; (delay slot) depth
         nop()
         alu s13, s13, s3, #OP_SUB
@@ -111,8 +111,8 @@ store:  stx A7, x
         x17.sty e9, #3, #0      ; left = n
 frame:  ldy s3, e9
         alu s12, s3, s14, #OP_SUB
-        ptst p1, s0, #LT12, #PTST
-        jmp #3, #1, finish
+        ptst p3, s0, #LT12, #PTST
+        jmp #3, #3, finish
         alu s3, s3, s14, #OP_SUB ; (delay slot)
         x17.sty e9, #3, #0      ; (delay slot) left -= 1
         x19.xrd s7, #2          ; u
@@ -120,16 +120,16 @@ frame:  ldy s3, e9
         ldy s3, e8
         alu s12, s3, s14, #OP_SUB
         alu s12, s12, s14, #OP_SUB
-        ptst p1, s0, #LT12, #PTST ; one lane
-        jmp #3, #1, mono
+        ptst p3, s0, #LT12, #PTST ; one lane
+        jmp #3, #3, mono
         nop()
         nop()
         x19.xrd s8, #3          ; v
         x02.ainc #3, #3
         ldy s3, e3
         alu s12, s3, s14, #OP_SUB
-        ptst p1, s0, #LT12, #PTST ; mix_res == 0
-        jmp #3, #1, lanes
+        ptst p3, s0, #LT12, #PTST ; mix_res == 0
+        jmp #3, #3, lanes
         nop()
         nop()
         mulshr()
@@ -144,8 +144,8 @@ lanes:  emit(s7)
 mono:   emit(s7)
 gap:    ldy s3, e10
 skip:   alu s12, s3, s14, #OP_SUB
-        ptst p1, s0, #LT12, #PTST
-        jmp #3, #1, frame
+        ptst p3, s0, #LT12, #PTST
+        jmp #3, #3, frame
         nop()
         nop()
         x02.ainc #7, #7

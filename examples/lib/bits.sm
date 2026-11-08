@@ -8,7 +8,7 @@
 ;   s6, s11, s12, s13 scratch; s0 stays 0
 ;
 ; refill(): cache = cache * 2^16 + the word in s13 (ldy sign-extends, fact 409, so a
-; negative word gets 2^16 back), e5 + 1, avail + 16. Uses s12 and p1.
+; negative word gets 2^16 back), e5 + 1, avail + 16. Uses s12 and p3.
 ;
 ; getbits(dst, k), k in 0..8 (getbits_s takes k in s11; k = 0 reads 0): refill 16 bits when avail < k (avail <= 7 then, so the cache
 ; stays below 2^23), then dst = floor(cache / 2^sh), sh = avail - k. The floor comes from the
@@ -53,8 +53,8 @@
         x19.alu s9, s9, s15, #SHIFT ; cache << 16
         alu s9, s9, s13, #OP_ADD ; + the word as ldy gave it
         alu s12, s13, s0, #OP_ADD
-        ptst p1, s0, #LT12, #PTST ; ldy sign-extended it
-        jmp #IF_NOT, #1, done
+        ptst p3, s0, #LT12, #PTST ; ldy sign-extended it
+        jmp #IF_NOT, #3, done
         x18.eagu e5, e5, #AGU_INC ; (delay slot) next word
         alu s10, s10, s15, #OP_ADD ; (delay slot) avail += 16
         x19.alu s12, s14, s15, #SHIFT ; 2^16
@@ -69,8 +69,8 @@ done:
 
 .macro getbits_s(dst) {
         alu s12, s10, s11, #OP_SUB ; avail - k
-        ptst p1, s0, #LT12, #PTST ; p1 = avail < k
-        jmp #IF_NOT, #1, have
+        ptst p3, s0, #LT12, #PTST ; p3 = avail < k
+        jmp #IF_NOT, #3, have
         ldy s13, e5             ; delay slot: next word, harmless if unused
         alu s6, s0, s14, #OP_SUB ; delay slot: s6 = -1
         refill()
@@ -90,13 +90,13 @@ have:   alu s12, s10, s11, #OP_SUB ; sh = avail - k
 .macro readn(dst) {
         alu dst, s0, s0, #OP_ADD
 more:   alu s12, s7, s14, #OP_SUB ; n - 1
-        ptst p1, s0, #LT12, #PTST ; p1 = n == 0
-        jmp #3, #1, done
+        ptst p3, s0, #LT12, #PTST ; p3 = n == 0
+        jmp #3, #3, done
         nop()
         ldi s11, #8             ; (second delay slot, harmless)
         alu s12, s7, s11, #OP_SUB ; n - 8
-        ptst p1, s0, #LT12, #PTST
-        jmp #IF_NOT, #1, full   ; n >= 8: take 8, n - 8 left
+        ptst p3, s0, #LT12, #PTST
+        jmp #IF_NOT, #3, full   ; n >= 8: take 8, n - 8 left
         nop()
         nop()
         alu s11, s7, s0, #OP_ADD ; n < 8: take n

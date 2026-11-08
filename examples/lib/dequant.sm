@@ -45,8 +45,8 @@
 .macro dq_mant() {
         ldi s12, #128
         alu s12, s12, s1, #OP_SUB
-        ptst p1, s0, #LT12, #PTST ; mag > 128
-        jmp #3, #1, big
+        ptst p3, s0, #LT12, #PTST ; mag > 128
+        jmp #3, #3, big
         ldi s4, #DQ_D           ; (delay slot)
         nop()
         alu s4, s4, s1, #OP_ADD
@@ -62,8 +62,8 @@
 big:    ldi s6, #1              ; s
         ldi s7, #256            ; 2^(7 + s)
 more:   alu s12, s1, s7, #OP_SUB
-        ptst p1, s0, #LT12, #PTST
-        jmp #3, #1, found
+        ptst p3, s0, #LT12, #PTST
+        jmp #3, #3, found
         nop()
         nop()
         alu s6, s6, s14, #OP_ADD
@@ -103,8 +103,8 @@ done:
 ; s1 = |s11|. Uses s4.
 .macro dq_abs() {
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, pos
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, pos
         alu s1, s11, s0, #OP_ADD ; (delay slot)
         nop()
         alu s1, s0, s11, #OP_SUB
@@ -152,18 +152,18 @@ grp:    ldi s13, #DQ_OFF - 1
         yld(s3, DQ_MAX)
         yst(DQ_SL)
 band:   yld(s4, DQ_SL)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, gdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, gdone
         nop()
         nop()
         ldy s4, e7
         alu s4, s4, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; book 0
-        jmp #3, #1, bnext
+        ptst p3, s0, #LT4, #PTST ; book 0
+        jmp #3, #3, bnext
         ldi s12, #10            ; (delay slot) book 12 never reaches here
         alu s4, s12, s4, #OP_SUB ; (delay slot) 11 - book
-        ptst p1, s0, #LT4, #PTST ; noise or intensity
-        jmp #3, #1, bnext
+        ptst p3, s0, #LT4, #PTST ; noise or intensity
+        jmp #3, #3, bnext
         ldy s3, e10             ; (delay slot)
         nop()
         yst(DQ_WL)
@@ -172,8 +172,8 @@ band:   yld(s4, DQ_SL)
         ldi s3, #0
         yst(DQ_MQ)
 win:    yld(s4, DQ_WL)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, wdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, wdone
         nop()
         nop()
         ldy s5, e9
@@ -186,16 +186,16 @@ win:    yld(s4, DQ_WL)
         amov(A2, s7)
         yld(s10, DQ_MQ)
 mx:     alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, mxd
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, mxd
         nop()
         nop()
         x19.xrd s11, #2
         x02.ainc #2, #2
         dq_abs()
         alu s4, s10, s1, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, mx2
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, mx2
         alu s9, s9, s14, #OP_SUB ; (delay slot)
         nop()
         alu s10, s1, s0, #OP_ADD
@@ -216,8 +216,8 @@ mxd:    alu s3, s10, s0, #OP_ADD
         nop()
 wdone:  yld(s1, DQ_MQ)
         alu s4, s1, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST ; an all-zero band sets nothing
-        jmp #3, #1, bnext
+        ptst p3, s0, #EQ4, #PTST ; an all-zero band sets nothing
+        jmp #3, #3, bnext
         nop()
         nop()
         dq_mant()
@@ -225,8 +225,8 @@ wdone:  yld(s1, DQ_MQ)
         alu s3, s3, s7, #OP_ADD ; e = em + 2 + floor(t / 4)
         yld(s5, DQ_E)
         alu s4, s5, s3, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, bnext
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, bnext
         nop()
         nop()
         yst(DQ_E)
@@ -244,8 +244,8 @@ gdone:  ldy s5, e10
         yld(s6, DQ_WIN)
         yld(s3, DQ_WB)
 gw:     alu s4, s5, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, gw2
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, gw2
         nop()
         nop()
         alu s3, s3, s6, #OP_ADD
@@ -258,8 +258,8 @@ gw2:    yst(DQ_WB)
         alu s3, s3, s14, #OP_SUB
         yst(DQ_GL)
         alu s4, s3, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, grp
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, grp
         nop()
         nop()
 }
@@ -274,18 +274,18 @@ grp:    ldi s13, #DQ_OFF - 1
         yld(s3, DQ_MAX)
         yst(DQ_SL)
 band:   yld(s4, DQ_SL)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, gdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, gdone
         nop()
         nop()
         ldy s4, e7
         alu s4, s4, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, bnext
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, bnext
         ldi s12, #10            ; (delay slot)
         alu s4, s12, s4, #OP_SUB ; (delay slot)
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, bnext
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, bnext
         nop()
         nop()
         dq_sh()
@@ -299,8 +299,8 @@ band:   yld(s4, DQ_SL)
         yld(s3, DQ_WB)
         yst(DQ_CW)
 win:    yld(s4, DQ_WL)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, bnext
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, bnext
         nop()
         nop()
         ldy s5, e9
@@ -315,15 +315,15 @@ win:    yld(s4, DQ_WL)
         alu s4, s8, s4, #OP_ADD
         amov(A3, s4)
 co:     alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, cod
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, cod
         nop()
         nop()
         x19.xrd s11, #2
         x02.ainc #2, #2
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST ; q = 0: DQ_OUT is already 0
-        jmp #3, #1, cnext
+        ptst p3, s0, #EQ4, #PTST ; q = 0: DQ_OUT is already 0
+        jmp #3, #3, cnext
         nop()
         nop()
         dq_abs()
@@ -336,16 +336,16 @@ co:     alu s4, s9, s0, #OP_ADD
         alu s12, s10, s3, #OP_SUB ; n = E - e
         ldi s4, #24
         alu s4, s12, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, nok
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, nok
         nop()
         nop()
         ldi s12, #23            ; P < 2^21.75, so any n >= 23 gives 0
 nok:    alu s12, s0, s12, #OP_SUB
         x19.alu s6, s6, s12, #SHIFT ; rshr(P, n)
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, put
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, put
         nop()
         nop()
         alu s6, s0, s6, #OP_SUB
@@ -378,8 +378,8 @@ gdone:  ldy s5, e10
         yld(s6, DQ_WIN)
         yld(s3, DQ_WB)
 gw:     alu s4, s5, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, gw2
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, gw2
         nop()
         nop()
         alu s3, s3, s6, #OP_ADD
@@ -392,8 +392,8 @@ gw2:    yst(DQ_WB)
         alu s3, s3, s14, #OP_SUB
         yst(DQ_GL)
         alu s4, s3, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, grp
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, grp
         nop()
         nop()
 }
@@ -406,16 +406,16 @@ clr:    stx A3, s0
         x02.ainc #3, #3
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, clr
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, clr
         nop()
         nop()
         dq_pass1()
         yld(s4, DQ_E)
         ldi s12, #DQ_NONE
         alu s4, s4, s12, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, run2
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, run2
         nop()
         nop()
         ldi s3, #0

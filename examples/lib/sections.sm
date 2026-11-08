@@ -16,34 +16,34 @@
         x17.mve e7, s13
 grp:    alu s3, s2, s0, #OP_ADD ; bands left in the group
 sect:   alu s4, s3, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, gdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, gdone
         nop()
         nop()
         getbits(s5, 4)          ; sect_cb
         ldi s4, #12
         alu s4, s5, s4, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST ; reserved
-        jmp #3, #1, fail
+        ptst p3, s0, #EQ4, #PTST ; reserved
+        jmp #3, #3, fail
         nop()
         ldi s7, #0              ; (second delay slot) length
 incr:   getbits(s8, sb)
         alu s7, s7, s8, #OP_ADD
         ldi s4, #esc
         alu s8, s8, s4, #OP_SUB
-        ptst p1, s0, #EQ8, #PTST ; an escape: more length follows
-        jmp #3, #1, incr
+        ptst p3, s0, #EQ8, #PTST ; an escape: more length follows
+        jmp #3, #3, incr
         nop()
         nop()
         alu s3, s3, s7, #OP_SUB
         alu s4, s3, s0, #OP_ADD
-        ptst p1, s0, #LT4, #PTST ; past max_sfb
-        jmp #3, #1, fail
+        ptst p3, s0, #LT4, #PTST ; past max_sfb
+        jmp #3, #3, fail
         nop()
         nop()
 fill:   alu s4, s7, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, sect
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, sect
         nop()
         nop()
         x17.sty e7, #5, #0
@@ -54,8 +54,8 @@ fill:   alu s4, s7, s0, #OP_ADD
         nop()
 gdone:  alu s1, s1, s14, #OP_SUB
         alu s4, s1, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, grp
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, grp
         nop()
         nop()
         alu s5, s0, s14, #OP_SUB
@@ -86,23 +86,23 @@ gdone:  alu s1, s1, s14, #OP_SUB
         x17.mve e8, s13
 band:   ldy s2, e7
         alu s4, s2, s0, #OP_ADD
-        ptst p1, s0, #LT4, #PTST ; -1: the end
-        jmp #3, #1, done
+        ptst p3, s0, #LT4, #PTST ; -1: the end
+        jmp #3, #3, done
         nop()
         nop()
-        ptst p1, s0, #EQ4, #PTST ; ZERO_HCB: 0, no codeword
-        jmp #3, #1, put
+        ptst p3, s0, #EQ4, #PTST ; ZERO_HCB: 0, no codeword
+        jmp #3, #3, put
         alu s5, s0, s0, #OP_ADD ; (delay slot)
         nop()
         ldi s4, #13
         alu s4, s2, s4, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, dec    ; not NOISE_HCB
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, dec    ; not NOISE_HCB
         ldi s13, #AAC_ACC + 3 - 1 ; (delay slot)
         x17.mve e6, s13         ; (delay slot) e6 = PCM pending
         ldy s4, e6
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, dec         ; the PCM value is behind us
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, dec         ; the PCM value is behind us
         nop()
         nop()
         alu s5, s0, s0, #OP_ADD
@@ -122,12 +122,12 @@ dec:    ldi s1, #tab
 acc:    ldy s2, e7              ; the book again: huff_decode took every register
         ldi s4, #13
         alu s4, s2, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, sfac        ; a spectral book
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, sfac        ; a spectral book
         ldi s13, #AAC_ACC - 1   ; (delay slot)
         nop()
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, add
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, add
         ldi s13, #AAC_ACC + 1 - 1 ; (delay slot) noise
         nop()
         ldi s13, #AAC_ACC + 2 - 1 ; intensity
@@ -143,12 +143,12 @@ sfac:   x17.mve e6, s13
         alu s5, s5, s3, #OP_ADD
         x17.sty e6, #5, #0
         alu s4, s5, s0, #OP_ADD
-        ptst p1, s0, #LT4, #PTST ; below 0
-        jmp #3, #1, fail
+        ptst p3, s0, #LT4, #PTST ; below 0
+        jmp #3, #3, fail
         ldi s4, #255            ; (delay slot)
         alu s4, s4, s5, #OP_SUB ; (delay slot)
-        ptst p1, s0, #LT4, #PTST ; above 255
-        jmp #3, #1, fail
+        ptst p3, s0, #LT4, #PTST ; above 255
+        jmp #3, #3, fail
         nop()
         nop()
 put:    x17.sty e8, #5, #0

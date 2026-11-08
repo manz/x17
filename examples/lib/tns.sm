@@ -58,15 +58,15 @@
         x12.aset #k, R7
 }
 
-; Jumps to FAIL unless -L < s<V> < L, L = s7. Uses s4, p1.
+; Jumps to FAIL unless -L < s<V> < L, L = s7. Uses s4, p3.
 .macro tn_small(V, FAIL) {
         alu s4, V, s7, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, FAIL   ; V >= L
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, FAIL   ; V >= L
         alu s4, V, s7, #OP_ADD  ; (delay slot)
         nop()
-        ptst p1, s0, #LE4, #PTST
-        jmp #3, #1, FAIL        ; V <= -L
+        ptst p3, s0, #LE4, #PTST
+        jmp #3, #3, FAIL        ; V <= -L
         nop()
         nop()
 }
@@ -75,8 +75,8 @@
 ; Jumps to FAIL when a value leaves the range. Uses s1, s4, s5, s6, s8, s9, s12, R3, A6, A8, A10.
 .macro tn_lattice(FAIL) {
 ls:     alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, ldone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, ldone
         ldi s12, #TN_KC - 2     ; (delay slot)
         nop()
         tn_aset(s12, 3)         ; A6 = K'
@@ -94,8 +94,8 @@ ls:     alu s4, s10, s0, #OP_ADD
         tn_small(s1, FAIL)
         alu s9, s11, s14, #OP_SUB
 st:     alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, sdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, sdone
         nop()
         nop()
         x19.xrd s5, #6          ; k_m
@@ -129,8 +129,8 @@ ldone:
         amov(A8, DST)
         alu s9, N, s0, #OP_ADD
 cl:     alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, cdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, cdone
         nop()
         nop()
         x19.xrd s1, #4
@@ -149,8 +149,8 @@ cdone:
         alu s9, N, s0, #OP_ADD
         ldi s12, #-1
 hl:     alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, hdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, hdone
         nop()
         nop()
         x19.xrd s1, #4
@@ -179,8 +179,8 @@ zb:     stx A10, s0
         x02.ainc #10, #10
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, zb
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, zb
         nop()
         nop()
         ldi s1, #TN_W
@@ -189,8 +189,8 @@ zb:     stx A10, s0
         yld(s10, TN_LEN)
         rimm R2, #1
         yld(s4, TN_DIR)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, fwd
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, fwd
         nop()
         nop()
         rimm R2, #-1            ; backwards: from the last sample
@@ -213,8 +213,8 @@ fail:   ldi s3, #TN_SAVE
         yld(s3, TN_TRY)
         ldi s4, #TN_MAXH
         alu s4, s3, s4, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, giveup
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, giveup
         alu s3, s3, s14, #OP_ADD ; (delay slot)
         nop()
         yst(TN_TRY)
@@ -242,8 +242,8 @@ gz:     stx A4, s0
         x02.ainc #4, #4
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, gz
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, gz
         nop()
         nop()
         yld(s3, TN_GIVE)
@@ -270,22 +270,22 @@ rdone:
         yld(s5, TN_TOPB)        ; top
         alu s6, s5, s1, #OP_SUB ; bottom = max(top - length, 0)
         alu s4, s6, s0, #OP_ADD
-        ptst p1, s0, #LT4, #PTST
+        ptst p3, s0, #LT4, #PTST
         alu s12, s0, s6, #OP_SUB
-        psel s6, s12, s6, p1, #1, #4
+        psel s6, s12, s6, p3, #1, #4
         tn_yst(TN_TOPB, 6, 0)
         yld(s3, TN_MAXO)        ; ord = min(order, max_order)
         alu s4, s3, s2, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
+        ptst p3, s0, #LT4, #PTST
         alu s8, s2, s0, #OP_ADD
-        psel s8, s4, s8, p1, #1, #4
+        psel s8, s4, s8, p3, #1, #4
         yld(s3, TN_TOP)         ; both ends clipped to TN_TOP
         alu s4, s3, s6, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        psel s6, s4, s6, p1, #1, #4
+        ptst p3, s0, #LT4, #PTST
+        psel s6, s4, s6, p3, #1, #4
         alu s4, s3, s5, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        psel s5, s4, s5, p1, #1, #4
+        ptst p3, s0, #LT4, #PTST
+        psel s5, s4, s5, p3, #1, #4
         tn_off(s10, s6)         ; start offset
         tn_off(s11, s5)         ; end offset
         yld(s3, TN_WB)
@@ -300,8 +300,8 @@ rdone:
         ldi s3, #0
         yst(TN_DIR)
         alu s4, s2, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, nocodes
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, nocodes
         nop()
         nop()
         ldy s3, e7              ; direction
@@ -315,22 +315,22 @@ rdone:
         yld(s3, TN_RES)
         ldi s5, #TN_K + 4
         alu s4, s3, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, cl
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, cl
         nop()
         nop()
         ldi s5, #TN_K + 16
 cl:     alu s4, s2, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, cdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, cdone
         nop()
         nop()
         ldy s6, e7              ; code
         x18.eagu e7, e7, #AGU_INC
         alu s2, s2, s14, #OP_SUB
         alu s4, s8, s0, #OP_ADD
-        ptst p1, s0, #LE4, #PTST ; the delay slot counts skipped codes too
-        jmp #3, #1, cl          ; past ord: skipped
+        ptst p3, s0, #LE4, #PTST ; the delay slot counts skipped codes too
+        jmp #3, #3, cl          ; past ord: skipped
         alu s8, s8, s14, #OP_SUB ; (delay slot)
         nop()
         alu s6, s5, s6, #OP_ADD
@@ -346,8 +346,8 @@ cdone:  yld(s11, TN_LEN)
 nocodes: tn_yst(TN_LEN, 3, 1)   ; s11
         ; nothing to run when ord = 0 or len <= 0
         yld(s4, TN_ORD)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, fdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, fdone
         nop()
         nop()
         ldi s3, #0
@@ -366,8 +366,8 @@ fdone:
         yld(s3, TN_NWIN)
         yst(TN_WI)
 win:    yld(s4, TN_WI)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, done
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, done
         nop()
         nop()
         yld(s3, TN_NSWB)
@@ -376,23 +376,23 @@ win:    yld(s4, TN_WI)
         x18.eagu e7, e7, #AGU_INC
         yst(TN_NF)
         alu s4, s3, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, wnext
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, wnext
         nop()
         nop()
         ldy s3, e7              ; coef_res
         x18.eagu e7, e7, #AGU_INC
         yst(TN_RES)
 filt:   yld(s4, TN_NF)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, wnext
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, wnext
         alu s3, s4, s14, #OP_SUB ; (delay slot)
         nop()
         yst(TN_NF)
         tn_filter()
         yld(s4, TN_LEN)
-        ptst p1, s0, #LE4, #PTST
-        jmp #3, #1, filt
+        ptst p3, s0, #LE4, #PTST
+        jmp #3, #3, filt
         nop()
         nop()
         tn_run()

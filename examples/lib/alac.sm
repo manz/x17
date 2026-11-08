@@ -64,8 +64,8 @@
         yld(s4, PK_L)
         ldi s3, #base
         alu s4, s4, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; lane 0
-        jmp #3, #1, l0
+        ptst p3, s0, #LT4, #PTST ; lane 0
+        jmp #3, #3, l0
         nop()
         nop()
         ldi s4, #step
@@ -84,32 +84,32 @@ alac_elem:
         yld(s3, PK_CH)
         yld(s4, PK_NCH)
         alu s4, s3, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; ch < channels
-        jmp #IF_NOT, #1, alac_end
+        ptst p3, s0, #LT4, #PTST ; ch < channels
+        jmp #IF_NOT, #3, alac_end
         nop()
         nop()
         getbits(s3, 3)          ; tag
         ldi s4, #7
         alu s4, s3, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, alac_end ; END
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, alac_end ; END
         nop()
         nop()
         ldi s1, #1              ; lanes
         alu s4, s3, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; SCE
-        jmp #3, #1, alac_one
+        ptst p3, s0, #LT4, #PTST ; SCE
+        jmp #3, #3, alac_one
         nop()
         nop()
         alu s4, s4, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; CPE
-        jmp #3, #1, alac_two
+        ptst p3, s0, #LT4, #PTST ; CPE
+        jmp #3, #3, alac_two
         nop()
         nop()
         ldi s4, #3
         alu s4, s3, s4, #OP_SUB
-        ptst p1, s0, #LE4, #PTST ; LFE
-        jmp #3, #1, alac_one
+        ptst p3, s0, #LE4, #PTST ; LFE
+        jmp #3, #3, alac_one
         nop()
         nop()
         ldi s3, #2
@@ -131,8 +131,8 @@ alac_one:
         getbits(s3, 1)
         yst(PK_ESC)
         alu s4, s1, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; not partial
-        jmp #3, #1, alac_full
+        ptst p3, s0, #LT4, #PTST ; not partial
+        jmp #3, #3, alac_full
         nop()
         nop()
         getbits(s3, 8)          ; n's top byte (0 in a valid stream)
@@ -142,8 +142,8 @@ alac_one:
 alac_full:
         yld(s3, PK_ESC)
         alu s4, s3, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; compressed
-        jmp #IF_NOT, #1, alac_verb
+        ptst p3, s0, #LT4, #PTST ; compressed
+        jmp #IF_NOT, #3, alac_verb
         nop()
         nop()
 
@@ -184,8 +184,8 @@ alac_hdr:
         alu s1, s1, s14, #OP_SUB ; address of coefs[0]: base + order - 1
 alac_coef:
         alu s4, s2, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, alac_coefs_done
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, alac_coefs_done
         nop()
         nop()
         ldi s7, #16
@@ -193,8 +193,8 @@ alac_coef:
         ldi s4, #0x7FFF
         alu s4, s4, s14, #OP_ADD ; 2^15
         alu s12, s3, s4, #OP_SUB
-        ptst p1, s0, #LT12, #PTST ; below 2^15: positive
-        jmp #3, #1, alac_cpos
+        ptst p3, s0, #LT12, #PTST ; below 2^15: positive
+        jmp #3, #3, alac_cpos
         nop()
         nop()
         alu s3, s12, s4, #OP_SUB ; c - 2^16
@@ -212,16 +212,16 @@ alac_coefs_done:
         yst(PK_L)
         yld(s4, PK_LN)
         alu s4, s3, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; another lane
-        jmp #3, #1, alac_hdr
+        ptst p3, s0, #LT4, #PTST ; another lane
+        jmp #3, #3, alac_hdr
         nop()
         nop()
 
         ; the low bytes come before the residuals: n * lanes of them, 8 * bytes_shifted bits
         yld(s3, PK_BS)
         alu s4, s3, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, alac_lanes
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, alac_lanes
         nop()
         nop()
         aimm(A4, X_LOW)
@@ -229,15 +229,15 @@ alac_coefs_done:
         yld(s3, PK_LN)
         alu s3, s3, s14, #OP_SUB
         alu s4, s3, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; one lane
-        jmp #3, #1, alac_sb
+        ptst p3, s0, #LT4, #PTST ; one lane
+        jmp #3, #3, alac_sb
         nop()
         nop()
         alu s1, s1, s1, #OP_ADD
 alac_sb:
         alu s4, s1, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, alac_lanes
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, alac_lanes
         nop()
         nop()
         yld(s7, PK_BS)
@@ -262,8 +262,8 @@ alac_lane:
         alu s3, s0, s0, #OP_ADD
 alac_pbm:
         alu s4, s2, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, alac_pbd
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, alac_pbd
         nop()
         nop()
         alu s3, s3, s1, #OP_ADD
@@ -275,8 +275,8 @@ alac_pbd:
         floorshr(s2, s3, 2)     ; pb = cfg.pb * pb_factor / 4
         ldi s4, #128
         alu s4, s2, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, alac_pbok
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, alac_pbok
         nop()
         nop()
         ldi s3, #3
@@ -304,8 +304,8 @@ alac_pbok:
         rice_slots(RICE)
         ldy s3, e10
         alu s4, s3, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, alac_rok
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, alac_rok
         nop()
         nop()
         ldi s3, #1
@@ -327,8 +327,8 @@ alac_rok:
         ysub(0)
         ldy s3, e6              ; mode
         alu s4, s3, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, alac_mode0
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, alac_mode0
         nop()
         nop()
         aimm(A2, PRED)
@@ -345,8 +345,8 @@ alac_mode0:
         yst(PK_L)
         yld(s4, PK_LN)
         alu s4, s3, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, alac_lane
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, alac_lane
         nop()
         nop()
         jmp #IF_NOT, #2, alac_out
@@ -363,8 +363,8 @@ alac_verb:
         yld(s1, PK_N)
 alac_vs:
         alu s4, s1, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, alac_out
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, alac_out
         nop()
         nop()
         yld(s7, PK_DEP)
@@ -374,8 +374,8 @@ alac_vs:
         yld(s4, PK_LN)
         alu s4, s4, s14, #OP_SUB
         alu s4, s4, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; one lane
-        jmp #3, #1, alac_vn
+        ptst p3, s0, #LT4, #PTST ; one lane
+        jmp #3, #3, alac_vn
         nop()
         nop()
         yld(s7, PK_DEP)

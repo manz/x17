@@ -44,15 +44,15 @@
         ldi s2, #8
 pcm_loop:
         alu s12, s1, s0, #OP_ADD
-        ptst p1, s0, #LE12, #PTST ; none left
-        jmp #3, #1, pcm_done
+        ptst p3, s0, #LE12, #PTST ; none left
+        jmp #3, #3, pcm_done
         nop()
         nop()
         getbits(s4, 8)          ; first byte
         getbits(s3, 8)          ; second byte
         alu s12, s8, s0, #OP_ADD
-        ptst p1, s0, #EQ12, #PTST ; big-endian (after getbits, which uses p1)
-        jmp #3, #1, pcm_be
+        ptst p3, s0, #EQ12, #PTST ; big-endian (after getbits, which uses p3)
+        jmp #3, #3, pcm_be
         nop()
         nop()
         x19.alu s3, s3, s2, #SHIFT ; little-endian: hi = second byte

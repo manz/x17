@@ -18,8 +18,8 @@
         alu s3, s1, s0, #OP_ADD ; start of the code - 1
         ldi s8, #5
 step:   alu s12, s10, s11, #OP_SUB ; avail - w
-        ptst p1, s0, #LT12, #PTST ; p1 = avail < w
-        jmp #IF_NOT, #1, have
+        ptst p3, s0, #LT12, #PTST ; p3 = avail < w
+        jmp #IF_NOT, #3, have
         ldy s13, e5             ; delay slot: next word, harmless if unused
         alu s6, s0, s14, #OP_SUB ; delay slot: s6 = -1
         refill()
@@ -38,8 +38,8 @@ have:   alu s7, s10, s11, #OP_SUB ; sh = avail - w
         x19.alu s12, s13, s8, #SHIFT ; hi << 5
         alu s2, s2, s12, #OP_SUB ; f
         alu s12, s2, s15, #OP_SUB ; f - 16
-        ptst p1, s0, #LT12, #PTST ; p1 = leaf
-        jmp #3, #1, leaf
+        ptst p3, s0, #LT12, #PTST ; p3 = leaf
+        jmp #3, #3, leaf
         alu s1, s3, s13, #OP_ADD ; (delay slot) pointer: next table
         alu s11, s12, s0, #OP_ADD ; (delay slot) pointer: its width
         x19.alu s12, s5, s7, #SHIFT ; pointer: consume w bits, t << sh
@@ -80,13 +80,13 @@ leaf:   alu s11, s2, s0, #OP_ADD ; consume f bits
 ; spec_sign(x): a non-zero x reads one sign bit; 1 negates it. Uses s4, s8.
 .macro spec_sign(x) {
         alu s4, x, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST ; zero: no sign bit
-        jmp #3, #1, done
+        ptst p3, s0, #EQ4, #PTST ; zero: no sign bit
+        jmp #3, #3, done
         nop()
         nop()
         getbits(s8, 1)
-        ptst p1, s0, #EQ8, #PTST
-        jmp #3, #1, done
+        ptst p3, s0, #EQ8, #PTST
+        jmp #3, #3, done
         nop()
         nop()
         alu x, s0, x, #OP_SUB
@@ -97,27 +97,27 @@ done:
 ; (N + 4)-bit word; x = sign(x) (2^(N+4) + word). Uses s4, s5, s7, s8 and readn's registers.
 .macro spec_esc(x, fail) {
         alu s4, x, s0, #OP_ADD
-        ptst p1, s0, #LT4, #PTST
+        ptst p3, s0, #LT4, #PTST
         alu s5, x, s0, #OP_ADD  ; |x|
-        jmp #IF_NOT, #1, pos
+        jmp #IF_NOT, #3, pos
         nop()
         nop()
         alu s5, s0, x, #OP_SUB
 pos:    alu s4, s5, s15, #OP_SUB ; |x| - 16
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, done
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, done
         ldi s7, #0              ; (delay slot) N = 0
         nop()
 pre:    getbits(s8, 1)
-        ptst p1, s0, #EQ8, #PTST ; the prefix's zero
-        jmp #3, #1, word
+        ptst p3, s0, #EQ8, #PTST ; the prefix's zero
+        jmp #3, #3, word
         nop()
         nop()
         alu s7, s7, s14, #OP_ADD ; N + 1
         ldi s4, #9
         alu s12, s7, s4, #OP_SUB
-        ptst p1, s0, #EQ12, #PTST ; N = 9
-        jmp #3, #1, fail
+        ptst p3, s0, #EQ12, #PTST ; N = 9
+        jmp #3, #3, fail
         nop()
         nop()
         jmp #IF_NOT, #2, pre
@@ -130,9 +130,9 @@ word:   ldi s4, #4
         x19.alu s5, s14, s4, #SHIFT ; 2^(N+4)
         alu s5, s5, s8, #OP_ADD ; + word
         alu s4, x, s0, #OP_ADD
-        ptst p1, s0, #LT4, #PTST
+        ptst p3, s0, #LT4, #PTST
         alu x, s5, s0, #OP_ADD
-        jmp #IF_NOT, #1, done
+        jmp #IF_NOT, #3, done
         nop()
         nop()
         alu x, s0, x, #OP_SUB

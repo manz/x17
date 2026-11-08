@@ -34,7 +34,7 @@
 .const IM_STG  = IM_Y + 5       ; stages left
 .const IM_J    = IM_Y + 6       ; twiddles left in the stage
 
-; s10 = max(0, X[BASE ..]), s11 = min(0, X[BASE ..]) over COUNT words. Uses s1, s4, s9, A8, p1.
+; s10 = max(0, X[BASE ..]), s11 = min(0, X[BASE ..]) over COUNT words. Uses s1, s4, s9, A8, p3.
 .macro im_scan(BASE, COUNT) {
         aimm(A8, BASE)
         ldi s9, #COUNT
@@ -43,40 +43,40 @@
 mm:     x19.xrd s1, #8
         x02.ainc #8, #8
         alu s4, s1, s10, #OP_SUB
-        ptst p1, s0, #LE4, #PTST
-        psel s10, s4, s10, p1, #0, #4 ; x > max: max + (x - max)
+        ptst p3, s0, #LE4, #PTST
+        psel s10, s4, s10, p3, #0, #4 ; x > max: max + (x - max)
         alu s4, s1, s11, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        psel s11, s4, s11, p1, #1, #4 ; x < min: min + (x - min)
+        ptst p3, s0, #LT4, #PTST
+        psel s11, s4, s11, p3, #1, #4 ; x < min: min + (x - min)
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, mm
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, mm
         nop()
         nop()
 }
 
 ; s6 = 2 when MX >= 2^22 or MN <= -2^22, else 1 when MX >= 2^21 or MN <= -2^21, else 0.
-; Uses s3, s4, p1.
+; Uses s3, s4, p3.
 .macro im_decide(MX, MN) {
         ldi s3, #22
         x19.alu s3, s14, s3, #SHIFT ; 2^22
         alu s4, MX, s3, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, two    ; max >= 2^22
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, two    ; max >= 2^22
         alu s4, MN, s3, #OP_ADD ; (delay slot)
         nop()
-        ptst p1, s0, #LE4, #PTST
-        jmp #3, #1, two         ; min <= -2^22
+        ptst p3, s0, #LE4, #PTST
+        jmp #3, #3, two         ; min <= -2^22
         ldi s3, #21             ; (delay slot)
         x19.alu s3, s14, s3, #SHIFT ; (delay slot) 2^21
         alu s4, MX, s3, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, one
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, one
         alu s4, MN, s3, #OP_ADD ; (delay slot)
         nop()
-        ptst p1, s0, #LE4, #PTST
-        jmp #3, #1, one
+        ptst p3, s0, #LE4, #PTST
+        jmp #3, #3, one
         nop()
         nop()
         jmp #IF_NOT, #2, done
@@ -102,8 +102,8 @@ sl:     x19.xrd s1, #8
         x02.ainc #9, #9
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, sl
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, sl
         nop()
         nop()
 }
@@ -113,14 +113,14 @@ sl:     x19.xrd s1, #8
         im_scan(IN, N2)
         alu s1, s0, s11, #OP_SUB ; -min
         alu s4, s1, s10, #OP_SUB
-        ptst p1, s0, #LE4, #PTST
-        jmp #3, #1, havebig
+        ptst p3, s0, #LE4, #PTST
+        jmp #3, #3, havebig
         alu s5, s10, s0, #OP_ADD ; (delay slot) big = max
         nop()
         alu s5, s1, s0, #OP_ADD ; big = -min
 havebig: alu s4, s5, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, nonzero
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, nonzero
         nop()
         nop()
         aimm(A9, OUT)
@@ -129,8 +129,8 @@ clr:    stx A9, s0
         x02.ainc #9, #9
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, clr
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, clr
         nop()
         nop()
         jmp #IF_NOT, #2, SILENT
@@ -139,16 +139,16 @@ clr:    stx A9, s0
 nonzero: im_decide(s10, s11)
         ldi s4, #2
         alu s4, s6, s4, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST ; big >= 2^22: one rounded halving
-        jmp #3, #1, scale
+        ptst p3, s0, #EQ4, #PTST ; big >= 2^22: one rounded halving
+        jmp #3, #3, scale
         ldi s6, #-1             ; (delay slot)
         nop()
         ldi s6, #0
         ldi s3, #21
         x19.alu s3, s14, s3, #SHIFT ; 2^21
 dbl:    alu s4, s5, s3, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, scale
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, scale
         nop()
         nop()
         alu s5, s5, s5, #OP_ADD
@@ -161,14 +161,14 @@ scale:  yld(s3, ESLOT)
         im_shift(IN, N2)
 }
 
-; s7 = max(s7, V), s13 = min(s13, V). Uses s4, p1.
+; s7 = max(s7, V), s13 = min(s13, V). Uses s4, p3.
 .macro im_track(V) {
         alu s4, V, s7, #OP_SUB
-        ptst p1, s0, #LE4, #PTST
-        psel s7, s4, s7, p1, #0, #4
+        ptst p3, s0, #LE4, #PTST
+        psel s7, s4, s7, p3, #0, #4
         alu s4, V, s13, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        psel s13, s4, s13, p1, #1, #4
+        ptst p3, s0, #LT4, #PTST
+        psel s13, s4, s13, p3, #1, #4
 }
 
 ; A<2k> = the value s<src> + 2 (mem.sm's amov path without its first two steps): e6, R7.
@@ -218,8 +218,8 @@ pre:    x19.xrd s1, #4          ; xr
         im_track(s8)
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, pre
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, pre
         nop()
         nop()
 }
@@ -321,8 +321,8 @@ bf:     im_ld(s1, 4)            ; ar
         x12.aset #6, R3
         alu s15, s15, s14, #OP_SUB
         alu s4, s15, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, bf
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, bf
         nop()
         nop()
         x18.rag101 s0, R3, A2, R5, #2
@@ -330,8 +330,8 @@ bf:     im_ld(s1, 4)            ; ar
         ldy s4, e8
         alu s4, s4, s14, #OP_SUB
         x17.sty e8, #4, #0
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, tw
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, tw
         nop()
         nop()
         im_decide(s7, s13)
@@ -346,8 +346,8 @@ bf:     im_ld(s1, 4)            ; ar
         alu s3, s3, s14, #OP_SUB
         yst(IM_STG)
         alu s4, s3, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, stage
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, stage
         nop()
         nop()
 }
@@ -385,8 +385,8 @@ post:   x19.xrd s1, #4          ; er
         x12.aset #6, R3
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, post
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, post
         nop()
         nop()
 }
@@ -403,8 +403,8 @@ fr:     x19.xrd s1, #8
         x02.ainc #9, #9
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, fr
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, fr
         nop()
         nop()
 }

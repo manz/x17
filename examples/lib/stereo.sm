@@ -41,15 +41,15 @@
 .const ST_RUNS = ST_Y + 0x2E0   ; (start, len, band) triples, len 0 last
 .const ST_NONE = -32767
 
-; p1 = s<v> in 1..11. Uses s4.
+; p3 = s<v> in 1..11. Uses s4.
 .macro st_spectral(v, no) {
         alu s4, v, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, no
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, no
         ldi s4, #11             ; (delay slot)
         alu s4, s4, v, #OP_SUB  ; (delay slot)
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, no
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, no
         nop()
         nop()
 }
@@ -71,8 +71,8 @@
         yld(s9, ST_NB)
         yld(s8, ST_MSP)
 kl:     alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, kdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, kdone
         nop()
         nop()
         ldy s5, e7              ; left book
@@ -85,24 +85,24 @@ nl:     st_spectral(s6, nr)
 nr:     ldi s3, #0
         ldi s4, #14
         alu s4, s6, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, notis       ; right book < 14
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, notis       ; right book < 14
         nop()
         nop()
         ldi s3, #2
-        ptst p1, s0, #EQ4, #PTST ; book 14 (INTENSITY_HCB2) is negative
-        jmp #IF_NOT, #1, isp
+        ptst p3, s0, #EQ4, #PTST ; book 14 (INTENSITY_HCB2) is negative
+        jmp #IF_NOT, #3, isp
         nop()
         nop()
         ldi s3, #3
 isp:    alu s4, s8, s14, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST ; ms_mask_present 1 and the band used: flip
-        jmp #IF_NOT, #1, isd
+        ptst p3, s0, #EQ4, #PTST ; ms_mask_present 1 and the band used: flip
+        jmp #IF_NOT, #3, isd
         nop()
         nop()
         alu s4, s7, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, isd
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, isd
         nop()
         nop()
         ldi s4, #5
@@ -111,21 +111,21 @@ isd:    jmp #IF_NOT, #2, kst
         ldi s1, #1              ; (delay slot)
         nop()
 notis:  alu s4, s8, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST ; no mask
-        jmp #3, #1, kst
+        ptst p3, s0, #EQ4, #PTST ; no mask
+        jmp #3, #3, kst
         nop()
         nop()
         alu s4, s7, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST ; band not used
-        jmp #3, #1, kst
+        ptst p3, s0, #EQ4, #PTST ; band not used
+        jmp #3, #3, kst
         ldi s4, #13             ; (delay slot)
         alu s4, s5, s4, #OP_SUB ; (delay slot)
-        ptst p1, s0, #LT4, #PTST ; left noise or intensity
-        jmp #IF_NOT, #1, kst
+        ptst p3, s0, #LT4, #PTST ; left noise or intensity
+        jmp #IF_NOT, #3, kst
         ldi s4, #13             ; (delay slot)
         alu s4, s6, s4, #OP_SUB ; (delay slot)
-        ptst p1, s0, #LT4, #PTST ; right noise
-        jmp #IF_NOT, #1, kst
+        ptst p3, s0, #LT4, #PTST ; right noise
+        jmp #IF_NOT, #3, kst
         nop()
         nop()
         ldi s3, #1
@@ -165,8 +165,8 @@ rg:     ldy s8, e10             ; group length
         x17.mve e11, s13
         yld(s7, ST_MAX)
 rb:     alu s4, s7, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, rgend
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, rgend
         nop()
         nop()
         ldy s5, e9
@@ -175,8 +175,8 @@ rb:     alu s4, s7, s0, #OP_ADD
         alu s13, s10, s5, #OP_ADD ; start
         alu s1, s8, s0, #OP_ADD ; windows left
 rw:     alu s4, s1, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, rwend
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, rwend
         nop()
         nop()
         x17.sty e7, #5, #1      ; s13
@@ -196,8 +196,8 @@ rwend:  alu s12, s12, s14, #OP_ADD
         alu s7, s7, s14, #OP_SUB ; (delay slot)
         nop()
 rgend:  alu s4, s8, s0, #OP_ADD
-rgw:    ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, rgw2
+rgw:    ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, rgw2
         nop()
         nop()
         alu s10, s10, s11, #OP_ADD
@@ -208,8 +208,8 @@ rgw:    ptst p1, s0, #EQ4, #PTST
 rgw2:   x18.eagu e10, e10, #AGU_INC
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, rg
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, rg
         nop()
         nop()
         ldi s4, #0
@@ -225,16 +225,16 @@ rgw2:   x18.eagu e10, e10, #AGU_INC
         ldi s11, #1024
         ldi s4, #24
         alu s4, s6, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; n < 24
-        jmp #3, #1, mshift
+        ptst p3, s0, #LT4, #PTST ; n < 24
+        jmp #3, #3, mshift
         alu s12, s0, s6, #OP_SUB ; (delay slot) -n
         nop()
 mz:     stx A4, s0
         x02.ainc #4, #4
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, mz
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, mz
         nop()
         nop()
         jmp #IF_NOT, #2, mdone
@@ -246,8 +246,8 @@ mshift: x19.xrd s1, #4
         x02.ainc #4, #4
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, mshift
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, mshift
         nop()
         nop()
 mdone:
@@ -257,8 +257,8 @@ mdone:
 ; Uses st_move's registers and s6.
 .macro st_moveto(BUF, ESLOT, LIVE) {
         yld(s4, LIVE)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, mset        ; not live: zeros, just take the exponent
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, mset        ; not live: zeros, just take the exponent
         nop()
         nop()
         yld(s6, ESLOT)
@@ -271,33 +271,33 @@ mset:   alu s3, s5, s0, #OP_ADD
 ; M/S: both live channels to max(EL, ER) + 1, then l + r, l - r over the M/S runs.
 .macro st_ms() {
         yld(s4, ST_AMS)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, msdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, msdone
         nop()
         nop()
         yld(s1, ST_LL)
         yld(s2, ST_RL)
         alu s4, s1, s2, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST ; neither live
-        jmp #3, #1, msdone
+        ptst p3, s0, #EQ4, #PTST ; neither live
+        jmp #3, #3, msdone
         nop()
         nop()
         yld(s5, ST_EL)
         alu s4, s1, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, mshave
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, mshave
         nop()
         nop()
         yld(s5, ST_ER)          ; only the right is live
 mshave: alu s4, s2, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, msto
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, msto
         nop()
         nop()
         yld(s6, ST_ER)
         alu s4, s5, s6, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, msto
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, msto
         nop()
         nop()
         alu s5, s6, s0, #OP_ADD
@@ -318,8 +318,8 @@ msrun:  ldy s9, e7              ; start
         x18.eagu e7, e7, #AGU_INC
         ldy s10, e7             ; len
         alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, msdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, msdone
         x18.eagu e7, e7, #AGU_INC ; (delay slot)
         nop()
         ldy s13, e7             ; band
@@ -329,8 +329,8 @@ msrun:  ldy s9, e7              ; start
         x17.mve e6, s13
         ldy s4, e6
         alu s4, s4, s14, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST ; kind 1
-        jmp #IF_NOT, #1, msrun
+        ptst p3, s0, #EQ4, #PTST ; kind 1
+        jmp #IF_NOT, #3, msrun
         nop()
         nop()
         ldi s4, #ST_L
@@ -349,8 +349,8 @@ msw:    x19.xrd s1, #4
         x02.ainc #6, #6
         alu s10, s10, s14, #OP_SUB
         alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, msw
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, msw
         nop()
         nop()
         jmp #IF_NOT, #2, msrun
@@ -373,19 +373,19 @@ msdone:
 ; bands, then each intensity run from the left.
 .macro st_is() {
         yld(s4, ST_LL)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, isdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, isdone
         nop()
         nop()
         yld(s4, ST_AIS)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, isdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, isdone
         nop()
         nop()
         ldi s10, #ST_NONE
         yld(s4, ST_RL)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, isfind
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, isfind
         nop()
         nop()
         yld(s10, ST_ER)
@@ -397,8 +397,8 @@ isfind: ldi s13, #ST_KIND - 1
         yld(s11, ST_EL)
         alu s11, s11, s14, #OP_ADD ; EL + 1
 isf:    alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, isfd
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, isfd
         nop()
         nop()
         ldy s4, e9
@@ -408,15 +408,15 @@ isf:    alu s4, s9, s0, #OP_ADD
         alu s9, s9, s14, #OP_SUB
         ldi s1, #2
         alu s4, s4, s1, #OP_SUB
-        ptst p1, s0, #LT4, #PTST ; not intensity
-        jmp #3, #1, isf
+        ptst p3, s0, #LT4, #PTST ; not intensity
+        jmp #3, #3, isf
         nop()
         nop()
         st_qb(s7)
         alu s5, s11, s5, #OP_SUB ; EL + 1 - q
         alu s4, s10, s5, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, isf
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, isf
         nop()
         nop()
         jmp #IF_NOT, #2, isf
@@ -430,8 +430,8 @@ isrun:  ldy s9, e7              ; start
         x18.eagu e7, e7, #AGU_INC
         ldy s10, e7             ; len
         alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, isdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, isdone
         x18.eagu e7, e7, #AGU_INC ; (delay slot)
         nop()
         ldy s1, e7              ; band
@@ -442,8 +442,8 @@ isrun:  ldy s9, e7              ; start
         ldy s8, e6              ; kind
         ldi s4, #2
         alu s4, s8, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, isrun
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, isrun
         ldi s4, #ST_RS - 1      ; (delay slot)
         alu s13, s1, s4, #OP_ADD ; (delay slot)
         x17.mve e6, s13
@@ -467,8 +467,8 @@ isrun:  ldy s9, e7              ; start
         alu s12, s0, s11, #OP_SUB ; -n
         ldi s4, #24
         alu s4, s11, s4, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, isw
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, isw
         nop()
         nop()
         ldi s6, #0              ; n >= 24: every word is 0
@@ -479,8 +479,8 @@ isw:    x19.xrd s1, #4
         x19.alu s5, s5, s12, #SHIFT
         ldi s4, #3
         alu s4, s8, s4, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST ; kind 3: negated
-        jmp #IF_NOT, #1, isput
+        ptst p3, s0, #EQ4, #PTST ; kind 3: negated
+        jmp #IF_NOT, #3, isput
         nop()
         nop()
         alu s5, s0, s5, #OP_SUB
@@ -488,8 +488,8 @@ isput:  stx A6, s5
         x02.ainc #6, #6
         alu s10, s10, s14, #OP_SUB
         alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, isw
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, isw
         nop()
         nop()
         jmp #IF_NOT, #2, isrun

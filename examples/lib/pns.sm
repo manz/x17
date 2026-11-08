@@ -74,8 +74,8 @@ rg:     ldy s8, e10
         x17.mve e8, s13
         yld(s7, PN_MAX)
 rb:     alu s4, s7, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, rgend
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, rgend
         nop()
         nop()
         ldy s5, e9
@@ -84,8 +84,8 @@ rb:     alu s4, s7, s0, #OP_ADD
         alu s13, s10, s5, #OP_ADD
         alu s1, s8, s0, #OP_ADD
 rw:     alu s4, s1, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, rwend
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, rwend
         nop()
         nop()
         x17.sty e7, #5, #1      ; s13
@@ -105,8 +105,8 @@ rwend:  alu s12, s12, s14, #OP_ADD
         alu s7, s7, s14, #OP_SUB ; (delay slot)
         nop()
 rgend:  alu s4, s8, s0, #OP_ADD
-rgw:    ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, rgw2
+rgw:    ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, rgw2
         nop()
         nop()
         alu s10, s10, s11, #OP_ADD
@@ -117,8 +117,8 @@ rgw:    ptst p1, s0, #EQ4, #PTST
 rgw2:   x18.eagu e10, e10, #AGU_INC
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, rg
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, rg
         nop()
         nop()
         ldi s4, #0
@@ -160,8 +160,8 @@ rgw2:   x18.eagu e10, e10, #AGU_INC
         ldi s9, #0
         ldi s11, #4
 sl:     alu s4, s10, s11, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, sdone
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, sdone
         ldi s12, #2             ; (delay slot)
         nop()
         x19.alu s11, s11, s12, #SHIFT
@@ -185,30 +185,30 @@ sdone:  pn_yst(PN_SH, 1, 1)     ; s9
         alu s8, s8, s12, #OP_ADD ; c = 0x3C6EF3
         ldi s11, #0             ; big
 gen:    alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, gdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, gdone
         nop()
         nop()
         pn_next()
         stx A4, s3
         x02.ainc #4, #4
         alu s4, s3, s0, #OP_ADD ; |v|
-        ptst p1, s0, #LT4, #PTST
+        ptst p3, s0, #LT4, #PTST
         alu s5, s0, s3, #OP_SUB
         alu s5, s5, s3, #OP_SUB
-        psel s3, s5, s3, p1, #1, #4 ; v < 0: v + (-2v)
+        psel s3, s5, s3, p3, #1, #4 ; v < 0: v + (-2v)
         alu s4, s11, s3, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
+        ptst p3, s0, #LT4, #PTST
         alu s5, s0, s4, #OP_SUB
-        psel s11, s5, s11, p1, #1, #4 ; big < |v|: big + (|v| - big)
+        psel s11, s5, s11, p3, #1, #4 ; big < |v|: big + (|v| - big)
         jmp #IF_NOT, #2, gen
         alu s10, s10, s14, #OP_SUB ; (delay slot)
         nop()
 gdone:  stx A6, s1              ; the state back
         ldi s3, #PN_NONE
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, ndone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, ndone
         nop()
         nop()
         ; k: the largest scaled up to >= 2^21
@@ -216,8 +216,8 @@ gdone:  stx A6, s1              ; the state back
         x19.alu s12, s14, s12, #SHIFT
         ldi s6, #0
 kl:     alu s4, s11, s12, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, kdone
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, kdone
         nop()
         nop()
         alu s11, s11, s11, #OP_ADD
@@ -234,8 +234,8 @@ kdone:                          ; pass 2: scale, and acc = sum rshr(rnd(v^2 / 2^
         alu s9, s0, s9, #OP_SUB ; -s
         ldi s11, #0
 sq:     alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, sqdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, sqdone
         nop()
         nop()
         x19.xrd s1, #4
@@ -250,8 +250,8 @@ sq:     alu s4, s10, s0, #OP_ADD
         nop()
 sqdone: ldi s3, #PN_NONE
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, ndone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, ndone
         nop()
         nop()
         ; p: acc * 4^p in [2^21, 2^23)
@@ -260,8 +260,8 @@ sqdone: ldi s3, #PN_NONE
         ldi s10, #0
         ldi s5, #2
 pl:     alu s4, s11, s12, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, pdone
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, pdone
         nop()
         nop()
         x19.alu s11, s11, s5, #SHIFT
@@ -291,8 +291,8 @@ nw:     x02.mpy s5, s1, s1
         x19.alu s1, s1, s5, #SHIFT
         alu s9, s9, s14, #OP_SUB
         alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, nw
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, nw
         nop()
         nop()
         ; nrg = 4q + b: g = rnd(z T[b]); the exponent p + q - 20 - s/2
@@ -323,8 +323,8 @@ nw:     x02.mpy s5, s1, s1
         amov(A4, s4)
         yld(s10, PN_LEN)
 sc:     alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, scdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, scdone
         nop()
         nop()
         x19.xrd s1, #4
@@ -361,8 +361,8 @@ ndone:
         amov(A6, s4)
         yld(s10, PN_LEN)
 cp:     alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, cpdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, cpdone
         nop()
         nop()
         x19.xrd s1, #6
@@ -383,8 +383,8 @@ cpdone: yld(s3, PN_EL)
 .macro pn_down(BUF, SRC) {
         ldi s12, #24
         alu s4, s12, s9, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        psel s9, s4, s9, p1, #1, #4 ; min(n, 24)
+        ptst p3, s0, #LT4, #PTST
+        psel s9, s4, s9, p3, #1, #4 ; min(n, 24)
         alu s9, s0, s9, #OP_SUB ; -n
         ldi s4, #SRC
         alu s4, s4, s2, #OP_ADD
@@ -393,8 +393,8 @@ cpdone: yld(s3, PN_EL)
         alu s4, s4, s2, #OP_ADD
         amov(A4, s4)
 dl:     alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, ddone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, ddone
         nop()
         nop()
         x19.xrd s1, #6
@@ -427,8 +427,8 @@ ra:     yld(s13, PN_RI)
         x18.eagu e7, e7, #AGU_INC
         ldy s11, e7             ; band
         alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, adone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, adone
         nop()
         nop()
         yld(s3, PN_RI)
@@ -443,8 +443,8 @@ ra:     yld(s13, PN_RI)
         ldy s4, e6
         ldi s5, #13
         alu s4, s4, s5, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, anone  ; not a noise band
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, anone  ; not a noise band
         ldi s13, #PN_SF - 1     ; (delay slot)
         alu s13, s13, s11, #OP_ADD ; (delay slot)
         x17.mve e6, s13
@@ -452,27 +452,27 @@ ra:     yld(s13, PN_RI)
         pn_yst(PN_NRG, 6, 0)
         ; correlated: mode 1, ms_mask_present != 0, ms_used, the left band noise too
         yld(s4, PN_MODE)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, anoise
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, anoise
         nop()
         nop()
         yld(s4, PN_MSP)
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, anoise
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, anoise
         ldi s13, #PN_MSU - 1    ; (delay slot)
         alu s13, s13, s11, #OP_ADD ; (delay slot)
         x17.mve e6, s13
         ldy s4, e6
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, anoise
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, anoise
         ldi s13, #PN_LBOOK - 1  ; (delay slot)
         alu s13, s13, s11, #OP_ADD ; (delay slot)
         x17.mve e6, s13
         ldy s4, e6
         ldi s5, #13
         alu s4, s4, s5, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, anoise
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, anoise
         ldi s13, #PN_LSF - 1    ; (delay slot)
         alu s13, s13, s11, #OP_ADD ; (delay slot)
         x17.mve e6, s13
@@ -492,8 +492,8 @@ aput:   x18.eagu e9, e9, #AGU_INC ; e9 steps once per run: PE in run order
         ; top = max(top, s3); PN_NONE never wins
         yld(s5, PN_TOP)
         alu s4, s5, s3, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, ra
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, ra
         nop()
         nop()
         yst(PN_TOP)
@@ -503,8 +503,8 @@ aput:   x18.eagu e9, e9, #AGU_INC ; e9 steps once per run: PE in run order
 adone:  yld(s3, PN_TOP)
         ldi s4, #PN_NONE
         alu s4, s3, s4, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, done        ; no noise
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, done        ; no noise
         nop()
         nop()
         ; live: some book in 1..11
@@ -513,41 +513,41 @@ adone:  yld(s3, PN_TOP)
         yld(s9, PN_NB)
         ldi s11, #0
 lv:     alu s4, s9, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, lvdone
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, lvdone
         nop()
         nop()
         ldy s5, e7
         x18.eagu e7, e7, #AGU_INC
         alu s9, s9, s14, #OP_SUB
         alu s4, s5, s14, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, lv
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, lv
         ldi s4, #11             ; (delay slot)
         alu s4, s4, s5, #OP_SUB ; (delay slot)
-        ptst p1, s0, #LT4, #PTST
-        jmp #3, #1, lv
+        ptst p3, s0, #LT4, #PTST
+        jmp #3, #3, lv
         nop()
         nop()
         ldi s11, #1
 lvdone: yld(s3, PN_TOP)         ; to = top, or E when live and larger
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, toput
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, toput
         nop()
         nop()
         yld(s5, PN_E)
         alu s4, s3, s5, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
-        jmp #IF_NOT, #1, toput
+        ptst p3, s0, #LT4, #PTST
+        jmp #IF_NOT, #3, toput
         nop()
         nop()
         alu s3, s5, s0, #OP_ADD
 toput:  yst(PN_TO)
         ; the block down to it when live
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, moved
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, moved
         nop()
         nop()
         yld(s5, PN_E)
@@ -569,8 +569,8 @@ rbk:    yld(s13, PN_RI)
         x18.eagu e7, e7, #AGU_INC
         ldy s10, e7
         alu s4, s10, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, done
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, done
         nop()
         nop()
         yld(s3, PN_RI)
@@ -581,8 +581,8 @@ rbk:    yld(s13, PN_RI)
         ldy s5, e9              ; its exponent
         ldi s4, #PN_NONE
         alu s4, s5, s4, #OP_SUB
-        ptst p1, s0, #EQ4, #PTST
-        jmp #3, #1, rbk
+        ptst p3, s0, #EQ4, #PTST
+        jmp #3, #3, rbk
         nop()
         nop()
         yld(s9, PN_TO)

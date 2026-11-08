@@ -12,7 +12,7 @@
 ;   X WP   the previous shape's rising half, 1024 words; X WC the current shape's
 ;   X OVL  1024 overlap words, read then rewritten with the block's second half
 ;   Y PCM  1024 samples out
-; Uses s1, s3 .. s13, e6, e7, R2, R3, R7, A4, A6, A8, A10, A14, p1 (all the macros here).
+; Uses s1, s3 .. s13, e6, e7, R2, R3, R7, A4, A6, A8, A10, A14, p3 (all the macros here).
 .macro win_long(T, WP, WC, OVL, PCM) {
         aimm(A4, T)
         aimm(A6, WP)
@@ -33,19 +33,19 @@ first:  x19.xrd s1, #4          ; t
         alu s5, s5, s6, #OP_ADD
         x19.alu s5, s5, s12, #SHIFT ; rshr 5
         alu s4, s5, s9, #OP_SUB
-        ptst p1, s0, #LE4, #PTST
+        ptst p3, s0, #LE4, #PTST
         alu s7, s0, s4, #OP_SUB
-        psel s5, s7, s5, p1, #0, #4 ; v > 32767: 32767
+        psel s5, s7, s5, p3, #0, #4 ; v > 32767: 32767
         alu s4, s5, s10, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
+        ptst p3, s0, #LT4, #PTST
         alu s7, s0, s4, #OP_SUB
-        psel s5, s7, s5, p1, #1, #4 ; v < -32768: -32768
+        psel s5, s7, s5, p3, #1, #4 ; v < -32768: -32768
         x17.sty e7, #5, #0
         x18.eagu e7, e7, #AGU_INC
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, first
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, first
         nop()
         nop()
         ldi s12, #WC + 1023
@@ -63,8 +63,8 @@ second: x19.xrd s1, #4
         x02.ainc #8, #8
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, second
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, second
         nop()
         nop()
 }
@@ -89,8 +89,8 @@ wr:     x19.xrd s1, #4
         x02.ainc #8, #8
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, wr
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, wr
         nop()
         nop()
 }
@@ -117,8 +117,8 @@ wa:     x19.xrd s1, #4
         x02.ainc #10, #10
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, wa
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, wa
         nop()
         nop()
 }
@@ -136,8 +136,8 @@ wq:     x19.xrd s1, #4
         x02.ainc #8, #8
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, wq
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, wq
         nop()
         nop()
 }
@@ -150,8 +150,8 @@ wz:     stx A8, s0
         x02.ainc #8, #8
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, wz
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, wz
         nop()
         nop()
 }
@@ -173,19 +173,19 @@ wo:     x19.xrd s5, #4
         alu s5, s5, s6, #OP_ADD
         x19.alu s5, s5, s12, #SHIFT
         alu s4, s5, s9, #OP_SUB
-        ptst p1, s0, #LE4, #PTST
+        ptst p3, s0, #LE4, #PTST
         alu s7, s0, s4, #OP_SUB
-        psel s5, s7, s5, p1, #0, #4
+        psel s5, s7, s5, p3, #0, #4
         alu s4, s5, s10, #OP_SUB
-        ptst p1, s0, #LT4, #PTST
+        ptst p3, s0, #LT4, #PTST
         alu s7, s0, s4, #OP_SUB
-        psel s5, s7, s5, p1, #1, #4
+        psel s5, s7, s5, p3, #1, #4
         x17.sty e7, #5, #0
         x18.eagu e7, e7, #AGU_INC
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, wo
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, wo
         nop()
         nop()
         aimm(A8, OVL)
@@ -196,8 +196,8 @@ wc:     x19.xrd s5, #4          ; A4 continues at B + 1024
         x02.ainc #8, #8
         alu s11, s11, s14, #OP_SUB
         alu s4, s11, s0, #OP_ADD
-        ptst p1, s0, #EQ4, #PTST
-        jmp #IF_NOT, #1, wc
+        ptst p3, s0, #EQ4, #PTST
+        jmp #IF_NOT, #3, wc
         nop()
         nop()
 }
