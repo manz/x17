@@ -4071,9 +4071,8 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x03rep",
-        // p3 = 1: the store of s3 lands at X:0x300, the second pass at X:0x301.  Measured with
-        // the halt in the jump's delay slot (679, 680: x03.rep is a jump to itself); written here
-        // with two nop slots, as 680 measured, until the halt-in-slot shape is pinned.
+        // p3 = 1, e11 = 0: the store of s3 lands at X:0x300, the second pass at X:0x301
+        // (x03.rep is a jump to itself, 679, 680; two nop slots, silicon 3 of 3).
         .pre = &.{
             .{ .bank = .p, .index = 3, .value = 1 },
             .{ .bank = .s, .index = 3, .value = 0x3303 },

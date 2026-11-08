@@ -6696,3 +6696,24 @@ test "x19k Y store: Y:[e<w3[28:25]>] <- s<w2[3:0]> on w2[26] and w2[16]; w1[18] 
         } else try testing.expectError(emu.RunError.UnknownForm, r);
     }
 }
+
+test "a halt in a taken jump's delay slot runs the target once, then stops (681)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const nop = [_]u32{0x40000005};
+    const w = [_]u32{ 0x00000003, 0x60000002, 0x18106000, 0x85800008, 0x00004005, 0x001CC000 };
+    for ([_]u32{ 3, 5 }) |e| {
+        for ([_]bool{ false, true }) |slot2| {
+            var st = emu.State{};
+            defer st.deinit(testing.allocator);
+            st.e[11] = e;
+            st.p[3] = 1;
+            st.a[8] = 0x300;
+            st.s[3] = 0x77;
+            const r = if (slot2) emu.runFrom(testing.allocator, &st, &(w ++ nop ++ halt), 0, 50) else emu.runFrom(testing.allocator, &st, &(w ++ halt), 0, 50);
+            _ = try r;
+            try testing.expectEqual(@as(usize, 2), st.x_mem.count());
+            try testing.expectEqual(@as(?u32, 0x77), st.x_mem.get(0x301));
+            try testing.expect(st.halted);
+        }
+    }
+}

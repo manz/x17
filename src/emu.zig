@@ -5132,6 +5132,16 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         }
         if (isHaltBundle(slice)) {
             state.halted = true;
+            if (state.jump_delay > 0) {
+                // A halt in a taken jump's delay slot (681): the target bundle runs once, then
+                // the engine stops.  Measured with the halt in slot 1 (nothing after it) and
+                // with nop + halt; a working bundle in slot 2 after a slot-1 halt is unmeasured.
+                if (state.jump_delay == 2 and i < syllables.len and syllables[i] != 0x40000005) return RunError.UnknownForm;
+                i = state.jump_target;
+                state.jump_delay = 0;
+                shadow = 0;
+                continue;
+            }
             shadow = 1;
             continue;
         }

@@ -262,7 +262,8 @@ Measured idioms, cheapest first:
   p3 <- (e > 0, signed 16) after the jump has read p (§675). So an offset-0 jump on p3 is a
   counted loop of three bundles (the x03 and its two slots): preset e = N - 1 and p3 = 1 for N
   passes (N >= 2), leaving p3 = 0 and e = -1. The x03's X store steps its A every pass, ending
-  at A + N. Measured on mode-0 store rows; the emulator refuses the jump on a MAC row.
+  at A + N. Measured on mode-0 store rows; the emulator refuses the jump on a MAC row. A halt in
+  a taken jump's delay slot still lets the target bundle run once before the stop (§681).
 - **Loops.** The counted loop above is the only zero-overhead loop, three bundles long. For
   longer bodies, a pcond on A against R plus a jmp whose two slots do work (§662) costs about
   one bundle. Unroll when the body is short. A MAC row with w2[31:29] = 011 runs once and then
