@@ -2261,6 +2261,8 @@ fn execX18C2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         if ((w1 >> 29) & 1 == 0) return RunError.UnknownForm;
         break :blk try agu10Eval((w1 >> 24) & 0xF, x_e_val, 0);
     };
+    // w2[27:24] != 0 can offset the R write (598: 1, 6 and F measured, no rule yet): OPEN.
+    if (dest_r != 0 and (w2 >> 24) & 0xF != 0) return RunError.UnknownForm;
     const r_val: u32 = x18RSlot(state, w3);
     if (((w2 >> 28) & 7) == 4) try execX18Q23(gpa, state, bundle);
     if (dest_s != 0) state.s[dest_s] = xs_val;

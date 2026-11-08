@@ -371,7 +371,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x18 class 011 p write (179): p<w2[17:14]> <- cond head[28:25] of the unary slot (operand, result) and s<w1[7:4]>; the same bundle's branch reads the old p.  own-x18pw-false, own-x18pw-true
 # x18 class 000 with w2[17], w2[18] and w3[7] clear may stop two slots later (485): x18.eagu's template with w2[17] cleared stops (g0 halts, g2 wedges), as does the row 80800018 XXXXXXXX 0000A97B XXXXXXXX with w3[7] cleared; w3[7] = 1 runs on. The template with w3[8] set wedges too (487), while own-x18e2nd-w17 (180) has all three clear and runs; emu refuses them all (UnknownForm), and own-x18e2nd-w17 left the gates for a refusal test. The decider is OPEN.
 # x18 class 000 w2[17] = 0 (180): T ^= 1 per execution, persistent across runs; second e slot = (T ? e_src : 0) - 1.  own-x18e2nd-w17 measured it; emu now refuses that word (485, 487)
-# x18 class 010 R slot (194): R<w3[10:7]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w3[14:11]>).  own-x18rag
+# x18 class 010 R slot (194): R<w3[10:7]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w3[14:11]>).  w2[27:24] != 0 can offset it (598: 1, 6, F; no rule): refused.  own-x18rag
 # x18 class 101 (195): the same R slot; X slot s<head[24:21]> <- w1[14:12] (001 R value, 011/101 yd).  own-x18rag101, own-x18rmux
 # x18 class 100 (196): R<{w3[2:0], w2[31]}> <- (w2[20] ? AGU10 : AGU10B)[w1[10:7]](x = e<w3[28:25]>, y = R<w2[26:23]>).  own-x18rcl100
 # x18 class 100 (197): s<w3[16:13]> <- 0x02's multiply of s<w3[20:17]>, s<w3[24:21]> (mode w1[13:11], w1[15]/[16]/[17]); s<w2[15:12]> low half; Y store only with w2[22:21] = 11.  own-x18mpy100

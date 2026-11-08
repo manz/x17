@@ -5163,3 +5163,19 @@ test "x18 class 111 muxes 4 and 5 fresh reads set yd too (after fact 597)" {
         try testing.expectEqual(@as(u32, 0x12B6), state.yd); // the raw word, not the lane
     }
 }
+
+test "x18 class 010's R slot refuses w2[27:24] != 0 (fact 598)" {
+    const gpa = testing.allocator;
+    // R2 <- AGU3 fn 8 (x + y) of A9 = 0x20, R6 = 0x100.
+    for ([_]u32{ 0, 1, 2, 6, 0xF }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x20;
+        state.r[6] = 0x100;
+        const r = emu.runFrom(gpa, &state, &.{ 0x00000018, 0x00000000, k << 24, 0x4084B100, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k == 0) {
+            _ = try r;
+            try testing.expectEqual(@as(u32, 0x120), state.r[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
