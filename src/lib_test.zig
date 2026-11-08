@@ -4005,11 +4005,18 @@ test "yld10's S[6:3] is an OPEN s write, not 123's clears" {
 test "x17sty's R mux 7 is the AGU over the store's own address register" {
     // fact 543: own-x17styr, e5 = 0x720: 500001d7 a802d804 78003a0e gives R11 = 0x720
     // (fn 0, x); fn 2 (a802d904) 0x721; the Y store to e5 runs alongside.  Fn 11 refuses.
+    // Those words also write e8 (w1[2:0] = 4) to a value not yet known under mux 7 (658):
+    // refused as measured, and run here with w1[2:0] cleared.
     const gpa = testing.allocator;
+    for ([_]u32{ 0xa802d804, 0xa802d904 }) |s1| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x500001d7, s1, 0x78003a0e, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    }
     for ([_]struct { s1: u32, r11: ?u32 }{
-        .{ .s1 = 0xa802d804, .r11 = 0x720 },
-        .{ .s1 = 0xa802d904, .r11 = 0x721 },
-        .{ .s1 = 0xa802dd84, .r11 = null },
+        .{ .s1 = 0xa802d800, .r11 = 0x720 },
+        .{ .s1 = 0xa802d900, .r11 = 0x721 },
+        .{ .s1 = 0xa802dd80, .r11 = null },
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -4019,7 +4026,6 @@ test "x17sty's R mux 7 is the AGU over the store's own address register" {
         if (c.r11) |v| {
             _ = try r;
             try testing.expectEqual(v, state.r[11]);
-            try testing.expectEqual(v, state.e[8]); // w1[2:0] = 4: e8 gets the same AGU value (658)
             try testing.expectEqual(@as(?u32, 0x55), state.getY(0x720));
         } else try testing.expectError(error.UnknownForm, r);
     }

@@ -3814,9 +3814,11 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         0 => state.yd & 0xFFFF,
         else => null,
     };
-    // e<2*S1[2:0] + h[31]> <- AGU10[S1[10:7]](x = e<k>, y = R<h[30:27]>, i = #h[26:11]), the
-    // same value mux 7 gives R, written after the store (fact 658, 429).
+    // e<2*S1[2:0] + h[31]> <- AGU10[S1[10:7]](x = e<k>), written after the store (fact 658,
+    // 429), measured with R mux 0 (fns x and x+1). Under mux 7 the e write lands elsewhere:
+    // refused.
     const ec_dest: u32 = ((s1 & 7) << 1) | (h >> 31);
+    if (ec_dest != 0 and r_mode != 0) return RunError.UnknownForm;
     const k: u32 = (s1 >> 15) & 0xF;
     const e_post: u32 = if (ec_dest == 0) 0 else try agu10ImmEval((s1 >> 7) & 0xF, state.e[k], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF);
     const v: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;

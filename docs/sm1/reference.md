@@ -2923,8 +2923,8 @@ Emulator:
 | src_hi | imm | s2 | [0:0] |
 
 > x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275). Also e<2*S1[2:0] + h[31]> <-
-> AGU10[S1[10:7]](x = e<k>, y = R<h[30:27]>, i) after the store (fact 658); the template clears
-> S1[2:0] and h[31].
+> AGU10[S1[10:7]](x = e<k>) after the store (fact 658), with R mux 0; under mux 7 the value is
+> unknown. The template clears S1[2:0] and h[31].
 
 ### `x17.styr`
 

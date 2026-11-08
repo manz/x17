@@ -118,7 +118,8 @@ a violated distance gives a lost or wrong value, never a trap.
 
 | Hazard | Minimum distance |
 |---|---|
-| `ldi`, `lde`, `lda`, then a bundle reading that register | none: the next bundle sees it (§659; supersedes §157's 4 nops). Measured for ldy via a new e, an x19a43 read via a new A, and x17sty of a new s. Loads feeding a jump condition or an x02 A slot: undefined, keep padding |
+| `ldi`, `lde`, `lda`, then a bundle reading that register | none: the next bundle sees it (§659; supersedes §157's 4 nops). Measured for ldy via a new e, an x19a43 read via a new A, and x17sty of a new s |
+| alu, then ptst on its result, then a conditional jump | none; the branch goes the right way both ways (§662) |
 | x02's A step (A<k> + 1), then a bundle using A<k> | none; steps chain back to back, and the x02's own X read uses the old A (§660) |
 | x16ld's A write, then a load through it | 2 instructions (§122) |
 | x02, then x02 | 3 nops (§188) |
