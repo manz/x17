@@ -235,6 +235,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (high3 == 0b001 and (head >> 19) & 1 == 1) return execPlog(gpa, state, head);
         if (high3 == 0b100) return execAset0b(state, head);
     }
+    // jr2 (302, 303, 617): 0x11 + a class-100 second with w1[23:21] = 001.
+    if (low5 == 0x11 and bundle.len == 2 and bundle[1] >> 29 == 0b100 and (bundle[1] >> 21) & 7 == 1) return execJr2(gpa, state, bundle);
     // The class-05 ALU word with its [25:19] modifiers (fact 65-67).
     if (low5 == 0x05 and (head >> 30) == 1) return execAlu(gpa, state, head);
     // ptst at class 011: head[29] is the dest's bit 3 (fact 219).
@@ -4409,6 +4411,15 @@ pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
 fn sx24FromU32(v: u32) i64 {
     if ((v & 0x0080_0000) != 0) return @as(i64, v) - 0x100_0000;
     return @as(i64, v);
+}
+
+/// jr2 (fact 302, 303, 617): the head is a 0x05 ALU word (head[31:30] inert) and the
+/// bundle jumps unconditionally to q + 2 * sx14(w1[18:5]) after two delay slots; w1[20:19]
+/// inert.
+fn execJr2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    try execAlu(gpa, state, bundle[0]);
+    const off: i32 = @as(i32, @bitCast(((bundle[1] >> 5) & 0x3FFF) << 18)) >> 18;
+    state.pending_jmp_offset = 2 * off;
 }
 
 fn execAlu(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

@@ -520,6 +520,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # x16alu, S2 class 010 (fact 119 pass 145): the 116 ALU alone, s<S1[11:8]> <- by S1[15], S1[18:16]: 0: 4 a+b 5 a 6 a-1 7 -a; 1: 4 a-b 5 a+1 6 a 7 a
 # (a = s<S2[28:25]>, b = s<S1[7:4]>; the same table holds under class-111 S2); head[24:21] bit b zeroes s<1 << b>, S2[16:13] bit b zeroes R<1 << b>.  own-x16alu2
 # x19a3st s write (612): 529's mux too, 0 zero / 2 AGU3 (measured with w1[31:29] = 0 and 7, 1-6 INFERRED), others refused; w1[31:29] = 7: e<w1[6:3]> <- #head[20:5] (148), A<w1[26:22]> (x99 only) refused; others: R<w1[14:11]> <- AGU10[w1[10:7]](e<w3[28:25]>, R<w1[21:18]>) (144/149); the Y store reads s before it.  Mux 3 (any class) is not the raw AGU x: OPEN.
+# jr2 (302, 303, 617): 0x11 + class-100 second with w1[23:21] = 001: head is a 0x05 ALU word (head[31:30] inert), and the bundle jumps unconditionally to q + 2*sx14(w1[18:5]) after two delay slots; w1[20:19] inert.  own-x11jr
 # ypair class 110 (616): head[30:29] inert, head[31:29] 0-3 admitted; head[31] = 1 leaves s unwritten, the rest unmeasured: refused.  Class 111 keeps head[31:29] 0/2.
 # x10alu (614, 615): head[31:30] inert, no w1[14] gate.
 # x19a3 X store (613): w2[13:9] = 01101 stores X:[A<{w1[2:0], head[31:30]}>] <- sx24 s<w2[8:5]>, the A read before the bundle's A write; other values store nothing seen.

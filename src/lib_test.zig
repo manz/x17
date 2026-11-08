@@ -5644,3 +5644,48 @@ test "ypair class 110 admits head[31:29] 0-3; head[31] refuses (fact 616)" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "jr2 runs its head ALU word and jumps to q + 2 * w1[18:5] after two slots (fact 302, 303, 617)" {
+    const gpa = testing.allocator;
+    // own-x11jr shape: at word 4, jr2 off 4 -> word 12; two slots set s2 = 0x333, 0x444; the
+    // ldi s1, #0xBAD between the slots and the target is skipped.
+    for ([_]struct { head: u32, s10: u32 = 0x1000, s3: u32 = 0x0234, want: u32 }{
+        .{ .head = 0x0c00d1d1, .want = 0x1234 },
+        .{ .head = 0x0c00d1d1, .s10 = 0x2000, .s3 = 0x0005, .want = 0x2005 },
+        .{ .head = 0xcc00d1d1, .want = 0x1234 }, // head[31:30] inert
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[10] = c.s10;
+        state.s[3] = c.s3;
+        const prog = [_]u32{
+            0xca80000b, 0xca80000b, 0xca80000b, 0xca80000b, // words 0-3: ldi s4, #0
+            c.head, 0x80200080, // word 4: jr2, off 4 -> word 12
+            0xca40666b, 0xca40888b, // slots: ldi s2, #0x333 / #0x444
+            0xcaa175ab, 0xcaa175ab, 0xcaa175ab, 0xcaa175ab, // skipped: ldi s5, #0xBAD
+            0x00000017, 0x31308000, 0xA0000000, // word 12: halt
+        };
+        _ = try emu.runFrom(gpa, &state, &prog, 0, 64);
+        try testing.expectEqual(c.want, state.s[1]);
+        try testing.expectEqual(@as(u32, 0x444), state.s[2]);
+        try testing.expectEqual(@as(u32, 0), state.s[5]);
+    }
+}
+
+test "jr2's offset field is wider than 3 bits (fact 303; derived)" {
+    const gpa = testing.allocator;
+    // jr2 at word 0 with off 8 -> word 16; slots at 2/3, words 4-15 skipped.
+    var prog: [19]u32 = @splat(0xcaa175ab); // ldi s5, #0xBAD
+    prog[0] = 0x0c00d1d1;
+    prog[1] = 0x80200100;
+    prog[2] = 0xca40666b;
+    prog[3] = 0xca40888b;
+    prog[16] = 0x00000017;
+    prog[17] = 0x31308000;
+    prog[18] = 0xA0000000;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    _ = try emu.runFrom(gpa, &state, &prog, 0, 64);
+    try testing.expectEqual(@as(u32, 0x444), state.s[2]);
+    try testing.expectEqual(@as(u32, 0), state.s[5]);
+}
