@@ -2590,16 +2590,23 @@ fn execX18Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 }
 
 /// ytst (fact 99, 625): p<S1[14:11]> <- !Y:[e<S1[24:21]>][0]; head classes 0/2/4/6;
-/// with S1[8] and S1[3] both set, X:[A<{S1[2:0], head[31:30]}>] <- sx24 s<S1[7:4]>.  head[24:21]
-/// != 0 also writes s from an OPEN source: refused.
+/// with S1[8] and S1[3] both set, X:[A<{S1[2:0], head[31:30]}>] <- sx24 s<S1[7:4]>.  The head
+/// also writes s<h[24:21]> <- e<S1[24:21]> and A<h[28:25]> <- h[20:5] (635).
 fn execYtst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len < 2) return RunError.UnknownForm;
     const s1 = bundle[1];
-    if ((bundle[0] >> 29) & 1 == 1 or (bundle[0] >> 21) & 0xF != 0) return RunError.UnknownForm;
-    if ((s1 >> 8) & 1 == 1 and (s1 >> 3) & 1 == 1) {
-        const ai: u32 = ((s1 & 7) << 2) | (bundle[0] >> 30);
-        state.x_mem.put(gpa, state.a[ai], state.s[(s1 >> 4) & 0xF] & M24) catch return RunError.OutOfMemory;
-    }
+    const h = bundle[0];
+    if ((h >> 29) & 1 == 1) return RunError.UnknownForm;
+    const dest_a: u32 = (h >> 25) & 0xF;
+    const stores = (s1 >> 8) & 1 == 1 and (s1 >> 3) & 1 == 1;
+    const ai: u32 = ((s1 & 7) << 2) | (h >> 30);
+    // The store's A against the head's A write on one register: unmeasured.
+    if (stores and dest_a != 0 and ai == dest_a) return RunError.UnknownForm;
+    if (stores) state.x_mem.put(gpa, state.a[ai], state.s[(s1 >> 4) & 0xF] & M24) catch return RunError.OutOfMemory;
+    const dest_s: u32 = (h >> 21) & 0xF;
+    if (dest_s != 0) state.s[dest_s] = state.e[(s1 >> 21) & 0xF];
+    // A0 skipped as in ldi2 (INFERRED).
+    if (dest_a != 0) state.a[dest_a] = (h >> 5) & 0xFFFF;
     const p_dest: u32 = (s1 >> 11) & 0xF;
     const src_e: u32 = (s1 >> 21) & 0xF;
     const addr: u32 = state.e[src_e];

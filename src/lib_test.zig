@@ -5774,7 +5774,6 @@ test "ytst stores X with S1[8] and S1[3]; head[29] and head[24:21] refuse (fact 
         .{ .s1 = 0x02210163, .want = 0 }, // S1[3] = 0
         .{ .s1 = 0x02210763, .want = 0 }, // S1[10:9] alone
         .{ .head = 0x20000014, .want = null }, // head[29]
-        .{ .head = XXXXXXXX, .want = null }, // head[24:21] = 1
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -5973,4 +5972,24 @@ test "ldi2 writes s and A from the head and stores Y from the old s (fact 634)" 
         defer r.deinit(gpa);
         try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &r, &.{ c[0], c[1], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
     }
+}
+
+test "ytst's head writes s<h[24:21]> <- e<S1[24:21]> and A<h[28:25]> <- # (fact 635)" {
+    const gpa = testing.allocator;
+    // own-ytst-e 01224694 0aa00600: s9 <- e5 = 0x710 (not Y).
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    st.e[5] = 0x710;
+    try st.y_mem.put(gpa, 0x710, 0x0BEE);
+    _ = try emu.runFrom(gpa, &st, &.{ 0x01224694, 0x0aa00600, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x710), st.s[9]);
+    // A7 (h[28:25] = 7) <- 0x1234.
+    var a = emu.State{};
+    defer a.deinit(gpa);
+    _ = try emu.runFrom(gpa, &a, &.{ 0x0f224694, 0x0aa00600, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1234), a.a[7]);
+    // The X store's A (A12 = {011, 00}) is the head's A dest: unmeasured.
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x18000014, 0x0221016B, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
