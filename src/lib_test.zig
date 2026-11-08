@@ -5284,3 +5284,21 @@ test "x18 class 111 MAC high write rounds with w3[8] (fact 601)" {
         }
     }
 }
+
+test "x03 override 11 over mux 001/010 reads Y:[e] with w5[21], else yd (fact 602)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w5: u32, y: u32, yd: u32, want: u32 }{
+        .{ .w5 = 0x30300100, .y = 0x1234, .yd = 0x34C9, .want = 0x1234 },
+        .{ .w5 = 0x30300100, .y = 0x0BCD, .yd = 0x34C9, .want = 0x0BCD },
+        .{ .w5 = 0x30100100, .y = 0x1234, .yd = 0x34C9, .want = 0x34C9 },
+        .{ .w5 = 0x30100100, .y = 0x1234, .yd = 0x7E11, .want = 0x7E11 },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[10] = 0x720;
+        state.yd = k.yd;
+        try state.y_mem.put(gpa, 0x720, k.y);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000003, 0x00000170, 0x0140a000, 0x57001405, 0x01004835, k.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(k.want, state.s[6]);
+    }
+}

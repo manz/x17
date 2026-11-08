@@ -385,6 +385,14 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             if (dest_s != 0) state.s[dest_s] = v;
             return;
         }
+        // w4 mux 001 / 010 with w5[29:28] = 11: s<w4[6:3]> <- Y:[e<w3[30:27]>] with w5[21],
+        // else yd (602, 565's rule).  Whether the fresh read sets yd is OPEN: left alone.
+        if ((w4_mode == 1 or w4_mode == 2) and ((bundle[5] >> 28) & 0x3) == 0b11) {
+            const dest_s: u32 = (bundle[4] >> 3) & 0xF;
+            const v: u32 = if ((bundle[5] >> 21) & 1 == 1) (state.getY(state.e[(bundle[3] >> 27) & 0xF]) orelse 0) & 0xFFFF else state.yd;
+            if (dest_s != 0) state.s[dest_s] = v;
+            return;
+        }
         // w4 mux 001 / 010 with w5[29:28] = 10: s<w4[6:3]> <- e<w3[30:27]>, or e<w3[26:23]>
         // with w1[8] (fact 190 / own-x03esrc; 519, 2 of 3 rows).
         if ((w4_mode == 1 or w4_mode == 2) and ((bundle[5] >> 28) & 0x3) == 0b10) {
