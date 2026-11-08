@@ -198,9 +198,17 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s_class == 0b100) return execX10Alu(state, bundle);
         if (s_class == 0b010) return execYstm(gpa, state, bundle);
     }
-    if (low5 == 0x14 and bundle.len >= 2 and head & 0xA0000000 == 0 and (bundle[1] >> 25) & 1 == 1) {
-        if (bundle[1] >> 29 == 0b100) return execYagu(state, bundle);
-        if (bundle[1] >> 30 == 0b11) return execYpair(state, bundle);
+    if (low5 == 0x14 and bundle.len >= 2 and (bundle[1] >> 25) & 1 == 1) {
+        // ypair class 110 admits head[31:29] 0-3 (616); head[31] = 1 leaves the s write undone
+        // and the rest is unmeasured: refused.  Class 111 and yagu keep head[31:29] 0 / 2.
+        if (bundle[1] >> 29 == 0b110) {
+            if (head >> 31 == 1) return RunError.UnknownForm;
+            return execYpair(state, bundle);
+        }
+        if (head & 0xA0000000 == 0) {
+            if (bundle[1] >> 29 == 0b100) return execYagu(state, bundle);
+            if (bundle[1] >> 30 == 0b11) return execYpair(state, bundle);
+        }
     }
     if (low5 == 0x12 and bundle.len == 2 and bundle[1] & 0xE1F00000 == 0x20000000 and (bundle[1] >> 19) & 1 == 1) {
         return execTst(state, bundle);

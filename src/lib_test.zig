@@ -5628,3 +5628,19 @@ test "x10alu ignores head[31:30] and has no w1[14] gate (fact 614, 615)" {
         try testing.expectEqual(c.want, state.r[5]);
     }
 }
+
+test "ypair class 110 admits head[31:29] 0-3; head[31] refuses (fact 616)" {
+    const gpa = testing.allocator;
+    // 3840c154 d2026001: s2 <- e10.
+    for ([_]u32{ 0, 1, 2, 3, 4, 7 }) |top| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[10] = 0x0345;
+        state.s[2] = 0x7777;
+        const r = emu.runFrom(gpa, &state, &.{ (0x3840c154 & 0x1FFFFFFF) | top << 29, 0xd2026001, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (top < 4) {
+            _ = try r;
+            try testing.expectEqual(@as(u32, 0x0345), state.s[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
