@@ -1403,16 +1403,13 @@ fn x02X3Value(bundle: []const u32, s: [16]u32) RunError!u32 {
 }
 
 /// x02's R slot with w5[31:30] = 10 (594): the third slot's value, measured for head codes 0,
-/// 3 and 0xE (a shift only with code 0) and m = w5[8:6] in {0, 1, 2, 3, 5, 7}; m 7 read |b|
-/// with b >= 0 only, so a negative b there is OPEN.
+/// 3 and 0xE (a shift only with code 0), every m = w5[8:6].
 fn x02RFromX3(state: *const State, bundle: []const u32) RunError!u32 {
     const w5 = bundle[5];
     const code: u32 = (bundle[0] >> 5) & 0x3F;
-    const m: u32 = (w5 >> 6) & 7;
     const sh: u32 = (w5 >> 2) & 0xF;
     const code_ok = code == 0 or ((code == 3 or code == 0xE) and sh == 0);
-    if (!code_ok or m == 4 or m == 6) return RunError.UnknownForm;
-    if (m == 7 and sx24(state.s[(bundle[4] >> 26) & 0xF]) < 0) return RunError.UnknownForm;
+    if (!code_ok) return RunError.UnknownForm;
     return try x02X3Value(bundle, state.s);
 }
 
@@ -4154,7 +4151,8 @@ fn adderM(m: u8, x: i64, y: i64, c: i64) AdderTuple {
         4 => .{ .x = -1, .y = y, .c = c },
         5 => .{ .x = x, .y = ~y, .c = 1 },
         6 => .{ .x = 0, .y = ~y, .c = 1 },
-        7 => .{ .x = 0, .y = y, .c = c },
+        // 238, measured with a negative b after 594: |y|, carry dropped.
+        7 => .{ .x = 0, .y = if (y < 0) -y else y, .c = 0 },
         else => unreachable,
     };
 }

@@ -5076,8 +5076,9 @@ test "0x02's R slot takes the third slot's value with w5[31:30] = 10 (fact 594)"
         .{ .m = 0, .sh = 2, .want = 0x2218 },
         .{ .code = 3, .m = 0, .want = 0x886 },
         .{ .code = 0xE, .m = 0, .want = 0x886 },
-        .{ .m = 4, .want = null }, // unmeasured m
-        .{ .m = 7, .b = 0xFFF000, .want = null }, // |b| on a negative b: OPEN
+        .{ .code = 0xE, .m = 4, .want = 0x552 }, // b - 1
+        .{ .code = 0xE, .m = 6, .want = 0xFAAD }, // -b
+        .{ .code = 0xE, .m = 7, .b = 0xFFF553, .want = 0x0AAD }, // |b|
         .{ .code = 3, .m = 0, .sh = 2, .want = null }, // shift with code 3: unmeasured
         .{ .code = 0x10, .m = 0, .want = null }, // other code
     }) |k| {
