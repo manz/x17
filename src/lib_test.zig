@@ -2809,8 +2809,10 @@ test "the 0x16 class-100 row's s ALU: shifts, masked shift, add and subtract by 
     // s<S2[7:4]> with head[29:27] = 0, n = 0, S2[2:0] in {0, 4} is measured
     for ([_]struct { h: u32, s2: u32, want: ?u32 }{
         .{ .h = 0x001211d6, .s2 = 0x86000000, .want = 0x8080 },
-        .{ .h = 0x801211d6, .s2 = 0x86000040, .want = null },
-        .{ .h = 0x801211d6, .s2 = 0x86000080, .want = null },
+        // 585: mx 0 c 0 with n = 7 is (a + b) >> n: (0x101 + s4 = 0) >> 7, (0x101 + s8 = 0) >> 7
+        .{ .h = 0x801211d6, .s2 = 0x86000040, .want = 2 },
+        .{ .h = 0x801211d6, .s2 = 0x86000080, .want = 2 },
+        .{ .h = 0x801211d6, .s2 = 0x86000081, .want = null },
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -4639,7 +4641,7 @@ test "the 0x16 class-100 s ALU copies s<S2[7:4]> outside its gate (fact 580, 581
         .{ .s2 = 0x8a000034, .want = 0x333 }, // S2[7:4] = 3, code 4
         .{ .s2 = 0x8a0000b0, .want = 0xBB0B }, // code 0
         .{ .h = 0x46000096 | 2 << 27, .want = 0xBB0B }, // 584: mx 0-2 all move b
-        .{ .s1 = 0x0b000012 | 1 << 29, .want = null }, // n != 0
+        .{ .s1 = 0x0b000012 | 1 << 29, .want = null }, // n != 0 with head[30] = 1
         .{ .s2 = 0x8a0000b1, .want = 0xBB0B }, // 584: every cell
         .{ .h = 0x46000096 | 3 << 27, .want = 0 }, // 584: mx 3 writes 0
         .{ .s2 = 0x8a0000bc, .want = null }, // S2[3] set
@@ -4764,4 +4766,27 @@ test "the 0x16 class-100 s ALU table with head[30] = 1 (fact 584)" {
     for (0..8) |mx| for (0..8) |c| {
         try testing.expectEqual(want[mx][c], try run(@intCast(mx), @intCast(c), 0x1234, 2));
     };
+}
+
+test "the 0x16 class-100 s ALU's n = S1[31:29] cells outside its gate (fact 585)" {
+    const gpa = testing.allocator;
+    for ([_]struct { mx: u32, c: u32, n: u32, want: ?u32, h30: u32 = 0 }{
+        .{ .mx = 0, .c = 0, .n = 2, .want = 0x3C4 }, // (a + b) >> n
+        .{ .mx = 5, .c = 0, .n = 5, .want = 0xE180 }, // (a ^ b) << n, low 16
+        .{ .mx = 1, .c = 1, .n = 1, .want = 0x7880 }, // (a + n) << b
+        .{ .mx = 2, .c = 2, .n = 7, .want = 0x0F0C }, // a - b, n ignored
+        .{ .mx = 0, .c = 1, .n = 1, .want = null },
+        .{ .mx = 7, .c = 7, .n = 3, .want = null },
+        .{ .mx = 0, .c = 0, .n = 2, .h30 = 1, .want = null },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0x0F0F;
+        state.s[11] = 3;
+        const r = emu.runFrom(gpa, &state, &.{ 0x06000096 | k.h30 << 30 | k.mx << 27, 0x0b000012 | k.n << 29, 0x860000b0 | k.c, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5] & 0xFFFF);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
 }

@@ -3320,7 +3320,8 @@ const X16_EXTRA = [2][8][8]X16Op{ .{
     .{ .add, .add_rsh, .sub, .sub_rsh, .a, .rsh, .inc, .inc_rsh },
 } };
 
-/// One X16_EXTRA cell on sx16 operands, 24-bit result.  Measured with a and b inside 16 bits.
+/// One X16_EXTRA cell on sx16 operands, 24-bit result.  Measured with a and b inside 16 bits;
+/// the result's top byte (sign extension here) and b's raw copy are ASSUMED, not measured.
 /// Variable shifts take b signed: a rounded >> with a negative b shifts left, saturating at
 /// 0x7FFFFF (582); other negative amounts and a negative overflow are OPEN.
 fn x16Extra(op: X16Op, a_raw: u32, b_raw: u32) RunError!u32 {
@@ -3359,6 +3360,21 @@ fn x16Extra(op: X16Op, a_raw: u32, b_raw: u32) RunError!u32 {
     return @truncate(@as(u64, @bitCast(r)) & M24);
 }
 
+/// fact 585: the X16_EXTRA cells (head[30] = 0) measured with n = S1[31:29] != 0.
+fn x16ExtraN(cell: u32, a_raw: u32, b_raw: u32, n: u32) RunError!u32 {
+    if (a_raw > 0xFFFF or b_raw > 0xFFFF) return RunError.UnknownForm;
+    const a: i64 = sx16(a_raw);
+    const b: i64 = sx16(b_raw);
+    const r: i64 = switch (cell) {
+        0 => (a + b) >> @intCast(n), // mx 0 c 0
+        8 * 5 => try satShl(a ^ b, n), // mx 5 c 0
+        8 * 1 + 1 => if (b < 0) return RunError.UnknownForm else try satShl(a + n, b), // mx 1 c 1
+        8 * 2 + 2 => a - b, // mx 2 c 2: n ignored
+        else => return RunError.UnknownForm,
+    };
+    return @truncate(@as(u64, @bitCast(r)) & M24);
+}
+
 fn satShl(v: i64, n: i64) RunError!i64 {
     const r: i64 = v << @intCast(@min(n, 40));
     if (r > 0x7FFFFF) return 0x7FFFFF;
@@ -3367,15 +3383,19 @@ fn satShl(v: i64, n: i64) RunError!i64 {
 }
 
 fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
-    // With S2 bits in 0x01FFFFF8 (580-584): only S2[7:4] may be set, n = 0; the cell is
-    // X16_EXTRA[head[30]][head[29:27]][S2[2:0]].
+    // With S2 bits in 0x01FFFFF8 (580-585): only S2[7:4] may be set; the cell is
+    // X16_EXTRA[head[30]][head[29:27]][S2[2:0]], and n = S1[31:29] != 0 only in 585's cells.
     if (s2 & 0x01FFFFF8 != 0) {
-        if (s2 & 0x01FFFF08 != 0 or s1 >> 29 != 0) return RunError.UnknownForm;
+        if (s2 & 0x01FFFF08 != 0) return RunError.UnknownForm;
         const src: u32 = (s2 >> 4) & 0xF;
         const b: u32 = if (src == 0) 0 else state.s[src] & M24;
         const mx: u32 = (h >> 27) & 7;
         const c: u32 = s2 & 7;
-        return x16Extra(X16_EXTRA[(h >> 30) & 1][mx][c], state.s[(s2 >> 25) & 0xF] & M24, b);
+        const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
+        const n: u32 = s1 >> 29;
+        if (n == 0) return x16Extra(X16_EXTRA[(h >> 30) & 1][mx][c], a, b);
+        if ((h >> 30) & 1 == 1) return RunError.UnknownForm;
+        return x16ExtraN(mx * 8 + c, a, b, n);
     }
     const a: u32 = state.s[(s2 >> 25) & 0xF] & M24;
     const n: u5 = @intCast(s1 >> 29);
