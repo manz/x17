@@ -237,10 +237,10 @@ unknown.
   (§617).
 - **Bit tests:** ptst op 0x1E sets p from (a & b) != 0, measured against s10 and s12 only
   (§632, §633).
-- **Loops:** "repeat this bundle while p" (§263, §452). DO-style hardware loops were disproved
-  (§71, §449).
-- **Conditional stop:** an x17sty with S1[28:27] = 00 and S1[5] = 0 stops the engine after its
-  store when p1 is set (§648). The store templates set S1[27] so no plain store is an exit.
+- **Loops:** x03's conditional jump to itself, counted by its e counter through p3 (§675,
+  §679, §680; §263's "repeat" was this jump). DO-style hardware loops were disproved (§71, §449).
+- **Conditional stop:** an x17sty with S1[28:27] = 00 and S1[5] = 0 is a stop form keyed by
+  S1[2:0]: 1 stops after the store when p1 is set, 3 runs away, others always stop (§648, §667). The store templates set S1[27] so no plain store is an exit.
 - **Calls and returns:** undefined (§230, §310).
 - **Wedges:** runaway words (§16, §44), low5 0x1A-0x1F after the stop (§72), a missed halt
   deadline, and the per-form wedge bits in the reference (for example xld10 S1[18] = 0, §559).
@@ -255,20 +255,18 @@ Measured idioms, cheapest first:
 - **Fill both delay slots** (§661). Work from the fall-through path goes there when the taken
   path does not read what it writes; a loop's first bundles go there when the back edge jumps
   past them.
-- **Counted loop.** x03 with w2[28] = 1 is a jr on p<w5[17:14]> by sext(w1[28:18]) with two
-  delay slots (§394); w2[27] = 1 flips the 000 sense to "jump while set" (§678). With offset
-  0 the bundle jumps to itself, and the e counter e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1
-  also writes p3 <- (e > 0, signed 16), seen one pass late (§675, §678). Preset e = N - 1 and
-  p3 = 1 for N passes (N >= 2); the loop leaves p3 = 0 and e = -1. Only p3 ends it. w3[31] is
-  not the loop: it is the counter's index bit. Whether the delay slots run on each pass is
-  unmeasured: keep nops after the loop bundle. Measured on a store row
-  (`00000003 60000002 18106000 85800008 00004005 001CC000`: X:[A8] <- s3, A8 steps on every pass, ending at A8 + N);
-  not yet on a MAC row.
-- **Loops.** There is no zero-overhead multi-bundle loop: x03 can repeat one bundle while a
-  predicate holds (§263, §452), and nothing more (§453). The cheapest counted loop is a pcond on
-  A against R plus a jmp whose two slots do work (§662), about one bundle of overhead. Unroll
-  when the body is short. The repeat class w2[31:29] = 011 on an x03 MAC row runs it once and
-  then hangs (§673): the emulator refuses it.
+- **Counted loop.** x03 with w2[28] = 1 is a jr by sext(w1[28:18]) on p<w5[17:14]>, any k:
+  w2[27] = 1 jumps if set, 0 if clear; w2[31:29] is ignored (§394, §679). w2[28] = 0 with
+  w2[27] = 1 jumps unconditionally (§329). Both delay slots run on every pass (§680). With
+  w2[28] = 1 the e counter e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1 also writes
+  p3 <- (e > 0, signed 16) after the jump has read p (§675). So an offset-0 jump on p3 is a
+  counted loop of three bundles (the x03 and its two slots): preset e = N - 1 and p3 = 1 for N
+  passes (N >= 2), leaving p3 = 0 and e = -1. The x03's X store steps its A every pass, ending
+  at A + N. Measured on mode-0 store rows; the emulator refuses the jump on a MAC row.
+- **Loops.** The counted loop above is the only zero-overhead loop, three bundles long. For
+  longer bodies, a pcond on A against R plus a jmp whose two slots do work (§662) costs about
+  one bundle. Unroll when the body is short. A MAC row with w2[31:29] = 011 runs once and then
+  hangs (§673): the emulator refuses it.
 - **Free pointer steps.** Stores (x17.styi, §658) and x17ld loads (§429) post-increment an e; x03
   counts an e down (§349); x02 steps an A (§660). Each replaces an x18.eagu or aset bundle.
 - **Packed bundles that are measured** (§155, §183, §185, §347-§350, §513, §174, §203):

@@ -827,7 +827,9 @@ x17.stop   3   0x00000017   0x20300000   0x00000000
 # x17.stopx: the same with every inert head and S2 bit filled (own-all-x).
 x17.stopx  3   0x00000017   0x20300000   0xA0000000
 
-# x03.rep: w3[31] repeat while p<w5[17:14]>, X store of s3 at A8 (fact 263 / own-x03rep).
+# x03.rep: counted loop, a jump to itself on p<w5[17:14]> with the e11 counter writing p3,
+# X store of s3 at A8 stepping each pass (fact 263, 675, 679, 680 / own-x03rep). Two delay
+# slots follow it and run on every pass.
 x03.rep    6   0x00000003   0x60000002   0x18106000   0x85800008   0x00004005   0x001C0000
 
 # x19.mac: the whole x19mac bundle, every field an operand so measured words assemble

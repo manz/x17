@@ -3468,7 +3468,9 @@ Emulator:
 |---|---|---|---|
 | pidx | p | s5 | [17:14] |
 
-> x03.rep: w3[31] repeat while p<w5[17:14]>, X store of s3 at A8 (fact 263 / own-x03rep).
+> x03.rep: counted loop, a jump to itself on p<w5[17:14]> with the e11 counter writing p3,
+> X store of s3 at A8 stepping each pass (fact 263, 675, 679, 680 / own-x03rep). Two delay
+> slots follow it and run on every pass.
 
 ### `x19.mac`
 
