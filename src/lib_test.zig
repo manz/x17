@@ -6922,3 +6922,10 @@ test "class-05 add is 24 bits wide and wraps at 2^24 (695)" {
         try testing.expectEqual(c[2], st.s[3]);
     }
 }
+
+test "stx0f through A0 is refused: its address is the previous word's field (694)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &([_]u32{ 0x0000000F, 0xA0500000 } ++ halt), 0, 8));
+}

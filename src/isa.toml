@@ -561,6 +561,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # s0 (438): always reads 0, writes discarded; the emulator pins it around every bundle.  dld (524 answers): the Y half sign-extends (54); [30] = 0 wedges (54, 116), refused.
 # ldy and the class-0A parallel move (523): R<head[25:22]> also gets the Y word (16 bits), beside s<head[29:26]> or alone; bit 9 = 0 gives the stale latch for both (refused beside an R destination); [30] = 0 with an R destination refused.  48 of 48 silicon rows, own-ldyr.
 # st.x (low5 0x0F X store, 525): also rimm's writes, R<S[14:11]> <- #head[20:5] (84 of 84 rows, own-stxr); its s<head[24:21]> write is 488's OPEN value, refused as on rimm.
+# X store through A0 (694): the address is the h[20:5] of the word just before, any opcode (after a nop, X:0); a plain X read through A0 reads X:0 (122).  Refused by the emulator.
 # stx0f.e, low5 0x0F S class 101 with S[22], S[20] (fact 437): beside the X store, e<S[6:3]> <- #head[20:5] under any
 # head[31:30]; measured with S[22:20] = 111 only.  own-st0fe
 # x17.styr, x17sty (S1 class != 0, S2 class 011) with S2[3:1] = 1 or 5 (fact 439): R<S1[14:11]> <- X17LD_OP[h[10:5]](s<S2[28:25]>,

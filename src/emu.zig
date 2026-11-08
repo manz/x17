@@ -5521,6 +5521,9 @@ fn execStx0f(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     try checkRimm(bundle);
     const sw = bundle[1];
     const a_idx: u32 = 4 * (sw & 7) + (bundle[0] >> 30);
+    // Through A0 the store lands at the previous word's h[20:5] (694; a nop before it gives 0):
+    // not modelled, refused.
+    if (a_idx == 0) return RunError.UnknownForm;
     const v: u32 = state.s[(sw >> 25) & 0xF] & M24;
     state.x_mem.put(gpa, state.a[a_idx], v) catch return RunError.OutOfMemory;
     const e_dest: u32 = (sw >> 3) & 0xF;
