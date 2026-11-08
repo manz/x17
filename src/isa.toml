@@ -519,7 +519,7 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # 538 revises 118's clears (never happen): s<h[24:21]> <- #h[20:5] when S1[14:13] = 00/11 (10 OPEN); Y:[e<S2[24:21]>] <- s<S1[27:24]> when S1[28] and S2[9], read first, s0 source OPEN; S1[11:8] a gated s write, source OPEN (refused).  own-x16imy
 # x16alu, S2 class 010 (fact 119 pass 145): the 116 ALU alone, s<S1[11:8]> <- by S1[15], S1[18:16]: 0: 4 a+b 5 a 6 a-1 7 -a; 1: 4 a-b 5 a+1 6 a 7 a
 # (a = s<S2[28:25]>, b = s<S1[7:4]>; the same table holds under class-111 S2); head[24:21] bit b zeroes s<1 << b>, S2[16:13] bit b zeroes R<1 << b>.  own-x16alu2
-# x19a3st s write (612): 529's mux too, 0 zero / 2 AGU3 (measured with w1[31:29] = 7), others refused; the Y store reads s before it.  Mux 3 (any class) is not the raw AGU x: OPEN.
+# x19a3st s write (612): 529's mux too, 0 zero / 2 AGU3 (measured with w1[31:29] = 0 and 7, 1-6 INFERRED), others refused; unmodelled slots (w1[31:29] = 7's A<w1[26:22]> and e<w1[6:3]>, the others' R<w1[14:11]>) refuse with a dest; the Y store reads s before it.  Mux 3 (any class) is not the raw AGU x: OPEN.
 # x19a3 s mux (611): w1[17:15] = 5 X:[A<{w1[2:0], head[31:30]}>][15:0], read before the bundle's own A write (529's moving word); 4 its (<< 7)[15:0]; 7 zero (4/7 x99 only); 3 and 6 OPEN.
 # x16agu (610): head[10:5] is inert with no ALU dest (S1[27:24] = 0).  S2 class 101 mux 000's 0 reads the head code (code 12 gave 1): measured at code 14 only, other codes refused.
 # x16agu, S2 class 101 (fact 120 pass 146): s<S1[12:9]> and R<1 << b> for S2[16:13] bit b <- by S1[17:15] (001 value, 000 0, 011 0x5000?, 101 yd):

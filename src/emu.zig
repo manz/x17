@@ -2816,15 +2816,20 @@ fn x19KAlu(state: *const State, w1: u32, w3: u32) u32 {
 
 /// Y:[e<w3[28:25]>] <- s<{w2[0], w1[31:29]}>.
 /// Also runs the s slot: s<head[24:21]> <- by 529's mux w1[17:15]: 0 zero, 2 AGU3[w3[24:20]](x =
-/// A<w3[19:15]>) (612, measured with w1[31:29] = 7); other muxes refused.  The store reads s
-/// before that write.
+/// A<w3[19:15]>) (612, measured with w1[31:29] = 0 and 7; 1-6 INFERRED); other muxes refused.
+/// The store reads s before that write.  Unmodelled slots refuse when they have a dest:
+/// w1[31:29] = 7's A<w1[26:22]> <- AGU3 and e<w1[6:3]> <- #imm (339), the others' R<w1[14:11]>.
 fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const src_s: u32 = ((bundle[2] & 1) << 3) | ((bundle[1] >> 29) & 0x7);
     const addr_e: u32 = (bundle[3] >> 25) & 0xF;
     const v: u32 = state.s[src_s] & 0xFFFF;
     const w3 = bundle[3];
     const dest_s: u32 = (bundle[0] >> 21) & 0xF;
-    const s_val: u32 = if (dest_s == 0) 0 else switch ((bundle[1] >> 15) & 7) {
+    const w1 = bundle[1];
+    if (w1 >> 29 == 7) {
+        if ((w1 >> 22) & 0x1F != 0 or (w1 >> 3) & 0xF != 0) return RunError.UnknownForm;
+    } else if ((w1 >> 11) & 0xF != 0) return RunError.UnknownForm;
+    const s_val: u32 = if (dest_s == 0) 0 else switch ((w1 >> 15) & 7) {
         0 => 0,
         2 => agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], 0, 2 * (w3 & 0x7FFF)),
         else => return RunError.UnknownForm,
