@@ -7006,6 +7006,26 @@ test "x17.sty writes e<2*w1[2:0] + h[31]> <- e<k> + 1; the template does not; ld
     try testing.expectEqual(@as(u32, 0x2E22), st.e[2]);
 }
 
+test "x17.sty keeps S1[27]; S1[28:27] = 00 stops after the store when p1 is set (648)" {
+    const t = try asm_mod.assembleOne("x17.sty e3, #3, #0");
+    try testing.expectEqual(@as(u32, 1), (t.slice()[1] >> 27) & 3);
+    const ti = try asm_mod.assembleOne("x17.styi e3, #3, #0, e3");
+    try testing.expectEqual(@as(u32, 1), (ti.slice()[1] >> 27) & 3);
+    for ([_]u8{ 0, 1 }) |p1| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.e[3] = 0x2E40;
+        st.s[3] = 0x99;
+        st.p[1] = p1;
+        const prog = [_]u32{ t.slice()[0], t.slice()[1] & ~@as(u32, 1 << 27), t.slice()[2], 0x00000017, 0x31308000, 0xA0000000 };
+        const r = emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        if (p1 == 1) try testing.expectError(emu.RunError.UnknownForm, r) else {
+            _ = try r;
+            try testing.expectEqual(@as(?u32, 0x99), st.y_mem.get(0x2E40));
+        }
+    }
+}
+
 test "x17.styi steps its pointer in the store bundle (658)" {
     const gpa = testing.allocator;
     const prog = try assemble(gpa,

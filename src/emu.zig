@@ -3816,6 +3816,9 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         0 => state.yd & 0xFFFF,
         else => null,
     };
+    // S1[28:27] = 00 with S1[5] = 0 stops the engine after the store when p1 is set (fact 648);
+    // what runs after that stop is unmeasured: refused. With p1 clear the store just runs.
+    if ((s1 >> 27) & 3 == 0 and (s1 >> 5) & 1 == 0 and state.p[1] != 0) return RunError.UnknownForm;
     // e<2*S1[2:0] + h[31]> <- AGU10[S1[10:7]](x = e<k>), written after the store (fact 658,
     // 429), measured with R mux 0 (fns x and x+1). Under mux 7 the e write lands elsewhere:
     // refused.

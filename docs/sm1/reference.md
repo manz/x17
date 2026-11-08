@@ -2914,7 +2914,7 @@ Emulator:
 ### `x17.sty`
 
 - Syllables: 3
-- Base: `00000017` `00000108` `60003800`
+- Base: `00000017` `08000108` `60003800`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -2924,12 +2924,13 @@ Emulator:
 
 > x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275). Also e<2*S1[2:0] + h[31]> <-
 > AGU10[S1[10:7]](x = e<k>) after the store (fact 658), with R mux 0; under mux 7 the value is
-> unknown. The template clears S1[2:0] and h[31].
+> unknown. The template clears S1[2:0] and h[31] and sets S1[27]: S1[28:27] = 00 (with S1[5] = 0)
+> stops the engine after the store whenever p1 is set (fact 648).
 
 ### `x17.styi`
 
 - Syllables: 3
-- Base: `00000017` `00000100` `60003800`
+- Base: `00000017` `08000100` `60003800`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
