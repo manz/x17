@@ -58,6 +58,8 @@ pub const Map = struct {
 
 pub const Region = struct { lo: u32, hi: u32 };
 
+pub const Param = struct { addr: u32, value: u32 };
+
 pub const Config = struct {
     map: Map = .{},
     /// Q1: execution enters at syllable 0 of the program window (MEASURED).
@@ -66,6 +68,11 @@ pub const Config = struct {
     /// writes the length in bytes at `len_at` and the bytes from `base`,
     /// big-endian pairs, two bytes per Y word.
     packet: struct { base: u32 = 0x4000, len_at: u32 = 0x3FFF } = .{},
+    /// STUB: codec parameters (an ALAC cookie's frame length, depth, Rice
+    /// constants, channels) as Y words.  How they reach the program on
+    /// silicon is unknown; the host writes them before each packet, after
+    /// the clobber.
+    params: []const Param = &.{},
     /// Q4 STUB: Y regions the host or boot code overwrites between packets.
     clobber: []const Region = &.{},
     clobber_value: u32 = 0,
@@ -137,11 +144,15 @@ pub const Host = struct {
             var a = r.lo;
             while (a <= r.hi) : (a += 1) try self.putY(a, self.cfg.clobber_value);
         }
+        for (self.cfg.params) |q| try self.putY(q.addr, q.value);
         try self.stage(packet);
 
         const guard = try self.snapshotOwned();
         defer self.gpa.free(guard);
 
+        // Each run enters at the entry syllable (Q1), in its own lane, not the last run's halt
+        // lane: runFrom counts lanes from cur_lane at syllable 0.
+        self.state.cur_lane = 0;
         const bundles = try emu.runFrom(self.gpa, &self.state, program, self.cfg.entry, self.cfg.max_bundles);
         if (!self.state.halted) return error.NoStop;
 
@@ -352,4 +363,35 @@ test "clobber regions are poisoned before each packet" {
     _ = try h.feed(prog, &.{});
     try testing.expectEqual(@as(u32, 0xAAAA), h.getY(0x100));
     try testing.expectEqual(@as(u32, 0xAAAA), h.getY(0x101));
+}
+
+test "params are written before each packet, over the clobber" {
+    const prog = try assemble(&.{"x17.halt"});
+    defer testing.allocator.free(prog);
+    var h = try Host.init(testing.allocator, .{
+        .params = &.{ .{ .addr = 0x2E00, .value = 4096 }, .{ .addr = 0x2E05, .value = 2 } },
+        .clobber = &.{.{ .lo = 0x2E00, .hi = 0x2E05 }},
+        .clobber_value = 0xAAAA,
+    });
+    defer h.deinit();
+    for (0..2) |_| {
+        _ = try h.feed(prog, &.{});
+        try testing.expectEqual(@as(u32, 4096), h.getY(0x2E00));
+        try testing.expectEqual(@as(u32, 2), h.getY(0x2E05));
+        try testing.expectEqual(@as(u32, 0xAAAA), h.getY(0x2E01));
+    }
+}
+
+test "every packet starts in lane 0, not the last run's halt lane" {
+    const prog = try assemble(&.{ "ldi s3, #1", "x17.halt" });
+    defer testing.allocator.free(prog);
+    var h = try Host.init(testing.allocator, .{});
+    defer h.deinit();
+    _ = try h.feed(prog, &.{});
+    try testing.expect(h.state.cur_lane != 0);
+    _ = try h.feed(prog, &.{});
+    var fresh = try Host.init(testing.allocator, .{});
+    defer fresh.deinit();
+    _ = try fresh.feed(prog, &.{});
+    try testing.expectEqual(fresh.state.cur_lane, h.state.cur_lane);
 }
