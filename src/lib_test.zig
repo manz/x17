@@ -5183,13 +5183,14 @@ test "x18 class 010's R slot refuses w2[27:24] != 0 (fact 598)" {
 
 test "x18 class 110 stores s<{w2[0], w1[31:29]}> at X:[A<w2[21:17]>] when w2[23:22] = 11 (fact 599)" {
     const gpa = testing.allocator;
-    for ([_]struct { h: u32 = XXXXXXXX, w1: u32, w2: u32, w3: u32 = XXXXXXXX, ai: u5, addr: u32, si: u4, sv: u32, want: ?u32 }{
+    // Head and w3 from own-x18c6y (01800058 A0001000 00D80001 C0000001, X:[A12] <- s13).
+    for ([_]struct { h: u32 = 0x01800058, w1: u32, w2: u32, w3: u32 = 0xC0000001, ai: u5, addr: u32, si: u4, sv: u32, want: ?u32 }{
         .{ .w1 = 0xC0001000, .w2 = 0x00CA0000, .ai = 5, .addr = 0x300, .si = 6, .sv = 0x1234, .want = 0x001234 },
         .{ .w1 = 0xC0001000, .w2 = 0x00CA0000, .ai = 5, .addr = 0x320, .si = 6, .sv = 0x0567, .want = 0x000567 },
         .{ .w1 = 0xA0001000, .w2 = 0x00D80001, .ai = 12, .addr = 0x340, .si = 13, .sv = 0xFF8567, .want = 0xFF8567 },
         .{ .w1 = 0x20001000, .w2 = 0x008C0001, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = 0 }, // 10: no store
         .{ .w1 = 0x20005000, .w2 = 0x00CC0001, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = null }, // w1 mode 5
-        .{ .w1 = 0x20001000, .w2 = 0x00CC0001, .w3 = 0xC2000101, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = null }, // branch
+        .{ .w1 = 0x20001000, .w2 = 0x00CC0001, .w3 = 0xC0000101, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = null }, // branch
         .{ .w1 = 0xC0001000, .w2 = 0x00E80000, .ai = 20, .addr = 0x380, .si = 6, .sv = 0x0042, .want = 0x000042 }, // A20: 5-bit index
         // the ALU2 slot writes s9 too: ordering unmeasured
         .{ .h = 0x13200418, .w1 = 0x20001900, .w2 = 0x00CC0001, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = null },
