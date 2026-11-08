@@ -1434,7 +1434,7 @@ fn execPar(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 /// mul13, low5 0x13, S class 101 with S[19] (fact 128):
 /// s<S[14:11]> <- round(s<S[6:3]> * s<2*S[2:0] + head[31]> / 2^23).
 /// mul13, low5 0x13 with S class 101 and S[19] (fact 128, 535): s<S[14:11]> <-
-/// round(s<S[6:3]> * s<2*S[2:0] + head[31]> / 2^23) over 16-bit operands; the head ALU slot,
+/// round(s<S[6:3]> * s<2*S[2:0] + head[31]> / 2^23) over 24-bit operands (697); the head ALU slot,
 /// s<h[18:15]> <- alu_word(h, a = s<h[14:11]>, b = s<h[22:19]>); and with S[16:15] = 11
 /// X:[A<h[30:26]>] <- s<S[28:25]>.  Everything reads before anything writes.  Refused:
 /// S[18:17], S[23:22], S[10:7] (unmodelled), S[16:15] = 01/10 and one s for both writes.
@@ -1450,7 +1450,8 @@ fn execMul13(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const dest: u32 = (sw >> 11) & 0xF;
     const alu_dest: u32 = (h >> 15) & 0xF;
     if (dest != 0 and dest == alu_dest) return RunError.UnknownForm;
-    const prod: i64 = sx16(state.s[(sw >> 3) & 0xF]) * sx16(state.s[2 * (sw & 7) + (h >> 31)]);
+    // 24x24 operands (697: 0x400000 * 0x400000 gives 0x200000).
+    const prod: i64 = @as(i64, sx24(state.s[(sw >> 3) & 0xF])) * sx24(state.s[2 * (sw & 7) + (h >> 31)]);
     const alu_v: ?u32 = if (alu_dest == 0) null else try aluWord(h, sx24(state.s[(h >> 11) & 0xF]), sx24(state.s[(h >> 19) & 0xF])) orelse
         return RunError.UnknownForm;
     if (store) state.x_mem.put(gpa, state.a[(h >> 26) & 0x1F], state.s[(sw >> 25) & 0xF] & M24) catch return RunError.OutOfMemory;
@@ -2106,7 +2107,8 @@ fn sx16(v: u32) i64 {
 fn x16Alu(state: *State, s1: u32, s2: u32) RunError!void {
     const v = try x16AluOp(s1, state.s[(s2 >> 25) & 0xF], state.s[(s1 >> 4) & 0xF]);
     const dest: u32 = (s1 >> 8) & 0xF;
-    if (dest != 0) state.s[dest] = v & 0xFFFF;
+    // 24 bits wide (697: 0x007FFF - 0xFF8000 = 0x00FFFF, no 16-bit wrap).
+    if (dest != 0) state.s[dest] = v & M24;
 }
 
 /// X16_ALU[S[15]][S[18:16]](a, b), unmasked (fact 116, 119; psel too, 126).  Ops 0-3

@@ -6975,3 +6975,16 @@ test "class-05 shifts, the shifted add and Q23 at 24 bits (696)" {
         try testing.expectEqual(@as(u32, 0x200000), st.s[3]);
     }
 }
+
+test "mul13 multiplies 24x24 and the x16 ALU keeps 24 bits (697)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const sub = try asm_mod.assembleOne("x16.alu2 s3, s1, s2, #4, #1");
+    for ([_][3]u32{ .{ 0x400000, 1, 0x3FFFFF }, .{ 0x007FFF, 0xFF8000, 0x00FFFF } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = c[0];
+        st.s[2] = c[1];
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ sub.slice()[0], sub.slice()[1], sub.slice()[2] } ++ halt), 0, 8);
+        try testing.expectEqual(c[2], st.s[3]);
+    }
+}

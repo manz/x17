@@ -4658,7 +4658,7 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x16alu2",
-        // s3 <- s1 - s3 = 0xDDFE; s5 <- -s1 = 0xEEFF.
+        // s3 <- s1 - s3 = 0xFFDDFE; s5 <- -s1 = 0xFFEEFF (24 bits, 697); silicon read 16.
         .pre = &.{
             .{ .bank = .s, .index = 1, .value = 0x1101 },
             .{ .bank = .s, .index = 3, .value = 0x3303 },
@@ -4669,8 +4669,8 @@ const GATES = [_]Gate{
         \\x17.halt
         ,
         .post = &.{
-            .{ .s_reg = .{ .index = 3, .value = 0xDDFE } },
-            .{ .s_reg = .{ .index = 5, .value = 0xEEFF } },
+            .{ .s_reg = .{ .index = 3, .value = 0xDDFE, .mask = 0xFFFF } },
+            .{ .s_reg = .{ .index = 5, .value = 0xEEFF, .mask = 0xFFFF } },
         },
     },
     .{
