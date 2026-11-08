@@ -5537,3 +5537,20 @@ test "x19a3 s mux 5 reads X:[A<{w1[2:0], head[31:30]}>] before the A write; 4 an
         try testing.expectEqual(c.want, state.s[3]);
     }
 }
+
+test "x19a3st's s write takes 529's mux; the store reads the old s (fact 612)" {
+    const gpa = testing.allocator;
+    // Y:[e2] <- s<{w2[0], w1[31:29]}> = s15; s15 <- mux w1[17:15] (0 zero, 2 AGU3 fn 25 = 2 * 0xB0).
+    for ([_]struct { mux: u32, want: ?u32 }{ .{ .mux = 0, .want = 0 }, .{ .mux = 2, .want = 0x160 }, .{ .mux = 1, .want = null }, .{ .mux = 3, .want = null } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[2] = 0x700;
+        state.s[15] = 0x5555;
+        const r = emu.runFrom(gpa, &state, &.{ 0x01E00019, 0xE0000000 | c.mux << 15, 0x00000203, 0x659000B0, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[15]);
+            try testing.expectEqual(@as(?u32, 0x5555), state.getY(0x700));
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
