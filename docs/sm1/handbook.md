@@ -256,13 +256,15 @@ Measured idioms, cheapest first:
   path does not read what it writes; a loop's first bundles go there when the back edge jumps
   past them.
 - **Counted loop.** x03 with w2[28] = 1 is a jr by sext(w1[28:18]) on p<w5[17:14]>, any k:
-  w2[27] = 1 jumps if set, 0 if clear; w2[31:29] is ignored (§394, §679). w2[28] = 0 with
-  w2[27] = 1 jumps unconditionally (§329). Both delay slots run on every pass (§680). With
+  w2[27] = 1 jumps if set, 0 if clear; w2[31:29] is ignored (§394, §679). p0 reads 1, so k = 0
+  with w2[27] = 1 always jumps (§682). Both delay slots run on every pass (§680). With
   w2[28] = 1 the e counter e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1 also writes
   p3 <- (e > 0, signed 16) after the jump has read p (§675). So an offset-0 jump on p3 is a
   counted loop of three bundles (the x03 and its two slots): preset e = N - 1 and p3 = 1 for N
   passes (N >= 2), leaving p3 = 0 and e = -1. The x03's X store steps its A every pass, ending
-  at A + N. Measured on mode-0 store rows; the emulator refuses the jump on a MAC row. A halt in
+  at A + N. Measured on mode-0 store rows. On the x03 tap row the jump works with a nonzero
+  offset, but its counter's p3 write is not seen, so a jump to itself there never ends (§682):
+  a counted tap loop must be a jump over a longer body, or unrolled. A halt in
   a taken jump's delay slot still lets the target bundle run once before the stop (§681).
 - **Loops.** The counted loop above is the only zero-overhead loop, three bundles long. For
   longer bodies, a pcond on A against R plus a jmp whose two slots do work (§662) costs about

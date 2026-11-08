@@ -6717,3 +6717,33 @@ test "a halt in a taken jump's delay slot runs the target once, then stops (681)
         }
     }
 }
+
+test "x03 jumps: p0 reads 1; the tap row jumps on p3 with a nonzero offset, refuses jr +0 (682)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const nop: u32 = 0x40000005;
+    const add: u32 = 0x5802a9c5; // alu s5, s5, s6, #OP_ADD: runs only on the fall-through
+    const tap = [_]u32{ 0x80000003, 0x40006800 | (9 << 18), 0x00041485 | (3 << 27), 0x00000002, 0x00002c90, 0x00041202 | (3 << 14) };
+    const st0 = [_]u32{ 0x00000003, 0x60000002 | (9 << 18), 0x18106000, 0x85800008, 0x00004005, 0x001C0000 };
+    for ([_]struct { w: [6]u32, p: u32, k: usize, jumps: bool }{
+        .{ .w = tap, .p = 1, .k = 3, .jumps = true },
+        .{ .w = tap, .p = 0, .k = 3, .jumps = false },
+        .{ .w = st0, .p = 0, .k = 0, .jumps = true },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.p[c.k] = @intCast(c.p);
+        st.s[6] = 1;
+        st.e[11] = 5;
+        st.a[2] = 0x100;
+        st.a[8] = 0x300;
+        _ = try emu.runFrom(testing.allocator, &st, &(c.w ++ [_]u32{ nop, nop, add } ++ halt), 0, 50);
+        try testing.expectEqual(@as(u32, if (c.jumps) 0 else 1), st.s[5]);
+    }
+    // the tap row's jump to itself never ends: refused
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    st.p[3] = 1;
+    var w = tap;
+    w[1] &= ~@as(u32, 0x7FF << 18);
+    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &(w ++ [_]u32{ nop, nop } ++ halt), 0, 50));
+}
