@@ -2568,9 +2568,14 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         if (ld_dest == dest_s or ld_dest == (w2 >> 2) & 0xF or ld_dest == (w1 >> 4) & 0xF) return RunError.UnknownForm;
     }
     const dest_r: u32 = (w3 >> 7) & 0xF;
+    // The result also lands in A<2 * w1[3:0] + head[31]> (fact 345): measured with the and
+    // (A2 <- s12 & s11). A31 is not a plain register (649): refused.
+    const dest_a: u32 = ((w1 & 0xF) << 1) | (h >> 31);
+    if (dest_a == 31) return RunError.UnknownForm;
     if (dest_s != 0) state.s[dest_s] = v;
     if (ld_dest != 0) state.s[ld_dest] = ld_val;
     if (dest_r != 0) state.r[dest_r] = v & 0xFFFF;
+    if (dest_a != 0) state.a[dest_a] = v;
     if (((h >> 25) & 0xF) == 11) {
         if ((w2 >> 14) & 0xF == 0) return RunError.UnknownForm; // p0 write: unmeasured
         state.p[(w2 >> 14) & 0xF] = if (sx16(v) < 0) 1 else 0;

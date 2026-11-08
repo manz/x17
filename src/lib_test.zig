@@ -6899,7 +6899,7 @@ test "stx refuses A0 and A31 (649)" {
     }
 }
 
-test "x02's undoubled low product holds P mod 2^24 (655); x18.and masks it (644)" {
+test "x02's undoubled low product holds P mod 2^24 (655); x18.and masks it (644, 345)" {
     for ([_]struct { c: u32, d: u32, want: u32 }{
         .{ .c = 0x2AC, .d = 0xFFFF80, .want = 0xFEAA00 },
         .{ .c = 0x2AC, .d = 0x80, .want = 0x015600 },
@@ -6919,7 +6919,17 @@ test "x02's undoubled low product holds P mod 2^24 (655); x18.and masks it (644)
         _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
         try testing.expectEqual(t.want, st.s[12]);
         try testing.expectEqual(t.want & 0xFFFF, st.s[13]);
+        try testing.expectEqual(@as(u32, 0), st.a[2]); // the template writes no A (345)
     }
+    // w1[3:0] = 1 also writes A2 <- the result (345)
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    st.a[2] = 0x42;
+    st.s[12] = 0x1255;
+    st.s[11] = 0xFF;
+    _ = try emu.runFrom(testing.allocator, &st, &.{ 0x3a000018, 0x00018cb1, 0x00004030, 0x61d53805, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
+    try testing.expectEqual(@as(u32, 0x55), st.a[2]);
+    try testing.expectEqual(@as(u32, 0x55), st.s[12]);
 }
 
 test "ldy refuses e2 and reads e3 (650)" {

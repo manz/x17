@@ -1062,7 +1062,7 @@ Emulator:
 ### `x18.una`
 
 - Syllables: 4
-- Base: `1c000018` `00000001` `00004000` `61d53805`
+- Base: `1c000018` `00000000` `00004000` `61d53805`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -1078,7 +1078,7 @@ Emulator:
 ### `x18.and`
 
 - Syllables: 4
-- Base: `3a000018` `00018001` `00004000` `61d53805`
+- Base: `3a000018` `00018000` `00004000` `61d53805`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -1087,7 +1087,8 @@ Emulator:
 | b_s | s | s1 | [7:4] |
 
 > x18.and: the x18.una bundle with code head[30:25] = 0x1D and op w1[17:15] = 3: LOGIC(a, b)
-> = a & b (fact 644).  s<w1[11:8]> <- s<w2[5:2]> & s<w1[7:4]>.
+> = a & b (fact 644).  s<w1[11:8]> <- s<w2[5:2]> & s<w1[7:4]>.  Class 011 also writes the result
+> to A<2 * w1[3:0] + head[31]> (fact 345): both templates keep w1[3:0] = 0, head[31] = 0.
 
 ### `x18.xrd`
 
