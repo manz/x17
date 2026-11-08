@@ -2457,7 +2457,9 @@ Emulator:
 | cond | imm | head | [28:25] |
 
 > x18.pw: class 011 with w3[8] = w3[0] = 1, p<w2[17:14]> <- cond head[28:25]
-> of the slot result (fact 179 / own-x18pw-*).
+> of the slot result (fact 179 / own-x18pw-*).  w3[21] = 0 here, the measured side: in other
+> class-011 bundles (a product in the unary slot) w3[21] changes the p written (704), rule OPEN;
+> the emulator refuses those bundles on their other fields.
 
 ### `x18.c2x`
 

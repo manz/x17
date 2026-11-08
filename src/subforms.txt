@@ -605,7 +605,9 @@ x18.pclr   4   0x1C000018   0x00000000   0x00000022   0xCC114001
 x18.pfn    4   0x00000018   0x00000000   0x00000022   0xC0100001
 
 # x18.pw: class 011 with w3[8] = w3[0] = 1, p<w2[17:14]> <- cond head[28:25]
-# of the slot result (fact 179 / own-x18pw-*).
+# of the slot result (fact 179 / own-x18pw-*).  w3[21] = 0 here, the measured side: in other
+# class-011 bundles (a product in the unary slot) w3[21] changes the p written (704), rule OPEN;
+# the emulator refuses those bundles on their other fields.
 x18.pw     4   0x00000018   0x00000000   0x00000000   0x60000101
 
 # x18.c2x: class 010 X slot (fact 176 / own-x18c2x).
