@@ -40,6 +40,7 @@ const libs = [_]struct { path: []const u8, text: []const u8 }{
     .{ .path = "lib/huffman.sm", .text = @embedFile("huffman.sm") },
     .{ .path = "lib/sections.sm", .text = @embedFile("sections.sm") },
     .{ .path = "lib/dequant.sm", .text = @embedFile("dequant.sm") },
+    .{ .path = "lib/pcm.sm", .text = @embedFile("pcm.sm") },
     .{ .path = "lib/imdct.sm", .text = @embedFile("imdct.sm") },
     .{ .path = "lib/window.sm", .text = @embedFile("window.sm") },
     .{ .path = "lib/stereo.sm", .text = @embedFile("stereo.sm") },
@@ -6218,5 +6219,45 @@ test "aac stage bench report" {
             const ld = @as(f64, @floatFromInt(f[1] * ch)) * @as(f64, @floatFromInt(hz)) / 1024.0 * 37.4e-9;
             p("  {d} Hz x{d}: {d:.0}%\n", .{ hz, ch, 100 * ld });
         };
+    }
+}
+
+test "pcm_packet copies WAV and AIFF samples into the host ring, packet after packet" {
+    const host = @import("host");
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\.include "lib/bits.sm"
+        \\.include "lib/pcm.sm"
+        \\        bits_init(0x4000)
+        \\        pcm_packet()
+        \\        x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var prng = std.Random.DefaultPrng.init(0x9C3);
+    const rnd = prng.random();
+    for ([_]u32{ 1, 0 }) |little| {
+        var h = try host.Host.init(gpa, .{ .max_bundles = 1 << 24 });
+        defer h.deinit();
+        try h.state.y_mem.put(gpa, 0xFD81, little);
+        var want: std.ArrayList(i16) = .empty;
+        defer want.deinit(gpa);
+        // three packets: the ring flips 0, 1, 0; one is empty
+        for ([_]usize{ 300, 0, 2048 }) |n| {
+            var bytes = try gpa.alloc(u8, 2 * n);
+            defer gpa.free(bytes);
+            for (0..n) |k| {
+                const v: i16 = if (k == 0) -32768 else if (k == 1) 32767 else rnd.int(i16);
+                try want.append(gpa, v);
+                const u: u16 = @bitCast(v);
+                const hi: u8 = @intCast(u >> 8);
+                const lo: u8 = @truncate(u);
+                bytes[2 * k] = if (little == 1) lo else hi;
+                bytes[2 * k + 1] = if (little == 1) hi else lo;
+            }
+            const r = try h.feed(prog, bytes);
+            try testing.expectEqual(n, r.units);
+        }
+        try testing.expectEqualSlices(i16, want.items, h.pcm.items);
     }
 }

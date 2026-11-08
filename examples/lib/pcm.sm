@@ -1,0 +1,96 @@
+; PCM passthrough: one packet of 16-bit samples (WAV little-endian or AIFF big-endian) copied
+; into the host's output ring. Needs lib/bits.sm first; bits_init must point the
+; reader at the packet.
+;
+; Contract (OURS, on x17's host model, src/host.zig):
+;   Y:0x3FFF   packet length in bytes (host Q2 stub), even: whole 16-bit samples
+;   Y:0x4000   packet bytes, two per word, big-endian pairs (host Q2 stub)
+;   Y:0xFD81   sample byte order, OURS: 0 big-endian (AIFF), 1 little-endian (WAV)
+;   Y:0x3FF0   the ring entry this packet fills, OURS: 0 or 1, flipped per packet
+; Output: a ring of 2 buffers of 2048 units at Y:0x80, entry table at Y:0, status Y:0xFD94.
+; Samples stay interleaved as the file has them; the host takes them in order.
+;
+; Registers: s1 samples left, s2 = 8, s3 store source, s4 first byte, s5 sample count, s7 entry,
+; s8 byte order, e7 the output pointer, e6 address scratch; bits.sm scratch as it documents.
+; Cost: about 61 bundles per sample (2048-sample packet), 5% of 26.7 M/s at 44.1 kHz stereo.
+
+.const PCM_FMT   = 0xFD81
+.const PCM_ENTRY = 0x3FF0
+.const PCM_UNITS = 2048
+
+; Y word at a constant address: lde loads e directly (yld's ldi + mve sign-extends 0x8000 and up).
+.macro pcm_yld(dst, addr) {
+        lde e6, #addr
+        ldy dst, e6
+}
+
+.macro pcm_yst(addr) {
+        lde e6, #addr
+        x17.sty e6, #3, #0
+}
+
+.macro pcm_packet() {
+        pcm_yld(s1, 0x3FFF)
+        alu s2, s0, s14, #OP_SUB ; -1
+        x19.alu s1, s1, s2, #SHIFT ; samples = bytes / 2 (even, so exact)
+        pcm_yld(s8, PCM_FMT)
+        pcm_yld(s7, PCM_ENTRY)
+        ldi s3, #11
+        x19.alu s3, s7, s3, #SHIFT ; entry * 2048
+        ldi s12, #0x7F
+        alu s3, s3, s12, #OP_ADD ; buffer - 1
+        x17.mve e7, s3          ; e7 = Y:0x80 + entry * 2048
+        alu s5, s1, s0, #OP_ADD ; keep the sample count for the entry
+        ldi s2, #8
+pcm_loop:
+        alu s12, s1, s0, #OP_ADD
+        ptst p1, s0, #LE12, #PTST ; none left
+        jmp #3, #1, pcm_done
+        nop()
+        nop()
+        getbits(s4, 8)          ; first byte
+        getbits(s3, 8)          ; second byte
+        alu s12, s8, s0, #OP_ADD
+        ptst p1, s0, #EQ12, #PTST ; big-endian (after getbits, which uses p1)
+        jmp #3, #1, pcm_be
+        nop()
+        nop()
+        x19.alu s3, s3, s2, #SHIFT ; little-endian: hi = second byte
+        alu s3, s3, s4, #OP_ADD
+        jmp #IF_NOT, #2, pcm_put
+        nop()
+        nop()
+pcm_be: x19.alu s4, s4, s2, #SHIFT ; big-endian: hi = first byte
+        alu s3, s4, s3, #OP_ADD
+pcm_put:
+        x17.sty e7, #3, #0
+        x18.eagu e7, e7, #AGU_INC
+        alu s1, s1, s14, #OP_SUB
+        jmp #IF_NOT, #2, pcm_loop
+        nop()
+        nop()
+pcm_done:
+        ; ring shape
+        ldi s3, #2
+        pcm_yst(1)
+        ldi s3, #PCM_UNITS
+        pcm_yst(2)
+        ; entry: owned, length
+        alu s3, s7, s7, #OP_ADD
+        ldi s12, #4
+        alu s3, s3, s12, #OP_ADD ; 4 + 2 entry
+        x17.mve e6, s3          ; e6 = 5 + 2 entry
+        alu s3, s14, s0, #OP_ADD
+        x17.sty e6, #3, #0      ; owned
+        x18.eagu e6, e6, #AGU_INC
+        alu s3, s5, s0, #OP_ADD
+        x17.sty e6, #3, #0      ; length in units
+        ; next entry
+        alu s3, s14, s7, #OP_SUB
+        pcm_yst(PCM_ENTRY)
+        ; status header: output ready
+        ldi s3, #0
+        pcm_yst(0xFD95)
+        alu s3, s14, s0, #OP_ADD
+        pcm_yst(0xFD94)
+}

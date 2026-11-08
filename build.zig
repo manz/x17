@@ -145,6 +145,8 @@ pub fn build(b: *std.Build) void {
     lib_mod.addAnonymousImport("stereo.sm", .{ .root_source_file = b.path("examples/lib/stereo.sm") });
     lib_mod.addAnonymousImport("tns.sm", .{ .root_source_file = b.path("examples/lib/tns.sm") });
     lib_mod.addAnonymousImport("pns.sm", .{ .root_source_file = b.path("examples/lib/pns.sm") });
+    lib_mod.addAnonymousImport("pcm.sm", .{ .root_source_file = b.path("examples/lib/pcm.sm") });
+    lib_mod.addImport("host", host_mod);
     for ([_][]const u8{ "mono.at", "tone.at", "white24.at", "clicks.c0.ff", "clicks.o30.ff", "mono.at.int", "tone.at.int" }) |f| {
         lib_mod.addAnonymousImport(b.fmt("{s}.pkts", .{f}), .{ .root_source_file = b.path(b.fmt("testdata/alac/{s}.pkts", .{f})) });
     }
