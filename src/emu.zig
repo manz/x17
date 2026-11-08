@@ -3165,6 +3165,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 ///   R<w3[10:7]> <- (w2[25] ? AGU10 : AGU10B)[w1[27:24]](x, y).
 ///   X:[A<w2[21:17]>] <- s<w1[31:28]> when w2[23:22] = 11 (239); w1 class 000 is x19agu, so
 ///     the source is never s0.
+///   Y:[e<w3[28:25]>] <- s<w2[3:0]> when w2[26] = w2[16] = 1 (677); with w1[18] = 0 the engine
+///     wedges after the bundle, so that form is refused.
 /// x = e<w3[28:25]>, y = R<w3[14:11]>.  Muxes 3-5 are OPEN.
 fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const head = bundle[0];
@@ -3175,6 +3177,9 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const x: u32 = state.e[(w3 >> 25) & 0xF];
     const y: u32 = state.r[(w3 >> 11) & 0xF];
     const store_val: u32 = state.s[(w1 >> 28) & 0xF] & M24;
+    const y_store = (w2 >> 26) & 1 == 1 and (w2 >> 16) & 1 == 1;
+    if (y_store and (w1 >> 18) & 1 == 0) return RunError.UnknownForm;
+    const y_val: u32 = state.s[w2 & 0xF] & 0xFFFF;
     const kalu: bool = switch ((w1 >> 15) & 7) {
         5, 7 => true,
         else => false,
@@ -3191,6 +3196,7 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_r != 0) state.r[dest_r] = r_val;
     if ((w2 >> 22) & 3 == 3) state.x_mem.put(gpa, state.a[(w2 >> 17) & 0x1F], store_val) catch return RunError.OutOfMemory;
+    if (y_store) state.y_mem.put(gpa, x, y_val) catch return RunError.OutOfMemory;
 }
 
 /// x19k's w1[17:15] ALU (own-x19kalu m = 5: a - b; own-x19kabs m = 7: |b| over 16 bits).

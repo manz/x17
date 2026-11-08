@@ -6658,3 +6658,24 @@ test "x03 counted repeat: w2[28] counter writes p3 one pass late (675)" {
         try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &bad, 0, 8));
     }
 }
+
+test "x19k Y store: Y:[e<w3[28:25]>] <- s<w2[3:0]> on w2[26] and w2[16]; w1[18] = 0 refused (677)" {
+    const k = try asm_mod.assembleOne("x19.k00 s9, e3, R6, #1, #6, #0");
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    for ([_]u32{ 1, 0 }) |b18| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.e[3] = 0x100;
+        st.r[6] = 0x23;
+        st.s[5] = 0x4567;
+        const w1 = (k.slice()[1] & ~@as(u32, 1 << 18)) | (b18 << 18);
+        const w2 = (k.slice()[2] & ~@as(u32, 0xF)) | (1 << 26) | (1 << 16) | 5;
+        const prog = [_]u32{ k.slice()[0], w1, w2, k.slice()[3] } ++ halt;
+        const r = emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        if (b18 == 1) {
+            _ = try r;
+            try testing.expectEqual(@as(?u32, 0x4567), st.y_mem.get(0x100));
+            try testing.expectEqual(@as(u32, 0x123), st.s[9]);
+        } else try testing.expectError(emu.RunError.UnknownForm, r);
+    }
+}
