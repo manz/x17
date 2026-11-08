@@ -851,6 +851,25 @@ fn x03AccXIndex(bundle: []const u32) u32 {
 /// mode 4 P, 5 X + P, 6 P - X, 7 X - P; w1[15] = 1 adds 2^23 first, 0 floors.  Mode 5 takes
 /// X_lo unsigned (670).  Measured with
 /// w1[14] = 1 and w1[17:16] = 0 only, the operands signed (0x7000 * -0x123 floors to -1).
+/// The running MAC's accumulator (701): 48 bits, hi = acc[47:24] and lo = acc[23:0], both
+/// 24-bit, fed back as X = sx24(hi) << 24 + lo (unsigned); 24-bit signed operands, P = 2ab.
+/// A sum past 2^47 - 1 saturates to {0x7FFFFF, 0xFFFFFF}; the negative bound is unmeasured.
+fn mac48(x_hi: u32, x_lo: u32, a: u32, b: u32) RunError!i64 {
+    const acc: i64 = (@as(i64, sx24(x_hi)) << 24) + (x_lo & M24) + 2 * @as(i64, sx24(a)) * sx24(b);
+    if (acc < -(@as(i64, 1) << 47)) return RunError.UnknownForm;
+    return @min(acc, (@as(i64, 1) << 47) - 1);
+}
+
+/// x03 mode 5 with w1[15] = 0 and w1[17:16] = 0 (670's row): the 701 running MAC.
+fn x03Mac48(state: *const State, bundle: []const u32) RunError!?i64 {
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    if ((w1 >> 11) & 7 != 5 or (w1 >> 14) & 1 == 0 or (w1 >> 15) & 7 != 0) return null;
+    const x_hi_s = x03AccXIndex(bundle);
+    if (x_hi_s == 0) return RunError.UnknownForm;
+    return try mac48(state.s[x_hi_s], state.s[(bundle[5] >> 9) & 0xF], state.s[(w2 >> 1) & 0xF], state.s[(w2 >> 5) & 0xF]);
+}
+
 fn x03ProductHigh(state: *const State, bundle: []const u32) RunError!?SWrite {
     const w1 = bundle[1];
     const w2 = bundle[2];
@@ -858,11 +877,12 @@ fn x03ProductHigh(state: *const State, bundle: []const u32) RunError!?SWrite {
     if (dest == 0) return null;
     const mode: u32 = (w1 >> 11) & 0x7;
     if ((w1 >> 14) & 1 == 0 or (w1 >> 16) & 3 != 0 or mode < 4) return RunError.UnknownForm;
+    if (try x03Mac48(state, bundle)) |acc| return .{ .dest = dest, .value = @truncate(@as(u64, @bitCast(acc >> 24)) & M24) };
     const x_hi_s = x03AccXIndex(bundle);
     if (mode != 4 and x_hi_s == 0) return RunError.UnknownForm;
     const a_m: i64 = sx24(state.s[(w2 >> 1) & 0xF]);
     const b_m: i64 = sx24(state.s[(w2 >> 5) & 0xF]);
-    // The running sum (670) is measured with operands of 16-bit magnitude only.
+    // The rounded running sum (w1[15] = 1) is measured with 16-bit magnitudes only.
     if (mode == 5 and (a_m < -0x8000 or a_m > 0x7FFF or b_m < -0x8000 or b_m > 0x7FFF)) return RunError.UnknownForm;
     const prod: i64 = a_m * b_m;
     // Mode 5's X_lo is unsigned 24 (670: X_lo = 0x900000, P = 0 gives hi 0), so (hi, lo) fed
@@ -888,6 +908,7 @@ fn x03ProductLow(state: *const State, bundle: []const u32) RunError!?SWrite {
     if (dest == 0) return null;
     const mode: u32 = (w1 >> 11) & 0x7;
     if ((w1 >> 14) & 1 == 0 and mode != 4) return RunError.UnknownForm;
+    if (try x03Mac48(state, bundle)) |acc| return .{ .dest = dest, .value = @truncate(@as(u64, @bitCast(acc)) & M24) };
     const b15: u32 = (w1 >> 15) & 1;
     const b16: u32 = (w1 >> 16) & 1;
     const prod: i64 = mpyOperand(state.s[(w2 >> 1) & 0xF], b15 != b16) * mpyOperand(state.s[(w2 >> 5) & 0xF], b15 == 1);
@@ -2708,7 +2729,11 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     };
     var acc: i64 = 0;
     const mode: u32 = (w3 >> 4) & 7;
-    if (hi_dest != 0 or lo_dest != 0) {
+    // Mode 5 floor (w3[8] = 0): the 701 running MAC, 24-bit operands and a 48-bit acc.
+    const mac48_on = mode == 5 and (w3 >> 8) & 1 == 0;
+    if ((hi_dest != 0 or lo_dest != 0) and mac48_on) {
+        acc = try mac48(state.s[(w1 >> 28) & 0xF], state.s[w2 & 0xF], state.s[(w2 >> 24) & 0xF], state.s[(w2 >> 28) & 0xF]);
+    } else if (hi_dest != 0 or lo_dest != 0) {
         // a and b are measured at 16-bit magnitudes only (665): wider values refused.
         const a_v: i64 = sx24(state.s[(w2 >> 24) & 0xF]);
         const b_v: i64 = sx24(state.s[(w2 >> 28) & 0xF]);
@@ -2746,7 +2771,7 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const hi_u: u64 = @bitCast(acc_hi);
     if (xs_dest != 0) state.s[xs_dest] = xs_val;
     if (yd_new) |v| state.yd = v;
-    if (hi_dest != 0) state.s[hi_dest] = @truncate((hi_u >> 24) & 0xFFFF);
+    if (hi_dest != 0) state.s[hi_dest] = @truncate((hi_u >> 24) & (if (mac48_on) M24 else 0xFFFF));
     if (lo_dest != 0) state.s[lo_dest] = @truncate(acc_u & (if (mode == 5) M24 else 0xFFFF));
     if (alu_dest != 0) state.s[alu_dest] = alu_v;
 }

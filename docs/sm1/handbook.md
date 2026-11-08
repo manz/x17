@@ -27,7 +27,7 @@ firmware's own sm1 programs, and it does not reproduce `isa.toml`'s `[tables.*]`
   their operands before any slot writes (§47, §491).
 - Two data memories: **X** (24-bit words) and **Y** (16-bit halfwords), plus a 4-lane program
   memory.
-- A 24-bit data path, with a 40-bit multiply-accumulator (§203).
+- A 24-bit data path, with a 48-bit multiply-accumulator (§701).
 - Three address banks: **e** (Y addresses), **A** (X addresses) and **R** (modifiers). Several
   address units combine them: AGU10, AGU10B, AGU3, AGUA and agu_xr.
 - No interrupts, no traps, no flags register (none found). Hazards are the programmer's job.
@@ -80,7 +80,8 @@ configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2) a
 - **ax**: the dual-load X address (§58).
 - **xi**: the X index (§116).
 - **T**: a phase toggle (§180).
-- **MAC**: the 40-bit accumulator, read out as [39:24] and [15:0] (§203, §213).
+- **MAC**: the 48-bit accumulator, read out as hi = [47:24] and lo = [23:0] (§701). Older
+  readings of [39:24] and [15:0] were 16-bit dumps (§203, §213).
 
 **Index-0 conventions.** e index 0 in a store tail means "the previous word's [20:5]" (§466); some
 slots read Y:0 for e index 0 (§505).
@@ -177,8 +178,7 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
   holds 2P mod 2^24 (w1[17] = 0 on x02/x03) or P mod 2^24: signed 24-bit, not masked to 16
   (§655, §657, §663). Mask with x18.and when 16 bits are
   wanted. An X read into s0 is dropped (§652).
-- **MAC:** 40-bit accumulator; the widest measured (§203). The patent's 48 bits are corroboration
-  only.
+- **MAC:** 48-bit accumulator, saturating on overflow (§701).
 - **Shifter (op 23):** left shifts saturate; right shifts round half up. Counts of 24 or more
   saturate or shift everything out (§366, §515). `asrrs` rounds (§66).
 - **Adder code 4:** a right shift with rounding (§211, §549).
@@ -187,8 +187,8 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
   (asr b by a, no rounding, no saturation), code 7 (asrrs: rounds right, saturates left), codes
   22/31 (a logic table: xor, xnor, or, and, not a, a; code 22 then shifts left by w5[5:2]) and
   codes 32/34 (clear). w5[5] negates the shift count.
-- **Product accumulate (§603-§605, §600, §601).** x03's high product adds 2ab to a 40-bit
-  accumulator built from two s registers and takes [39:24], rounding half up on request. x18's
+- **Product accumulate (§603-§605, §600, §601).** x03's high product adds 2ab to the 48-bit
+  accumulator built from two s registers and takes [47:24], rounding half up on request. x18's
   class-110 multiply gives (2ab)>>24 doubled or integer, signed or unsigned. x18's MAC can add
   2^23 for round-to-nearest.
 - **x16alu post-op (§563, §564).** On the 3-syllable x16alu form with S2 class 111,
@@ -300,8 +300,12 @@ Measured idioms, cheapest first:
   and returns lo' = acc mod 2^24. With rounding off, hi' = floor(acc / 2^24), so feeding
   (hi', lo') back is an exact running sum: one bundle per tap, round once at the end. Two forms
   are measured: x18 class 111 as `x18.macf` (w3[8] = 0; `x18.mac` adds 2^23 to hi only, §665,
-  §668) and x03 mode 5 with w1[15] = 0 (§670). Measured with operands of 16-bit magnitude and a
-  small hi; the emulator refuses wider a and b on x18.
+  §668) and x03 mode 5 with w1[15] = 0 (§670). Both take full 24-bit signed a and b into a
+  48-bit acc (§701): hi and lo are 24 bits each, and the sum is exact while |sum| < 2^47. A sum
+  past 2^47 - 1 saturates to {0x7FFFFF, 0xFFFFFF}; the negative bound is unmeasured (refused).
+  x18 chains of 4 or more wedged after the program's stores, values intact; x03 did not, so
+  prefer x03 for long sums. The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
+  16-bit operands only.
 - **No computed jumps.** Every measured jump takes an immediate target: x00/x01 control
   relative and absolute (§230, §575), 0x04 (§304), §301/§302, and jmp/jmp-if (§661). None takes
   its target from a register or memory. Share code through absolute-jump dispatch, counted

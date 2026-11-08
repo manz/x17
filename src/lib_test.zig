@@ -7046,14 +7046,40 @@ test "x19alu's 32 ops are 24 bits wide (699)" {
     try testing.expectEqual(@as(u32, 0), bad);
 }
 
-test "x03 mode 5 refuses operands past 16-bit magnitude (670's measured range)" {
+test "the running MAC is 24x24 into a 48-bit saturating acc on both forms (701)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
-    const mac = [_]u32{ 0x80000003, 0x40006800, 0x01441485, 0x00000007, 0x00002c80, 0x00041202 };
-    var st = emu.State{};
-    defer st.deinit(testing.allocator);
-    st.s[2] = 0x20000; // an 18-bit difference
-    st.s[4] = 0x1000;
-    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &(mac ++ halt), 0, 8));
+    // x03 row: a s2, b s4, hi s10 (fed back), lo s9 (fed back).
+    const x03 = [_]u32{ 0x80000003, 0x40006800, 0x01441485, 0x00000007, 0x00002c80, 0x00041202 };
+    const m18 = try asm_mod.assembleOne("x18.macf s4, #5, s1, s2, s4, s6, s6");
+    const cases = [_]struct { a: i64, b: i64, n: usize }{
+        .{ .a = -0x7FFF, .b = 0x1FFFF, .n = 32 },
+        .{ .a = -0x7FFF, .b = -0x1FFFF, .n = 32 },
+        .{ .a = 0x123456, .b = 0x100, .n = 1 },
+        .{ .a = -0x200000, .b = 0x7FF, .n = 4 },
+        .{ .a = 0x7FFFFF, .b = 0x7FFFFF, .n = 1 },
+        .{ .a = -0x800000, .b = 0x400000, .n = 1 },
+        .{ .a = 0x7FFFFF, .b = 0x7FFFFF, .n = 2 }, // saturates
+    };
+    for (cases) |c| {
+        const true_sum: i64 = @min(@as(i64, @intCast(c.n)) * 2 * c.a * c.b, (@as(i64, 1) << 47) - 1);
+        const want_hi: u32 = @truncate(@as(u64, @bitCast(true_sum >> 24)) & 0xFFFFFF);
+        const want_lo: u32 = @truncate(@as(u64, @bitCast(true_sum)) & 0xFFFFFF);
+        for (0..2) |form| {
+            var st = emu.State{};
+            defer st.deinit(testing.allocator);
+            var prog: [32 * 6 + 3]u32 = undefined;
+            const blen: usize = if (form == 0) 6 else m18.slice().len;
+            for (0..c.n) |k| @memcpy(prog[k * blen ..][0..blen], if (form == 0) x03[0..] else m18.slice());
+            @memcpy(prog[c.n * blen ..][0..3], &halt);
+            const ra: usize = if (form == 0) 2 else 1;
+            const rb: usize = if (form == 0) 4 else 2;
+            st.s[ra] = @as(u32, @truncate(@as(u64, @bitCast(c.a)))) & 0xFFFFFF;
+            st.s[rb] = @as(u32, @truncate(@as(u64, @bitCast(c.b)))) & 0xFFFFFF;
+            _ = try emu.runFrom(testing.allocator, &st, prog[0 .. c.n * blen + 3], 0, 256);
+            try testing.expectEqual(want_hi, st.s[if (form == 0) 10 else 4]);
+            try testing.expectEqual(want_lo, st.s[if (form == 0) 9 else 6]);
+        }
+    }
 }
 
 test "x01.norm and x01.selneg on any registers (502, 666, 669)" {
