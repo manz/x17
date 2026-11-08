@@ -5605,3 +5605,26 @@ test "x19a3 stores X with w2[13:9] = 01101 at the A read before the A write (fac
         try testing.expectEqual(@as(u32, 0x500), state.a[1]);
     }
 }
+
+test "x10alu ignores head[31:30] and has no w1[14] gate (fact 614, 615)" {
+    const gpa = testing.allocator;
+    // own-x10alu0 0A0001D0 80A20017: R5 <- b - 1, b = s<head[29:26]>.
+    for ([_]struct { head: u32, w1: u32 = 0x80A20017, s2: u32 = 0x1234, s10: u32 = 0, want: u32 }{
+        .{ .head = 0x0A0001D0, .want = 0x1233 },
+        .{ .head = 0x4A0001D0, .want = 0x1233 },
+        .{ .head = 0x8A0001D0, .want = 0x1233 },
+        .{ .head = 0xCA0001D0, .want = 0x1233 },
+        .{ .head = 0x8A0001D0, .s2 = 0x0800, .want = 0x07FF },
+        // head[29] = 1: b = s10, w1[14] = 0 (615)
+        .{ .head = 0x2A0001D0, .w1 = 0x80A20017 & ~@as(u32, 1 << 14), .s10 = 0x0500, .want = 0x04FF },
+        .{ .head = 0xAA0001D0, .w1 = 0x80A20017 & ~@as(u32, 1 << 14), .s10 = 0x0500, .want = 0x04FF },
+        .{ .head = 0xEA0001D0, .w1 = 0x80A20017 & ~@as(u32, 1 << 14), .s10 = 0x2222, .want = 0x2221 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[2] = c.s2;
+        state.s[10] = c.s10;
+        _ = try emu.runFrom(gpa, &state, &.{ c.head, c.w1, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.r[5]);
+    }
+}
