@@ -2339,11 +2339,12 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // 5 P + X, 6 P - X, 7 X - P; 16 bits wide.  Measured in the doubled form only.
     const mode: u32 = (bundle[3] >> 18) & 7;
     // w3[21] = 0 with w3[13:10] != 0 takes the X term from that s register, at acc[47:24]
-    // (711: P + s6 = 0x20 + 0x666 = 0x686).  Measured: the fractional form, modes 5-7, the hi
-    // output; integer mode, the lo output and modes 0-3 are refused.
+    // (711: P + s6 = 0x20 + 0x666 = 0x686) in modes 1, 2 and 5-7 (711, 712); mode 3 ignores it
+    // and keeps xd, mode 0 stays 0.  Measured on the fractional hi output; integer mode (the
+    // field adds nothing to hi there, 712) and the lo output are refused.
     const x_reg: u32 = (bundle[3] >> 10) & 0xF;
-    const x_from_s = (bundle[3] >> 21) & 1 == 0 and x_reg != 0;
-    if (x_from_s and (integer or lo_dest != 0 or (hi_dest != 0 and mode != 4 and mode < 5))) return RunError.UnknownForm;
+    const x_from_s = (bundle[3] >> 21) & 1 == 0 and x_reg != 0 and mode != 3;
+    if (x_from_s and (integer or lo_dest != 0)) return RunError.UnknownForm;
     const hi_m: u32 = if (mode == 4 or hi_dest == 0) hi else blk: {
         if (integer) return RunError.UnknownForm;
         const x: i64 = if (x_from_s) @as(i64, sx24(state.s[x_reg])) << 24 else @as(i64, state.xd) << 32;

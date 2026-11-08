@@ -5817,3 +5817,31 @@ test "x18 class 110: w3[21] = 0 takes the hi MAC's X from s<w3[13:10]> (711)" {
     _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ base[0], base[1], base[2], w3 } ++ halt), 0, 8);
     try testing.expectEqual(@as(u32, 0x20), st.s[7]);
 }
+
+test "x18 class 110 field X in modes 1 and 2; mode 3 keeps xd; mode 0 is 0 (712)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const base = [_]u32{ 0x1E200018, 0x80005AA0, 0x00500E2B, 0xC0542C39 };
+    for ([_][2]u32{ .{ 1, 0x789 }, .{ 2, 0xFABD }, .{ 0, 0 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x123;
+        st.s[1] = 0x4000;
+        st.s[6] = 0x666;
+        const w3 = (base[3] & ~@as(u32, (7 << 18) | (0xF << 10))) | (c[0] << 18) | (6 << 10);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ base[0], base[1], base[2], w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c[1], st.s[7]);
+    }
+    // Mode 3 gives the same with and without the field.
+    var got: [2]u32 = undefined;
+    for (0..2) |k| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[6] = 0x666;
+        st.xd = 0x55;
+        const fld: u32 = if (k == 0) 6 << 10 else 0;
+        const w3 = (base[3] & ~@as(u32, (7 << 18) | (0xF << 10))) | (3 << 18) | fld;
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ base[0], base[1], base[2], w3 } ++ halt), 0, 8);
+        got[k] = st.s[7];
+    }
+    try testing.expectEqual(got[1], got[0]);
+}
