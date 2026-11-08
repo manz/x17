@@ -6875,3 +6875,25 @@ test "x18 class 110 hi output follows the mode w3[20:18], X the previous read (6
     try testing.expectEqual(@as(u32, 0x550C), st.s[4]);
     try testing.expectEqual(@as(u32, 0xE01A), st.xd);
 }
+
+test "one X latch: an x03 read sets the X that x18 class 110's mode uses; stores leave it (690)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    st.s[1] = 0x6000;
+    st.s[2] = 0x1000;
+    st.s[4] = 0x1000;
+    st.a[2] = 0x40;
+    st.a[7] = 0x40;
+    st.xd = 0x99;
+    try st.x_mem.put(testing.allocator, 0x40, 0x55);
+    // x03 tap read s2 <- X:[A2] (671), then x18 class 110 mode 5 into s4
+    const tap = [_]u32{ 0x80000003, 0x40006800, 0x01441485, 0x00000007, 0x00002c90, 0x00041202 };
+    const w3: u32 = (0xC1500001 & ~@as(u32, (7 << 18) | (1 << 24))) | (5 << 18);
+    const mpy = [_]u32{ 0x00000018, 0, (6 << 1) | (2 << 5) | (11 << 9), w3 };
+    st.s[6] = 0x6000;
+    _ = try emu.runFrom(testing.allocator, &st, &(tap ++ mpy ++ halt), 0, 8);
+    try testing.expectEqual(@as(u32, 0x55), st.xd);
+    // X part 0x55 << 8; P = 2 * 0x6000 * 0x55 = 0x3FC000 rounds to 0 at bit 24
+    try testing.expectEqual(@as(u32, 0x5500), st.s[11]);
+}

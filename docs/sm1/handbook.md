@@ -301,6 +301,9 @@ Measured idioms, cheapest first:
   m = 7 gives b < 0 ? b : i (§502).
 - **Free R load.** x18 class 011 with w3[3] = 1 writes #head[20:5] to R<w3[10:7]> beside its
   ALU slot (§688); an immediate of 0 clears it.
+- **Latches at entry.** One X read latch (xd) serves x03 and x18; the latest read sets it,
+  stores do not, and it carries from the previous run (§690). yd starts each run at a value
+  the program did not set. Read before relying on either.
 - **Constants.** ldi is 16 bits, sign-extended: 0xFFFF costs ldi plus two adds, or a mask.
   Compute constants once per loop, not per pass.
 - **Masks.** Every low product is 24 bits (§655, §657, §663): x18.and when 16 are wanted.
