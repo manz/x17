@@ -2343,9 +2343,21 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // and keeps xd, mode 0 stays 0.  Measured on the fractional hi output; integer mode (the
     // field adds nothing to hi there, 712) and the lo output are refused.
     const x_reg: u32 = (bundle[3] >> 10) & 0xF;
-    const x_from_s = (bundle[3] >> 21) & 1 == 0 and x_reg != 0 and mode != 3;
-    if (x_from_s and (integer or lo_dest != 0)) return RunError.UnknownForm;
-    const hi_m: u32 = if (mode == 4 or hi_dest == 0) hi else blk: {
+    const w21 = (bundle[3] >> 21) & 1 == 1;
+    const x_from_s = !w21 and x_reg != 0 and mode != 3;
+    // The lo output's X term (713), modes 5 (P + X) and 6 (P - X): X = s<w3[13:10]>, field 0
+    // the xd latch << 8 (as 709's s0).  Fractional with w3[21] = 0 sends the field to hi and
+    // lo is P alone; integer mode adds it whatever w3[21].  Mode 7 on lo, and integer mode
+    // with field 0, are unmeasured and refused.
+    const lo_m: u32 = if (lo_dest == 0 or (mode != 5 and mode != 6 and mode != 7)) lo else blk: {
+        if (!integer and !w21) break :blk lo;
+        if (mode == 7 or (integer and x_reg == 0)) return RunError.UnknownForm;
+        if (x_reg == 0 and state.xd > 0xFFFF) return RunError.UnknownForm;
+        const xl: u32 = if (x_reg != 0) state.s[x_reg] else state.xd << 8;
+        break :blk (if (mode == 5) lo +% xl else lo -% xl) & M24;
+    };
+    // Integer mode with the field (w3[21] = 0): hi has no X term at all (712, 713).
+    const hi_m: u32 = if (mode == 4 or hi_dest == 0 or (integer and x_from_s)) hi else blk: {
         if (integer) return RunError.UnknownForm;
         const x: i64 = if (x_from_s) @as(i64, sx24(state.s[x_reg])) << 24 else @as(i64, state.xd) << 32;
         const sp: i64 = (@as(i64, sx24(state.s[a_s])) * sx24(state.s[b_s])) << 1;
@@ -2361,7 +2373,7 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         const half: i64 = if ((bundle[3] >> 22) & 1 == 1 and mode != 3) 1 << 23 else 0;
         break :blk @as(u32, @truncate(@as(u64, @bitCast((acc + half) >> 24)))) & 0xFFFF;
     };
-    if (lo_dest != 0) state.s[lo_dest] = lo;
+    if (lo_dest != 0) state.s[lo_dest] = lo_m;
     if (hi_dest != 0) state.s[hi_dest] = hi_m;
 }
 

@@ -5845,3 +5845,34 @@ test "x18 class 110 field X in modes 1 and 2; mode 3 keeps xd; mode 0 is 0 (712)
     }
     try testing.expectEqual(got[1], got[0]);
 }
+
+test "x18 class 110 lo X term: s<w3[13:10]> in modes 5/6, xd << 8 for field 0 (713)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const h = [_]u32{ 0x1E200018, 0x80005AA0, 0x0C500E2B };
+    const base3: u32 = 0xC0542C39 & ~@as(u32, (1 << 24) | (1 << 21) | (7 << 18) | (0xF << 10));
+    const Case = struct { int: bool, w21: bool, mode: u32, field: u32, want: u32 };
+    for ([_]Case{
+        .{ .int = false, .w21 = true, .mode = 5, .field = 6, .want = 0x2AC6 },
+        .{ .int = false, .w21 = true, .mode = 6, .field = 6, .want = 0x1DFA },
+        .{ .int = false, .w21 = true, .mode = 5, .field = 13, .want = 0x323D },
+        .{ .int = false, .w21 = false, .mode = 5, .field = 6, .want = 0x2460 },
+        .{ .int = true, .w21 = true, .mode = 5, .field = 6, .want = 0x1896 },
+        .{ .int = true, .w21 = false, .mode = 6, .field = 6, .want = 0x0BCA },
+        .{ .int = true, .w21 = true, .mode = 5, .field = 13, .want = 0x200D },
+        .{ .int = false, .w21 = true, .mode = 5, .field = 0, .want = 0x2460 + 0x6B00 },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x123;
+        st.s[1] = 0x10;
+        st.s[6] = 0x666;
+        st.s[13] = 0xDDD;
+        st.xd = 0x6B;
+        const w3 = base3 | (@as(u32, @intFromBool(c.int)) << 24) | (@as(u32, @intFromBool(c.w21)) << 21) | (c.mode << 18) | (c.field << 10);
+        // Integer hi with w3[21] = 1 takes an X term not yet pinned: drop the hi dest there.
+        const w2 = if (c.int and c.w21) h[2] & ~@as(u32, 0xF << 9) else h[2];
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ h[0], h[1], w2, w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c.want, st.s[12]);
+        if (c.int and !c.w21) try testing.expectEqual(@as(u32, 0), st.s[7]);
+    }
+}
