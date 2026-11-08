@@ -61,7 +61,7 @@ configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2, �
 | e | 16 | 16 | Y addresses, wrap at 16 bits (§59, §88) |
 | R | 16 | 16 | modifiers; R0 is hardwired 0 (§88) |
 | A | 32 | 16+ | X addresses; A0 reads 0 (§122); tst sees A as 16-bit signed (§375); wider bits unknown |
-| p | 16 | 1 | predicates; p0 is hardwired true (§86) |
+| p | 16 | 1 | predicates; p0 is hardwired true (§86) and writes to it are undefined (after §608) |
 
 **Latches**, readable through slot muxes:
 
@@ -142,6 +142,14 @@ a violated distance gives a lost or wrong value, never a trap.
   saturate or shift everything out (§366, §515). `asrrs` rounds (§66).
 - **Adder code 4:** a right shift with rounding (§211, §549).
 - **|b|** exists (§238). **norm(b)** returns the redundant sign bits at 24-bit width (§502).
+- **Third-slot ops on x02 (§627, §628).** Besides the adder codes, the third slot runs code 6
+  (asr b by a, no rounding, no saturation), code 7 (asrrs: rounds right, saturates left), codes
+  22/31 (a logic table: xor, xnor, or, and, not a, a; code 22 then shifts left by w5[5:2]) and
+  codes 32/34 (clear). w5[5] negates the shift count.
+- **Product accumulate (§603-§605, §600, §601).** x03's high product adds 2ab to a 40-bit
+  accumulator built from two s registers and takes [39:24], rounding half up on request. x18's
+  class-110 multiply gives (2ab)>>24 doubled or integer, signed or unsigned. x18's MAC can add
+  2^23 for round-to-nearest.
 - **x16alu post-op (§563, §564).** On the 3-syllable x16alu form with S2 class 111,
   head[30:25] selects a post-operation and S2[7:4] a shift count n. The operation is a shift
   (left, arithmetic right, or rounded right) of the native ALU result, of a logic result, of a or
@@ -153,7 +161,8 @@ Other rounding modes: unknown.
 
 ## 8. Address generation
 
-**Units.** AGU10, AGU10B, AGU3 and AGUA are 16-entry tables. They hold only add, subtract, ±1,
+**Units.** AGU10, AGU10B, AGU10Q, AGU3 and AGUA are 16-entry tables. AGU10Q adds a third input
+q = e<k>: q, q+1, y-q, q-y, y-q±1 (§636); AGU10B is AGU10Q with q = 0. They hold only add, subtract, ±1,
 negate and immediate, plus one AGUA entry, (x-1)//2+i (§109, §120, §144, §149). agu_xr is the
 one-A, one-R adder that x02, x03, x16alu and x19agu share (§338, §403). Post-modify slots exist
 (§100, §157).
@@ -166,8 +175,14 @@ one-A, one-R adder that x02, x03, x16alu and x19agu share (§338, §403). Post-m
     otherwise                 ->  sum
 
 Measured on x02's A-slot sum and its R slot, and on x16alu's R slot. This is circular-buffer
-addressing for buffers of length M, provided each step moves by less than M. Whether x02's second A
-write (sum + A) wraps before or after its add is undefined. No bit-reversed mode has been measured.
+addressing for buffers of length M, provided each step moves by less than M. x02's second A
+write wraps the sum, then adds A unwrapped (§626). No bit-reversed mode has been measured.
+
+**Byte loads.** x19agu's and x16agu's s mux 3 load Y[7:0] << 8 (§637, §638); x19agu only with
+its w2[26] gate.
+
+**Immediates into A.** ldi2 and ytst heads also load their immediate into an A register (§634,
+§635); A0 is never written there (*inferred*).
 
 **Widths.** Y addresses are 16 bits; e and R wrap at 16 (§5, §88). A's width beyond 16 bits is
 unknown.
@@ -185,6 +200,10 @@ unknown.
   The wide-bundle jump's offset is sx15({w2[0], w1[31:18]}) from q (§575); its condition
   field w4[31:28] is defined only at 0, always taken; the other codes read hidden state that
   earlier runs change, not p1..p15 (§578).
+- **Unconditional relative jump:** jr2 runs a head ALU word and jumps to q + 2·sx14(w1[18:5])
+  (§617).
+- **Bit tests:** ptst op 0x1E sets p from (a & b) != 0, measured against s10 and s12 only
+  (§632, §633).
 - **Loops:** "repeat this bundle while p" (§263, §452). DO-style hardware loops were disproved
   (§71, §449).
 - **Calls and returns:** undefined (§230, §310).
@@ -232,8 +251,7 @@ guessing.
 - Head low5 0x1A-0x1F; ops 0-3 of the x16 ALU (they wedge).
 - Calls and returns; how pass 2 is entered; mirrors and wrap at the top of each space.
 - Whether the halt deadline counts words or cycles.
-- Modulo or bit-reversed modes outside agu_xr's wrap-once; the order of x02's second A write
-  against the wrap.
+- Modulo or bit-reversed modes outside agu_xr's wrap-once.
 - x16alu post-op cells outside the six measured (op, S1[15]) rows.
 - Every bit a form's reference entry marks OPEN, and every bit it marks as a wedge gate.
 - Power-on register values.
