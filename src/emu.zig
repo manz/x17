@@ -2817,8 +2817,9 @@ fn x19KAlu(state: *const State, w1: u32, w3: u32) u32 {
 /// Y:[e<w3[28:25]>] <- s<{w2[0], w1[31:29]}>.
 /// Also runs the s slot: s<head[24:21]> <- by 529's mux w1[17:15]: 0 zero, 2 AGU3[w3[24:20]](x =
 /// A<w3[19:15]>) (612, measured with w1[31:29] = 0 and 7; 1-6 INFERRED); other muxes refused.
-/// The store reads s before that write.  Unmodelled slots refuse when they have a dest:
-/// w1[31:29] = 7's A<w1[26:22]> <- AGU3 and e<w1[6:3]> <- #imm (339), the others' R<w1[14:11]>.
+/// The store reads s before that write.  w1[31:29] = 7: e<w1[6:3]> <- #head[20:5] (148), and
+/// A<w1[26:22]> (x99 only) refuses with a dest; other values: R<w1[14:11]> <- AGU10[w1[10:7]](
+/// e<w3[28:25]>, R<w1[21:18]>) (144, 149).
 fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const src_s: u32 = ((bundle[2] & 1) << 3) | ((bundle[1] >> 29) & 0x7);
     const addr_e: u32 = (bundle[3] >> 25) & 0xF;
@@ -2826,9 +2827,11 @@ fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const w3 = bundle[3];
     const dest_s: u32 = (bundle[0] >> 21) & 0xF;
     const w1 = bundle[1];
-    if (w1 >> 29 == 7) {
-        if ((w1 >> 22) & 0x1F != 0 or (w1 >> 3) & 0xF != 0) return RunError.UnknownForm;
-    } else if ((w1 >> 11) & 0xF != 0) return RunError.UnknownForm;
+    const c7 = w1 >> 29 == 7;
+    if (c7 and (w1 >> 22) & 0x1F != 0) return RunError.UnknownForm;
+    const e_dest: u32 = if (c7) (w1 >> 3) & 0xF else 0;
+    const r_dest: u32 = if (c7) 0 else (w1 >> 11) & 0xF;
+    const r_val: u32 = if (r_dest == 0) 0 else try agu10Eval((w1 >> 7) & 0xF, state.e[addr_e], state.r[(w1 >> 18) & 0xF]);
     const s_val: u32 = if (dest_s == 0) 0 else switch ((w1 >> 15) & 7) {
         0 => 0,
         2 => agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], 0, 2 * (w3 & 0x7FFF)),
@@ -2836,6 +2839,8 @@ fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     };
     state.y_mem.put(gpa, state.e[addr_e], v) catch return RunError.OutOfMemory;
     if (dest_s != 0) state.s[dest_s] = s_val;
+    if (e_dest != 0) state.e[e_dest] = (bundle[0] >> 5) & 0xFFFF;
+    if (r_dest != 0) state.r[r_dest] = r_val;
 }
 
 /// x19a3, classes (0,0,3) (fact 149, 529): with x = A<w3[19:15]>, y = R<w1[21:18]>, i =
@@ -2844,7 +2849,6 @@ fn execX19A3St(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
 /// 4 (D << 7)[15:0] (611; 4 and 7 from the x99 sweep), 3 and 6 OPEN.  R<w1[14:11]> <-
 /// AGU10[w1[10:7]](e<w3[28:25]>, y).  All read before any writes.
 fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
     const head = bundle[0];
     const w1 = bundle[1];
     const w3 = bundle[3];
@@ -2861,9 +2865,15 @@ fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         else => return RunError.UnknownForm,
     };
     const r_val = try agu10Eval((w1 >> 7) & 0xF, state.e[(w3 >> 25) & 0xF], y);
+    // w2[13:9] = 01101 also stores X:[A<{w1[2:0], head[31:30]}>] <- sx24 s<w2[8:5]>, the A
+    // read before the A write (613); other w2[13:9] values store nothing seen.
+    const w2 = bundle[2];
+    const x_addr: u32 = state.a[((w1 & 7) << 2) | (head >> 30)];
+    const x_st: ?u32 = if ((w2 >> 9) & 0x1F == 0b01101) state.s[(w2 >> 5) & 0xF] & M24 else null;
     const dest_a: u32 = (head >> 25) & 0x1F;
     if (dest_a != 0) state.a[dest_a] = agu;
     state.s[(head >> 21) & 0xF] = s_val;
+    if (x_st) |v| state.x_mem.put(gpa, x_addr, v) catch return RunError.OutOfMemory;
     const dest_r: u32 = (w1 >> 11) & 0xF;
     if (dest_r != 0) state.r[dest_r] = r_val;
 }

@@ -5547,7 +5547,7 @@ test "x19a3st's s write takes 529's mux; the store reads the old s (fact 612)" {
         .{ .mux = 1, .want = null },
         .{ .mux = 3, .want = null },
         .{ .mux = 0, .extra = 3 << 22, .want = null }, // class 7's A<w1[26:22]> slot: unmodelled
-        .{ .mux = 0, .extra = 3 << 3, .want = null }, // class 7's e<w1[6:3]> slot: unmodelled
+
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -5562,18 +5562,46 @@ test "x19a3st's s write takes 529's mux; the store reads the old s (fact 612)" {
     }
 }
 
-test "x19a3st with w1[31:29] != 7 refuses an R<w1[14:11]> dest (after fact 612)" {
+test "x19a3st's R slot (w1[31:29] != 7) and class 7's e slot (fact 144, 148, 149, 613)" {
     const gpa = testing.allocator;
-    // Store s5 (w1[31:29] = 5, w2[0] = 0); R<w1[14:11]> = R3 is unmodelled here.
-    for ([_]struct { w1: u32, ok: bool }{ .{ .w1 = 0xA0000000, .ok = true }, .{ .w1 = XXXXXXXX, .ok = false } }) |c| {
+    // Store s5 or s7 at Y:[e2 = 0x700].  w1[31:29] = 5: R3 <- AGU10[2](e2) = 0x701.
+    // w1[31:29] = 7: e3 <- #head[20:5] = 0x1234.
+    {
         var state = emu.State{};
         defer state.deinit(gpa);
         state.e[2] = 0x700;
         state.s[5] = 0x1357;
-        const r = emu.runFrom(gpa, &state, &.{ 0x00000019, c.w1, 0x00000202, 0x659000B0, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
-        if (c.ok) {
-            _ = try r;
-            try testing.expectEqual(@as(?u32, 0x1357), state.getY(0x700));
-        } else try testing.expectError(error.UnknownForm, r);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000019, 0xA0001900, 0x00000202, 0x659000B0, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(?u32, 0x1357), state.getY(0x700));
+        try testing.expectEqual(@as(u32, 0x701), state.r[3]);
+    }
+    {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[2] = 0x700;
+        state.s[7] = 0x2468;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00024699, 0xE0000018, 0x00000202, 0x659000B0, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(?u32, 0x2468), state.getY(0x700));
+        try testing.expectEqual(@as(u32, 0x1234), state.e[3]);
+    }
+}
+
+test "x19a3 stores X with w2[13:9] = 01101 at the A read before the A write (fact 613)" {
+    const gpa = testing.allocator;
+    // 43e00019 08010000 00001b24 68580000: A1 is the store index and the dest (A1 <- A16).
+    for ([_]struct { w2: u32 = 0x00001B24, a1: u32, s9: u32, want: ?u32 }{
+        .{ .a1 = 0x380, .s9 = 0x4321, .want = 0x004321 },
+        .{ .a1 = 0x3A0, .s9 = 0xFF8765, .want = 0xFF8765 },
+        .{ .w2 = 0x00000B24, .a1 = 0x380, .s9 = 0x4321, .want = null }, // w2[12] = 0: no store
+        .{ .w2 = 0x00003B24, .a1 = 0x380, .s9 = 0x4321, .want = null }, // w2[13:9] = 11101: not claimed
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[1] = c.a1;
+        state.a[16] = 0x500;
+        state.s[9] = c.s9;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x43E00019, 0x08010000, c.w2, 0x68580000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.want, state.readX(c.a1));
+        try testing.expectEqual(@as(u32, 0x500), state.a[1]);
     }
 }
