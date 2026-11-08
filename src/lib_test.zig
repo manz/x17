@@ -7247,3 +7247,84 @@ test "x18 class 111 Y-side tap: load, e step and exact MAC in one bundle (703)" 
         try testing.expectEqual(@as(u32, 0x100 + @as(u32, @intCast(n))), st.e[3]);
     }
 }
+
+test "two-pointer taps: x19ld + x03.tap and x02 load + x18.ytap, primed, exact (705)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    var prng = std.Random.DefaultPrng.init(705);
+    const rnd = prng.random();
+    // Pair B: s4 <- Y:[e2], e2 += 1 (sign-extended); then x03.tap s2, #2, s4, s10, s9.
+    const yl = try asm_mod.assembleOne("x19.ldn s4, #1, e2, #2");
+    try testing.expectEqualSlices(u32, &.{ 0x00000019, 0x00100129, 0x00001000, 0xE4000403 }, yl.slice()[0..4]);
+    const yld = yl.slice()[0..4].*;
+    const tb = try asm_mod.assembleOne("x03.tap s2, #2, s4, s10, s9");
+    // Pair A: s2 <- X:[A9], A9 += 1; then x18.ytap s1, e3, s2, s4, s6 (Y zero-extends).
+    const xld = [_]u32{ 0x00000002, 0x0002A000, 0x00120000, 0x00000009, 0x40522810, 0x00004223 };
+    const ta = try asm_mod.assembleOne("x18.ytap s1, e3, s2, s4, s6");
+    for (0..2) |pair| for (0..20) |_| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        var c: [32]i64 = undefined;
+        var d: [33]i64 = undefined;
+        for (0..33) |k| {
+            d[k] = if (pair == 0) rnd.intRangeAtMost(i64, -0x20000, 0x1FFFF) else rnd.intRangeAtMost(i64, 0, 0xFFFF);
+            if (pair == 0)
+                try st.x_mem.put(testing.allocator, @intCast(0x300 + k), @as(u32, @truncate(@as(u64, @bitCast(d[k])))) & 0xFFFFFF)
+            else
+                try st.y_mem.put(testing.allocator, @intCast(0x300 + k), @intCast(d[k]));
+        }
+        for (0..32) |k| {
+            c[k] = if (pair == 0) rnd.intRangeAtMost(i64, -0x8000, 0x7FFF) else rnd.intRangeAtMost(i64, -0x8000, 0x7FFF);
+            if (pair == 0)
+                try st.y_mem.put(testing.allocator, @intCast(0x500 + k), @as(u32, @truncate(@as(u64, @bitCast(c[k])))) & 0xFFFF)
+            else
+                try st.x_mem.put(testing.allocator, @intCast(0x500 + k), @as(u32, @truncate(@as(u64, @bitCast(c[k])))) & 0xFFFFFF);
+        }
+        var prog: [33 * 10 + 3]u32 = undefined;
+        var n: usize = 0;
+        const tap = if (pair == 0) tb.slice() else ta.slice();
+        const ld: []const u32 = if (pair == 0) &yld else &xld;
+        @memcpy(prog[n..][0..tap.len], tap); // prime: MAC 0 * 0, loads d[0]
+        n += tap.len;
+        for (0..32) |_| {
+            @memcpy(prog[n..][0..ld.len], ld);
+            n += ld.len;
+            @memcpy(prog[n..][0..tap.len], tap);
+            n += tap.len;
+        }
+        @memcpy(prog[n..][0..3], &halt);
+        if (pair == 0) {
+            st.a[2] = 0x300;
+            st.e[2] = 0x500;
+        } else {
+            st.e[3] = 0x300;
+            st.a[9] = 0x500;
+        }
+        _ = try emu.runFrom(testing.allocator, &st, prog[0 .. n + 3], 0, 512);
+        var want: i64 = 0;
+        for (0..32) |k| want += 2 * c[k] * d[k];
+        const hi: u32 = if (pair == 0) st.s[10] else st.s[4];
+        const lo: u32 = if (pair == 0) st.s[9] else st.s[6];
+        try testing.expectEqual(want, (@as(i64, @as(i24, @bitCast(@as(u24, @truncate(hi))))) << 24) + lo);
+        if (pair == 0) {
+            try testing.expectEqual(@as(u32, 0x300 + 33), st.a[2]);
+            try testing.expectEqual(@as(u32, 0x500 + 32), st.e[2]);
+        }
+    };
+}
+
+test "Y 0x8000: x18.ytap zero-extends, x19.ldn sign-extends and stores nothing (705)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const yt = try asm_mod.assembleOne("x18.ytap s1, e3, s2, s4, s6");
+    const ln = try asm_mod.assembleOne("x19.ldn s4, #1, e2, #2");
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    try st.y_mem.put(testing.allocator, 0x40, 0x8000);
+    try st.y_mem.put(testing.allocator, 0x41, 0x1234);
+    st.e[3] = 0x40;
+    st.e[2] = 0x40;
+    st.v[0] = 0x777;
+    _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ yt.slice()[0], yt.slice()[1], yt.slice()[2], yt.slice()[3], ln.slice()[0], ln.slice()[1], ln.slice()[2], ln.slice()[3] } ++ halt), 0, 8);
+    try testing.expectEqual(@as(u32, 0x008000), st.s[1]);
+    try testing.expectEqual(@as(u32, 0xFF8000), st.s[4]);
+    try testing.expectEqual(@as(?u32, 0x1234), st.getY(0x41));
+}

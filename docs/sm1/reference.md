@@ -1926,7 +1926,8 @@ Emulator:
 >   e<2*w1[2:0] + head[31]> <- AGU10[w1[10:7]](x = e<src>, y = e<src>)
 >   st.y Y:[e<new>] <- v[cur_lane]
 > w1[3] = 1 is the measured enable; w3 bakes class 111 + the low 12 bits
-> measured on the gate.
+> measured on the gate.  The load sign-extends (705).  x19.ldn sets w1[20] and w1[5] and does
+> not store; which bit gates the store is OPEN.
 
 ### `x17.cont`
 
@@ -3688,4 +3689,20 @@ Emulator:
 > sL is the head slot (mux w1[14:12] = 5, w2[22:21] = 01) and the multiplicand w2[27:24]; eN the
 > Y address w3[28:25] and the e slot w1[23:20]; sHi/sLo written and fed back.  x18 MAC chains
 > of 3 or more wedged after the program's stores (701); runs of this tap did not.
+
+### `x19.ldn`
+
+- Syllables: 4
+- Base: `00000019` `00100028` `00000000` `e0000403`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| dest_s | s | s2 | [13:10] |
+| dest_e_half | imm | s1 | [2:0] |
+| y_src_e | e | s3 | [28:25] |
+| fn_op | imm | s1 | [10:7] |
+
+> x19.ldn: x19.ld with w1[20] = w1[5] = 1 (fact 705): the load (sign-extended) and the e step,
+> no store.  s<w2[13:10]> <- Y:[e<w3[28:25]>]; e<2*w1[2:0] + head[31]> <- AGU10[w1[10:7]](e).
+> The Y-side coefficient load beside x03.tap.
 

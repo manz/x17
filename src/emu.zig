@@ -3780,9 +3780,18 @@ fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const y_src_e: u32 = (w3 >> 25) & 0xF;
     const fn_op: u32 = (w1 >> 7) & 0xF;
 
-    // 1) Load from Y memory using the pre-state element register.
+    // w1 outside its operand fields: 0x8 is 143's word, which stores; 0x100028 is 705's, which
+    // does not (its exact sums leave Y:[e+1] alone).  Which of w1[20] / w1[5] gates the store is
+    // OPEN, so other patterns are refused.
+    const store: bool = switch (w1 & ~@as(u32, 0x787)) {
+        0x8 => true,
+        0x100028 => false,
+        else => return RunError.UnknownForm,
+    };
+
+    // 1) Load from Y memory using the pre-state element register, sign-extended (705).
     const src_e_val: u32 = if (y_src_e == 0) 0 else state.e[y_src_e];
-    const loaded: u32 = state.getY(src_e_val) orelse 0;
+    const loaded: u32 = sx16To24((state.getY(src_e_val) orelse 0) & 0xFFFF);
     state.s[dest_s] = loaded;
 
     // 2) AGU update: feed the same source register as x and y, then write back.
@@ -3790,6 +3799,7 @@ fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     state.e[dest_e] = new_e;
 
     // 3) Store this lane's V to Y:[new_e].
+    if (!store) return;
     const v = state.v[state.cur_lane & 0x3];
     state.y_mem.put(gpa, new_e, v) catch return RunError.OutOfMemory;
 }
