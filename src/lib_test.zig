@@ -5789,3 +5789,25 @@ test "ytst stores X with S1[8] and S1[3]; head[29] and head[24:21] refuse (fact 
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x02's third slot with head code 7 is asrrs, w5[5] negating the count (fact 627)" {
+    const gpa = testing.allocator;
+    // s3 <- asrrs(s5 = 0x3303 by s4); low 16 bits as measured.
+    const neg = [_][2]i32{ .{ 0, 0x3303 }, .{ 1, 0x6606 }, .{ 2, 0xCC0C }, .{ 4, 0x3030 }, .{ 7, 0x8180 }, .{ 8, 0x0300 }, .{ 9, 0x0600 }, .{ 12, 0xFFFF }, .{ 20, 0xFFFF }, .{ -8, 0x33 }, .{ -1, 0x1982 } };
+    const pos = [_][2]i32{ .{ 4, 0x0330 }, .{ -1, 0x6606 } };
+    for ([_]struct { w5: u32, rows: []const [2]i32 }{
+        .{ .w5 = 0xc00200B0, .rows = &neg },
+        .{ .w5 = 0xc0020090, .rows = &pos },
+        .{ .w5 = 0xc00201DC, .rows = &pos }, // w5[8:6], w5[4:2] inert
+    }) |c| for (c.rows) |r| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[5] = 0x3303;
+        state.s[4] = @as(u32, @bitCast(r[0])) & 0xFFFFFF;
+        _ = try runX02(gpa, &state, .{ 0x010650E2, 0x00002048, 0x00001432, 0x00000000, 0xD5000480, c.w5 });
+        try testing.expectEqual(@as(u32, @intCast(r[1])), state.s[3] & 0xFFFF);
+    };
+    var o = emu.State{};
+    defer o.deinit(gpa);
+    try testing.expectError(error.UnknownForm, runX02(gpa, &o, .{ 0x010650E2, 0x00002048, 0x00001432, 0x00000000, 0xD5000480, 0xc0030090 }));
+}

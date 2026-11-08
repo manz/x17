@@ -1495,7 +1495,17 @@ fn execX02X3Pre(gpa: std.mem.Allocator, state: *State, bundle: []const u32, s_pr
     const w5 = bundle[5];
     const dest_s: u32 = ((w5 & 3) << 2) | (w4 >> 30);
     if (dest_s == 0) return;
-    if (ALU05[(bundle[0] >> 5) & 0x3F] != .add) return RunError.UnknownForm;
+    const code: u32 = (bundle[0] >> 5) & 0x3F;
+    if (code == 7) {
+        // 627: asrrs, b = s<w4[29:26]> by a = s<w4[25:22]>, negated when w5[5]; w5[8:6] and
+        // w5[4:2] inert.  w5[16] = 1 unmeasured.
+        if ((w5 >> 16) & 1 == 1) return RunError.UnknownForm;
+        const a: u32 = s_pre[(w4 >> 22) & 0xF] & M24;
+        const n: u32 = if ((w5 >> 5) & 1 == 1) (0 -% a) & M24 else a;
+        state.s[dest_s] = alu05Shift(n, s_pre[(w4 >> 26) & 0xF] & M24, .asrrs);
+        return;
+    }
+    if (ALU05[code] != .add) return RunError.UnknownForm;
     state.s[dest_s] = try x02X3Value(bundle, s_pre);
 }
 
