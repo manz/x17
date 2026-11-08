@@ -302,3 +302,9 @@ test "x03.tap round-trips, and a word whose tied fields disagree is not a tap" {
         try testing.expect(!std.mem.startsWith(u8, buf[0..n], "x03.tap"));
     } else |_| {}
 }
+
+test "x18.ytap round-trips" {
+    const t = try roundTrip("x18.ytap s3, e5, s7, s12, s11");
+    defer testing.allocator.free(t);
+    try testing.expectEqualStrings("x18.ytap s3, e5, s7, s12, s11", t);
+}

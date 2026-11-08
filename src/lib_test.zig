@@ -7224,3 +7224,26 @@ test "x03.tap0 starts the sum: 2ab, the X registers ignored (702)" {
         try testing.expectEqual(c[3], st.s[9]);
     }
 }
+
+test "x18 class 111 Y-side tap: load, e step and exact MAC in one bundle (703)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const t = try asm_mod.assembleOne("x18.ytap s1, e3, s2, s4, s6");
+    try testing.expectEqualSlices(u32, &.{ 0x1C200018, 0x42375007, 0x21326006, 0xE60700D4 }, t.slice()[0..4]);
+    const tap = t.slice()[0..4].*;
+    const want = [_][2]u32{ .{ 0x111, 0 }, .{ 0x222, 0x222000 }, .{ 0x333, 0x666000 } };
+    for (1..4) |n| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        for ([_]u32{ 0x111, 0x222, 0x333 }, 0..) |v, i| try st.y_mem.put(testing.allocator, @intCast(0x100 + i), v);
+        st.e[3] = 0x100;
+        st.s[2] = 0x1000;
+        var prog: [3 * 4 + 3]u32 = undefined;
+        for (0..n) |k| prog[4 * k ..][0..4].* = tap;
+        prog[4 * n ..][0..3].* = halt;
+        _ = try emu.runFrom(testing.allocator, &st, prog[0 .. 4 * n + 3], 0, 16);
+        try testing.expectEqual(want[n - 1][0], st.s[1]);
+        try testing.expectEqual(want[n - 1][1], st.s[6]);
+        try testing.expectEqual(@as(u32, 0), st.s[4]);
+        try testing.expectEqual(@as(u32, 0x100 + @as(u32, @intCast(n))), st.e[3]);
+    }
+}

@@ -1411,3 +1411,12 @@ x03.tap0	=An	A	0	4	s3
 x03.tap0	=sHi	imm	29	31	s1
 x03.tap0	=sHi>>3	imm	0	0	s2
 x03.tap0	=sLo	s	9	12	s5
+x18.ytap	sL	s	21	24	head
+x18.ytap	eN	e	25	28	s3
+x18.ytap	sB	s	28	31	s2
+x18.ytap	sHi	s	0	3	s3
+x18.ytap	sLo	s	12	15	s2
+x18.ytap	=sL	s	24	27	s2
+x18.ytap	=eN	e	20	23	s1
+x18.ytap	=sHi	s	28	31	s1
+x18.ytap	=sLo	s	0	3	s2

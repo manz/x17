@@ -876,3 +876,11 @@ x03.tap    6   0x00000003   0x00006800   0x00000000   0x00000000   0x00002800   
 # x03.tap0: x03.tap with mode 4 (fact 702): {sHi:sLo} <- 2 * sL * sB, the X registers ignored.
 # The first tap of a sum, with no zeroing; the load and the A step as in x03.tap.
 x03.tap0   6   0x00000003   0x00006000   0x00000000   0x00000000   0x00002800   0x00040002
+
+# x18.ytap: the Y-side one-bundle tap (fact 703), x18 class 111 mode 5 floor:
+#   sL <- Y:[eN] (lands after the multiply reads sL), eN <- eN + 1,
+#   {sHi:sLo} <- {sHi:sLo} + 2 * sL * sB, the 701 48-bit sum.
+# sL is the head slot (mux w1[14:12] = 5, w2[22:21] = 01) and the multiplicand w2[27:24]; eN the
+# Y address w3[28:25] and the e slot w1[23:20]; sHi/sLo written and fed back.  x18 MAC chains
+# of 3 or more wedged after the program's stores (701); runs of this tap did not.
+x18.ytap   4   0x1C000018   0x02075007   0x00320000   0xE00700D0

@@ -308,7 +308,10 @@ Measured idioms, cheapest first:
   sL <- X:[An] after the multiply reads sL, An += 1, {sHi:sLo} += 2 sL sB. All five are free
   fields; the word repeats sL, An, sHi and sLo in further fields and the assembler fills them
   (operand rows named `=x`). Prime sL before the first tap. `x03.tap0`, the same word in mode 4,
-  writes {sHi:sLo} <- 2 sL sB ignoring their old values (§702): use it as the first tap. The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
+  writes {sHi:sLo} <- 2 sL sB ignoring their old values (§702): use it as the first tap.
+  The Y-side twin is `x18.ytap sL, eN, sB, sHi, sLo`: sL <- Y:[eN] after the multiply, eN += 1
+  (§703). No bundle reads both an X and a Y operand (x03 has one read mux, §703), so a tap
+  with two stepping pointers takes two bundles. The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
   16-bit operands only.
 - **No computed jumps.** Every measured jump takes an immediate target: x00/x01 control
   relative and absolute (§230, §575), 0x04 (§304), §301/§302, and jmp/jmp-if (§661). None takes

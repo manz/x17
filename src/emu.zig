@@ -2773,8 +2773,12 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     }
     const acc_u: u64 = @bitCast(acc);
     const hi_u: u64 = @bitCast(acc_hi);
+    // The e slot (703): e<w1[23:20]> <- AGU10[w1[27:24]](e<w3[28:25]>); fn 2 (+1) measured.
+    const dest_e: u32 = (w1 >> 20) & 0xF;
+    if (dest_e != 0 and (w1 >> 24) & 0xF != 2) return RunError.UnknownForm;
     if (xs_dest != 0) state.s[xs_dest] = xs_val;
     if (yd_new) |v| state.yd = v;
+    if (dest_e != 0) state.e[dest_e] = (state.e[(w3 >> 25) & 0xF] +% 1) & 0xFFFF;
     if (hi_dest != 0) state.s[hi_dest] = @truncate((hi_u >> 24) & (if (mac48_on) M24 else 0xFFFF));
     if (lo_dest != 0) state.s[lo_dest] = @truncate(acc_u & (if (mode == 5) M24 else 0xFFFF));
     if (alu_dest != 0) state.s[alu_dest] = alu_v;
