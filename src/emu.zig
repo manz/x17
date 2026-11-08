@@ -2845,7 +2845,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 0 and w3_class == 1) {
         return execX19Imm(gpa, state, bundle);
     }
-    if (w1_class == 0 and w2_class == 0 and w3_class == 0) {
+    // w2[30] is inert (640): w2 class 010 is the same form.
+    if (w1_class == 0 and (w2_class == 0 or w2_class == 2) and w3_class == 0) {
         return execX19Agu(gpa, state, bundle);
     }
     // Any w2 class (555): w2[30:29] are the s<w2[30:27]> dest's high bits.
@@ -3149,7 +3150,7 @@ fn execX19Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 /// other muxes are OPEN.
 fn x19AguS(state: *State, bundle: []const u32, agu: u32) RunError!u32 {
     const mux: u32 = (bundle[1] >> 12) & 7;
-    if (mux == 0) return 0;
+    if (mux == 0 or mux == 6) return 0; // 6: 640
     if (mux == 1) return agu;
     if (mux == 2) {
         // 636: (w2[25] ? AGU10 : AGU10Q)[w1[27:24]](x = e<w3[28:25]>, y = R<w3[14:11]>,

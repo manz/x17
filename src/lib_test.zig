@@ -6130,3 +6130,29 @@ test "agumul with S1[30:28] = 000 also runs the 120 slot; both read the old s (f
     defer o.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x50000016, 0x8941a402, 0xa0a00148, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "x19agu: w2[24]'s immediate goes to e only, w2[30] inert, s mux 6 writes 0 (fact 640)" {
+    const gpa = testing.allocator;
+    // own-x19aimm 00002479 16540000 03c40000 06000980: e5 <- #0x123, R3 <- e3 + R1.
+    var a = emu.State{};
+    defer a.deinit(gpa);
+    a.e[3] = 0x430;
+    a.r[1] = 9;
+    a.s[3] = 0x777;
+    _ = try emu.runFrom(gpa, &a, &.{ 0x00002479, 0x16540000, 0x03c40000, 0x06000980, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x123), a.e[5]);
+    try testing.expectEqual(@as(u32, 0x439), a.r[3]);
+    // own-x19r 00000199 00e40000 53000440 0e001380 (w2 class 010): R7 <- e7 = 0x123.
+    var r = emu.State{};
+    defer r.deinit(gpa);
+    r.e[7] = 0x123;
+    _ = try emu.runFrom(gpa, &r, &.{ 0x00000199, 0x00e40000, 0x53000440, 0x0e001380, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x123), r.r[7]);
+    // s mux 6 (w1[14:12] = 110) writes 0 to s<h[24:21]>.
+    var m = emu.State{};
+    defer m.deinit(gpa);
+    m.e[7] = 0x123;
+    m.s[9] = 0x777;
+    _ = try emu.runFrom(gpa, &m, &.{ 0x01200199, 0x00e46000, 0x53000440, 0x0e001380, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0), m.s[9]);
+}
