@@ -1832,8 +1832,32 @@ test "x18 class 111 X-slot muxes 3, 4 and 5 read lanes of Y:[e]" {
         defer state.deinit(gpa);
         try state.y_mem.put(gpa, 0x700, 0x12AB);
         state.e[3] = 0x700;
-        _ = try emu.runFrom(gpa, &state, &.{ 0x00400018, c.mux << 12, 0x00000000, 0xE6000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00400018, c.mux << 12, 0x00200000, 0xE6000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c.want, state.s[2]);
+    }
+}
+
+test "x18 class 111 mux 3 takes yd[7:0] << 8 unless w2[22:21] = 01 (fact 597)" {
+    const gpa = testing.allocator;
+    // Y:[e3] = 0x12B6; w2[22:21] = 01 reads it, 00 / 10 / 11 take yd.
+    for ([_]struct { mux: u32 = 3, w2: u32, yd: u32, want: ?u32 }{
+        .{ .w2 = 0x00000000, .yd = 0x34C9, .want = 0xC900 },
+        .{ .w2 = 0x00400000, .yd = 0x7E11, .want = 0x1100 },
+        .{ .w2 = 0x00600000, .yd = 0x34C9, .want = 0xC900 }, // 11 (with 197's Y store of s0)
+        .{ .w2 = 0x00200000, .yd = 0x34C9, .want = 0xB600 },
+        .{ .mux = 4, .w2 = 0x00000000, .yd = 0x34C9, .want = null },
+        .{ .mux = 5, .w2 = 0x00400000, .yd = 0x34C9, .want = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try state.y_mem.put(gpa, 0x700, 0x12B6);
+        state.e[3] = 0x700;
+        state.yd = c.yd;
+        const r = emu.runFrom(gpa, &state, &.{ 0x00400018, c.mux << 12, c.w2, 0xE6000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[2]);
+        } else try testing.expectError(error.UnknownForm, r);
     }
 }
 

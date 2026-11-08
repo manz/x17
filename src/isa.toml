@@ -363,7 +363,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x18 class 100 (172): e<w2[11:8]> <- e<w2[7:4]> - 1 (w2[20] = 1; 0 OPEN); Y:[e<w3[28:25]>] <- s<w2[3:0]>.  own-x18edec, own-x18yst
 # x18 class 001 (173): class 010's multiply (same w2 fields, w3[2] /2^24 truncates?, w3[1] s<b>+X); e dst w2[3:0], unary dst w1[6:3] (values OPEN); no Y store.  own-x18q23c
 # x18 class 111 (174): X slot s<head[24:21]> (mux w1[14:12]); unary s<w1[11:8]> <- op w1[17:15] of s<w2[19:16]>; e<w1[23:20]> <- op w1[27:24] of e<w3[28:25]>; MAC s<w3[3:0]> <- 0x19 mode w3[6:4] of P = s<w2[27:24]>*s<w2[31:28]>, X = s<w1[31:28]> (0 = xd), w2[3] trunc, w3[10] /2^24.  own-x18mac
-# x18 class 111 X slot (486): muxes 3/4/5 read Y:[e<w3[28:25]>] in plain programs: 3 Y[7:0] << 8, 4 (Y << 7)[15:0], 5 Y.  own-x18ylane (plant 0x12AB, mux 3 gives 0xAB00).  Earlier zeros were a readback artifact: an x19alu MOV reads 0 after any st.y (cause OPEN, the register is intact).
+# x18 class 111 X slot (486): muxes 3/4/5 read Y:[e<w3[28:25]>] with w2[22:21] = 01: 3 Y[7:0] << 8, 4 (Y << 7)[15:0], 5 Y; other w2[22:21] mux 3 takes yd[7:0] << 8, 4/5 refused (597).  own-x18ylane (plant 0x12AB, mux 3 gives 0xAB00).  Earlier zeros were a readback artifact: an x19alu MOV reads 0 after any st.y (cause OPEN, the register is intact).
 # x18 (175): X-slot mux 001/010/110 = immediate head[20:5] (classes 110/011/111); head[5] is that immediate's LSB, inert elsewhere.  own-x18imm
 # x18 class 010 X slot (176): s<head[24:21]> <- w1[14:12]: 0/7 0, 1/2 e<w3[28:25]>, 3/4/5 yd [15:0]/[16:1]/[23:8], 6 #head[20:5]; no X memory read.  own-x18c2x
 # x18 class 000 second e slot (177): e<w2[5:2]> <- e<{w2[1:0], w1[31:30]}> - 1.  own-x18e2nd

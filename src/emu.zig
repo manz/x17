@@ -2181,15 +2181,17 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const x_lo_raw: u32 = state.s[w2 & 0xF] & 0xFFFF;
     const st_val: u32 = x_lo_raw;
     // X slot s<head[24:21]>: muxes 1, 2 and 6 the immediate head[20:5] (175); 3, 4 and 5 lanes
-    // of Y:[e<w3[28:25]>] (486: Y[7:0] << 8, (Y << 7)[15:0], Y).
+    // of Y:[e<w3[28:25]>] (486: Y[7:0] << 8, (Y << 7)[15:0], Y) when w2[22:21] = 01.  Other
+    // w2[22:21]: mux 3 takes yd[7:0] << 8 (597), muxes 4 / 5 are OPEN.
     const xs_dest: u32 = (h >> 21) & 0xF;
     const xs_val: u32 = if (xs_dest == 0) 0 else blk: {
-        const y: u32 = (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF;
+        const fresh = (w2 >> 21) & 3 == 1;
+        const y: u32 = if (fresh) (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF else state.yd & 0xFFFF;
         break :blk switch ((w1 >> 12) & 7) {
             1, 2, 6 => (h >> 5) & 0xFFFF,
             3 => (y & 0xFF) << 8,
-            4 => shl7(y),
-            5 => y,
+            4 => if (fresh) shl7(y) else return RunError.UnknownForm,
+            5 => if (fresh) y else return RunError.UnknownForm,
             else => return RunError.UnknownForm,
         };
     };
