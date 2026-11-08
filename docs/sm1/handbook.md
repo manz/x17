@@ -290,6 +290,10 @@ Measured idioms, cheapest first:
   are measured: x18 class 111 as `x18.macf` (w3[8] = 0; `x18.mac` adds 2^23 to hi only, §665,
   §668) and x03 mode 5 with w1[15] = 0 (§670). Measured with operands of 16-bit magnitude and a
   small hi; the emulator refuses wider a and b on x18.
+- **No computed jumps.** Every measured jump takes an immediate target: x00/x01 control
+  relative and absolute (§230, §575), 0x04 (§304), §301/§302, and jmp/jmp-if (§661). None takes
+  its target from a register or memory. Share code through absolute-jump dispatch, counted
+  repeats and predicated jumps.
 - **Selects without branches.** x19alu's write can be conditional on p1 (§646); the x01 slot's
   m = 7 gives b < 0 ? b : i (§502).
 - **Constants.** ldi is 16 bits, sign-extended: 0xFFFF costs ldi plus two adds, or a mask.
