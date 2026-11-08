@@ -74,7 +74,7 @@ x19.e      4   0x00000019   0x42040000   0x01C20000   0x00000000
 # A<{w1[2:0], head[31:30]}> (fact 651). The bundle also writes A<head[29:25]> <-
 # AGU3[w3[24:20]](x = A<w3[19:15]>, i) (fact 654): the template keeps head[29:25] = 0.
 # X-memory read into s: s<head[24:21]> <- X:[A<k>].
-x19.xrd    4   0xC0000019   0x08028002   0x80003000   0x61500554
+x19.xrd    4   0x00000019   0x08028002   0x80003000   0x61500554
 
 # x19.a3: 4-syllable low5 0x19 class (0,0,3) (fact 149 / own-x19a3).
 # Parallel s load from AGU3 and R load from AGU10.  Only AGU3 fn 25
@@ -715,6 +715,11 @@ x17.ms     3   0x00000017   0x00000000   0xA0000000
 # AGU10[S1[10:7]](x = e<k>) after the store (fact 658), with R mux 0; under mux 7 the value is
 # unknown. The template clears S1[2:0] and h[31].
 x17.sty    3   0x00000017   0x00000108   0x60003800
+
+# x17.styi: x17.sty plus the post-increment it carries anyway (fact 658): e<d> <- e<k> + 1
+# after the store, d = 2*S1[2:0] + h[31] (S1[10:7] = 2, AGU10 x + 1). `x17.styi e3, #3, #0, e3`
+# steps the store pointer and saves an x18.eagu.
+x17.styi   3   0x00000017   0x00000100   0x60003800
 
 # x17.styr: the x17sty row's R write, S2[3:1] = 1, S1[27] = 1, S2[12:11] = 10 (fact 439):
 # R<S1[14:11]> <- s<S2[28:25]> << S1[26:23] (X17LD_OP row 0, h[10:5] = 0).

@@ -97,6 +97,7 @@ pub const OperandKind = enum {
     r_reg, // R-file reg, 4 bits (R0 pinned to 0)
     a_reg, // Address reg A0..A15, 4 or 5 bits
     a4, // A index k written `#k`: k >> 2 in the field, k & 3 in head[31:30] (fact 651)
+    eh, // element reg k: k >> 1 in the field, k & 1 in head[31] (facts 429, 658)
     p, // predicate, form-specific width
     imm, // raw immediate, width = hi-lo+1
     dest_ldi, // ldi's 5-bit dest index (16..31 = s(k-16))
@@ -240,6 +241,9 @@ pub fn stopBase(name: []const u8) ?*const SubForm {
 pub fn nonOperandMask(ops: []const Operand, syll: u8) u32 {
     var mask: u32 = 0xFFFF_FFFF;
     for (ops) |op| {
+        // a4 and eh keep their low index bits in the head, outside their own field.
+        if (syll == 0 and op.kind == .a4) mask &= 0x3FFF_FFFF;
+        if (syll == 0 and op.kind == .eh) mask &= 0x7FFF_FFFF;
         if (op.syll != syll) continue;
         mask &= ~op.fieldMask();
     }
@@ -336,7 +340,7 @@ fn parseOperands(src: []const u8) OperandsParse {
         const lo_s = std.mem.trim(u8, rest3[0..f4], " \t\r");
 
         const kind: OperandKind =
-            if (std.mem.eql(u8, kind_s, "s")) .s else if (std.mem.eql(u8, kind_s, "e")) .e else if (std.mem.eql(u8, kind_s, "e8")) .e8 else if (std.mem.eql(u8, kind_s, "R")) .r_reg else if (std.mem.eql(u8, kind_s, "A")) .a_reg else if (std.mem.eql(u8, kind_s, "a4")) .a4 else if (std.mem.eql(u8, kind_s, "p")) .p else if (std.mem.eql(u8, kind_s, "imm")) .imm else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi else if (std.mem.eql(u8, kind_s, "y_addr")) .y_addr else if (std.mem.eql(u8, kind_s, "rel")) .rel else if (std.mem.eql(u8, kind_s, "relu")) .relu else if (std.mem.eql(u8, kind_s, "rel4")) .rel4 else continue;
+            if (std.mem.eql(u8, kind_s, "s")) .s else if (std.mem.eql(u8, kind_s, "e")) .e else if (std.mem.eql(u8, kind_s, "e8")) .e8 else if (std.mem.eql(u8, kind_s, "R")) .r_reg else if (std.mem.eql(u8, kind_s, "A")) .a_reg else if (std.mem.eql(u8, kind_s, "a4")) .a4 else if (std.mem.eql(u8, kind_s, "eh")) .eh else if (std.mem.eql(u8, kind_s, "p")) .p else if (std.mem.eql(u8, kind_s, "imm")) .imm else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi else if (std.mem.eql(u8, kind_s, "y_addr")) .y_addr else if (std.mem.eql(u8, kind_s, "rel")) .rel else if (std.mem.eql(u8, kind_s, "relu")) .relu else if (std.mem.eql(u8, kind_s, "rel4")) .rel4 else continue;
 
         const syll: u8 = blk: {
             if (std.mem.eql(u8, syll_s, "head")) break :blk 0;

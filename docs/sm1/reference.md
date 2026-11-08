@@ -799,7 +799,7 @@ Emulator:
 ### `x19.xrd`
 
 - Syllables: 4
-- Base: `c0000019` `08028002` `80003000` `61500554`
+- Base: `00000019` `08028002` `80003000` `61500554`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -2925,6 +2925,22 @@ Emulator:
 > x17.sty: S2 class 011 with S1 class != 0, Y store (fact 275). Also e<2*S1[2:0] + h[31]> <-
 > AGU10[S1[10:7]](x = e<k>) after the store (fact 658), with R mux 0; under mux 7 the value is
 > unknown. The template clears S1[2:0] and h[31].
+
+### `x17.styi`
+
+- Syllables: 3
+- Base: `00000017` `00000100` `60003800`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| y_e | e | s1 | [18:15] |
+| src_lo | imm | s1 | [31:29] |
+| src_hi | imm | s2 | [0:0] |
+| inc_e | eh | s1 | [2:0] |
+
+> x17.styi: x17.sty plus the post-increment it carries anyway (fact 658): e<d> <- e<k> + 1
+> after the store, d = 2*S1[2:0] + h[31] (S1[10:7] = 2, AGU10 x + 1). `x17.styi e3, #3, #0, e3`
+> steps the store pointer and saves an x18.eagu.
 
 ### `x17.styr`
 

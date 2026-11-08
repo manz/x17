@@ -83,7 +83,12 @@ fn writeFormLine(
         const word = bundle[op.syll];
         const field = (word >> @as(u5, @intCast(op.lo))) & ((@as(u32, 1) << @as(u5, @intCast(op.width()))) - 1);
         // a4: the field is the index's top bits, head[31:30] its low two (fact 651)
-        cur += if (op.kind == .a4) printTo(out[cur..], "#{d}", .{(field << 2) | (bundle[0] >> 30)}) else formatOperand(out[cur..], op, field);
+        cur += if (op.kind == .a4)
+            printTo(out[cur..], "#{d}", .{(field << 2) | (bundle[0] >> 30)})
+        else if (op.kind == .eh)
+            printTo(out[cur..], "e{d}", .{(field << 1) | (bundle[0] >> 31)})
+        else
+            formatOperand(out[cur..], op, field);
     }
     // e0 as a Y address is no register (fact 466, 468): say so where it is read.
     if (std.mem.eql(u8, name, "st.wr") and bundle.len >= 2 and (bundle[1] >> 17) & 0xF == 0)
@@ -108,6 +113,7 @@ fn formatOperand(out: []u8, op: isa.Operand, field: u32) usize {
         },
         .y_addr => printTo(out, "Y:0x{x}", .{field}),
         .a4 => printTo(out, "#{d}", .{field}), // only via writeFormLine, which adds head[31:30]
+        .eh => printTo(out, "e{d}", .{field}), // only via writeFormLine, which adds head[31]
     };
 }
 
@@ -260,4 +266,24 @@ test "disasm lde.arm prints e8..e15" {
     const s = try roundTrip("lde.arm e11, #0x740");
     defer testing.allocator.free(s);
     try testing.expectEqualStrings("lde.arm e11, #0x740", s);
+}
+
+test "x19.xrd disassembles for every k & 3 (head[31:30] is part of the index, 651)" {
+    var buf: [64]u8 = undefined;
+    for ([_]u32{ 4, 5, 6, 7 }) |k| {
+        var src: [32]u8 = undefined;
+        const b = try asm_mod.assembleOne(try std.fmt.bufPrint(&src, "x19.xrd s3, #{d}", .{k}));
+        const n = try disasmBundle(&buf, b.slice());
+        var want: [32]u8 = undefined;
+        try testing.expectEqualStrings(try std.fmt.bufPrint(&want, "x19.xrd s3, #{d}", .{k}), buf[0..n]);
+    }
+}
+
+test "x17.styi disassembles with its post-increment target (658)" {
+    var buf: [64]u8 = undefined;
+    for ([_][]const u8{ "x17.styi e3, #0x3, #0x0, e12", "x17.styi e9, #0x5, #0x1, e9" }) |line| {
+        const b = try asm_mod.assembleOne(line);
+        const n = try disasmBundle(&buf, b.slice());
+        try testing.expectEqualStrings(line, buf[0..n]);
+    }
 }

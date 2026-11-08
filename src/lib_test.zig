@@ -7006,6 +7006,28 @@ test "x17.sty writes e<2*w1[2:0] + h[31]> <- e<k> + 1; the template does not; ld
     try testing.expectEqual(@as(u32, 0x2E22), st.e[2]);
 }
 
+test "x17.styi steps its pointer in the store bundle (658)" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        x17.styi e3, #3, #0, e3
+        \\        x17.styi e3, #5, #0, e3
+        \\        x17.styi e3, #3, #0, e12
+        \\        x17.halt
+    );
+    defer gpa.free(prog);
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    st.e[3] = 0x2E30;
+    st.s[3] = 0x11;
+    st.s[5] = 0x22;
+    _ = try emu.runFrom(gpa, &st, prog, 0, 16);
+    try testing.expectEqual(@as(?u32, 0x11), st.y_mem.get(0x2E30));
+    try testing.expectEqual(@as(?u32, 0x22), st.y_mem.get(0x2E31));
+    try testing.expectEqual(@as(?u32, 0x11), st.y_mem.get(0x2E32));
+    try testing.expectEqual(@as(u32, 0x2E32), st.e[3]);
+    try testing.expectEqual(@as(u32, 0x2E33), st.e[12]);
+}
+
 test "x19alu sets p<w2[17:14]> under w3[23:20] = 0xE (647)" {
     for ([_]struct { pk: u32, s4: u32 }{ .{ .pk = 2, .s4 = 0x12 }, .{ .pk = 3, .s4 = 0 }, .{ .pk = 15, .s4 = 0x12 } }) |c| {
         var st = emu.State{};

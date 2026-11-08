@@ -479,6 +479,21 @@ fn matchOperand(op: isa.Operand, tok: Token, d: *Diagnostic) ?u32 {
             }
             return tok.value;
         },
+        .eh => {
+            if (tok.kind != .e_reg) {
+                d.* = .{ .code = .e0009_expected_element_reg, .span = tokSpan(tok) };
+                setExpected(d, "element register", tok);
+                d.setHint("the register this store post-increments, e1..e15");
+                return null;
+            }
+            if (tok.value == 0 or tok.value > 15) {
+                d.* = .{ .code = .e0014_reg_index_out_of_range, .span = tokSpan(tok) };
+                d.setMsg("post-increment target must be e1..e15");
+                d.setHint("e0 in this field means no write: use x17.sty");
+                return null;
+            }
+            return tok.value;
+        },
         .e8 => {
             if (tok.kind != .e_reg) {
                 d.* = .{ .code = .e0009_expected_element_reg, .span = tokSpan(tok) };
@@ -1140,6 +1155,11 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
             var dx = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(tok) };
             dx.setMsg("operand table names a syllable past the bundle length");
             return .{ .err = dx };
+        }
+        if (op.kind == .eh) {
+            b.words[op.syll] = op.place(b.words[op.syll], field >> 1);
+            b.words[0] = (b.words[0] & 0x7FFF_FFFF) | ((field & 1) << 31);
+            continue;
         }
         b.words[op.syll] = op.place(b.words[op.syll], field);
     }
