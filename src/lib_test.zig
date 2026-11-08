@@ -5500,3 +5500,18 @@ test "x17agu also copies its AGU value to s<S1[23:20]> (fact 609)" {
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
+
+test "x16agu2 mux 0's s write is measured as 0 only at head code 14 (fact 610)" {
+    const gpa = testing.allocator;
+    // 002001d6 01002d20 a14c8f00: s6 <- 0 at code 14; code 12 gave 1 (OPEN).
+    for ([_]struct { head: u32, ok: bool }{ .{ .head = 0x002001D6, .ok = true }, .{ .head = 0x00200196, .ok = false } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[6] = 0x777;
+        const r = emu.runFrom(gpa, &state, &.{ c.head, 0x01002D20, 0xA14C8F00, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.ok) {
+            _ = try r;
+            try testing.expectEqual(@as(u32, 0), state.s[6]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

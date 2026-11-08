@@ -1817,12 +1817,14 @@ fn execX16Agu2(state: *State, bundle: []const u32) RunError!void {
     const fn_op: u32 = (s1 >> 26) & 0xF;
     const x: u32 = state.e[(s2 >> 21) & 0xF];
     const y: u32 = state.r[(s1 >> 18) & 0xF];
+    const dest: u32 = (s1 >> 9) & 0xF;
     const v: u32 = switch (mux) {
-        0 => 0,
+        // 610: mux 0's 0 reads the head code h[10:5] somehow (code 12 gave 1): only code 14's 0
+        // is measured.
+        0 => if (dest != 0 and (bundle[0] >> 5) & 0x3F != 14) return RunError.UnknownForm else 0,
         1 => if ((s2 >> 8) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y),
         else => return RunError.UnknownForm,
     };
-    const dest: u32 = (s1 >> 9) & 0xF;
     if (dest != 0) state.s[dest] = v;
 }
 
