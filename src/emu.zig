@@ -3296,12 +3296,12 @@ fn execX16Agu100(state: *State, bundle: []const u32) RunError!void {
 /// wrapping.  Mux 0 even codes but 6 give a << n, odd but 7 (a & 0xF00) << n; mux 1 even codes
 /// a >> n (arithmetic); mux 2 a + n, a - n, a, a + 1 by code pairs.  The rest is OPEN.  Outside
 /// the gate X16_EXTRA (583) applies.
-const X16Op = enum { b, add, sub, add1, a, inc, dec, asr8, xor, xnor, or_, and_, xor8, xnor8, or8, and8, rsh_rnd, lsh, inc_lsh, rsh, nrsh, nlsh, add_rsh, sub_rsh, inc_rsh, rsh_rnd_pos, zero };
+const X16Op = enum { b, add, sub, add1, a, inc, dec, asr8, xor, xnor, or_, and_, xor8, xnor8, or8, and8, rsh_rnd, lsh, inc_lsh, rsh, nrsh, nlsh, add_rsh, sub_rsh, inc_rsh, rsh_rnd_pos, add_asr8, sub_asr8, inc_asr8, zero };
 
 /// The class-100 s ALU outside its gate by (head[30], head[29:27], S2[2:0]): fact 583
 /// (head[30] = 0) and 584 (head[30] = 1).
 const X16_EXTRA = [2][8][8]X16Op{ .{
-    .{ .add, .asr8, .sub, .asr8, .a, .asr8, .inc, .asr8 },
+    .{ .add, .add_asr8, .sub, .sub_asr8, .a, .asr8, .inc, .inc_asr8 },
     .{ .rsh_rnd, .lsh, .rsh_rnd, .lsh, .rsh_rnd, .lsh, .rsh_rnd, .inc_lsh },
     .{ .add, .add, .sub, .sub, .a, .a, .inc, .inc },
     .{ .add, .add, .sub, .sub, .a, .a, .inc, .inc },
@@ -3320,15 +3320,16 @@ const X16_EXTRA = [2][8][8]X16Op{ .{
     .{ .add, .add_rsh, .sub, .sub_rsh, .a, .rsh, .inc, .inc_rsh },
 } };
 
-/// One X16_EXTRA cell on sx16 operands, 24-bit result.  Measured with a and b inside 16 bits;
-/// the result's top byte (sign extension here) and b's raw copy are ASSUMED, not measured.
-/// Variable shifts take b signed: head[30] = 0's rounded >> with a negative b shifts left,
-/// saturating at 0x7FFFFF (582); other negative amounts and a negative overflow are OPEN.
+/// One X16_EXTRA cell on 24-bit operands, 24-bit result (586, 587).  Rounded >> is arithmetic,
+/// half up; >> 8 is arithmetic, truncating; every truncating >> b is logical in 24 bits; a
+/// signed amount b below 0 on head[30] = 0's rounded >> shifts left, saturating at 0x7FFFFF
+/// (582).  OPEN, so refused: other negative amounts, amounts of 0x20 or more, amounts of 15 or
+/// more on a negative value, and a signed result outside 24 bits.
 fn x16Extra(op: X16Op, a_raw: u32, b_raw: u32) RunError!u32 {
-    if (a_raw > 0xFFFF or b_raw > 0xFFFF) return RunError.UnknownForm;
-    if (op == .b) return b_raw; // 581: d read back as s<S2[7:4]>'s value
-    const a: i64 = sx16(a_raw);
-    const b: i64 = sx16(b_raw);
+    if (op == .b) return b_raw; // 586: all 24 bits, raw
+    const a: i64 = sx24(a_raw);
+    const b: i64 = sx24(b_raw);
+    const big_neg = a < 0 and b >= 15;
     const r: i64 = switch (op) {
         .b => unreachable,
         .add => a + b,
@@ -3338,6 +3339,9 @@ fn x16Extra(op: X16Op, a_raw: u32, b_raw: u32) RunError!u32 {
         .inc => a + 1,
         .dec => a - 1,
         .asr8 => a >> 8,
+        .add_asr8 => (a + b) >> 8,
+        .sub_asr8 => (a - b) >> 8,
+        .inc_asr8 => (a + 1) >> 8,
         .xor => a ^ b,
         .xnor => ~(a ^ b),
         .or_ => a | b,
@@ -3346,34 +3350,54 @@ fn x16Extra(op: X16Op, a_raw: u32, b_raw: u32) RunError!u32 {
         .xnor8 => ~(a ^ b) << 8,
         .or8 => (a | b) << 8,
         .and8 => (a & b) << 8,
-        .rsh_rnd => if (b < 0) try satShl(a, -b) else if (b == 0) a else (a + (@as(i64, 1) << @intCast(@min(b - 1, 62)))) >> @intCast(@min(b, 63)),
-        .rsh_rnd_pos => if (b < 0) return RunError.UnknownForm else if (b == 0) a else (a + (@as(i64, 1) << @intCast(@min(b - 1, 62)))) >> @intCast(@min(b, 63)),
-        .lsh => if (b < 0) return RunError.UnknownForm else try satShl(a, b),
-        .inc_lsh => if (b < 0) return RunError.UnknownForm else try satShl(a + 1, b),
-        .rsh => if (b < 0) return RunError.UnknownForm else a >> @intCast(@min(b, 63)),
-        .nrsh => if (b < 0) return RunError.UnknownForm else ~a >> @intCast(@min(b, 63)),
-        .nlsh => if (b < 0) return RunError.UnknownForm else try satShl(~a, b),
-        .add_rsh => if (b < 0) return RunError.UnknownForm else (a + b) >> @intCast(@min(b, 63)),
-        .sub_rsh => if (b < 0) return RunError.UnknownForm else (a - b) >> @intCast(@min(b, 63)),
-        .inc_rsh => if (b < 0) return RunError.UnknownForm else (a + 1) >> @intCast(@min(b, 63)),
+        .rsh_rnd => if (b < 0) try satShl(a, -b) else try rshRound(a, b, big_neg),
+        .rsh_rnd_pos => if (b < 0) return RunError.UnknownForm else try rshRound(a, b, big_neg),
+        .lsh => if (b < 0 or b >= 0x20) return RunError.UnknownForm else try satShl(a, b),
+        .inc_lsh => if (b < 0 or b >= 0x20) return RunError.UnknownForm else try satShl(a + 1, b),
+        .rsh => try lsr24(a, b),
+        .nrsh => try lsr24(~a, b),
+        .nlsh => if (b < 0 or b >= 0x20) return RunError.UnknownForm else try satShl(~a, b),
+        .add_rsh => try lsr24(a + b, b),
+        .sub_rsh => try lsr24(a - b, b),
+        .inc_rsh => try lsr24(a + 1, b),
         .zero => 0,
     };
+    return in24(r);
+}
+
+/// Logical >> of v's 24 bits (587), as a signed value so in24 keeps the pattern.  OPEN, so
+/// refused: a negative amount, 15 or more on a negative v (586), v past 24 bits.
+fn lsr24(v: i64, b: i64) RunError!i64 {
+    if (b < 0 or b >= 0x20 or (v < 0 and b >= 15)) return RunError.UnknownForm;
+    const pat: u32 = try in24(v);
+    return sx24(pat >> @intCast(b));
+}
+
+fn rshRound(a: i64, b: i64, big_neg: bool) RunError!i64 {
+    if (big_neg or b >= 0x20) return RunError.UnknownForm;
+    if (b == 0) return a;
+    return (a + (@as(i64, 1) << @intCast(@min(b - 1, 62)))) >> @intCast(@min(b, 63));
+}
+
+/// A table result as 24 bits; one outside the signed 24-bit range is OPEN (586 saw no wrap at
+/// 16 bits, never the 24-bit edge).
+fn in24(r: i64) RunError!u32 {
+    if (r < -0x800000 or r > 0x7FFFFF) return RunError.UnknownForm;
     return @truncate(@as(u64, @bitCast(r)) & M24);
 }
 
 /// fact 585: the X16_EXTRA cells (head[30] = 0) measured with n = S1[31:29] != 0.
 fn x16ExtraN(cell: u32, a_raw: u32, b_raw: u32, n: u32) RunError!u32 {
-    if (a_raw > 0xFFFF or b_raw > 0xFFFF) return RunError.UnknownForm;
-    const a: i64 = sx16(a_raw);
-    const b: i64 = sx16(b_raw);
+    const a: i64 = sx24(a_raw);
+    const b: i64 = sx24(b_raw);
     const r: i64 = switch (cell) {
-        0 => (a + b) >> @intCast(n), // mx 0 c 0
+        0 => (a + b) >> @intCast(n), // mx 0 c 0, arithmetic (586)
         8 * 5 => try satShl(a ^ b, n), // mx 5 c 0
         8 * 1 + 1 => if (b < 0) return RunError.UnknownForm else try satShl(a + n, b), // mx 1 c 1
         8 * 2 + 2 => a - b, // mx 2 c 2: n ignored
         else => return RunError.UnknownForm,
     };
-    return @truncate(@as(u64, @bitCast(r)) & M24);
+    return in24(r);
 }
 
 fn satShl(v: i64, n: i64) RunError!i64 {

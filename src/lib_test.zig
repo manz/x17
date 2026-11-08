@@ -4660,26 +4660,30 @@ test "the 0x16 class-100 s ALU copies s<S2[7:4]> outside its gate (fact 580, 581
     }
 }
 
-test "the 0x16 class-100 s ALU shifts by s<S2[7:4]> (fact 582, 583)" {
+test "the 0x16 class-100 s ALU shifts by s<S2[7:4]> (fact 582, 583, 586)" {
     const gpa = testing.allocator;
-    // head[30] = 0, head[29:27] = 1, S2[2:0] = 4: s5 <- s3 >> s11, rounded (583).
+    // head[30] = 0, head[29:27] = 1, S2[2:0] = 4: s5 <- s3 >> s11, rounded (583); operands as
+    // ldi leaves them, 24-bit (586).
     for ([_]struct { a: u32, k: u32, want: ?u32, code: u32 = 4 }{
         .{ .a = 0x1234, .k = 1, .want = 0x091A },
         .{ .a = 0x1234, .k = 2, .want = 0x048D },
         .{ .a = 0x0100, .k = 1, .want = 0x0080 },
-        .{ .a = 0x8000, .k = 4, .want = 0xFFF800 },
-        .{ .a = 0x8000, .k = 1, .want = 0xFFC000 },
+        .{ .a = 0xFF8000, .k = 4, .want = 0xFFF800 },
+        .{ .a = 0xFF8000, .k = 1, .want = 0xFFC000 },
+        .{ .a = 0xFF8001, .k = 1, .want = 0xFFC001 }, // half up
         .{ .a = 0x1234, .k = 15, .want = 0 },
         .{ .a = 0x1234, .k = 0, .want = 0x1234 },
-        .{ .a = 0x1234, .k = 0xFFFF, .want = 0x2468 }, // -1
-        .{ .a = 0x1234, .k = 0xFFFE, .want = 0x48D0 },
-        .{ .a = 0x1234, .k = 0xFFFC, .want = 0x12340 },
-        .{ .a = 0x1234, .k = 0xFFF0, .want = 0x7FFFFF }, // saturates
-        .{ .a = 0x1234, .k = 0x8000, .want = 0x7FFFFF },
+        .{ .a = 0x1234, .k = 0xFFFFFF, .want = 0x2468 }, // -1
+        .{ .a = 0x1234, .k = 0xFFFFFE, .want = 0x48D0 },
+        .{ .a = 0x1234, .k = 0xFFFFFC, .want = 0x12340 },
+        .{ .a = 0xFF8000, .k = 0xFFFFFC, .want = 0xF80000 },
+        .{ .a = 0x1234, .k = 0xFFFFF0, .want = 0x7FFFFF }, // saturates
+        .{ .a = 0x1234, .k = 0xFF8000, .want = 0x7FFFFF },
         .{ .a = 0x0F0F, .k = 3, .want = 0x1E2 }, // rounds
-        .{ .a = 0x8000, .k = 0xFFF0, .want = null }, // negative overflow: OPEN
-        .{ .a = 0x10000, .k = 1, .want = null },
-        .{ .a = 0x1234, .k = 0xFFFF, .code = 5, .want = null }, // a << -1: OPEN
+        .{ .a = 0x10000, .k = 1, .want = 0x8000 }, // 24-bit operand
+        .{ .a = 0xFF8000, .k = 0xFFFFF0, .want = null }, // negative overflow: OPEN
+        .{ .a = 0xFF8000, .k = 15, .want = null }, // large amount on a negative value: OPEN
+        .{ .a = 0x1234, .k = 0xFFFFFF, .code = 5, .want = null }, // a << -1: OPEN
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -4749,7 +4753,7 @@ test "the 0x16 class-100 s ALU table with head[30] = 1 (fact 584)" {
         }
     }.f;
     _ = gpa;
-    try testing.expectError(error.UnknownForm, run(5, 4, 0x1234, 0xFFFF)); // negative amount: OPEN here
+    try testing.expectError(error.UnknownForm, run(5, 4, 0x1234, 0xFFFFFF)); // negative amount: OPEN here
     for ([_][4]u32{ .{ 7, 3, 0x048C, 0x01E1 }, .{ 7, 1, 0x048D, 0x01E2 }, .{ 5, 4, 0x048D, 0x01E2 }, .{ 4, 5, 0x0012, 0x000F } }) |v| {
         try testing.expectEqual(v[2], try run(v[0], v[1], 0x1234, 2));
         try testing.expectEqual(v[3], try run(v[0], v[1], 0x0F0F, 3));
@@ -4790,4 +4794,53 @@ test "the 0x16 class-100 s ALU's n = S1[31:29] cells outside its gate (fact 585)
             try testing.expectEqual(v, state.s[5] & 0xFFFF);
         } else try testing.expectError(error.UnknownForm, r);
     }
+}
+
+test "the 0x16 class-100 s ALU on 24-bit operands (fact 586)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h30: u32 = 0, mx: u32, c: u32, a: u32, b: u32, want: ?u32 }{
+        .{ .mx = 5, .c = 2, .a = 0x1234, .b = 2, .want = 0xFFEDC9 }, // ~(a ^ b)
+        .{ .mx = 7, .c = 6, .a = 0xFF8F0F, .b = 0xFFFFF3, .want = 0xFF8F03 }, // a & b
+        .{ .mx = 6, .c = 1, .a = 0x1234, .b = 4, .want = 0x012340 }, // a << b
+        .{ .mx = 0, .c = 0, .a = 0x7FFF, .b = 0x3B0C, .want = 0x00BB0B }, // no 16-bit wrap
+        .{ .mx = 6, .c = 0, .a = 0xFF8000, .b = 4, .want = 0x0FF800 }, // logical >>
+        .{ .mx = 6, .c = 0, .a = 0xFF8001, .b = 1, .want = 0x7FC000 },
+        .{ .mx = 6, .c = 2, .a = 0x1234, .b = 2, .want = 0x3FFB72 }, // ~a >> b, logical
+        .{ .h30 = 1, .mx = 7, .c = 5, .a = 0xFF8000, .b = 4, .want = 0x0FF800 },
+        .{ .h30 = 1, .mx = 5, .c = 4, .a = 0xFF8000, .b = 4, .want = 0xFFF800 }, // rounded: arithmetic
+        .{ .h30 = 1, .mx = 0, .c = 0, .a = 0, .b = 0x00BB0B, .want = 0x00BB0B }, // raw b
+        .{ .h30 = 1, .mx = 1, .c = 3, .a = 0, .b = 0xFF8000, .want = 0xFF8000 }, // all 24 bits
+        // 587: >> 8 cells are arithmetic on the even cell's value; every truncating >> b logical
+        .{ .mx = 0, .c = 1, .a = 0xFF8000, .b = 4, .want = 0xFFFF80 },
+        .{ .mx = 0, .c = 3, .a = 0xFF8000, .b = 4, .want = 0xFFFF7F },
+        .{ .mx = 0, .c = 1, .a = 0x12FF, .b = 2, .want = 0x13 },
+        .{ .mx = 0, .c = 3, .a = 0x12FF, .b = 2, .want = 0x12 },
+        .{ .mx = 0, .c = 5, .a = 0x12FF, .b = 2, .want = 0x12 },
+        .{ .mx = 0, .c = 7, .a = 0x12FF, .b = 2, .want = 0x13 },
+        .{ .mx = 0, .c = 5, .a = 0x1300, .b = 2, .want = 0x13 },
+        .{ .h30 = 1, .mx = 4, .c = 5, .a = 0xFF8000, .b = 4, .want = 0xFFFF80 },
+        .{ .h30 = 1, .mx = 7, .c = 1, .a = 0xFF8000, .b = 4, .want = 0x0FF800 },
+        .{ .h30 = 1, .mx = 7, .c = 3, .a = 0xFF8000, .b = 4, .want = 0x0FF7FF },
+        .{ .h30 = 1, .mx = 7, .c = 7, .a = 0xFF8000, .b = 4, .want = 0x0FF800 },
+        .{ .mx = 6, .c = 4, .a = 0xFF8000, .b = 4, .want = 0x0FF800 },
+        .{ .mx = 6, .c = 0, .a = 0xFF8000, .b = 0x20, .want = null }, // amount >= 0x20
+        .{ .mx = 6, .c = 0, .a = 0xFF8000, .b = 15, .want = null }, // 15+ on a negative
+        .{ .mx = 0, .c = 0, .a = 0x7FFFFF, .b = 1, .want = null }, // past 24 bits: OPEN
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = k.a;
+        state.s[11] = k.b;
+        const r = emu.runFrom(gpa, &state, &.{ 0x06000096 | k.h30 << 30 | k.mx << 27, 0x0b000012, 0x860000b0 | k.c, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[5]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+    // 585's n post-shift on mx 0 c 0 is arithmetic.
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    st.s[3] = 0xFF8000;
+    _ = try emu.runFrom(gpa, &st, &.{ 0x06000096, 0x8b000012, 0x860000b0, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0xFFF800), st.s[5]);
 }
