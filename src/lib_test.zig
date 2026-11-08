@@ -5041,6 +5041,8 @@ test "x16agu carries the 0x05 ALU word in S1 (fact 592)" {
         .{ .code = 0x10, .s1 = 0x16040030, .want = null }, // sub at m 0: unmeasured
         .{ .code = 0x28, .want = null }, // other clr code
         .{ .code = 0x00, .s1 = 0x16042030, .want = null }, // add at m 4: unmeasured
+        .{ .code = 16, .s1 = 0x16043830, .want = null }, // sub at m 7: OPEN
+        .{ .code = 0x00, .s1 = 0x16043830, .want = 0xBB3 }, // add at m 7: |b| (after 594)
         .{ .code = 0x00, .s1 = 0x16140030, .want = null }, // add #s at m 0: unmeasured
     }) |k| {
         var state = emu.State{};
@@ -5092,4 +5094,10 @@ test "0x02's R slot takes the third slot's value with w5[31:30] = 10 (fact 594)"
             try testing.expectEqual(v, state.r[2]);
         } else try testing.expectError(error.UnknownForm, r);
     }
+}
+
+test "aluWord: add at m 7 is |b|; sub at m 7 is refused (fact 238, after 594)" {
+    try testing.expectEqual(@as(?u32, 0xBB3), try emu.aluWord((7 << 23), 0, 0xBB3));
+    try testing.expectEqual(@as(?u32, 0xBB3), try emu.aluWord((7 << 23), 0, -0xBB3));
+    try testing.expectError(error.UnknownForm, emu.aluWord((0x10 << 5) | (7 << 23), 0, 0xBB3));
 }

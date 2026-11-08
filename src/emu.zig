@@ -1818,7 +1818,7 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
 /// The x16agu's 0x05 ALU word (fact 592): s<S1[27:24]> <- alu_word(code h[10:5],
 /// a = s<S1[19:16]>, b = s<S2[28:25]>, m = S1[13:11], #s = S1[23:20]); 0 means no write.
-/// Measured codes only: add 0 / 1 at m 0/2/3/6 (with #s only at m 2); at m 2 with #s = 0 sub
+/// Measured codes only: add 0 / 1 at m 0/2/3/6/7 (with #s only at m 2); at m 2 with #s = 0 sub
 /// 16, asr 6, mova 35, sel 42, movb 51, clr 32 / 34.  Read 16-bit, so the top byte is the
 /// alu_word's.
 fn x16AguAlu(state: *const State, h: u32, s1: u32, s2: u32) RunError!?struct { dest: u32, val: u32 } {
@@ -1828,7 +1828,7 @@ fn x16AguAlu(state: *const State, h: u32, s1: u32, s2: u32) RunError!?struct { d
     const m: u32 = (s1 >> 11) & 7;
     const sh: u32 = (s1 >> 20) & 0xF;
     const ok = switch (code) {
-        0, 1 => (m == 0 or m == 2 or m == 3 or m == 6) and (sh == 0 or m == 2),
+        0, 1 => (m == 0 or m == 2 or m == 3 or m == 6 or m == 7) and (sh == 0 or m == 2),
         16, 6, 35, 42, 51, 32, 34 => m == 2 and sh == 0,
         else => false,
     };
@@ -4151,7 +4151,7 @@ fn adderM(m: u8, x: i64, y: i64, c: i64) AdderTuple {
         4 => .{ .x = -1, .y = y, .c = c },
         5 => .{ .x = x, .y = ~y, .c = 1 },
         6 => .{ .x = 0, .y = ~y, .c = 1 },
-        // 238, measured with a negative b after 594: |y|, carry dropped.
+        // 238, measured with a negative b after 594: |y| for add (c = 0); sub is refused upstream.
         7 => .{ .x = 0, .y = if (y < 0) -y else y, .c = 0 },
         else => unreachable,
     };
@@ -4219,6 +4219,8 @@ pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
             },
             else => unreachable,
         }
+        // sub with m 7 fits neither |~b| nor the carry-kept form (measured after 594): OPEN.
+        if (op == .sub and m & 7 == 7) return RunError.UnknownForm;
         const t = adderM(m, x0, y0, c0);
         var r: i64 = t.x + t.y + t.c;
         if (op == .add and code <= 2) {
