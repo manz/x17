@@ -2606,7 +2606,7 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
 }
 
 /// Class 011 (fact 168, 179, 200, 206, 683): the slot result goes to
-/// s<w1[11:8]> and R<w3[10:7]> (0 when w3[3] = 1), and p<w2[17:14]> <- cond head[28:25] of it.
+/// s<w1[11:8]> and R<w3[10:7]> (#head[20:5] when w3[3] = 1, 688), and p<w2[17:14]> <- cond head[28:25] of it.
 /// Only cond 11 (negative) is measured; other conds leave p alone.
 /// w3[0] = 0 is the branch form (178), not modelled.
 fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -2640,8 +2640,8 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         }
         if (ld_dest == dest_s or ld_dest == (w2 >> 2) & 0xF or ld_dest == (w1 >> 4) & 0xF) return RunError.UnknownForm;
     }
-    // w3[3] = 1 writes 0 to the R dest instead of the result (683).
-    const r_val: u32 = if ((w3 >> 3) & 1 == 1) 0 else v & 0xFFFF;
+    // w3[3] = 1 writes #head[20:5] to the R dest instead of the result (688, revising 683).
+    const r_val: u32 = if ((w3 >> 3) & 1 == 1) (h >> 5) & 0xFFFF else v & 0xFFFF;
     const dest_r: u32 = (w3 >> 7) & 0xF;
     // The result also lands in A<2 * w1[3:0] + head[31]> (fact 345): measured with the and
     // (A2 <- s12 & s11). A31 is not a plain register (649): refused.
