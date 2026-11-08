@@ -5736,3 +5736,29 @@ test "x03's X store writes all 24 bits (708)" {
         try testing.expectEqual(@as(?u32, v), st.readX(0x3A0));
     }
 }
+
+test "x03.tap0 into s0 is a pure X load-and-step; stx from s0 stores xd << 8 (709)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // 709's word: x03.tap0 s3, #5, s0, s0, s0 but with the multiplicand w2[4:1] = s0 (the
+    // mnemonic ties it to sL = s3; both discard the product, only this one is measured).
+    const word = [_]u32{ 0x40000003, 0x00006001, 0x000A0000, 0x00000005, 0x00002818, 0x00040002 };
+    const stx = try asm_mod.assembleOne("stx A6, s0");
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    st.a[5] = 0x40;
+    st.a[6] = 0x80;
+    try st.x_mem.put(testing.allocator, 0x40, 0x111);
+    try st.x_mem.put(testing.allocator, 0x41, 0x222);
+    for (1..15) |k| st.s[k] = @intCast(0x10 * k);
+    var prog: [16]u32 = undefined;
+    @memcpy(prog[0..6], &word);
+    @memcpy(prog[6..12], &word);
+    prog[12] = stx.slice()[0];
+    @memcpy(prog[13..16], &halt);
+    _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+    try testing.expectEqual(@as(u32, 0x222), st.s[3]);
+    try testing.expectEqual(@as(u32, 0x42), st.a[5]);
+    try testing.expectEqual(@as(u32, 0), st.s[0]);
+    for (1..15) |k| if (k != 3) try testing.expectEqual(@as(u32, @intCast(0x10 * k)), st.s[k]);
+    try testing.expectEqual(@as(?u32, 0x022200), st.readX(0x80));
+}

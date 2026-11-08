@@ -1449,7 +1449,7 @@ fn execPar(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     // take the stale latch, unmodelled.
     const dest_r: u32 = (head >> 22) & 0xF;
     if ((head >> 9) & 1 == 0 and (k != 16 or dest_r != 0)) return RunError.UnknownForm;
-    const xv: u32 = state.s[(head >> 16) & 0xF] & M24;
+    const xv: u32 = try stxValue(state, (head >> 16) & 0xF);
     // The X store through A0 lands at the previous bundle's immediate or result, through A31
     // at X:0 (fact 649): refused.
     const xa: u32 = (head >> 11) & 0x1F;
@@ -5521,8 +5521,15 @@ fn execStx(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     // at X:0 (fact 649): neither is an address register here, so both are refused.
     if (a_idx == 0 or a_idx == 31) return RunError.UnknownForm;
     const addr: u32 = state.a[a_idx];
-    const v: u32 = state.s[src_s] & M24;
-    try state.x_mem.put(gpa, addr, v);
+    try state.x_mem.put(gpa, addr, try stxValue(state, src_s));
+}
+
+/// The value an stx store writes from s<src>: s0 stores the xd latch << 8, not 0 (709:
+/// 0x011100 after reading 0x111).  Measured with a small xd; a shift past 24 bits is refused.
+fn stxValue(state: *const State, src: u32) RunError!u32 {
+    if (src != 0) return state.s[src] & M24;
+    if (state.xd > 0xFFFF) return RunError.UnknownForm;
+    return (state.xd << 8) & M24;
 }
 
 /// low5 0x0E, head[31] = 0, code != 0x23 (fact 221): s<S[11:8]> <-
