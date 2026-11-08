@@ -354,12 +354,12 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w4_mode == 5) {
             // The product low half runs beside the Xrd path (603), reading before it writes.
             if ((bundle[4] >> 7) & 0xF != 0 and (bundle[5] >> 6) & 1 == 1) return RunError.UnknownForm;
-            // The w2[12:9] high dest is live here too (604): one 40-bit {X_hi : X_lo} op P with
-            // X_hi = s<8 + w1[31:29]> on 603's row, index bit 3 OPEN: refused, not left unwritten.
-            if ((bundle[2] >> 9) & 0xF != 0) return RunError.UnknownForm;
+            // The w2[12:9] high dest is live here too (604, 605).
+            const phi = try x03ProductHigh(state, bundle);
             const plo = try x03ProductLow(state, bundle);
             try execX03Xrd(gpa, state, bundle);
             try execX03Agu(gpa, state, bundle);
+            if (phi) |w| state.s[w.dest] = w.value;
             if (plo) |w| state.s[w.dest] = w.value;
             return;
         }
@@ -783,11 +783,12 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_s != 0) {
         const v: i64 = switch (mode) {
             4 => p,
-            // mode 5: P + X; w1[14] = 1 takes X from s<w1[31:29]>
-            // (fact 254 / own-x03xsn).
+            // mode 5: P + X; w1[14] = 1 takes X from s<{w2[0], w1[31:29]}>
+            // (fact 254 / own-x03xsn, 605); X index 0 is OPEN.
             5 => blk: {
                 if ((w1 >> 14) & 1 == 0) return;
-                const x_s: u32 = (w1 >> 29) & 0x7;
+                const x_s: u32 = x03AccXIndex(bundle);
+                if (x_s == 0) return RunError.UnknownForm;
                 break :blk p + @as(i64, state.s[x_s] & M24);
             },
             else => return,
@@ -795,6 +796,31 @@ fn execX03Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         state.s[dest_s] = @truncate(@as(u64, @bitCast(v)) & M24);
     }
     if (try x03ProductLow(state, bundle)) |w| state.s[w.dest] = w.value;
+}
+
+/// x03's accumulate X_hi index {w2[0], w1[31:29]} (605, the store's index).
+fn x03AccXIndex(bundle: []const u32) u32 {
+    return ((bundle[2] & 1) << 3) | (bundle[1] >> 29);
+}
+
+/// x03's high dest beside w4 mode 5 (604, 605): s<w2[12:9]> <- the 40-bit
+/// {X_hi : X_lo} op P, [39:24], floor; X_hi = s<{w2[0], w1[31:29]}>, X_lo = s<w5[12:9]>.
+/// Measured for mode 4 / 5 with w1[14] = 1 and w1[17:15] = 0 only, the operands signed
+/// (0x7000 * -0x123 floors to -1).
+fn x03ProductHigh(state: *const State, bundle: []const u32) RunError!?SWrite {
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const dest: u32 = (w2 >> 9) & 0xF;
+    if (dest == 0) return null;
+    const mode: u32 = (w1 >> 11) & 0x7;
+    if ((w1 >> 14) & 1 == 0 or (w1 >> 15) & 7 != 0) return RunError.UnknownForm;
+    if (mode != 4 and mode != 5) return RunError.UnknownForm;
+    const x_hi_s = x03AccXIndex(bundle);
+    if (mode == 5 and x_hi_s == 0) return RunError.UnknownForm;
+    const prod: i64 = @as(i64, sx24(state.s[(w2 >> 1) & 0xF])) * sx24(state.s[(w2 >> 5) & 0xF]);
+    const x: i64 = if (mode == 4) 0 else (@as(i64, state.s[x_hi_s] & 0xFFFF) << 24) + sx24(state.s[(bundle[5] >> 9) & 0xF]);
+    const acc: i64 = x + prod * 2;
+    return .{ .dest = dest, .value = @truncate(@as(u64, @bitCast(acc >> 24)) & 0xFFFF) };
 }
 
 /// x03's product low half s<w4[10:7]> (191, 603): (X op P)[15:0], P = a * b over

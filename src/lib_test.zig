@@ -5306,19 +5306,19 @@ test "x03 override 11 over mux 001/010 reads Y:[e] with w5[21], else yd (fact 60
 
 test "x03 product low half is (X op P)[15:0] (fact 603)" {
     const gpa = testing.allocator;
-    // 80000003 00006800 01441485 00000007 00002C90 00041402 (w4 mode 5): s9 <- low; w2[12:9] = 0
-    // here, DERIVED: the vectors ran with 0xA, whose high dest is OPEN and refuses (604: a carry
-    // runs low -> high only, so the low half should not depend on it), s2 = 3, s4 = 5 (P = 0x1E),
+    // 80000003 00006800 01441485 00000007 00002C90 00041402 (w4 mode 5): s9 <- low, s2 = 3, s4 = 5 (P = 0x1E),
     // s<k> = 0x110 k + 1, X = s<w5[12:9]>, mode w1[13:11].
-    for ([_]struct { w1: u32 = 0x00006800, k: u32 = 8, want: ?u32 }{
+    // Modes 6 / 7 and w1[17] clear the w2[12:9] high dest (DERIVED: measured with 0xA, whose
+    // high write there is unmodelled and refuses).
+    for ([_]struct { w1: u32 = 0x00006800, w2: u32 = 0x01441485, k: u32 = 8, want: ?u32 }{
         .{ .want = 0x089F },
         .{ .k = 10, .want = 0x0ABF },
         .{ .k = 12, .want = 0x0CDF },
         .{ .k = 1, .want = 0x012F },
-        .{ .w1 = 0x00007800, .want = 0x0863 },
-        .{ .w1 = 0x00007000, .want = 0xF79D },
+        .{ .w1 = 0x00007800, .w2 = 0x01440085, .want = 0x0863 },
+        .{ .w1 = 0x00007000, .w2 = 0x01440085, .want = 0xF79D },
         .{ .w1 = 0x00006000, .want = 0x001E },
-        .{ .w1 = 0x00026800, .want = 0x0890 }, // w1[17]: P not doubled
+        .{ .w1 = 0x00026800, .w2 = 0x01440085, .want = 0x0890 }, // w1[17]: P not doubled
         .{ .w1 = 0x00002800, .want = null }, // w1[14] = 0 with an X mode: OPEN
     }) |c| {
         var state = emu.State{};
@@ -5326,13 +5326,40 @@ test "x03 product low half is (X op P)[15:0] (fact 603)" {
         for (1..16) |i| state.s[i] = 0x110 * @as(u32, @intCast(i)) + 1;
         state.s[2] = 3;
         state.s[4] = 5;
-        const r = emu.runFrom(gpa, &state, &.{ 0x80000003, c.w1, 0x01440085, 0x00000007, 0x00002C90, 0x00040002 | c.k << 9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        const r = emu.runFrom(gpa, &state, &.{ 0x80000003, c.w1, c.w2, 0x00000007, 0x00002C90, 0x00040002 | c.k << 9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         if (c.want) |v| {
             _ = try r;
             try testing.expectEqual(v, state.s[9]);
         } else try testing.expectError(error.UnknownForm, r);
     }
-    var o = emu.State{};
-    defer o.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x80000003, 0x00006800, 0x01441485, 0x00000007, 0x00002C90, 0x00041402, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
+
+test "x03 high dest beside w4 mode 5 is the 40-bit acc's [39:24] (fact 604, 605)" {
+    const gpa = testing.allocator;
+    // 603's row: s10 <- ({X_hi : s<w5[12:9]> = s10} + 2ab)[39:24], X_hi = s<{w2[0], w1[31:29]}>;
+    // presets s<k> = 0x110 k + 1.
+    for ([_]struct { w1: u32 = 0x00006800, w2: u32 = 0x01441485, a: u32 = 3, b: u32 = 5, want: ?u32 }{
+        .{ .want = 0x0881 },
+        .{ .a = 0x4000, .b = 0x4000, .want = 0x08A1 },
+        .{ .a = 0x1000, .b = 0x0C00, .want = 0x0882 },
+        .{ .a = 0x7000, .b = 0xFFFEDD, .want = 0x0880 },
+        .{ .w1 = 0x60006800, .want = 0x0BB1 }, // w1[31:29] = 3, w2[0] = 1: s11
+        .{ .w1 = 0x60006800, .w2 = 0x01441484, .want = 0x0331 }, // w2[0] = 0: s3
+        .{ .w1 = 0xC0006800, .w2 = 0x01441484, .want = 0x0661 }, // s6
+        .{ .w2 = 0x01441484, .want = null }, // X index 0: OPEN
+        .{ .w1 = 0x00007000, .want = null }, // mode 6 on the high half: unmeasured
+        .{ .w1 = 0x00026800, .want = null }, // w1[17]
+        .{ .w1 = 0x00006000, .a = 0x4000, .b = 0x4000, .want = 0x0020 }, // mode 4: P alone
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |i| state.s[i] = 0x110 * @as(u32, @intCast(i)) + 1;
+        state.s[2] = c.a;
+        state.s[4] = c.b;
+        const r = emu.runFrom(gpa, &state, &.{ 0x80000003, c.w1, c.w2, 0x00000007, 0x00002C90, 0x00041402, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[10]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
 }
