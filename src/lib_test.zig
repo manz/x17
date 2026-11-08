@@ -6929,3 +6929,49 @@ test "stx0f through A0 is refused: its address is the previous word's field (694
     defer st.deinit(testing.allocator);
     try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &([_]u32{ 0x0000000F, 0xA0500000 } ++ halt), 0, 8));
 }
+
+test "class-05 shifts, the shifted add and Q23 at 24 bits (696)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // head: 0x40000005 | code << 5 | a << 11 | dest << 15 | s << 19 | b << 26
+    const w = struct {
+        fn alu(code: u32, s: u32) u32 {
+            return 0x40000005 | (code << 5) | (1 << 11) | (3 << 15) | (s << 19) | (2 << 26);
+        }
+    };
+    for ([_][4]u32{
+        .{ 6, 4, 0x800000, 0xF80000 }, .{ 6, 20, 0x800000, 0xFFFFF8 }, .{ 6, 0xFFFFFC, 0x800000, 0 },
+        .{ 8, 4, 0x800000, 0x080000 }, .{ 8, 20, 0x800000, 0x000008 }, .{ 8, 0xFFFFFC, 0x800000, 0 },
+        .{ 7, 4, 0x800000, 0xF80000 }, .{ 7, 20, 0x800000, 0xFFFFF8 }, .{ 7, 0xFFFFFC, 0x800000, 0x800000 },
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = c[1];
+        st.s[2] = c[2];
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{w.alu(c[0], 0)} ++ halt), 0, 8);
+        try testing.expectEqual(c[3], st.s[3]);
+    }
+    // add code 0 with s = 4: 0x0F0000 << 4 keeps 24 bits
+    {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = 0x0F0000;
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{w.alu(0, 4)} ++ halt), 0, 8);
+        try testing.expectEqual(@as(u32, 0xF00000), st.s[3]);
+    }
+    // shift codes with s != 0 do not shift: refused
+    {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &([_]u32{w.alu(6, 4)} ++ halt), 0, 8));
+    }
+    // x18 class 010 Q23, rounded: 0x400000 * 0x400000 >> 23 = 0x200000
+    {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = 0x400000;
+        st.s[2] = 0x400000;
+        const q = try asm_mod.assembleOne("x18.q23 s3, s1, s2, #4");
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ q.slice()[0], q.slice()[1], q.slice()[2], q.slice()[3] } ++ halt), 0, 8);
+        try testing.expectEqual(@as(u32, 0x200000), st.s[3]);
+    }
+}
