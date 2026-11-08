@@ -5149,3 +5149,17 @@ test "0x00's s-slot sub-mux 11 reads D (fact 595)" {
         try testing.expectEqual(k.want, state.yd);
     }
 }
+
+test "x18 class 111 muxes 4 and 5 fresh reads set yd too (after fact 597)" {
+    const gpa = testing.allocator;
+    for ([_][2]u32{ .{ 4, 0x5B00 }, .{ 5, 0x12B6 } }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try state.y_mem.put(gpa, 0x700, 0x12B6);
+        state.e[3] = 0x700;
+        state.yd = 0xA050;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00400018, k[0] << 12, 0x00200000, 0xE6000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(k[1], state.s[2]);
+        try testing.expectEqual(@as(u32, 0x12B6), state.yd); // the raw word, not the lane
+    }
+}

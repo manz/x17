@@ -2184,11 +2184,13 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // of Y:[e<w3[28:25]>] (486: Y[7:0] << 8, (Y << 7)[15:0], Y) when w2[22:21] = 01.  Other
     // w2[22:21]: mux 3 takes yd[7:0] << 8 (597), muxes 4 / 5 are OPEN.
     const xs_dest: u32 = (h >> 21) & 0xF;
-    // Mux 3's fresh read sets yd (after 597); only yd[7:0] is measured, the rest follows x00.
+    // The muxes 3-5 fresh read sets yd to the raw word (after 597); only yd[7:0] is measured,
+    // the rest follows x00.
     var yd_new: ?u32 = null;
     const xs_val: u32 = if (xs_dest == 0) 0 else blk: {
         const fresh = (w2 >> 21) & 3 == 1;
-        if (fresh and (w1 >> 12) & 7 == 3) yd_new = (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF;
+        const lane = (w1 >> 12) & 7;
+        if (fresh and lane >= 3 and lane <= 5) yd_new = (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF;
         const y: u32 = if (fresh) (state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0) & 0xFFFF else state.yd & 0xFFFF;
         break :blk switch ((w1 >> 12) & 7) {
             1, 2, 6 => (h >> 5) & 0xFFFF,

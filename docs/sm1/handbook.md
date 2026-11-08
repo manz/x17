@@ -67,7 +67,7 @@ configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2, �
 
 - **yd**: a 16-bit Y-read latch. Measured to set it: yld10, x03, x02's R-slot Y side, x16alu's
   mux Y read, the x17 class-101 fresh read, x19aagu's byte load (§565, §571) and x00's s-slot
-  sub-mux 11 fresh read (after §595), and x18 class 111's mux 3 fresh read (after §597). Y stores don't
+  sub-mux 11 fresh read (after §595), and x18 class 111's muxes 3-5 fresh read (after §597). Y stores don't
   (§550). Other forms are unmeasured, and so is the timing within one bundle: don't read yd in
   the bundle that refreshes it.
 - **xd**: the last X read (§161).
