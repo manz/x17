@@ -5456,3 +5456,24 @@ test "ld0e mux 0 writes the cond on p<S[27:24]> by modifier S[23:21] (fact 608)"
         }
     }
 }
+
+test "p0 reads 1 from reset (fact 608)" {
+    const state = emu.State{};
+    try testing.expectEqual(@as(u8, 1), state.p[0]);
+}
+
+test "writes to p0 refuse (after fact 608)" {
+    const gpa = testing.allocator;
+    // tst (low5 0x12) and x18 class 011 code 11: p3 writes, p0 refuses.
+    for ([_]struct { prog: []const u32, ok: bool }{
+        .{ .prog = &.{ 0x00000012, 0x26080000, 0x00000017, 0x31308000, 0xA0000000 }, .ok = true },
+        .{ .prog = &.{ 0x00000012, 0x20080000, 0x00000017, 0x31308000, 0xA0000000 }, .ok = false },
+        .{ .prog = &.{ 0x16000018, 0x00000000, 0x0000C000, 0x60000001, 0x00000017, 0x31308000, 0xA0000000 }, .ok = true },
+        .{ .prog = &.{ 0x16000018, 0x00000000, 0x00000000, 0x60000001, 0x00000017, 0x31308000, 0xA0000000 }, .ok = false },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const r = emu.runFrom(gpa, &state, c.prog, 0, 16);
+        if (c.ok) _ = try r else try testing.expectError(error.UnknownForm, r);
+    }
+}

@@ -46,7 +46,9 @@ pub const State = struct {
     /// Predicate bits p0..p15 (1-bit each; stored as u8 for ergonomics).
     /// Written by ptst / plog; consumed by psel / jmp / bcc.  Survives
     /// across bundles per fact.
-    p: [16]u8 = @splat(0),
+    /// p0 reads 1 (608: ld0e's cond; branch decode treats p<0> as unconditional); a write to
+    /// it is unmeasured and refuses.
+    p: [16]u8 = .{1} ++ @as([15]u8, @splat(0)),
     /// Y data memory, keyed by address.  Sparse: only addresses the program
     /// writes are present.  Caller inspects via `getY`.
     y_mem: std.AutoHashMapUnmanaged(u32, u32) = .{},
@@ -1355,6 +1357,7 @@ fn execTst(state: *State, bundle: []const u32) RunError!void {
         @intFromBool("nnnnnnnTnnTTTTTn"[hk] == 'T')
     else
         return RunError.UnknownForm;
+    if ((bundle[1] >> 25) & 0xF == 0) return RunError.UnknownForm; // p0 write: unmeasured
     state.p[(bundle[1] >> 25) & 0xF] = v;
 }
 
@@ -2257,7 +2260,10 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_s != 0) state.s[dest_s] = v;
     if (dest_r != 0) state.r[dest_r] = v & 0xFFFF;
-    if (((h >> 25) & 0xF) == 11) state.p[(w2 >> 14) & 0xF] = if (sx16(v) < 0) 1 else 0;
+    if (((h >> 25) & 0xF) == 11) {
+        if ((w2 >> 14) & 0xF == 0) return RunError.UnknownForm; // p0 write: unmeasured
+        state.p[(w2 >> 14) & 0xF] = if (sx16(v) < 0) 1 else 0;
+    }
 }
 
 /// Class 111 (fact 174, 202, 203, 206).  40-bit MAC: P =
@@ -4977,7 +4983,7 @@ fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
         1, 6 => addr,
         0 => blk: {
             const pi: u32 = (s1 >> 24) & 0xF;
-            const pv: u32 = if (pi == 0) 1 else @intFromBool(state.p[pi] != 0);
+            const pv: u32 = @intFromBool(state.p[pi] != 0);
             break :blk switch ((s1 >> 21) & 7) {
                 0 => pv ^ 1,
                 1 => pv,
