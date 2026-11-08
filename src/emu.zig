@@ -2334,6 +2334,16 @@ fn x18C3TableB(op: u32, a: u32, b: u32) RunError!u32 {
     };
 }
 
+/// The slot ALU as class 011 runs it: ops 4 (a - 1) and 6 (-a, from a's low 16 bits, like op 7's
+/// abs) are measured there (643 follow-up, fact 641 rows); class 111 still refuses them.
+fn x18C3SlotAlu(op: u32, a: u32, b: u32) RunError!u32 {
+    return switch (op) {
+        4 => (a -% 1) & M24,
+        6 => @as(u32, @truncate(@as(u64, @bitCast(-sx16(a))))) & M24,
+        else => x18SlotAlu(op, a, b),
+    };
+}
+
 /// v << n at 24 bits; a result past 24 bits is unmeasured and refused.
 fn x18C3Shl(v: u32, n: u32) RunError!u32 {
     const r = @as(i64, sx24(v)) << @intCast(n);
@@ -2370,8 +2380,8 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
     const op = (w1 >> 15) & 7;
     const n = (w2 >> 6) & 0xF;
     return switch ((h >> 25) & 0x3F) {
-        0x10 => if (x18C3AluN(n)) x18SlotAlu(op, a, b) else x18C3TableB(op, a, b),
-        0x23 => if (x18C3AluN(n)) x18SlotAlu(op, a, b) else b & M24,
+        0x10 => if (x18C3AluN(n)) x18C3SlotAlu(op, a, b) else x18C3TableB(op, a, b),
+        0x23 => if (x18C3AluN(n)) x18C3SlotAlu(op, a, b) else b & M24,
         else => |code| {
             const unary = op == 2 or op == 3 or op == 4 or op == 6 or op == 7;
             if (unary) {
@@ -2384,8 +2394,8 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
                 const shifting = op == 2 or op == 6 or op == 7; // 0x30-0x35: ops 3 / 4 give a
                 switch (code) {
                     // 642: codes 0x00-0x02 shift the result left by n, 0x03-0x05 right (floor).
-                    0x00...0x02 => return x18C3Shl(try x18SlotAlu(op, a, b), n),
-                    0x03...0x05 => return x18C3Shr(try x18SlotAlu(op, a, b), n),
+                    0x00...0x02 => return x18C3Shl(try x18C3SlotAlu(op, a, b), n),
+                    0x03...0x05 => return x18C3Shr(try x18C3SlotAlu(op, a, b), n),
                     // 643: the logic ops, shifted.
                     0x16, 0x17 => return x18C3Shl(logic, n),
                     0x18, 0x19 => return x18C3Shr(logic, n),
@@ -2396,7 +2406,7 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
                     else => {},
                 }
             }
-            return if (n != 0) RunError.UnknownForm else x18SlotAlu(op, a, b);
+            return if (n != 0) RunError.UnknownForm else x18C3SlotAlu(op, a, b);
         },
     };
 }

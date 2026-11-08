@@ -6399,3 +6399,13 @@ test "x18 class 011 unary ops under codes 0x16-0x19, 0x30-0x35, 0x3A (643)" {
     try testing.expectError(error.UnknownForm, x18c3Unary(0x30, 2, 2, 0x300000, 0));
     try testing.expectError(error.UnknownForm, x18c3Unary(0x16, 6, 1, 0, 0x400000));
 }
+
+test "x18 class 011 slot ops 4 and 6: a - 1 and -a (fact 641 rows)" {
+    // code 0x10, n = 2 runs the slot ALU: a = 5 -> 4 / -5; 7 -> 6 / -7; -4 -> -5 / 4.
+    for ([_][3]u32{ .{ 5, 4, 0xFFFFFB }, .{ 7, 6, 0xFFFFF9 }, .{ 0xFFFFFC, 0xFFFFFB, 4 } }) |c| {
+        try testing.expectEqual(c[1], try x18c3Unary(0x10, 4, 2, c[0], 0));
+        try testing.expectEqual(c[2], try x18c3Unary(0x10, 6, 2, c[0], 0));
+    }
+    // unary under 0x00-0x02 shifts the op result: (5 - 1) << 1
+    try testing.expectEqual(@as(u32, 8), try x18c3Unary(0x00, 4, 1, 5, 0));
+}
