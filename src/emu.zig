@@ -327,6 +327,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             const st_s: u32 = ((bundle[2] & 1) << 3) | (bundle[1] >> 29);
             const st_old: u32 = state.s[st_s];
             if (w1_mode == 5) {
+                // The multiply beside the X read reads xd before the read sets it (689).
+                if ((bundle[2] >> 9) & 0xF != 0 or (bundle[2] >> 24) & 0xF != 0) try execX18Mpy(gpa, state, bundle);
                 try execX18Xrd(gpa, state, bundle);
             } else if (bundle[2] != 0) {
                 try x18PWrite(state, bundle);
@@ -2281,25 +2283,25 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         const half: i64 = if ((bundle[3] >> 22) & 1 == 1) 1 << 23 else 0;
         break :blk @as(u32, @truncate(@as(u64, @bitCast((sp + half) >> 24)))) & M24;
     };
-    // The hi output follows the mode w3[20:18] (687), over acc[39:24] with the bundle's X read
-    // (X:[A<w2[21:17]>] when w2[23:22] = 01, else xd) at acc[47:32] and a = s<w2[4:1]> at
-    // acc[47:24]: 0 zero, 2 a - X, 3 ~X, 4 P, 5 P + X, 6 P - X, 7 X - P; 16 bits wide.  Mode 1
-    // is OPEN; the other modes are measured in the doubled form only.
+    // The hi output follows the mode w3[20:18] (687, 689), over acc[39:24] with X = xd as the
+    // bundle starts (the previous X read; this bundle's own read lands after) at acc[47:32] and
+    // a = s<w2[4:1]> at acc[47:24]: 0 zero, 1 a + X, 2 a - X, 3 ~X (never rounded), 4 P,
+    // 5 P + X, 6 P - X, 7 X - P; 16 bits wide.  Measured in the doubled form only.
     const mode: u32 = (bundle[3] >> 18) & 7;
     const hi_m: u32 = if (mode == 4 or hi_dest == 0) hi else blk: {
-        if (mode == 1 or integer) return RunError.UnknownForm;
-        const xv: i64 = if ((w2 >> 22) & 3 == 1) state.x_mem.get(state.a[(w2 >> 17) & 0x1F]) orelse 0 else state.xd;
-        const x: i64 = xv << 32;
+        if (integer) return RunError.UnknownForm;
+        const x: i64 = @as(i64, state.xd) << 32;
         const sp: i64 = (@as(i64, sx24(state.s[a_s])) * sx24(state.s[b_s])) << 1;
         const acc: i64 = switch (mode) {
             0 => 0,
+            1 => (@as(i64, state.s[a_s] & M24) << 24) + x,
             2 => (@as(i64, state.s[a_s] & M24) << 24) - x,
             3 => ~x,
             5 => sp + x,
             6 => sp - x,
             else => x - sp,
         };
-        const half: i64 = if ((bundle[3] >> 22) & 1 == 1) 1 << 23 else 0;
+        const half: i64 = if ((bundle[3] >> 22) & 1 == 1 and mode != 3) 1 << 23 else 0;
         break :blk @as(u32, @truncate(@as(u64, @bitCast((acc + half) >> 24)))) & 0xFFFF;
     };
     if (lo_dest != 0) state.s[lo_dest] = lo;

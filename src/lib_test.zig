@@ -6834,7 +6834,7 @@ test "x18 class 010 X mux 011: Y[7:0] << 8 setting yd with w1[28] = 1, yd[7:0] <
     try testing.expectEqual(@as(u32, 0x3300), st.s[6]);
 }
 
-test "x18 class 110 hi output follows the mode w3[20:18] (687)" {
+test "x18 class 110 hi output follows the mode w3[20:18], X the previous read (687, 689)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
     for ([_]struct { mode: u32, want: ?u32 }{
         .{ .mode = 4, .want = 0x0C },
@@ -6843,8 +6843,8 @@ test "x18 class 110 hi output follows the mode w3[20:18] (687)" {
         .{ .mode = 7, .want = 0x19F4 },
         .{ .mode = 0, .want = 0 },
         .{ .mode = 2, .want = 0x4600 },
-        .{ .mode = 3, .want = 0xE600 }, // ~X has ones below bit 24: the 2^23 carries
-        .{ .mode = 1, .want = null },
+        .{ .mode = 3, .want = 0xE5FF }, // never rounded (689)
+        .{ .mode = 1, .want = 0x7A00 }, // a + X: 0x6000 + 0x1A00
     }) |c| {
         var st = emu.State{};
         defer st.deinit(testing.allocator);
@@ -6861,4 +6861,17 @@ test "x18 class 110 hi output follows the mode w3[20:18] (687)" {
             try testing.expectEqual(v, st.s[4]);
         } else try testing.expectError(emu.RunError.UnknownForm, r);
     }
+    // beside its own X read (w1 mode 5) the multiply sees the old xd; the read sets xd (689)
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    st.s[1] = 0x6000;
+    st.s[2] = 0x1000;
+    st.xd = 0x55;
+    st.a[3] = 0x40;
+    try st.x_mem.put(testing.allocator, 0x40, 0xE01A);
+    const w2: u32 = (1 << 1) | (2 << 5) | (4 << 9) | (3 << 17) | (1 << 22);
+    const w3: u32 = (0xC1500001 & ~@as(u32, (7 << 18) | (1 << 24))) | (5 << 18);
+    _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x00000018, 0x00005000, w2, w3 } ++ halt), 0, 8);
+    try testing.expectEqual(@as(u32, 0x550C), st.s[4]);
+    try testing.expectEqual(@as(u32, 0xE01A), st.xd);
 }
