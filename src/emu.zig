@@ -386,7 +386,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             // post-incrementing (fact 262-263).  w2[28] = 1 makes the e counter (349)
             // e<2*w4[2:0] + 1> <- e<w3[26:23]> - 1 also write p3 <- (e_new > 0, signed 16),
             // which the repeat sees one pass late (675): e = N - 1 with p3 = 1 runs N passes
-            // (at least 2).  w2[28] = 0 or any p but p3 runs away: refused.
+            // (at least 2), A stepping after every pass.  w2[28] = 0 or any p but p3 runs
+            // away: refused.
             if (bundle[3] >> 31 == 1) {
                 const pi: u32 = (bundle[5] >> 14) & 0xF;
                 if ((bundle[2] >> 28) & 1 == 0 or pi != 3) return RunError.UnknownForm;
@@ -399,10 +400,11 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
                     const e_new: u32 = (state.e[ec_src] -% 1) & 0xFFFF;
                     state.e[ec_dest] = e_new;
                     state.p[3] = @intFromBool(sx16(e_new) > 0);
+                    // the X address steps on every pass, the last included (675)
+                    state.a[ai] +%= 1;
                     if (seen == 0) break;
                     passes += 1;
                     if (passes > 0x10000) return RunError.RunawayProgram;
-                    state.a[ai] +%= 1;
                     try execX03Mode0(gpa, state, bundle);
                 }
             }

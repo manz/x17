@@ -260,7 +260,7 @@ Measured idioms, cheapest first:
   signed 16), seen by the repeat one pass late (§675). Preset e = N - 1 and p3 = 1 for N passes
   (N >= 2); the loop leaves p3 = 0 and e = -1. Only p3 ends it: other predicates, or
   w2[28] = 0, run away. Measured on a store row
-  (`00000003 60000002 18106000 85800008 00004005 001CC000`: X:[A8] <- s3, A8 steps each pass);
+  (`00000003 60000002 18106000 85800008 00004005 001CC000`: X:[A8] <- s3, A8 steps on every pass, ending at A8 + N);
   not yet on a MAC row.
 - **Loops.** There is no zero-overhead multi-bundle loop: x03 can repeat one bundle while a
   predicate holds (§263, §452), and nothing more (§453). The cheapest counted loop is a pcond on

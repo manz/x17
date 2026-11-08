@@ -6642,6 +6642,7 @@ test "x03 counted repeat: w2[28] counter writes p3 one pass late (675)" {
         _ = try emu.runFrom(testing.allocator, &st, &(w ++ halt), 0, 8);
         try testing.expectEqual(c.passes, st.x_mem.count());
         try testing.expectEqual(@as(?u32, 0x55), st.x_mem.get(0x200 + c.passes - 1));
+        try testing.expectEqual(0x200 + c.passes, st.a[8]);
         if (c.p3 == 1) {
             try testing.expectEqual(@as(u8, 0), st.p[3]);
             try testing.expectEqual(@as(u32, (c.e -% (c.passes)) & 0xFFFF), st.e[11]);
