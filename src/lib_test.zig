@@ -6899,7 +6899,7 @@ test "stx refuses A0 and A31 (649)" {
     }
 }
 
-test "x02's undoubled low product holds P mod 2^24 (655); x18.and masks it (644, 345)" {
+test "x02's low products hold P and 2P mod 2^24 (655, 657); x18.and masks them (644, 345)" {
     for ([_]struct { c: u32, d: u32, want: u32 }{
         .{ .c = 0x2AC, .d = 0xFFFF80, .want = 0xFEAA00 },
         .{ .c = 0x2AC, .d = 0x80, .want = 0x015600 },
@@ -6920,6 +6920,19 @@ test "x02's undoubled low product holds P mod 2^24 (655); x18.and masks it (644,
         try testing.expectEqual(t.want, st.s[12]);
         try testing.expectEqual(t.want & 0xFFFF, st.s[13]);
         try testing.expectEqual(@as(u32, 0), st.a[2]); // the template writes no A (345)
+    }
+    // w1[17] = 0: (2P) mod 2^24, also unmasked (657)
+    {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = 0x2AC;
+        st.s[2] = 0x80;
+        const w = try asm_mod.assembleOne("x02.x3 #0, #0, s2, s3, #5, #2, s2, #1, s6");
+        var prog: [9]u32 = undefined;
+        @memcpy(prog[0..6], w.slice()[0..6]);
+        prog[6..9].* = .{ 0x00000017, 0x31308000, 0xA0000000 };
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        try testing.expectEqual(@as(u32, 0x02AC00), st.s[6]);
     }
     // w1[3:0] = 1 also writes A2 <- the result (345)
     var st = emu.State{};

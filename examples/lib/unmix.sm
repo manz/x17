@@ -51,7 +51,11 @@
         nop()
         alu s1, s1, s3, #OP_SUB ; a -= 256
 apos:   alu s2, s8, s0, #OP_ADD
-        x02.x3 #0, #0, s0, s0, #5, #0, s0, #1, s5 ; s5 = (2av)[15:0]
+        x02.x3 #0, #0, s0, s0, #5, #0, s0, #1, s5 ; s5 = (2av) mod 2^24 (fact 657)
+        ldi s3, #0x7FFF
+        alu s3, s3, s3, #OP_ADD
+        alu s3, s3, s14, #OP_ADD
+        x18.and s5, s5, s3      ; (2av)[15:0]
         ldi s3, #8
         x19.alu s3, s1, s3, #SHIFT
         x02.mpy s4, s3, s2      ; round((a << 8) * v / 2^23)

@@ -309,7 +309,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # p with R dest != 0, slot 0, c0-21.  The old "A - i" reading of [26:17] was wrong.  own-x0cragu, own-pcond
 # x03 w2[28] = 1 (fact 394): a conditional jr in the bundle, to q + sext(w1[28:18]) with two delay slots, on
 # p<w5[17:14]>: sense w2[31:29] 101 jumps if set, 000 / 100 if clear, 001 OPEN.  p0 is not a constant.  own-x03jrc
-# x02 mode 5 second multiply dest s<w4[10:7]> (fact 399): (2P)[15:0], or with w1[17] = 1 P mod 2^24 as a signed 24-bit word (655: 0x7FFF * -0x1234 gives 0xE61234; 399's product sat under 2^16 and could not show it) (op 4;
+# x02 mode 5 second multiply dest s<w4[10:7]> (fact 399): (2P) mod 2^24 (657: 0x2AC * 0x80 gives 0x02AC00), or with w1[17] = 1 P mod 2^24 (655: 0x7FFF * -0x1234 gives 0xE61234); neither is masked to 16 bits, 399's product sat under 2^15 and could not show it (op 4;
 # op 5 with w1[17] = 1 is OPEN: xd joins it).  own-x02plo, own-x02lo24
 # ldy sign-extends the 16-bit Y word (fact 409): 0x8001 -> 0xFF8001.  own-ldysx
 # x17.ms, 0x17 S2 class 101 with S1[22:20] != 011 (fact 410-413), reads before writes: Y:[e<S1[18:15]>] <-
