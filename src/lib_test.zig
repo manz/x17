@@ -7045,3 +7045,13 @@ test "x19alu's 32 ops are 24 bits wide (699)" {
     }
     try testing.expectEqual(@as(u32, 0), bad);
 }
+
+test "x03 mode 5 refuses operands past 16-bit magnitude (670's measured range)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const mac = [_]u32{ 0x80000003, 0x40006800, 0x01441485, 0x00000007, 0x00002c80, 0x00041202 };
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    st.s[2] = 0x20000; // an 18-bit difference
+    st.s[4] = 0x1000;
+    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &(mac ++ halt), 0, 8));
+}

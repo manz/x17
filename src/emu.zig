@@ -859,7 +859,11 @@ fn x03ProductHigh(state: *const State, bundle: []const u32) RunError!?SWrite {
     if ((w1 >> 14) & 1 == 0 or (w1 >> 16) & 3 != 0 or mode < 4) return RunError.UnknownForm;
     const x_hi_s = x03AccXIndex(bundle);
     if (mode != 4 and x_hi_s == 0) return RunError.UnknownForm;
-    const prod: i64 = @as(i64, sx24(state.s[(w2 >> 1) & 0xF])) * sx24(state.s[(w2 >> 5) & 0xF]);
+    const a_m: i64 = sx24(state.s[(w2 >> 1) & 0xF]);
+    const b_m: i64 = sx24(state.s[(w2 >> 5) & 0xF]);
+    // The running sum (670) is measured with operands of 16-bit magnitude only.
+    if (mode == 5 and (a_m < -0x8000 or a_m > 0x7FFF or b_m < -0x8000 or b_m > 0x7FFF)) return RunError.UnknownForm;
+    const prod: i64 = a_m * b_m;
     // Mode 5's X_lo is unsigned 24 (670: X_lo = 0x900000, P = 0 gives hi 0), so (hi, lo) fed
     // back chain exactly with w1[15] = 0; modes 6 and 7 keep 605's signed reading.
     const x_lo_v: u32 = state.s[(bundle[5] >> 9) & 0xF];
