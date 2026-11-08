@@ -537,7 +537,7 @@ const X02Common = struct {
 
 /// 0x02 slots outside the w4 modes (fact 513, 547): w5[10:9] = 11 stores sx24
 /// s<{w2[0], w1[31:29]}> at X:[A<w4[21:17]>]; R<w3[22:19]> <- by w5[27:26]: 00 w5[31:30] = 11
-/// #head[26:11], 00 the Y side (01/10 refused); 01 (w5[11] ? AGU10 : AGU10B)[w1[10:7]](x =
+/// #head[26:11], 00 the Y side, 10 the third slot's value (594), 01 refused; 01 (w5[11] ? AGU10 : AGU10B)[w1[10:7]](x =
 /// e<w3[30:27]>, y = R<w5[25:22]>); w5[27] = 1 OPEN (265's "R <- 1" holds only in fresh state).
 /// Both read before the bundle writes.
 fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
@@ -559,6 +559,7 @@ fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
         c.r_val = switch ((w5 >> 26) & 3) {
             0 => switch (w5 >> 30) {
                 3 => (h >> 11) & 0xFFFF,
+                2 => (try x02RFromX3(state, bundle)) & 0xFFFF, // 594
                 0 => blk: {
                     const v = x02YSide(state, bundle) & 0xFFFF;
                     c.yd = v;
@@ -1388,10 +1389,31 @@ fn execX02X3Pre(gpa: std.mem.Allocator, state: *State, bundle: []const u32, s_pr
     const w5 = bundle[5];
     const dest_s: u32 = ((w5 & 3) << 2) | (w4 >> 30);
     if (dest_s == 0) return;
+    if (ALU05[(bundle[0] >> 5) & 0x3F] != .add) return RunError.UnknownForm;
+    state.s[dest_s] = try x02X3Value(bundle, s_pre);
+}
+
+/// The third slot's alu_word value (182, 549), also the R slot's source with w5[31:30] = 10.
+fn x02X3Value(bundle: []const u32, s: [16]u32) RunError!u32 {
+    const w4 = bundle[4];
+    const w5 = bundle[5];
     const code: u32 = (bundle[0] >> 5) & 0x3F;
-    if (ALU05[code] != .add) return RunError.UnknownForm;
     const word: u32 = (code << 5) | (((w5 >> 6) & 7) << 23) | (((w5 >> 2) & 0xF) << 19);
-    state.s[dest_s] = try aluWord(word, sx24(s_pre[(w4 >> 22) & 0xF]), sx24(s_pre[(w4 >> 26) & 0xF])) orelse return RunError.UnknownForm;
+    return try aluWord(word, sx24(s[(w4 >> 22) & 0xF]), sx24(s[(w4 >> 26) & 0xF])) orelse RunError.UnknownForm;
+}
+
+/// x02's R slot with w5[31:30] = 10 (594): the third slot's value, measured for head codes 0,
+/// 3 and 0xE (a shift only with code 0) and m = w5[8:6] in {0, 1, 2, 3, 5, 7}; m 7 read |b|
+/// with b >= 0 only, so a negative b there is OPEN.
+fn x02RFromX3(state: *const State, bundle: []const u32) RunError!u32 {
+    const w5 = bundle[5];
+    const code: u32 = (bundle[0] >> 5) & 0x3F;
+    const m: u32 = (w5 >> 6) & 7;
+    const sh: u32 = (w5 >> 2) & 0xF;
+    const code_ok = code == 0 or ((code == 3 or code == 0xE) and sh == 0);
+    if (!code_ok or m == 4 or m == 6) return RunError.UnknownForm;
+    if (m == 7 and sx24(state.s[(bundle[4] >> 26) & 0xF]) < 0) return RunError.UnknownForm;
+    return try x02X3Value(bundle, state.s);
 }
 
 /// x02's w4 slot, s<w4[6:3]> <- by mode w4[13:11] (fact 186, 187, 191, 545, 548): 101

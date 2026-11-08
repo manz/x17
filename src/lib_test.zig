@@ -5062,3 +5062,33 @@ test "x16agu's ALU and AGU writing one s is refused (fact 592)" {
     // AGU dest S2[6:3] = 6 and ALU dest S1[27:24] = 6.
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x00000016, 0x16045030, 0x76000030, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "0x02's R slot takes the third slot's value with w5[31:30] = 10 (fact 594)" {
+    const gpa = testing.allocator;
+    // R2 <- alu(code h[10:5], m w5[8:6], #n w5[5:2]; a = s<w4[25:22]> = s3, b = s<w4[29:26]> = s5).
+    for ([_]struct { code: u32 = 0, m: u32, sh: u32 = 0, b: u32 = 0x553, want: ?u32 }{
+        .{ .m = 0, .want = 0x886 },
+        .{ .m = 1, .want = 0x220 },
+        .{ .m = 2, .want = 0x553 },
+        .{ .m = 3, .want = 0x554 },
+        .{ .m = 5, .want = 0xFDE0 },
+        .{ .m = 7, .want = 0x553 },
+        .{ .m = 0, .sh = 2, .want = 0x2218 },
+        .{ .code = 3, .m = 0, .want = 0x886 },
+        .{ .code = 0xE, .m = 0, .want = 0x886 },
+        .{ .m = 4, .want = null }, // unmeasured m
+        .{ .m = 7, .b = 0xFFF000, .want = null }, // |b| on a negative b: OPEN
+        .{ .code = 3, .m = 0, .sh = 2, .want = null }, // shift with code 3: unmeasured
+        .{ .code = 0x10, .m = 0, .want = null }, // other code
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = 0x333;
+        state.s[5] = k.b;
+        const r = emu.runFrom(gpa, &state, &.{ 0x0084F802 | k.code << 5, 0x00000008, 0x00000000, 0x00100000, 0x14D62848, 0x80024200 | k.m << 6 | k.sh << 2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.r[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
