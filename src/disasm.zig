@@ -82,7 +82,8 @@ fn writeFormLine(
         if (op.syll >= bundle.len) return DisasmError.BundleTooShort;
         const word = bundle[op.syll];
         const field = (word >> @as(u5, @intCast(op.lo))) & ((@as(u32, 1) << @as(u5, @intCast(op.width()))) - 1);
-        cur += formatOperand(out[cur..], op, field);
+        // a4: the field is the index's top bits, head[31:30] its low two (fact 651)
+        cur += if (op.kind == .a4) printTo(out[cur..], "#{d}", .{(field << 2) | (bundle[0] >> 30)}) else formatOperand(out[cur..], op, field);
     }
     // e0 as a Y address is no register (fact 466, 468): say so where it is read.
     if (std.mem.eql(u8, name, "st.wr") and bundle.len >= 2 and (bundle[1] >> 17) & 0xF == 0)
@@ -106,6 +107,7 @@ fn formatOperand(out: []u8, op: isa.Operand, field: u32) usize {
             break :blk printTo(out, "#0x{x}", .{field}); // raw for OPEN slots
         },
         .y_addr => printTo(out, "Y:0x{x}", .{field}),
+        .a4 => printTo(out, "#{d}", .{field}), // only via writeFormLine, which adds head[31:30]
     };
 }
 

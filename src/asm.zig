@@ -549,7 +549,7 @@ fn matchOperand(op: isa.Operand, tok: Token, d: *Diagnostic) ?u32 {
             }
             return tok.value;
         },
-        .y_addr, .rel, .relu, .rel4 => unreachable, // handled inline in the operand loop
+        .y_addr, .rel, .relu, .rel4, .a4 => unreachable, // handled inline in the operand loop
         .dest_ldi => {
             if (tok.kind != .s_reg) {
                 d.* = .{ .code = .e0015_ldi_dest_not_s_reg, .span = tokSpan(tok) };
@@ -1097,6 +1097,26 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
             var dx = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(tok) };
             dx.setMsg("operand table names a syllable past the bundle length");
             return .{ .err = dx };
+        }
+        if (op.kind == .a4) {
+            if (tok.kind != .hash) lex.i = tok.start;
+            switch (parseExpr(lex, env)) {
+                .ok => |val| {
+                    const sizing = if (env) |e| e.sizing else false;
+                    const k: u32 = if (sizing) 1 else if (val.v < 0 or val.v > 0xFFFF) 0xFFFF else @intCast(val.v);
+                    if (k == 0 or k >= 31) {
+                        var dx = Diagnostic{ .code = .e0014_reg_index_out_of_range, .span = val.span };
+                        var mb: [96]u8 = undefined;
+                        dx.setMsg(std.fmt.bufPrint(&mb, "A index {d} cannot be read through here", .{k}) catch mb[0..0]);
+                        dx.setHint("A1..A30: A0 reads a bus value and A31 junk (fact 649)");
+                        return .{ .err = dx };
+                    }
+                    b.words[op.syll] = op.place(b.words[op.syll], k >> 2);
+                    b.words[0] = (b.words[0] & 0x3FFF_FFFF) | ((k & 3) << 30);
+                },
+                .err => |r| return r,
+            }
+            continue;
         }
         if (op.kind == .imm or op.kind.isRel()) {
             switch (valueOperand(lex, tok, op, env)) {

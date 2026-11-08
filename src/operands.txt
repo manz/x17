@@ -152,7 +152,7 @@ x19.e	mux	imm	12	14	s1
 # x19.xrd (4 syllables): X-memory read into s.
 # Grammar: x19.xrd <dest_s>, #<src_a>
 x19.xrd	dest_s	s	21	24	head
-x19.xrd	src_a	imm	15	19	s3
+x19.xrd	src_a	a4	0	2	s1
 
 # x19.a3 (4 syllables): s and R loaded in parallel.
 # Grammar: x19.a3 <dest_s>, <dest_R>, <x_e>, #<agu3_fn>, #<agu10_fn>, #<i>

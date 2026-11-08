@@ -6837,6 +6837,24 @@ test "x19alu writes its ALU result per cond w1[23:20] and p1 (646)" {
     try testing.expectEqual(@as(u32, 6), (w.slice()[1] >> 20) & 0xF);
 }
 
+test "x19.xrd reads A<{w1[2:0], head[31:30]}>, w3[19:15] inert (651)" {
+    // the old template word with w3[19:15] = 2 reads A11
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    for (1..31) |k| st.a[k] = 0x40 + @as(u32, @intCast(k));
+    for (1..31) |k| try st.x_mem.put(testing.allocator, 0x40 + @as(u32, @intCast(k)), 0x100 + @as(u32, @intCast(k)));
+    _ = try emu.runFrom(testing.allocator, &st, &.{ 0xc8e00019, 0x08028002, 0x80003000, 0x61510554, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
+    try testing.expectEqual(@as(u32, 0x10B), st.s[7]);
+    // the assembler splits k across w1[2:0] and head[31:30]
+    for ([_]u32{ 1, 2, 8, 11, 19, 30 }) |k| {
+        var buf: [32]u8 = undefined;
+        const w = try asm_mod.assembleOne(try std.fmt.bufPrint(&buf, "x19.xrd s7, #{d}", .{k}));
+        try testing.expectEqual(k, ((w.slice()[1] & 7) << 2) | (w.slice()[0] >> 30));
+    }
+    try testing.expectError(error.AssemblyFailed, asm_mod.assembleOne("x19.xrd s7, #0"));
+    try testing.expectError(error.AssemblyFailed, asm_mod.assembleOne("x19.xrd s7, #31"));
+}
+
 test "ldy refuses e2 and reads e3 (650)" {
     for ([_]struct { e: u32, ok: bool }{ .{ .e = 2, .ok = false }, .{ .e = 3, .ok = true } }) |c| {
         var st = emu.State{};

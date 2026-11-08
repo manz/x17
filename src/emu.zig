@@ -3225,11 +3225,13 @@ fn execX19A43(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 fn execX19Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     const head = bundle[0];
-    const w3 = bundle[3];
+    const w1 = bundle[1];
     const dest_s: u32 = (head >> 21) & 0xF;
-    const src_a: u32 = (w3 >> 15) & 0x1F;
-    const a_val: u32 = if (src_a == 0) 0 else state.a[src_a];
-    const v: u32 = state.readX(a_val) orelse 0;
+    // The read index is A<{w1[2:0], head[31:30]}>; w3[19:15] is inert (fact 651, which
+    // revises 154). A0 and A31 are not plain address registers (649): refused.
+    const src_a: u32 = ((w1 & 7) << 2) | (head >> 30);
+    if (src_a == 0 or src_a == 31) return RunError.UnknownForm;
+    const v: u32 = state.readX(state.a[src_a]) orelse 0;
     if (dest_s != 0) state.s[dest_s] = v;
 }
 

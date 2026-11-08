@@ -96,6 +96,7 @@ pub const OperandKind = enum {
     e8, // element reg e8..e15 in a 3-bit field (field = k - 8)
     r_reg, // R-file reg, 4 bits (R0 pinned to 0)
     a_reg, // Address reg A0..A15, 4 or 5 bits
+    a4, // A index k written `#k`: k >> 2 in the field, k & 3 in head[31:30] (fact 651)
     p, // predicate, form-specific width
     imm, // raw immediate, width = hi-lo+1
     dest_ldi, // ldi's 5-bit dest index (16..31 = s(k-16))
@@ -335,7 +336,7 @@ fn parseOperands(src: []const u8) OperandsParse {
         const lo_s = std.mem.trim(u8, rest3[0..f4], " \t\r");
 
         const kind: OperandKind =
-            if (std.mem.eql(u8, kind_s, "s")) .s else if (std.mem.eql(u8, kind_s, "e")) .e else if (std.mem.eql(u8, kind_s, "e8")) .e8 else if (std.mem.eql(u8, kind_s, "R")) .r_reg else if (std.mem.eql(u8, kind_s, "A")) .a_reg else if (std.mem.eql(u8, kind_s, "p")) .p else if (std.mem.eql(u8, kind_s, "imm")) .imm else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi else if (std.mem.eql(u8, kind_s, "y_addr")) .y_addr else if (std.mem.eql(u8, kind_s, "rel")) .rel else if (std.mem.eql(u8, kind_s, "relu")) .relu else if (std.mem.eql(u8, kind_s, "rel4")) .rel4 else continue;
+            if (std.mem.eql(u8, kind_s, "s")) .s else if (std.mem.eql(u8, kind_s, "e")) .e else if (std.mem.eql(u8, kind_s, "e8")) .e8 else if (std.mem.eql(u8, kind_s, "R")) .r_reg else if (std.mem.eql(u8, kind_s, "A")) .a_reg else if (std.mem.eql(u8, kind_s, "a4")) .a4 else if (std.mem.eql(u8, kind_s, "p")) .p else if (std.mem.eql(u8, kind_s, "imm")) .imm else if (std.mem.eql(u8, kind_s, "dest_ldi")) .dest_ldi else if (std.mem.eql(u8, kind_s, "y_addr")) .y_addr else if (std.mem.eql(u8, kind_s, "rel")) .rel else if (std.mem.eql(u8, kind_s, "relu")) .relu else if (std.mem.eql(u8, kind_s, "rel4")) .rel4 else continue;
 
         const syll: u8 = blk: {
             if (std.mem.eql(u8, syll_s, "head")) break :blk 0;
