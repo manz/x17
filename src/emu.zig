@@ -2344,6 +2344,97 @@ fn x18C3SlotAlu(op: u32, a: u32, b: u32) RunError!u32 {
     };
 }
 
+/// shr / rshr / lsr by a register count (644): b >= 0 shifts right (arithmetic, rounded, or
+/// logical over 24 bits), b < 0 shifts left by -b.  Counts are measured over -8..12 (644, 645
+/// sweeps); any other b is refused, as is a left shift past 24 bits.
+const X18C3ShiftKind = enum { shr, rshr, lsr };
+fn x18C3ShiftBy(kind: X18C3ShiftKind, v: u32, b: u32) RunError!u32 {
+    const k = sx24(b);
+    if (k < -8 or k > 12) return RunError.UnknownForm;
+    if (k < 0) return x18C3Shl(v, @intCast(-k));
+    return switch (kind) {
+        .shr => x18C3Shr(v, @intCast(k)),
+        .rshr => x18C3Rnd(v, @intCast(k)),
+        .lsr => (v & M24) >> @intCast(k),
+    };
+}
+
+/// Ops 2/3/4 min, op 6 max, signed 24-bit (644).
+fn x18C3MinMax(op: u32, x: u32, y: u32) u32 {
+    const lo = sx24(x) < sx24(y);
+    return (if ((op == 6) != lo) x else y) & M24;
+}
+
+/// x18 class 011 unary ops 2/3/4/6 under the 45 codes 641-643 left (644).  Null for codes this
+/// table does not cover.  #n is the immediate n; S = {2, 5, 6, 7, 9}.  The fit covers n = 0..2,
+/// so n > 2 is refused except where a code selects on S.  Op 7 runs only under 0x09-0x0F.
+fn x18C3Unary644(code: u32, op: u32, n: u32, a: u32, b: u32) RunError!?u32 {
+    const covered = switch (code) {
+        0x06...0x0F, 0x12...0x15, 0x1A...0x22, 0x24...0x2F, 0x36...0x39, 0x3B...0x3F => true,
+        else => false,
+    };
+    if (!covered) return null;
+    if (op == 7 and !(code >= 0x09 and code <= 0x0F)) return RunError.UnknownForm;
+    const uses_s = switch (code) {
+        0x12...0x15, 0x24, 0x25 => true,
+        else => false,
+    };
+    if (n > 2 and !uses_s) return RunError.UnknownForm;
+    const in_s = x18C3AluN(n);
+    const imm = n;
+    const logic_imm: u32 = (switch (op) {
+        2 => a | imm,
+        3 => a & imm,
+        4 => ~imm,
+        else => imm,
+    }) & M24;
+    const logic_b: u32 = (switch (op) {
+        2 => a | b,
+        3 => a & b,
+        4 => ~b,
+        else => b,
+    }) & M24;
+    const pick_imm = if (op == 6) a & M24 else imm; // 0x29 / 0x2F: #n for ops 2/3/4, a for 6
+    return switch (code) {
+        0x06 => try x18C3ShiftBy(.shr, try x18C3SlotAlu(op, a, b), b),
+        0x07 => try x18C3ShiftBy(.rshr, try x18C3SlotAlu(op, a, b), b),
+        0x08 => if (op == 6) RunError.UnknownForm else try x18C3ShiftBy(.lsr, try x18C3SlotAlu(op, a, b), b),
+        0x09...0x0F => try x18C3SlotAlu(op, a, b),
+        0x12, 0x13 => if (in_s) try x18C3SlotAlu(op, a, b) else (switch (op) {
+            2 => a,
+            3 => a -% 1,
+            4 => a +% 1,
+            else => ~a,
+        }) & M24,
+        0x14, 0x15 => if (in_s) try x18C3SlotAlu(op, a, b) else (switch (op) {
+            2 => ~(a +% 1),
+            3, 4 => ~a,
+            else => a,
+        }) & M24,
+        0x1A => try x18C3ShiftBy(.shr, logic_imm, b),
+        0x1B => try x18C3ShiftBy(.lsr, logic_imm, b),
+        0x1C => logic_imm,
+        0x1D...0x1F => logic_b,
+        0x20, 0x22 => 0,
+        0x21 => if (op == 4) RunError.UnknownForm else 0,
+        0x24 => if (in_s) try x18C3SlotAlu(op, a, b) else b & M24,
+        0x25 => if (in_s) a & M24 else logic_b,
+        0x26, 0x2A => x18C3MinMax(op, a, b),
+        0x27, 0x2B => if (op == 6) a & M24 else b & M24,
+        0x28 => x18C3MinMax(op, a, imm),
+        0x29 => pick_imm,
+        0x2C => try x18C3Shl(x18C3MinMax(op, a, b), n),
+        0x2D => if (n == 0) x18C3MinMax(op, a, b) else try x18C3Rnd(x18C3MinMax(op, a, b), n),
+        0x2E => try x18C3ShiftBy(.shr, x18C3MinMax(op, a, imm), b),
+        0x2F => try x18C3ShiftBy(.lsr, pick_imm, b),
+        0x3B => if (op == 4) b & M24 else 0,
+        0x3C => if (n <= 1) try x18C3SlotAlu(op, a, b) else if (n == 2) b & M24 else RunError.UnknownForm,
+        0x3D, 0x3F => if (n <= 1) try x18C3SlotAlu(op, a, b) else RunError.UnknownForm,
+        0x3E => if (op == 4) try x18C3Shr(a, n) else RunError.UnknownForm,
+        else => RunError.UnknownForm, // 0x36-0x39
+    };
+}
+
 /// v << n at 24 bits; a result past 24 bits is unmeasured and refused.
 fn x18C3Shl(v: u32, n: u32) RunError!u32 {
     const r = @as(i64, sx24(v)) << @intCast(n);
@@ -2380,7 +2471,8 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
     const op = (w1 >> 15) & 7;
     const n = (w2 >> 6) & 0xF;
     return switch ((h >> 25) & 0x3F) {
-        0x10 => if (x18C3AluN(n)) x18C3SlotAlu(op, a, b) else x18C3TableB(op, a, b),
+        // 644: 0x11 runs as 0x10.
+        0x10, 0x11 => if (x18C3AluN(n)) x18C3SlotAlu(op, a, b) else x18C3TableB(op, a, b),
         0x23 => if (x18C3AluN(n)) x18C3SlotAlu(op, a, b) else b & M24,
         else => |code| {
             const unary = op == 2 or op == 3 or op == 4 or op == 6 or op == 7;
@@ -2403,7 +2495,7 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
                     0x33, 0x35 => return if (shifting) x18C3Shr(a, n) else a & M24,
                     0x34 => return if (!shifting or n == 0) a & M24 else x18C3Rnd(a, n),
                     0x3A => return if (op == 2 or op == 3) x18C3Shl(a, n) else x18C3Shr(a, n),
-                    else => {},
+                    else => if (try x18C3Unary644(code, op, n, a, b)) |v| return v,
                 }
             }
             return if (n != 0) RunError.UnknownForm else x18C3SlotAlu(op, a, b);

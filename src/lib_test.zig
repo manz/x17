@@ -6136,7 +6136,7 @@ test "agumul with S1[30:28] = 000 also runs the 120 slot; both read the old s (f
         try testing.expectEqual(c[2], st.s[2]);
         try testing.expectEqual(@as(u32, 0xAB00), st.s[9]);
     }
-    // own-x16y with S1[12:9] = 1 (measured): the slot writes s1 = 0x5F00, the product still
+    // own-x16y1 (own-x16y with S1[12:9] = 1, silicon 3 of 3): the slot writes s1 = 0x5F00, the product still
     // reads the old s1.
     var st = emu.State{};
     defer st.deinit(gpa);
@@ -6351,12 +6351,14 @@ test "x18 class 011 unary ops shift the result by n under codes 0x00-0x05" {
     try testing.expectEqual(@as(u32, 8), b.s[9]);
 }
 
+/// Runs one class-011 bundle, s9 <- the slot.  p1 is the p destination, for codes whose
+/// head[28:25] is the p-write condition 11.
 fn x18c3Unary(code: u32, op: u32, n: u32, s4: u32, s7: u32) !u32 {
     var state = emu.State{};
     defer state.deinit(testing.allocator);
     state.s[4] = s4;
     state.s[7] = s7;
-    _ = try emu.runFrom(testing.allocator, &state, &.{ x18c3Head(code), 0x00001970 | (op << 15), 0x30000010 | (n << 6), 0x740000c9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    _ = try emu.runFrom(testing.allocator, &state, &.{ x18c3Head(code), 0x00001970 | (op << 15), 0x30000010 | (n << 6) | (1 << 14), 0x740000c9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     return state.s[9];
 }
 
@@ -6408,4 +6410,95 @@ test "x18 class 011 slot ops 4 and 6: a - 1 and -a (fact 641 rows)" {
     }
     // unary under 0x00-0x02 shifts the op result: (5 - 1) << 1
     try testing.expectEqual(@as(u32, 8), try x18c3Unary(0x00, 4, 1, 5, 0));
+}
+
+test "x18 class 011 unary ops under the 45 remaining codes (644)" {
+    // own-x18m: s4 = -4, s7 = 9, code 0x26, op 2: min(-4, 9) = -4.
+    var st = try x18c3Run(0x4c400018, 0x00011970, 0x30000010, 0xFFFFFC);
+    defer st.deinit(testing.allocator);
+    try testing.expectEqual(@as(u32, 0xFFFFFC), st.s[9]); // the exact words, s7 = 3 here
+    try testing.expectEqual(@as(u32, 0xFFFFFC), try x18c3Unary(0x26, 2, 0, 0xFFFFFC, 9));
+    const N4: u32 = 0xFFFFFC; // -4
+    const M2: u32 = 0xFFFFFE; // -2
+    const C = struct { code: u32, op: u32, n: u32, a: u32, b: u32, want: u32 };
+    for ([_]C{
+        // 0x06-0x08: shr / rshr / lsr of the slot result by b
+        .{ .code = 0x06, .op = 2, .n = 0, .a = N4, .b = 9, .want = 0xFFFFFF },
+        .{ .code = 0x06, .op = 2, .n = 1, .a = 7, .b = M2, .want = 28 },
+        .{ .code = 0x07, .op = 4, .n = 0, .a = 7, .b = 3, .want = 1 }, // (6 + 4) >> 3
+        .{ .code = 0x08, .op = 2, .n = 2, .a = N4, .b = 9, .want = 0x7FFF },
+        // 0x09-0x0F: the slot ALU, op 7 abs
+        .{ .code = 0x09, .op = 7, .n = 0, .a = N4, .b = 0, .want = 4 },
+        .{ .code = 0x0C, .op = 4, .n = 2, .a = 5, .b = 0, .want = 4 },
+        // 0x11 = 0x10
+        .{ .code = 0x11, .op = 2, .n = 0, .a = 5, .b = 3, .want = 0xFFFFFB },
+        .{ .code = 0x11, .op = 2, .n = 2, .a = 5, .b = 3, .want = 5 },
+        // 0x12 / 0x13, 0x14 / 0x15: S picks the ALU
+        .{ .code = 0x12, .op = 3, .n = 0, .a = 5, .b = 3, .want = 4 },
+        .{ .code = 0x13, .op = 4, .n = 1, .a = 5, .b = 3, .want = 6 },
+        .{ .code = 0x12, .op = 6, .n = 0, .a = 5, .b = 3, .want = 0xFFFFFA },
+        .{ .code = 0x12, .op = 3, .n = 5, .a = 5, .b = 3, .want = 6 },
+        .{ .code = 0x14, .op = 2, .n = 1, .a = 5, .b = 3, .want = 0xFFFFF9 },
+        .{ .code = 0x15, .op = 3, .n = 0, .a = 5, .b = 3, .want = 0xFFFFFA },
+        .{ .code = 0x14, .op = 6, .n = 0, .a = 5, .b = 3, .want = 5 },
+        .{ .code = 0x15, .op = 6, .n = 9, .a = 5, .b = 3, .want = 0xFFFFFB },
+        // 0x1A-0x1F: LOGIC with #n or b
+        .{ .code = 0x1A, .op = 2, .n = 2, .a = 5, .b = M2, .want = 28 },
+        .{ .code = 0x1B, .op = 4, .n = 1, .a = 5, .b = 9, .want = 0x7FFF },
+        .{ .code = 0x1C, .op = 3, .n = 2, .a = 7, .b = 3, .want = 2 },
+        .{ .code = 0x1D, .op = 2, .n = 0, .a = 5, .b = 3, .want = 7 },
+        .{ .code = 0x1F, .op = 4, .n = 1, .a = 5, .b = 3, .want = 0xFFFFFC },
+        .{ .code = 0x1E, .op = 6, .n = 0, .a = 5, .b = 3, .want = 3 },
+        // 0x20-0x22: 0
+        .{ .code = 0x20, .op = 2, .n = 0, .a = 5, .b = 3, .want = 0 },
+        .{ .code = 0x21, .op = 3, .n = 1, .a = 5, .b = 3, .want = 0 },
+        .{ .code = 0x22, .op = 6, .n = 2, .a = 5, .b = 3, .want = 0 },
+        // 0x24 / 0x25
+        .{ .code = 0x24, .op = 3, .n = 0, .a = 5, .b = 3, .want = 3 },
+        .{ .code = 0x24, .op = 3, .n = 2, .a = 5, .b = 3, .want = 6 },
+        .{ .code = 0x25, .op = 3, .n = 6, .a = 5, .b = 3, .want = 5 },
+        .{ .code = 0x25, .op = 3, .n = 0, .a = 5, .b = 3, .want = 1 },
+        // min / max
+        .{ .code = 0x26, .op = 6, .n = 0, .a = N4, .b = 9, .want = 9 },
+        .{ .code = 0x2A, .op = 3, .n = 1, .a = N4, .b = 9, .want = N4 },
+        .{ .code = 0x2A, .op = 4, .n = 0, .a = 7, .b = M2, .want = M2 },
+        .{ .code = 0x27, .op = 2, .n = 0, .a = 5, .b = 3, .want = 3 },
+        .{ .code = 0x2B, .op = 6, .n = 0, .a = 5, .b = 3, .want = 5 },
+        .{ .code = 0x28, .op = 2, .n = 2, .a = 5, .b = 3, .want = 2 },
+        .{ .code = 0x28, .op = 6, .n = 1, .a = N4, .b = 3, .want = 1 },
+        .{ .code = 0x29, .op = 3, .n = 2, .a = 5, .b = 3, .want = 2 },
+        .{ .code = 0x29, .op = 6, .n = 2, .a = 5, .b = 3, .want = 5 },
+        .{ .code = 0x2C, .op = 6, .n = 2, .a = 5, .b = 3, .want = 20 },
+        .{ .code = 0x2D, .op = 2, .n = 1, .a = 5, .b = 7, .want = 3 }, // (5 + 1) >> 1
+        .{ .code = 0x2D, .op = 2, .n = 0, .a = 5, .b = 7, .want = 5 },
+        .{ .code = 0x2E, .op = 2, .n = 2, .a = N4, .b = 9, .want = 0xFFFFFF },
+        .{ .code = 0x2E, .op = 2, .n = 2, .a = N4, .b = M2, .want = 0xFFFFF0 },
+        .{ .code = 0x2E, .op = 6, .n = 1, .a = N4, .b = M2, .want = 4 }, // max(-4, #1) << 2, not max(-4, -2) << 2
+        .{ .code = 0x2F, .op = 6, .n = 0, .a = N4, .b = 9, .want = 0x7FFF },
+        .{ .code = 0x2F, .op = 2, .n = 2, .a = 5, .b = M2, .want = 8 },
+        // 0x3B-0x3E
+        .{ .code = 0x3B, .op = 4, .n = 0, .a = 5, .b = 3, .want = 3 },
+        .{ .code = 0x3B, .op = 2, .n = 0, .a = 5, .b = 3, .want = 0 },
+        .{ .code = 0x3C, .op = 3, .n = 1, .a = 5, .b = 3, .want = 6 },
+        .{ .code = 0x3C, .op = 3, .n = 2, .a = 5, .b = 3, .want = 3 },
+        .{ .code = 0x3D, .op = 4, .n = 0, .a = 5, .b = 3, .want = 4 },
+        .{ .code = 0x3F, .op = 6, .n = 1, .a = 5, .b = 3, .want = 0xFFFFFB },
+        .{ .code = 0x3E, .op = 4, .n = 2, .a = N4, .b = 3, .want = 0xFFFFFF },
+    }) |c| {
+        const got = x18c3Unary(c.code, c.op, c.n, c.a, c.b) catch |e| {
+            std.debug.print("code {x} op {d} n {d}: {}\n", .{ c.code, c.op, c.n, e });
+            return e;
+        };
+        if (got != c.want) std.debug.print("code {x} op {d} n {d}: got {x}\n", .{ c.code, c.op, c.n, got });
+        try testing.expectEqual(c.want, got);
+    }
+    const R = struct { code: u32, op: u32, n: u32, a: u32 = 5, b: u32 = 3 };
+    for ([_]R{
+        .{ .code = 0x36, .op = 2, .n = 0 },          .{ .code = 0x39, .op = 6, .n = 0 },
+        .{ .code = 0x3E, .op = 2, .n = 0 },          .{ .code = 0x3C, .op = 3, .n = 3 },
+        .{ .code = 0x3D, .op = 3, .n = 2 },          .{ .code = 0x3F, .op = 3, .n = 2 },
+        .{ .code = 0x26, .op = 7, .n = 0 },          .{ .code = 0x26, .op = 2, .n = 3 },
+        .{ .code = 0x08, .op = 6, .n = 0 },          .{ .code = 0x21, .op = 4, .n = 0 },
+        .{ .code = 0x06, .op = 2, .n = 0, .b = 13 }, .{ .code = 0x06, .op = 2, .n = 0, .b = 0xFFFFF7 },
+    }) |r| try testing.expectError(error.UnknownForm, x18c3Unary(r.code, r.op, r.n, r.a, r.b));
 }
