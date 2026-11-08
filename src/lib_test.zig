@@ -6855,6 +6855,29 @@ test "x19.xrd reads A<{w1[2:0], head[31:30]}>, w3[19:15] inert (651)" {
     try testing.expectError(error.AssemblyFailed, asm_mod.assembleOne("x19.xrd s7, #31"));
 }
 
+test "an x02.v X read into s0 reaches no other slot (652)" {
+    for ([_]u32{ 0, 8 }) |d| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.a[1] = 0;
+        try st.x_mem.put(testing.allocator, 0, 0x123456);
+        st.s[3] = 0x40;
+        st.s[7] = 0x100;
+        st.s[4] = 0x77;
+        st.s[8] = 0x55;
+        var buf: [96]u8 = undefined;
+        const src = try std.fmt.bufPrint(&buf, "x02.v s{d}, A1, A0, A0, A0, s4, s0, s0, s0, #5, #0, #2, s3, s7, #5, #0", .{d});
+        const w = try asm_mod.assembleOne(src);
+        var prog: [9]u32 = undefined;
+        @memcpy(prog[0..6], w.slice()[0..6]);
+        prog[6..9].* = .{ 0x00000017, 0x31308000, 0xA0000000 };
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        try testing.expectEqual(@as(u32, 0), st.s[0]);
+        try testing.expectEqual(@as(u32, 0), st.s[4]); // the multiply saw s0 = 0
+        try testing.expectEqual(@as(u32, if (d == 8) 0x123456 else 0x55), st.s[8]);
+    }
+}
+
 test "ldy refuses e2 and reads e3 (650)" {
     for ([_]struct { e: u32, ok: bool }{ .{ .e = 2, .ok = false }, .{ .e = 3, .ok = true } }) |c| {
         var st = emu.State{};

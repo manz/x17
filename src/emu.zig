@@ -541,7 +541,8 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         const s_pre = state.s;
         // The X read writes before the multiply reads here.  Whether silicon's
         // multiply sees the old or the new s is OPEN (own-x02yrd overlaps them
-        // but observes only the read); code should not lean on either.
+        // but observes only the read); code should not lean on either.  A read
+        // into s0 is never seen (652).
         try execX02Xrd(gpa, state, bundle);
         try execX02Mpy(gpa, state, bundle);
         try execX02Ainc(gpa, state, bundle);
@@ -1577,7 +1578,9 @@ fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         1 => if (mode == 2) (state.a[w3 & 0x1F] +% 1) & M24 else return RunError.UnknownForm,
         else => x02YSide(state, bundle),
     };
-    state.s[(w4 >> 3) & 0xF] = v;
+    // Read into s0, the word reaches no other slot of the bundle: s0 stays 0 (fact 652).
+    const dest_s: u32 = (w4 >> 3) & 0xF;
+    if (dest_s != 0) state.s[dest_s] = v;
 }
 fn execX12Aset(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len < 2) return RunError.UnknownForm;

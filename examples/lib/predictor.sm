@@ -213,7 +213,7 @@ sample: ldy s7, e15
         ; fact 399). Four x02.v bundles a term, the X reads and A steps one term ahead, the
         ; hi add one term behind; no multiply reads an s its own bundle's X read writes.
         ; The bundles with nothing to read still read X:[A0] (x02.v always does): into s8, which
-        ; is dead until the sum reloads it, never s0, since X:0 may hold samples.
+        ; is dead until the sum reloads it. s0 would do too: a read into s0 is never seen (652).
         ; Operands: xrd_d, xrd_a, inc_d1, inc_d2, inc_s, mpy_d, mpy_a, mpy_b, plo, #sgn,
         ; #x3_d >> 2, #x3_d & 3, x3_a, x3_b, #op, #sh
         x02.v s1, A11, A11, A0, A11, s9, s0, s0, s0, #5, #1, #1, s0, s0, #0, #0 ; c; s9 = s5 = 0

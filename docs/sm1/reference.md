@@ -452,6 +452,7 @@ Emulator:
 > i = (w3[14:0] << 1) | w2[31]), 100 H3[16:1], 101 H3[23:8], 111 0; w2[4] yd.  own-x19a43
 > x19aagu covers (0,4,2) too (152): same slot, i = (w3[14:0] << 1) | w2[31].  own-x19aagu42
 > x19alu write condition (646): the ALU write lands iff cond w1[23:20] holds on p1: 0, 1, 3 while p1 = 0; 2, 5, 7 while p1 = 1; 6, 9 always (the X writes are unconditional).  4, 8, 10-15 did not write in the one context measured: refused.  The assembler emits 6.
+> x02 X read into s0 (652): the word reaches no other slot of the same bundle; s0 stays 0.  own probe pair, the s8 twin returning the word.
 > x19 (0,4,3) mux-5 X read (651, revising 154): the index is A<{w1[2:0], head[31:30]}> = 4 * w1[2:0] + head[31:30]; w3[19:15] is inert (154's own program used A11, where both readings agree).  A0 and A31 refused (649).  The assembler writes `x19.xrd s, #k` across both fields.
 > x19alu predicate write (647): with w3[23:20] = 0xE the bundle sets p<w2[17:14]> <- 1 whether the result is zero or not; 15 touches none (the assembler emits 15).  Other w3[23:20] values: OPEN, p left alone.
 > x19alu covers (0,4,4) too (153): w2[31] does not move the s write.  own-x19alu44
