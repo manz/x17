@@ -671,7 +671,7 @@ ld0e.a     2   0x8000000E   0x00041000
 # ste: 0x0F head class 000 + class-001 second, e <- #imm (fact 279).
 ste        2   0x0000000F   0x20058000
 
-# rop.b21: rop with the inert [21] set, as the stock words carry it
+# rop.b21: rop with the inert [21] set
 # (fact 281 / own-x07rop12).
 rop.b21    1   0x40200007
 
@@ -788,7 +788,7 @@ x16.sh     3   0x06000016   0x00000000   0x00001000
 # x02.mac: the w2 multiply with its mode and the w4 X read (fact 161).
 x02.mac    6   0x00000002   0x00000000   0x00020042   0x00000001   0x00002800   0x00004200
 
-# x18.e2nd17: the stock class-000 bundle with w2[17] = 0, phase T (fact 180).
+# x18.e2nd17: a class-000 bundle with w2[17] = 0, phase T (fact 180).
 x18.e2nd17 4   0x80800018   0x00028024   0x0000A940   0x00048100
 
 # ldi.q: ldi with its inert [29:26] spelt out (fact 87).

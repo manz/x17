@@ -136,6 +136,7 @@ pub fn build(b: *std.Build) void {
     lib_mod.addAnonymousImport("sections.sm", .{ .root_source_file = b.path("examples/lib/sections.sm") });
     lib_mod.addAnonymousImport("dequant.sm", .{ .root_source_file = b.path("examples/lib/dequant.sm") });
     lib_mod.addAnonymousImport("imdct.sm", .{ .root_source_file = b.path("examples/lib/imdct.sm") });
+    lib_mod.addAnonymousImport("handbook.md", .{ .root_source_file = b.path("docs/sm1/handbook.md") });
     lib_mod.addAnonymousImport("window.sm", .{ .root_source_file = b.path("examples/lib/window.sm") });
     lib_mod.addAnonymousImport("stereo.sm", .{ .root_source_file = b.path("examples/lib/stereo.sm") });
     lib_mod.addAnonymousImport("tns.sm", .{ .root_source_file = b.path("examples/lib/tns.sm") });

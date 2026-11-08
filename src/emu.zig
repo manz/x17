@@ -474,7 +474,7 @@ fn execPc14(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
 }
 
 /// A class-011 pc14's p write is measured only for group 0 code 0, which sets it (487: the
-/// pair XXXXXXXX 72000060 sets p6 from 0 and from 1).
+/// measured pair sets p6 from 0 and from 1).
 fn pc14C3PMeasured(bundle: []const u32) bool {
     if ((bundle[1] >> 4) & 0xF == 0) return true;
     return (bundle[0] >> 25) & 0xF == 0 and (bundle[1] >> 8) & 0xF == 0;
@@ -2663,7 +2663,7 @@ fn execXst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     if (bundle.len < 2) return RunError.UnknownForm;
-    // Every row sets S1[18]; clearing it wedges (559).
+    // Every measured row sets S1[18]; clearing it wedges (559).
     if ((bundle[1] >> 18) & 1 == 0) return RunError.UnknownForm;
     const head = bundle[0];
     const s1 = bundle[1];
@@ -2957,7 +2957,7 @@ fn execX19A3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const head = bundle[0];
     const w1 = bundle[1];
     const w3 = bundle[3];
-    // Every row sets w1[27]; clearing it wedges (559).
+    // Every measured row sets w1[27]; clearing it wedges (559).
     if ((w1 >> 27) & 1 == 0) return RunError.UnknownForm;
     const y: u32 = state.r[(w1 >> 18) & 0xF];
     const agu = agu3Eval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], y, 2 * (w3 & 0x7FFF));
@@ -3435,7 +3435,7 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     // 22, 32, 47; [16:15] = 10 hits the drifting pointer a2).
     if (s2_class == 0b101) return execX17Ms(gpa, state, bundle);
     // S1[22:20] = 010 on any other continue-shape form: its fields, then the stop
-    // (fact 478: all 20 rows stopped; the two-bundle shadow is the synthetic's).
+    // (fact 478: all 20 silicon rows stopped; the two-bundle shadow is the synthetic's).
     if (s1 & (7 << 20) == isa.STOP_ROW) {
         const b3 = [3]u32{ bundle[0], s1 & ~isa.STOP_ROW, s2 };
         // Forms with an operand on those bits (x17.ld, ...) read 010 as a field: not a stop.
@@ -4297,7 +4297,7 @@ fn execX17E(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     const s1 = bundle[1];
     const s2 = bundle[2];
 
-    // S1[23:20] != 0: of 17 rows 9 run, 4 arm the halt deadline and 4 stop, and no
+    // S1[23:20] != 0: of 17 silicon rows 9 run, 4 arm the halt deadline and 4 stop, and no
     // field predicts which (fact 481): refused.
     if ((s1 >> 20) & 0xF != 0) return RunError.UnknownForm;
     const dest_s: u32 = (head >> 21) & 0xF;
@@ -5322,7 +5322,7 @@ fn execRop(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const x_val: u32 = if (x_e == 0) 0 else state.e[x_e];
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
 
-    // head[21] = 1 computes through AGU10 (fact 521, own-ropagu, 162 rows), 0
+    // head[21] = 1 computes through AGU10 (fact 521, own-ropagu, 162 silicon rows), 0
     // through ROP07 = AGU10B:  x, y, 0, -x, -y, 1, x+y, x-y, 0, 0, y, y, y, -y, y+1, y-1
     const v: u32 = if ((head >> 21) & 1 == 1) try agu10Eval(fn_op, x_val, y_val) else switch (fn_op & 0xF) {
         0 => x_val & M24,

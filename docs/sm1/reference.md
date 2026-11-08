@@ -13,7 +13,7 @@ OPEN are undefined: the emulator refuses them.
 
 - Encoding: `word & 0xE000001F == 0x2000000F`
 - Evidence: MEASURED
-- Source: fact 14: XXXXXXXX/2002120f move their store with [20:5]; [31:29]=001 selects it
+- Source: fact 14: [20:5] moves the store; [31:29]=001 selects it
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -119,6 +119,7 @@ Emulator:
 
 - Encoding: `word & 0xE008001F == 0x0008000B`
 - Evidence: MEASURED
+- Source: fact 96 pass 122: p<[14:11]> <- FN[18:15](a = p<[25:21]>, b = p<[28:26]>), FN b, a==b, a^b, a&b, a|b, !(a&b), !(a|b), !b, a, 0, then 1 for 10-15; op [10:5] 0E/0F/1F/2A/2B (0E is the common op; other ops write 1 in the measured context, OPEN); [19] = 0 is another form (wedges when b).  own-plog-and, own-plog-or
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -225,18 +226,18 @@ Emulator:
 > own-x18pset, own-x18pmov, own-x18pnot, own-x18pclr
 > pc14 (fact 380, 381, 464): v = mode S[14:12] of s<S[22:19]> (0-2 -a, 3 ~a, 4 1-a, 5-6 a, 7 -|a|); g 0 c0-7, c9 -> 1;
 > mux 00 loads s<h[24:21]> <- !cond (478, not 0).  g 11 c12 -> v even; g 12 c0-11 -> v >= 0, <= 0, > 0, < 0, != 0, == 0 by c mod 6, c15 -> 1; g 14 -> 0xFD1B; other cells refused.
-> x17 S2 class 101 with S1[28] = 0 and a load dest (490, one word: XXXXXXXX XXXXXXXX XXXXXXXX, mux 4): s<h[24:21]> <- 0 in a plain program, also after a st.y, with Y:0/Y:1 planted and with R10 set. x99 reads 0xA050 for the same word, so the 0 is plain-program only (revisit if emu models x99-like presets). Other muxes refused.
-> 521: rop head[21] = 1 computes through AGU10, 0 through ROP07 = AGU10B (162 rows, own-ropagu); x16alu (S2 class 111) mux 1/5 with S2[18] reads Y:[e<S2[24:21]>] fresh instead of yd (15 of 15); x19mac runs w2 class 100 as 001 (7 of 7), w3 class 101 with w2 class 100 is OPEN (refused); w2 = 0x80C80000 wedged twice (w2[31] necessary, rest unmeasured), both already refused (open X store, w1 class 111).
-> 0x03 R slot Y read (519): w5[21] = 1, w5[27:26] = 00: R<w3[22:19]> <- Y:[e<w3[30:27]>] fresh (w5[21] = 0 the stale latch), 7 rows, own-x03ry; refused beside w5[20] (a Y-storing row read 0x1101), at index 0 (unmeasured) and beside AGU fns 10/14.  Mux 1/2 with w5[29:28] = 10: e<w3[26:23]> when w1[8], else e<w3[30:27]> (2 of 3 rows; w1[8] at index 0 read 0x3422, refused).
-> 0x00 R slot (516): R<{w4[0], w3[31:29]}> as on 0x01; w5[21] = 1 AGU10, else w5[26:25] = 11 head[26:11], 10 zero, w5[25] = 1 in mode 4 (s<w6[27:24]> * s<w6[31:28]> << !w1[17])[15:0], otherwise Y:[e<w4[8:5]>] (Y:0 at index 0).  14 of 14 rows, own-x00rimm.  The product route holds on 0x01 too (522, own-x01mp: R2 = 0x100 * 3; 425's 0xEE07 row was the product); the immediate and zero bits read Y there (505); OPEN.
+> x17 S2 class 101 with S1[28] = 0 and a load dest (490, one measured bundle, mux 4): s<h[24:21]> <- 0 in a plain program, also after a st.y, with Y:0/Y:1 planted and with R10 set. x99 reads 0xA050 for the same word, so the 0 is plain-program only (revisit if emu models x99-like presets). Other muxes refused.
+> 521: rop head[21] = 1 computes through AGU10, 0 through ROP07 = AGU10B (162 silicon rows, own-ropagu); x16alu (S2 class 111) mux 1/5 with S2[18] reads Y:[e<S2[24:21]>] fresh instead of yd (15 of 15); x19mac runs w2 class 100 as 001 (7 of 7), w3 class 101 with w2 class 100 is OPEN (refused); w2 = 0x80C80000 wedged twice (w2[31] necessary, rest unmeasured), both already refused (open X store, w1 class 111).
+> 0x03 R slot Y read (519): w5[21] = 1, w5[27:26] = 00: R<w3[22:19]> <- Y:[e<w3[30:27]>] fresh (w5[21] = 0 the stale latch), 7 silicon rows, own-x03ry; refused beside w5[20] (a Y-storing row read 0x1101), at index 0 (unmeasured) and beside AGU fns 10/14.  Mux 1/2 with w5[29:28] = 10: e<w3[26:23]> when w1[8], else e<w3[30:27]> (2 of 3 rows; w1[8] at index 0 read 0x3422, refused).
+> 0x00 R slot (516): R<{w4[0], w3[31:29]}> as on 0x01; w5[21] = 1 AGU10, else w5[26:25] = 11 head[26:11], 10 zero, w5[25] = 1 in mode 4 (s<w6[27:24]> * s<w6[31:28]> << !w1[17])[15:0], otherwise Y:[e<w4[8:5]>] (Y:0 at index 0).  14 of 14 silicon rows, own-x00rimm.  The product route holds on 0x01 too (522, own-x01mp: R2 = 0x100 * 3; 425's 0xEE07 row was the product); the immediate and zero bits read Y there (505); OPEN.
 > ystm (514): h[26] = 0 and s[17:16] = 10 read Y:[e<h[8:5]>] into e<h[12:9]> and R<s[28:25]> (s[17] = 0: the stale latch); h[26] = 1 with the store on picks AGU10B (s[20] = 0) or AGU10 (1), 32 of 32.  own-ystmB.  s[20] with the store off is untested (emu keeps AGU10).
 > 0x04 R slot (522): w5[27:26] = 00: R<w3[22:19]> <- Y:[e<w3[30:27]>] (w5[25] = 1; own-x04yd's 0x1357 was this read), or with w5[30] = 1 in mode w1[13:11] = 4 (s<w2[8:5]> * s<w2[4:1]> << !w1[17])[15:0]; 8 of 8 rows.  Both bits refused together.
 > 0x02 (513): w5[10:9] = 11 stores sx24 s<{w2[0], w1[31:29]}> at X:[A<w4[21:17]>]; with w5[27:26] = 00, R<w3[22:19]> <- w5[31:30] = 11: #head[26:11], 00: yd, 10: the third slot's alu value (594; codes 0/3/0xE, every m; ADDER_M[7] = |b|, 238), 01 refused; both outside the w4 modes, reading before the bundle writes (own-x02rimm).  Overturns 158's inert w1[31:29] and w5[31:30].
 > 0x01 multiply mode 4 (496, 507): rnd(a * b >> 23), X ignored, w4[22]'s Y swap (316) only on mode 0; emu admits w1[17:14] = 0010 and 16-bit operands (own-x01m4, own-x01m4w22).  0x01 s-slot sub-mux 10 (508, 509): rows 10/11 are R<head[30:27]> +/- head[26:11] (own-x01ty).  The rest is AGU10 (x = e<w4[8:5]>, row 8 = i; 509, 16 of 16) or 234's table, picked by w5[11] (512, own-x01tabsel): 1 is AGU10, 0 is 234.  0x00's table is 234's (510, own-x00tab).
 > 0x01 R slot (320, 321, 425, 505): R<{w4[0], w3[31:29]}> <- w5[21] = 1: AGU10[w1[10:7]](y = R<head[30:27]>, i = head[26:11]), fns 8/10/11/14; w5[21] = 0: Y:[e<w4[8:5]>], Y:[0] at index 0 (the store's index 0 unmeasured).  head[31] inert, so every 0x01 head is the one form.  own-x01ragu, own-x01ry, own-x01ry0.
 > 0x01 ALU slot s<w6[7:4]> (498-500): a full class-05 adder, alu_word with a = s<w6[23:20]>, b = s<w2[5:2]>, m = w5[29:27], shift w2[9:6] (m0-7 sweep matched ADDER_M 8 of 8; 498's negate was m6/m7); w4[19] inert. w5[3:2] is a source mux: 0x the adder, 10 OPEN (0x85A4 under x99), 11 yd (emu refuses both). own-x01am, own-x01neg.  Head code 0x1C (502): xori modes over b and i = w2[9:6], m5 = norm(b) (own-x01norm), m7 = b < 0 ? b : i.  Head code 0x06 (503-504): ADDER_M[m](i, b) >> s<a>, a register count, negative shifts left (own-x01asr, own-x01asrneg); m7 = |b| (506, both signs); counts >= 24 shift fully out, positive left overflow wraps (own-x01asrwrap); negative overflow, counts < -23 and sums past 24 bits refused.
-> Depends on unfound state (488), refused: rimm's s<head[24:21]> write (XXXXXXXX A1008000 gives s2 = 0x0700 before any st.y, 0x5000 after) and x16 source mux 011 (varies from run to run; own-x16mux-b keeps only mux 100). x16mul's side write was never modelled.
-> pc14 class-011 second (486): S[28:27] = 10 writes the immediate h[20:5] to s<h[24:21]> unconditionally (461's 0 after a st.y was the MOV readback artifact); its p write is measured for group 0 code 0 only, which sets it (487: XXXXXXXX 72000060 sets p6); emu refuses other p cells and other muxes.
+> Depends on unfound state (488), refused: rimm's s<head[24:21]> write (0x0700 before any st.y, 0x5000 after) and x16 source mux 011 (varies from run to run; own-x16mux-b keeps only mux 100). x16mul's side write was never modelled.
+> pc14 class-011 second (486): S[28:27] = 10 writes the immediate h[20:5] to s<h[24:21]> unconditionally (461's 0 after a st.y was the MOV readback artifact); its p write is measured for group 0 code 0 only, which sets it (487: measured setting p6); emu refuses other p cells and other muxes.
 > own-pc14-e0
 
 ### `xst`
@@ -481,7 +482,7 @@ Emulator:
 > x18 class 000 second e slot (177): e<w2[5:2]> <- e<{w2[1:0], w1[31:30]}> - 1.  own-x18e2nd
 > x18 class 110/011, w3[0] = 0 (178): if p<w2[31:28]> jump q + sext(w1[28:18]) (110) / sext({w2[0], w1[31:18]}) (011), 2 delay slots; p<w2[16:13]> (110) / p<w2[17:14]> (011) <- condition OPEN, both w3[0] forms.  own-x18br, own-x18br-back
 > x18 class 011 p write (179): p<w2[17:14]> <- cond head[28:25] of the unary slot (operand, result) and s<w1[7:4]>; the same bundle's branch reads the old p.  own-x18pw-false, own-x18pw-true
-> x18 class 000 with w2[17], w2[18] and w3[7] clear may stop two slots later (485): x18.eagu's template with w2[17] cleared stops (g0 halts, g2 wedges), as does the row 80800018 XXXXXXXX 0000A97B XXXXXXXX with w3[7] cleared; w3[7] = 1 runs on. The template with w3[8] set wedges too (487), while own-x18e2nd-w17 (180) has all three clear and runs; emu refuses them all (UnknownForm), and own-x18e2nd-w17 left the gates for a refusal test. The decider is OPEN.
+> x18 class 000 with w2[17], w2[18] and w3[7] clear may stop two slots later (485): x18.eagu's template with w2[17] cleared stops (g0 halts, g2 wedges), as does a measured class-000 row with w3[7] cleared; w3[7] = 1 runs on. The template with w3[8] set wedges too (487), while own-x18e2nd-w17 (180) has all three clear and runs; emu refuses them all (UnknownForm), and own-x18e2nd-w17 left the gates for a refusal test. The decider is OPEN.
 > x18 class 000 w2[17] = 0 (180): T ^= 1 per execution, persistent across runs; second e slot = (T ? e_src : 0) - 1.  own-x18e2nd-w17 measured it; emu now refuses that word (485, 487)
 > p0 (608): reads 1 everywhere (ld0e's cond measured; branch decode treats p<0> as unconditional); writes to p0 are unmeasured and refuse.
 > x03 head ALU (606, with 569/570): w5[16:14] can force an add with the row's m, gated by head[22:19] with no rule: refused when non-zero.
@@ -560,7 +561,7 @@ Emulator:
 
 - Encoding: `word & 0x8000001F == 0x40102009`
 - Evidence: MEASURED
-- Source: fact 524: s<[25:22]> <- X:[A<[19:15]>] when [20] = 1 (58's ax <- e0 latch was this read; [20] = 0 reads another word, OPEN); s<[29:26]> <- Y:[e<[8:5]>] when [13] = 1 ([13] = 0 the stale latch); destination 0 writes nothing.  14 of 14 rows on the Y half; [12:9] inert.  own-dldx.
+- Source: fact 524: s<[25:22]> <- X:[A<[19:15]>] when [20] = 1 (58's ax <- e0 latch was this read; [20] = 0 reads another word, OPEN); s<[29:26]> <- Y:[e<[8:5]>] when [13] = 1 ([13] = 0 the stale latch); destination 0 writes nothing.  14 of 14 silicon rows on the Y half; [12:9] inert.  own-dldx.
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -580,7 +581,7 @@ Emulator:
 
 - Encoding: `word & 0x803FFE1F == 0x0000020A`
 - Evidence: MEASURED
-- Source: fact 523: ldy with R<[25:22]> != 0 (ldy itself matches R0): R<[25:22]> also gets Y:[e<[8:5]>], beside or without s<[29:26]> ([30] = 1; index 0 is no s write).  Bit 9 = 0 gives the stale latch for both (not decoded).  48 of 48 rows.  own-ldyr.
+- Source: fact 523: ldy with R<[25:22]> != 0 (ldy itself matches R0): R<[25:22]> also gets Y:[e<[8:5]>], beside or without s<[29:26]> ([30] = 1; index 0 is no s write).  Bit 9 = 0 gives the stale latch for both (not decoded).  48 of 48 silicon rows.  own-ldyr.
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -2780,7 +2781,7 @@ Emulator:
 | y_R | r_reg | head | [16:13] |
 | fn | imm | head | [20:17] |
 
-> rop.b21: rop with the inert [21] set, as the stock words carry it
+> rop.b21: rop with the inert [21] set
 > (fact 281 / own-x07rop12).
 
 ### `x04.ragu`
@@ -3336,7 +3337,7 @@ Emulator:
 | y_lo | imm | s1 | [31:30] |
 | y_hi | imm | s2 | [1:0] |
 
-> x18.e2nd17: the stock class-000 bundle with w2[17] = 0, phase T (fact 180).
+> x18.e2nd17: a class-000 bundle with w2[17] = 0, phase T (fact 180).
 
 ### `ldi.q`
 

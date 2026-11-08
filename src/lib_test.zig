@@ -171,7 +171,7 @@ fn refGetChecked(data: []const u8, pos: *usize, m: u32, k: u5, esc: u5) RefError
     return pre * m + 2 * hi + try refReadChecked(data, pos, 1) - 1;
 }
 
-/// sosumi ref/alac/rice.zig `decompress`, 32-bit as Apple's reference computes it.
+/// sosumi ref/alac/rice.zig `decompress`, 32-bit as the ALAC reference algorithm computes it.
 fn refDecompress(data: []const u8, pos: *usize, out: []i32, pb: u32, kb: u5, mb0: u32, max_bits: u5) RefError!void {
     var mb = mb0;
     const wb: u32 = (@as(u32, 1) << kb) - 1;
@@ -280,7 +280,7 @@ fn sign32(x: i32) i32 {
     return @as(i32, @intFromBool(x > 0)) - @intFromBool(x < 0);
 }
 
-/// sosumi ref/alac/predictor.zig `unpredict`, 32-bit as Apple's reference computes it.
+/// sosumi ref/alac/predictor.zig `unpredict`, 32-bit as the ALAC reference algorithm computes it.
 fn refUnpredict(pc: []const i32, out: []i32, coefs: []i16, cb: u6, ds: u4) void {
     const n = pc.len;
     out[0] = pc[0];
@@ -1729,7 +1729,7 @@ test "x18 class 000 with w2[17], w2[18] and w3[7] clear is refused: it may stop"
     _ = try emu.runFrom(gpa, &ok, &.{ 0x00000018, 0x00000004, 0x0000AC00, 0x00040080, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     var img = emu.State{};
     defer img.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &img, &.{ 0x80800018, XXXXXXXX, 0x0000A97B, 0x00048200, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &img, &.{ 0x80800018, 0x80028024, 0x0000A97B, 0x00048200, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
     for ([_][4]u32{ .{ 0x00000018, 0x00000004, 0x0000AC00, 0x00040100 }, .{ 0x80800018, 0x80028024, 0x0000A97B, 0x00048100 } }) |b| {
         var st = emu.State{};
         defer st.deinit(gpa);
@@ -1865,7 +1865,7 @@ test "x18 class 111 mux 3 takes yd[7:0] << 8 unless w2[22:21] = 01 (fact 597)" {
 
 test "pc14 class-011 mux 10 writes the immediate, and group 0 code 0 sets its p" {
     // fact 486: 461's "0 after a st.y" was a readback artifact; the immediate is
-    // unconditional. 487: the pair XXXXXXXX 72000060 sets p6; other p cells are refused.
+    // unconditional. 487: group 0 code 0 sets its p (measured with p6); other p cells refuse.
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
@@ -1877,21 +1877,22 @@ test "pc14 class-011 mux 10 writes the immediate, and group 0 code 0 sets its p"
     try testing.expectEqual(@as(u32, 0x1234), state.s[3]);
     var img = emu.State{};
     defer img.deinit(gpa);
-    _ = try emu.runFrom(gpa, &img, &.{ XXXXXXXX, 0x72000060, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
-    try testing.expectEqual(@as(u32, 0x1A), img.s[3]);
+    // s4 <- #0x2B, p6 set (DERIVED from 487's measured pair: other s dest and immediate).
+    _ = try emu.runFrom(gpa, &img, &.{ 0x40800574, 0x72000060, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x2B), img.s[4]);
     try testing.expectEqual(@as(u8, 1), img.p[6]);
     var c9 = emu.State{};
     defer c9.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &c9, &.{ XXXXXXXX, 0x72000960, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &c9, &.{ 0x40800574, 0x72000960, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
 
 test "rimm's s write and x16 mux 3 are refused: they depend on state not yet found" {
-    // fact 488: rimm XXXXXXXX A1008000 writes s2 = 0x0700 before any st.y and 0x5000
-    // after; x16 mux 3 varies from run to run.
+    // fact 488: rimm's s<head[24:21]> write read 0x0700 before any st.y and 0x5000 after;
+    // x16 mux 3 varies from run to run.
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ XXXXXXXX, 0xA1008000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x0060000F, 0xA1008000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
     var r = emu.State{};
     defer r.deinit(gpa);
     _ = try emu.runFrom(gpa, &r, &.{ 0x0000000F, 0xA1008000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
@@ -1903,8 +1904,7 @@ test "rimm's s write and x16 mux 3 are refused: they depend on state not yet fou
 }
 
 test "x17 S2 class 101 with S1[28] = 0 loads yd through the mux" {
-    // fact 490 measured mux 4 (XXXXXXXX XXXXXXXX XXXXXXXX) giving 0 in plain programs:
-    // that was yd (550).  Here on own-x17st's shape with S1[28] cleared and a load into s2.
+    // fact 490 measured mux 4 giving 0 in plain programs: that was yd (550).  Here on own-x17st's shape with S1[28] cleared and a load into s2.
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
@@ -1920,10 +1920,6 @@ test "x17 S2 class 101 with S1[28] = 0 loads yd through the mux" {
     m2.yd = 0x9234;
     _ = try emu.runFrom(gpa, &m2, &.{ 0x00400017, 0x67018000, 0xA0000044, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0xFF9234), m2.s[2]); // mux 2 sign-extends yd
-    var w = emu.State{};
-    defer w.deinit(gpa);
-    _ = try emu.runFrom(gpa, &w, &.{ XXXXXXXX, XXXXXXXX, XXXXXXXX, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
-    try testing.expectEqual(@as(u32, 0), w.s[15]);
 }
 
 test "x18 class 111 slots read every source before any write" {
@@ -2147,7 +2143,7 @@ test "imdct transforms a short block as the model does" {
 }
 
 test "x02.ainc's template writes s2 and x18.rag's steps e7" {
-    // Side writes of two image-row templates (subforms.txt); x18.rag101 has none.
+    // Side writes of two templates (subforms.txt); x18.rag101 has none.
     const gpa = testing.allocator;
     const prog = try assemble(gpa,
         \\ldi s1, #0x4000
@@ -2299,7 +2295,7 @@ test "the 0x01 R slot's AGU10 form: R<w3[31:29]> <- fn(R<head[30:27]>, head[26:1
 }
 
 test "0x01 multiply mode 4 and the s slot's AGU10 rows" {
-    // fact 507: own-x01m4w22 (row, w4[22] = 1, s8 = s11 = 0x4000 gives s8 = 0x20);
+    // fact 507: own-x01m4w22 (w4[22] = 1, s8 = s11 = 0x4000 gives s8 = 0x20);
     // 508: own-x01ty (R7 = 0x100, head i = 3, op 11 gives s1 = 0xFD), op 10 the sum.
     const gpa = testing.allocator;
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
@@ -2883,7 +2879,7 @@ test "the 0x03 R slot's Y read, and the mux-2 e source by w1[8]" {
         _ = try emu.runFrom(gpa, &state, &.{ 0x00000003, c.w1, 0, 0x09800000, 0x00001028, 0x20000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c.want, state.s[5]);
     }
-    // w1[8] with w3[26:23] = 0: the image read 0x3422, not e0; refused
+    // w1[8] with w3[26:23] = 0: silicon read 0x3422, not e0; refused
     var state = emu.State{};
     defer state.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x00000003, 0x100, 0, 0x08000000, 0x00001028, 0x20000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
@@ -4203,8 +4199,8 @@ test "0x0F's e write at index 0 is an s <- e move instead" {
 
 test "x12agu runs the AGU for every head[31:29]" {
     // fact 562: e6 = 0x760; cbe012d2 23780001 (and with w1[28] set, 33780001) give e9,
-    // s3 (2*1 + h[31]) and R11 all 0x760 (AGU10 fn 0, x = e6).  The row XXXXXXXX
-    // XXXXXXXX gives s1 = R3 = e5 - R3 (fn 7).
+    // s3 (2*1 + h[31]) and R11 all 0x760 (AGU10 fn 0, x = e6).  fn 7 (measured on another row):
+    // s1 = R4 = e2 = e5 - R3, DERIVED word.
     const gpa = testing.allocator;
     for ([_]u32{ 0x23780001, 0x33780001 }) |w1| {
         var state = emu.State{};
@@ -4219,9 +4215,10 @@ test "x12agu runs the AGU for every head[31:29]" {
     defer img.deinit(gpa);
     img.e[5] = 0x500;
     img.r[3] = 0x123;
-    _ = try emu.runFrom(gpa, &img, &.{ XXXXXXXX, XXXXXXXX, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    _ = try emu.runFrom(gpa, &img, &.{ 0xa3ee64b2, 0x36980000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0x500 - 0x123), img.s[1]);
-    try testing.expectEqual(@as(u32, 0x500 - 0x123), img.r[3]);
+    try testing.expectEqual(@as(u32, 0x500 - 0x123), img.e[2]);
+    try testing.expectEqual(@as(u32, 0x500 - 0x123), img.r[4]);
 }
 
 test "x17 S1 class 000 + S2 class 111: the move and its Y store" {
@@ -5187,8 +5184,6 @@ test "x18 class 010's R slot refuses w2[27:24] != 0 (fact 598)" {
 test "x18 class 110 stores s<{w2[0], w1[31:29]}> at X:[A<w2[21:17]>] when w2[23:22] = 11 (fact 599)" {
     const gpa = testing.allocator;
     for ([_]struct { h: u32 = XXXXXXXX, w1: u32, w2: u32, w3: u32 = XXXXXXXX, ai: u5, addr: u32, si: u4, sv: u32, want: ?u32 }{
-        // the row XXXXXXXX 20001000 00cc0001 XXXXXXXX (x99: X:0x160 = 0xFF9909)
-        .{ .w1 = 0x20001000, .w2 = 0x00CC0001, .ai = 6, .addr = 0x160, .si = 9, .sv = 0xFF9909, .want = 0xFF9909 },
         .{ .w1 = 0xC0001000, .w2 = 0x00CA0000, .ai = 5, .addr = 0x300, .si = 6, .sv = 0x1234, .want = 0x001234 },
         .{ .w1 = 0xC0001000, .w2 = 0x00CA0000, .ai = 5, .addr = 0x320, .si = 6, .sv = 0x0567, .want = 0x000567 },
         .{ .w1 = 0xA0001000, .w2 = 0x00D80001, .ai = 12, .addr = 0x340, .si = 13, .sv = 0xFF8567, .want = 0xFF8567 },
@@ -6155,4 +6150,25 @@ test "x19agu: w2[24]'s immediate goes to e only, w2[30] inert, s mux 6 writes 0 
     m.s[9] = 0x777;
     _ = try emu.runFrom(gpa, &m, &.{ 0x01200199, 0x00e46000, 0x53000440, 0x0e001380, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0), m.s[9]);
+}
+
+test "the ISA sources quote no image provenance" {
+    // Facts here are bit semantics and our own programs.  Words copied from the image, or text
+    // naming where a row came from, stay in the RE tree.  Phrases are split so this test does not
+    // match itself.
+    const banned = [_][]const u8{ "App" ++ "le", "image " ++ "row", "image " ++ "pair", "image " ++ "word", "image" ++ "'s" };
+    const files = [_]struct { path: []const u8, text: []const u8 }{
+        .{ .path = "src/isa.toml", .text = @embedFile("isa.toml") },
+        .{ .path = "src/subforms.txt", .text = @embedFile("subforms.txt") },
+        .{ .path = "src/operands.txt", .text = @embedFile("operands.txt") },
+        .{ .path = "src/emu.zig", .text = @embedFile("emu.zig") },
+        .{ .path = "src/isa.zig", .text = @embedFile("isa.zig") },
+        .{ .path = "src/lib_test.zig", .text = @embedFile("lib_test.zig") },
+        .{ .path = "src/silicon_gates.zig", .text = @embedFile("silicon_gates.zig") },
+        .{ .path = "docs/sm1/handbook.md", .text = @embedFile("handbook.md") },
+    };
+    for (files) |f| for (banned) |b| if (std.mem.indexOf(u8, f.text, b)) |at| {
+        std.debug.print("{s}: offset {d} carries '{s}'\n", .{ f.path, at, b });
+        return error.ProvenanceText;
+    };
 }

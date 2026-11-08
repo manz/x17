@@ -214,7 +214,7 @@ pub fn subFormByName(name: []const u8) ?*const SubForm {
 }
 
 /// S1[22:20] = 010 on an x17 continue-shape bundle: the same fields, then a stop (fact
-/// 457, 465, 478: every row with 010 stopped, whatever its S1 and S2 fields).
+/// 457, 465, 478: every silicon row with 010 stopped, whatever its S1 and S2 fields).
 pub const STOP_ROW: u32 = 0b010 << 20;
 
 /// Whether `sf` takes the `.stop` suffix: an x17 form whose base has S1[22:20] = 000 and no
