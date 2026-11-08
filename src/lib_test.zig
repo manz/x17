@@ -5923,3 +5923,27 @@ test "x17agu2's AGU x = e<S2[24:21]> and the e<k> <- e<j> - 1 write (fact 630, 6
     defer o.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &o, &.{ 0x20001817, 0x68000501, 0x00140049, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
+
+test "ptst op 0x1E tests a & b at c 14 (s10) and 15 (s12) (fact 632, 633)" {
+    const gpa = testing.allocator;
+    const Row = struct { head: u32, a_i: u32, b_i: u32, b: u32, want: ?u8 };
+    for ([_]Row{
+        .{ .head = 0x45d533cd, .a_i = 6, .b_i = 10, .b = 4, .want = 1 }, // own-ptst-and
+        .{ .head = 0x45d533cd, .a_i = 6, .b_i = 10, .b = 2, .want = 0 },
+        .{ .head = 0x45e55bcd, .a_i = 11, .b_i = 12, .b = 4, .want = 1 }, // own-ptst-and12
+        .{ .head = 0x45e55bcd, .a_i = 11, .b_i = 12, .b = 2, .want = 0 },
+        .{ .head = 0x45b533cd, .a_i = 6, .b_i = 10, .b = 4, .want = null }, // c 13
+        .{ .head = 0x45d5b3cd, .a_i = 6, .b_i = 10, .b = 4, .want = null }, // h[18:15] = 11
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[1] = 7;
+        state.s[c.a_i] = 5;
+        state.s[c.b_i] = c.b;
+        const r = emu.runFrom(gpa, &state, &.{ c.head, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.p[1]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}

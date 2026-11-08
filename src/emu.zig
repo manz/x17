@@ -4885,6 +4885,19 @@ fn execPtst(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const cond: u32 = (head >> 21) & 0x1F;
     const a_s: u32 = (head >> 11) & 0xF;
     const a_val: u32 = state.s[a_s] & M24;
+    const op: u32 = (head >> 5) & 0x3F;
+    if (op == 0x1E) {
+        // 632, 633: p <- (a & b) != 0, measured only with h[18:15] = 10 and c 14 (b = s10) or
+        // 15 (b = s12); the b index rule is OPEN.
+        const b_s: u32 = switch (cond) {
+            14 => 10,
+            15 => 12,
+            else => return RunError.UnknownForm,
+        };
+        if ((head >> 15) & 0xF != 10) return RunError.UnknownForm;
+        if (p_dest != 0) state.p[p_dest] = @intFromBool(a_val & state.s[b_s] & M24 != 0);
+        return;
+    }
     // 24-bit signed: sign bit is bit 23.
     const signed: i32 = if (a_val & 0x800000 != 0)
         @as(i32, @bitCast(a_val | 0xFF000000))
