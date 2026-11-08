@@ -5300,5 +5300,6 @@ test "x03 override 11 over mux 001/010 reads Y:[e] with w5[21], else yd (fact 60
         try state.y_mem.put(gpa, 0x720, k.y);
         _ = try emu.runFrom(gpa, &state, &.{ 0x00000003, 0x00000170, 0x0140a000, 0x57001405, 0x01004835, k.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(k.want, state.s[6]);
+        try testing.expectEqual(k.want, state.yd); // the fresh read sets yd (after 602)
     }
 }
