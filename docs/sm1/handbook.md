@@ -318,7 +318,7 @@ Measured idioms, cheapest first:
   Keep x19.ld's w1[20] and w1[5] clear: set, they write the tap's A pointer and grow the e
   step on each later load, so the pair reads past its data (§790, §791, §793). Pure x03.tap
   chains, one or two X pointers, are exact on silicon (§791, §792).
-  Both pairs are exact over 32 taps; prefer the x03 pair (signed Y, no x18 chain). The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
+  Both pairs are exact over 32 taps (§705; the x03 pair with the clear word, §794); prefer the x03 pair (signed Y, no x18 chain). The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
   16-bit operands only.
 - **No computed jumps.** Every measured jump takes an immediate target: x00/x01 control
   relative and absolute (§230, §575), 0x04 (§304), §301/§302, and jmp/jmp-if (§661). None takes
