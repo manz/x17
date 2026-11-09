@@ -7330,3 +7330,19 @@ test "compat: set image, configure then decode arm" {
     const entry_hex = testing.environ.getPosix("X17_COMPAT_DECODE_ENTRY") orelse "0";
     compatArm(gpa, &state, prog, "set 2 decode arm", .{ .decode = try std.fmt.parseInt(usize, entry_hex, 16) });
 }
+
+test "x16 b16 under any S1 class with S1[18] and S2 0xE004 (fact 778)" {
+    const gpa = testing.allocator;
+    // S1 class 111: s14 <- sx(Y:[e4]), X:[xa] <- old s14, s12 <- old s3.
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[4] = 0x300;
+    state.xa = 0x40;
+    state.s[14] = 0x123456;
+    state.s[3] = 0x000777;
+    try state.y_mem.put(gpa, 0x300, 0xB454);
+    _ = try emu.runFrom(gpa, &state, &.{ 0x01C00016, 0xE0041C00, 0xE6846000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0xFFB454), state.s[14]);
+    try testing.expectEqual(@as(?u32, 0x123456), state.x_mem.get(0x40));
+    try testing.expectEqual(@as(u32, 0x000777), state.s[12]);
+}

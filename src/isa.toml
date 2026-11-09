@@ -527,8 +527,11 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 
 # Three-word low5 0x16 bundle, one shape (fact 90, MEASURED; disasm.decode "b16"):
 #   head  [24:21] s dest, [20:5] imm -> xa (when head [31] and S1 [3]); [30:25] inert
-#   S1    [31:28] X store source s, [18] = 1, [13:12] load placement (01 plain, 00 none, 11 << 8),
-#         [11:8] s<n> <- 0 when != 0, [3] xa load enable
+#   S1    [31:28] X store source s, [18] = 1, [13:12] load placement (01 sign-extended to 24 bits
+#         (778), 00 none, 11 << 8, 10 OPEN), [11:8] s<n> <- s<S2[28:25]> (778 move; 90's clear was
+#         s0), [3] xa load enable
+#   778: any S1 class with S1[18] = 1 and S2 & 0xE0050000 = 0xE0040000 is this form; S1 class 000
+#         excluded here (563/571 x16alu bundles match the pattern); move and store read pre-bundle
 #   S2    [31:29] = 111, [24:21] Y entry of the load, [18] = 1, [16] = 0, [14:13] = 11 and [11] = 0
 #         enable the X store
 #   X:[xa] <- s<S1[31:28]> uses xa as it was BEFORE the bundle; s<head[24:21]> <- Y:[e<S2[24:21]>]

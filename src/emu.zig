@@ -306,6 +306,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s2_class == 0b110 and s1_class16 == 0 and s2_mode <= 7) return execX16Mul(gpa, state, bundle);
         if (s2_class == 0b110 and s1_class16 == 1) return execX16Mac(state, bundle);
         if (s2_class == 0b100) return execX16Agu100(state, bundle);
+        // 778: S1[18] with S2 & 0xE0050000 = 0xE0040000 is b16 under S1 classes other than
+        // 000; class 000 keeps x16alu (563, 571 measured bundles match the same pattern).
+        if (s2_class == 0b111 and s1_class16 != 0 and ((bundle[1] >> 18) & 1 == 1 and bundle[2] & 0xE0050000 == 0xE0040000)) return execX16B16(gpa, state, bundle);
         if (s1_class16 == 1 and s2_class == 0b111) return execX16B16(gpa, state, bundle);
         if (s1_class16 == 0 and s2_class == 0 and (bundle[2] >> 12) & 1 == 1) return execX16Sh(state, bundle);
         if (s2_class == 0b010 and (s1_class16 == 0 or (bundle[1] >> 24) & 1 == 1)) return execX16Xs(state, bundle);
@@ -4604,28 +4607,32 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
     return r & M24;
 }
 
-/// x16 S1 class 001 / S2 class 111 (fact 90): Y load s<head[24:21]> <-
-/// Y:[e<S2[24:21]>] placed by S1[13:12] (00: 0, 01: plain, 11: << 8); X store
-/// X:[xa] <- sx24 s<S1[31:28]> with S1[18], S2[14:13] = 11, S2[11] = 0, using xa
-/// as it was before the bundle; then xa <- head[20:5] when head[31] and S1[3].
+/// x16 b16 (fact 90, 778): S1 class 001 / S2 class 111, or any S1 class with S1[18] = 1 and
+/// S2 & 0xE0050000 = 0xE0040000.  Y load s<head[24:21]> <- Y:[e<S2[24:21]>] placed by
+/// S1[13:12] (00: 0, 01: sign-extended, 11: << 8); s<S1[11:8]> <- s<S2[28:25]> (a move,
+/// 778); X store X:[xa] <- sx24 s<S1[31:28]> with S1[18], S2[14:13] = 11, S2[11] = 0, using
+/// xa as it was before the bundle; then xa <- head[20:5] when head[31] and S1[3].  The move
+/// and the store read before the bundle's writes.
 fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const s1 = bundle[1];
     const s2 = bundle[2];
-    if ((s1 >> 8) & 0xF != 0) return RunError.UnknownForm;
     const yv: u32 = (state.getY(state.e[(s2 >> 21) & 0xF]) orelse 0) & 0xFFFF;
     const hv: u32 = switch ((s1 >> 12) & 3) {
         0 => 0,
-        1 => yv,
+        1 => sx16To24(yv),
         3 => (yv << 8) & M24,
         else => return RunError.UnknownForm,
     };
+    const mv_dest: u32 = (s1 >> 8) & 0xF;
+    const mv_val: u32 = state.s[(s2 >> 25) & 0xF] & M24;
     if ((s1 >> 18) & 1 == 1 and (s2 >> 13) & 3 == 3 and (s2 >> 11) & 1 == 0) {
         if (state.xa) |addr| {
-            state.x_mem.put(gpa, addr, sx16To24(state.s[(s1 >> 28) & 0xF])) catch return RunError.OutOfMemory;
+            state.x_mem.put(gpa, addr, state.s[(s1 >> 28) & 0xF] & M24) catch return RunError.OutOfMemory;
         }
     }
     if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) state.xa = (h >> 5) & 0xFFFF;
+    if (mv_dest != 0) state.s[mv_dest] = mv_val;
     const hd: u32 = (h >> 21) & 0xF;
     if (hd != 0) state.s[hd] = hv;
 }
