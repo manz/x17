@@ -499,28 +499,8 @@ value = "0x00000000"
 evidence = "MEASURED"
 ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole rows, section 18)"
 
-# Data regions per codec mode (fact 2, mode tables).  Anything not listed prints as a bare address.
-[[region]]
-modes = [0]
-space = "Y"
-lo = "0x2E80"
-hi = "0x2EFF"
-name = "win32"     # entry 11: the 32-bit scalar-state window
-
-[[region]]
-modes = [1]
-space = "Y"
-lo = "0x1780"
-hi = "0x187F"
-name = "win32"
-
-[[region]]
-modes = [0, 1, 3, 5, 2]
-space = "Y"
-lo = "0xFD80"
-hi = "0xFDFF"
-name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
-
+[notes]
+# Fact notes not tied to one form; x17 doc stops reading at this header.
 
 # Two-word low5 0x10 pairs with a head [31:29] = 000 (fact 89, MEASURED by bit flips; decoded in
 # disasm.decode, executed by emu.Engine.step - the head's meaning depends on the second's class):

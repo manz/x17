@@ -6,8 +6,7 @@
 //!   operands.txt    every form's operand fields
 //!   emu.zig         the `///` doc of the handler `named_forms` maps each form to
 //!
-//! isa.toml's `[tables.*]` sections and `[[region]]` blocks are never read.  Note lines naming the
-//! codecs or a vendor are dropped: the reference is interface facts only.
+//! Note lines naming codecs or a vendor are dropped: the reference is interface facts only.
 const std = @import("std");
 const isa = @import("isa");
 

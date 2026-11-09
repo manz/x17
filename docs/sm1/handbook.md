@@ -19,7 +19,7 @@ Every fact carries one of three levels:
   not rely on it. Appendix A lists these.
 
 This document carries interface facts only: what the machine does. It says nothing about the
-firmware's own sm1 programs, and it does not reproduce `isa.toml`'s `[tables.*]` sections.
+firmware's own sm1 programs.
 
 ## 1. Overview
 
