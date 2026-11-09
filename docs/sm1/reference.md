@@ -1095,7 +1095,7 @@ Computes an R register from an address-generation function of another R register
 
 ### `x02.esrc`
 
-Copies an element register e into a scalar s register.
+Copies an element register e into a scalar s register; also steps A1 by one.
 
 - Syllables: 6
 - Base: `00000002` `0000a000` `00020442` `00000001` `00041000` `20004200`
@@ -1107,7 +1107,7 @@ Copies an element register e into a scalar s register.
 
 ### `x02.asrc`
 
-Copies an A register plus one into a scalar s register.
+Copies an A register plus one into a scalar s register; A1 gets the same value.
 
 - Syllables: 6
 - Base: `00000002` `0000a000` `00020442` `00000000` `00041000` `10004200`

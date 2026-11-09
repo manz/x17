@@ -81,8 +81,8 @@ x16.hd	Runs an ALU operation on two scalar s registers, with the ALU word carrie
 x15.pt	Writes a scalar s register with a lookup function of a predicate bit p, such as the predicate itself or its negation.
 x18.br	Branches when a predicate p is set, adding a signed offset counted in bundles to the program counter.
 x02.agu	Computes an R register from an address-generation function of another R register, in the R slot of a six-syllable bundle.
-x02.esrc	Copies an element register e into a scalar s register.
-x02.asrc	Copies an A register plus one into a scalar s register.
+x02.esrc	Copies an element register e into a scalar s register; also steps A1 by one.
+x02.asrc	Copies an A register plus one into a scalar s register; A1 gets the same value.
 x03.mpy	Multiplies two scalar s registers and writes the product shifted right by 23, with rounding, to a destination s register.
 x02.x3	Third slot of a bundle: applies an ALU operation (such as subtract) to two s registers with a shift, writing a destination s register.
 x01.st	Seven-syllable bundle with stores; only its scalar copy from an element register e into a scalar s register is modelled.

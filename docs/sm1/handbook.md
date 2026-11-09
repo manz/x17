@@ -141,6 +141,7 @@ write is meant:
 | x03 (A-copy mode) | e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1 |
 | x17sty, x17ld, x17agu2 | e<2*w1[2:0] + h[31]> <- AGU10[w1[10:7]](x = e<w1[18:15]>) |
 | x02 multiply templates naming A1 | A1 <- A1 + 1 |
+| x02.asrc An, x02.esrc | A1 <- An + 1, or A1 + 1 (§157, §795): read A1 before them |
 | x01 (R slot) | R<{w4[0], w3[31:29]}> <- R5 - 2 in the norm word (§669) |
 | x01 | e<w4[12:9]> <- value unknown (§669): the emulator refuses a nonzero field |
 | x18 class 111 MAC templates | A14 <- A14 + 1 (§668; field unknown, not modelled) |

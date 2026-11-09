@@ -623,6 +623,9 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     }
     if (w4_mode == 2) {
         try execX02Xrd(gpa, state, bundle); // esrc path
+        // The A slot runs here too: asrc and esrc name A1 as its destination, so asrc An
+        // sets A1 <- An + 1 and esrc steps A1 (157, 795).
+        try execX02Ainc(gpa, state, bundle);
         return true;
     }
     return false;
