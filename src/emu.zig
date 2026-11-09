@@ -4979,11 +4979,13 @@ fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const y_r: u32 = (head >> 27) & 0xF;
     const imm: u32 = (head >> 11) & 0xFFFF;
     const dest_s: u32 = (s2 >> 10) & 0xF;
-    const dest_e: u32 = (2 * (s1 & 0x7)) & 0xF;
+    // 780: e<2*S1[2:0] + h[31]>.
+    const dest_e: u32 = (2 * (s1 & 0x7) + (head >> 31)) & 0xF;
     const y_val: u32 = if (y_r == 0) 0 else state.r[y_r];
-    // v = AGU10[S1[10:7]](x = e<S2[24:21]>, y = R<h[30:27]>, i = h[26:11]) (631).
+    // v = AGU10[S1[10:7]](x = e<S2[24:21]>, y = R<h[30:27]>, i = h[26:11]) (631); fn 11 is
+    // y - i here (780, own-a2f11; still refused in x17ld, 443).
     const x_e: u32 = (s2 >> 21) & 0xF;
-    const result = try agu10ImmEval(fn_op, if (x_e == 0) 0 else state.e[x_e], y_val, imm);
+    const result = if (fn_op == 11) (y_val -% imm) & 0xFFFF else try agu10ImmEval(fn_op, if (x_e == 0) 0 else state.e[x_e], y_val, imm);
     // S2[5:2] = k != 0 (630): e<k> <- e<{S2[1:0], S1[31:30]}> - 1, read before the writes.
     const dec_k: u32 = (s2 >> 2) & 0xF;
     const dec_v: u32 = (state.e[((s2 & 3) << 2) | (s1 >> 30)] -% 1) & 0xFFFF;

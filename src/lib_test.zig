@@ -7433,3 +7433,26 @@ test "alu code 0x28 moves s<b> or # by m, a inert (fact 779)" {
         try testing.expectEqual(row.want, state.s[10]);
     }
 }
+
+test "x17agu2 fn 11 is y - i into e<2*S1[2:0] + h[31]> (fact 780)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s1: u32, want: u32 }{
+        .{ .s1 = 0x68000581, .want = 0x57D }, // the measured bundle: fn 11
+        .{ .s1 = 0x68000501, .want = 0x683 }, // fn 10: y + i
+        .{ .s1 = 0x68000601, .want = 0x600 }, // fn 12: y
+    }) |row| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[8] = 0x600;
+        state.e[9] = 0x490;
+        try emu.executeBundle(gpa, &state, &.{ 0x40041817, row.s1, 0x00140066 });
+        try testing.expectEqual(row.want, state.e[2]);
+        try testing.expectEqual(@as(u32, 0x48F), state.e[9]);
+    }
+    // h[31] = 1 moves the dest to e3.
+    var hi = emu.State{};
+    defer hi.deinit(gpa);
+    hi.r[8] = 0x600;
+    try emu.executeBundle(gpa, &hi, &.{ 0xC0041817, 0x68000581, 0x00140066 });
+    try testing.expectEqual(@as(u32, 0x57D), hi.e[3]);
+}
