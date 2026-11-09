@@ -225,3 +225,5 @@ x18.min	Signed 24-bit minimum of two s registers into a destination s register.
 x03.tapa	FIR tap like x03.tap, but the A step uses a selectable function (add or subtract one, or add or subtract R).
 x03.tap0a	First FIR tap like x03.tap0, but the A step uses a selectable function (add or subtract one, or add or subtract R).
 x03.repa	Counted loop like x03.rep, but the A step uses a selectable function (add or subtract one, or add or subtract R).
+x16.getb	Reads the next n+1 bits of the input stream, most significant first, into the odd A register A<2k+1>.
+ld0e.sen	ld0e whose ALU word enables the input stream when s12 is 1 and s14 has bit 2 set with bits 1:0 clear.
