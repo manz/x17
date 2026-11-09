@@ -23,6 +23,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .link_libc = true,
+        .strip = b.option(bool, "strip", "Strip debug info from the x17 binary"),
     });
     exe_mod.addImport("isa", isa_mod);
 

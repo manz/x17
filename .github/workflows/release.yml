@@ -1,0 +1,31 @@
+name: Release
+
+# Pushing a v* tag publishes a release with the static aarch64-linux binary the
+# setup-x17 action downloads on ARM64 Linux runners.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: '0.17.0'
+      - name: Build
+        run: zig build -Doptimize=ReleaseFast -Dstrip=true -Dtarget=aarch64-linux-musl --prefix out
+      - name: Smoke test
+        run: |
+          printf 'x17.imm s5, #0x0BEE\nx17.halt\n' > /tmp/smoke.sm
+          out/bin/x17 asm /tmp/smoke.sm | head -1 | grep -q '005f7017'
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar -C out/bin -czf x17-aarch64-linux.tar.gz x17
+          gh release create "$GITHUB_REF_NAME" x17-aarch64-linux.tar.gz --title "$GITHUB_REF_NAME" --generate-notes
