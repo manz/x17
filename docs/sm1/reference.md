@@ -533,10 +533,10 @@ Emulator:
 > class aliases (618-621): agu12 and agu13 S class 011 as 001; x17agu2 S1 111 as 001; x17sub any S1[31:29].
 > class aliases (551): x19k w2 classes 000-011; x17agu2 S1 011/101 as 001; x19mac w2 000/101 with w3 110; aset12 S 111 as 101.  st.y's 011 alias is not taken: it would shadow loop (0x6044800x).  xst class 000 is ytst, not an alias.  own-x19kal
 > yd reads (550): 0x00's R slot Y source with w5[4] = 0 (0x01 unaffected) and x17 S2 class 101 with S1[28] = 0 read yd, the last Y read, through the same muxes (490's 0 / 0xA050 was yd).  x00's multiply slot s<w6[19:16]> in mode 0 with w4[22] (316's swap): X:[A<w2[22:18]>] when w4[18] = 0, Y:[e<w4[8:5]>] when w4[18] and w5[4]; yd unmeasured, refused.  x17sty R mux 0: yd[15:0].
+> x02 third slot (549): alu_word over the head code h[10:5], m = w5[8:6], #n = w5[5:2] (adder codes: 0-2 <<n, 3/5 >>n, 4 >>n rounded); non-adder codes OPEN, refused; runs in w4 modes 0 and 5.  own-x02t3
 > x02 w2-slot modes 1 / 2 (733): s<w2[12:9]> <- s<w2[4:1]> +/- (xd << 8), exact at 24 bits, xd the X word read before the bundle; 735: modes 5 / 6 / 7 = P + X, P - X, X - P with the same 24-bit X (161's [15:0] was a 16-bit view; own-x02mac's gate is masked to it).  With w1[17] = 1 X collapses to xd's sign, scale OPEN, refused.  Beside the third slot's u + v this is a butterfly when v = xd << 8.  own-x02bfly
 > x02.v (730): bundle 00000002 0002A000 00120042 00000009 A5122E18 00004201 checks codes 0 / 4 (n 2, rounded) / 7 (asrrs by s<a>, half up both signs, negative count shifts left), A9 steps, low product = P with w1[17] = 1 (183).  Beside the X store (w5[10:9] = 11, at the old A) the mode-5 read slot takes xd, not memory; other modes unmeasured.  own-x02v
 > x02 read gate (736, 739): with w5[14] the mode-5 read slot reads X memory only when w5[10:9] = 01; 00 and 10 give xd with no store, 11 stores at the old A and gives xd (730).  545's 0x999 was xd (its row has 00 / 11).  own-x02ydxd, own-x02rgate
-> x02 third slot (549): alu_word over the head code h[10:5], m = w5[8:6], #n = w5[5:2] (adder codes: 0-2 <<n, 3/5 >>n, 4 >>n rounded); non-adder codes OPEN, refused; runs in w4 modes 0 and 5.  own-x02t3
 > x02 R<w3[22:19]> (547): w5[27:26] 00 imm / Y side by w5[31:30]; 01 (w5[11] ? AGU10 : AGU10B)[w1[10:7]](e<w3[30:27]>, R<w5[25:22]>); w5[27] (265's carry) fresh-state only, refused on x02 and x03.  own-x02ra
 > x02 (188): w3[31] inert; w3[30] only as e<w3[30:27]>'s top bit.  Back-to-back 0x02s chain with no gap (666; 188's 3-nop window was a sticky wedge from earlier runs).  own-x02w3b31
 > x02 (189): head[31:27] inert (the immediate's sign fill).  own-x02hdhi
@@ -3565,6 +3565,63 @@ Emulator:
 > X read s<w4[6:3]> <- X:[A<w4[20:17]>]; A<w2[21:17]>, A<w3[14:10]> <- A<w3[4:0]> + 1;
 > multiply s<w2[12:9]> <- s<w2[4:1]> * s<w2[8:5]> (w1[17:15]), s<w4[10:7]> <- (2P)[15:0];
 > x3 s<{w5[1:0], w4[31:30]}> <- (s<w4[25:22]> op w5[8:6] s<w4[29:26]>) << w5[5:2].
+
+### `x02.vc`
+
+- Syllables: 6
+- Base: `00000002` `00002000` `00000000` `00000000` `00002800` `00004200`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| xrd_d | s | s4 | [6:3] |
+| xrd_a | a_reg | s4 | [20:17] |
+| inc_d1 | a_reg | s2 | [21:17] |
+| inc_d2 | a_reg | s3 | [14:10] |
+| inc_s | a_reg | s3 | [4:0] |
+| mpy_d | s | s2 | [12:9] |
+| mpy_a | s | s2 | [4:1] |
+| mpy_b | s | s2 | [8:5] |
+| plo | s | s4 | [10:7] |
+| sgn | imm | s1 | [17:15] |
+| x3_dlo | imm | s5 | [1:0] |
+| x3_dhi | imm | s4 | [31:30] |
+| x3_a | s | s4 | [25:22] |
+| x3_b | s | s4 | [29:26] |
+| x3_op | imm | s5 | [8:6] |
+| x3_sh | imm | s5 | [5:2] |
+| code | imm | head | [10:5] |
+
+> x02.vc: x02.v with the third slot's head code h[10:5] as a trailing operand (549, 627, 628,
+> 730): 0-5 the adder (#x3_sh = n), 6 asr / 7 asrrs of b by a, x3_sh's top bit w5[5] negating a.
+
+### `x02.vs`
+
+- Syllables: 6
+- Base: `00000002` `00002000` `00000000` `00000000` `00002800` `00004600`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| xrd_d | s | s4 | [6:3] |
+| xrd_a | a_reg | s4 | [20:17] |
+| inc_d1 | a_reg | s2 | [21:17] |
+| inc_d2 | a_reg | s3 | [14:10] |
+| inc_s | a_reg | s3 | [4:0] |
+| mpy_d | s | s2 | [12:9] |
+| mpy_a | s | s2 | [4:1] |
+| mpy_b | s | s2 | [8:5] |
+| plo | s | s4 | [10:7] |
+| sgn | imm | s1 | [17:15] |
+| x3_dlo | imm | s5 | [1:0] |
+| x3_dhi | imm | s4 | [31:30] |
+| x3_a | s | s4 | [25:22] |
+| x3_b | s | s4 | [29:26] |
+| x3_op | imm | s5 | [8:6] |
+| x3_sh | imm | s5 | [5:2] |
+| st_lo | imm | s1 | [31:29] |
+| st_hi | imm | s2 | [0:0] |
+
+> x02.vs: x02.v with the X store on (w5[10:9] = 11, 513, 730): X:[old A<w4[21:17]>] <- sx24
+> s<{w2[0], w1[31:29]}> as #st_lo, #st_hi; A still steps, and the read slot yields xd, not memory.
 
 ### `x02.aa`
 
