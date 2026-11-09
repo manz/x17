@@ -6897,6 +6897,27 @@ test "st.y with a class-011 second writes e and the 326 mux, no store (fact 757)
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x0002468F, 0x60000000 }));
 }
 
+test "0x00 control 6 / 7 ends the program after two delay slots (fact 759)" {
+    const gpa = testing.allocator;
+    const lde = struct {
+        fn f(k: u32, v: u32) u32 {
+            return 0x40000006 | k << 26 | v << 5;
+        }
+    }.f;
+    for ([_]u32{ 6, 7 }) |ctl| for ([_][2]u32{ .{ 0, 0 }, .{ 0x1068, 1 }, .{ 0x40, 0 } }) |t| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const n = try emu.runFrom(gpa, &state, &.{ 0x00000000, t[0] << 18, t[1], ctl, 0, 0, 0, lde(1, 0x11), lde(2, 0x22), lde(3, 0x33) }, 0, 16);
+        try testing.expectEqual(@as(usize, 3), n);
+        try testing.expect(state.halted);
+        try testing.expectEqual([3]u32{ 0x11, 0x22, 0 }, state.e[1..4].*);
+    };
+    // 0x01's control 6 is unmeasured.
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x00000001, 0, 0, 6, 0, 0, 0 }));
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};

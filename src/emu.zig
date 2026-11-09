@@ -80,6 +80,8 @@ pub const State = struct {
     /// Set by a bundle after which one more bundle runs and the program stops without a halt
     /// (x17 S2 class 101 with S1[22:20] = 010, fact 457).
     wedge_pending: bool = false,
+    /// Set by a 0x00 END (control 6 / 7, fact 759): two more bundles run, then the program halts.
+    end_pending: bool = false,
     /// Whether e0, the address entry, is known (fact 466, 468): see updateE0.
     e0_known: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
@@ -1409,6 +1411,11 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
         4 => state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc)),
+        // 759: 0x00 END: two delay slots run, then the normal halt; target fields inert, no link.
+        6, 7 => {
+            if (x01) return RunError.UnknownForm;
+            state.end_pending = true;
+        },
         0, 2, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
         else => return RunError.UnknownForm,
     }
@@ -5497,6 +5504,14 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
                 shadow = 0;
                 continue;
             }
+            shadow = 1;
+            continue;
+        }
+        if (state.end_pending) {
+            // 759: like a halt, two delay slots then the stop; inside a jump's delay unmeasured.
+            state.end_pending = false;
+            if (state.jump_delay > 0) return RunError.UnknownForm;
+            state.halted = true;
             shadow = 1;
             continue;
         }
