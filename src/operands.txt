@@ -1371,7 +1371,7 @@ x02.v	x3_b	s	26	29	s4
 x02.v	x3_op	imm	6	8	s5
 x02.v	x3_sh	imm	2	5	s5
 
-# x02.vc: x02.v's operands, then #<code>
+# x02.vc: x02.v's operands, then #<code>, #<fn>, <r>: the A step agu_xr fn w2[26:22], r = R<w5[25:22]> (738)
 x02.vc	xrd_d	s	3	6	s4
 x02.vc	xrd_a	A	17	20	s4
 x02.vc	inc_d1	A	17	21	s2
@@ -1389,8 +1389,10 @@ x02.vc	x3_b	s	26	29	s4
 x02.vc	x3_op	imm	6	8	s5
 x02.vc	x3_sh	imm	2	5	s5
 x02.vc	code	imm	5	10	head
+x02.vc	fn	imm	22	26	s2
+x02.vc	r	R	22	25	s5
 
-# x02.vs: x02.v's operands, then #<st_lo>, #<st_hi>
+# x02.vs: x02.v's operands, then #<st_lo>, #<st_hi>, #<fn>, <r> (738)
 x02.vs	xrd_d	s	3	6	s4
 x02.vs	xrd_a	A	17	20	s4
 x02.vs	inc_d1	A	17	21	s2
@@ -1409,6 +1411,8 @@ x02.vs	x3_op	imm	6	8	s5
 x02.vs	x3_sh	imm	2	5	s5
 x02.vs	st_lo	imm	29	31	s1
 x02.vs	st_hi	imm	0	0	s2
+x02.vs	fn	imm	22	26	s2
+x02.vs	r	R	22	25	s5
 
 # x02.aa <dest_A>, <x_A>, <r_R>, #<fn>, <dest2_A>, <add_A>
 x02.aa	dest_A	A	17	21	s2
@@ -1472,3 +1476,38 @@ x18.max	b_s	s	4	7	s1
 x18.min	dest_s	s	8	11	s1
 x18.min	a_s	s	2	5	s2
 x18.min	b_s	s	4	7	s1
+
+# x03.tapa: x03.tap plus #<fn>, <r>: the A step agu_xr fn w2[26:22] (0 x+1, 1 x-1, 2 x+r, 3 x-r), r = R<w5[25:22]> (740)
+x03.tapa	sL	s	3	6	s4
+x03.tapa	An	a4	0	2	s1
+x03.tapa	sB	s	5	8	s2
+x03.tapa	sHi	s	9	12	s2
+x03.tapa	sLo	s	7	10	s4
+x03.tapa	=sL	s	1	4	s2
+x03.tapa	=An	A	17	21	s2
+x03.tapa	=An	A	0	4	s3
+x03.tapa	=sHi	imm	29	31	s1
+x03.tapa	=sHi>>3	imm	0	0	s2
+x03.tapa	=sLo	s	9	12	s5
+x03.tapa	fn	imm	22	26	s2
+x03.tapa	r	R	22	25	s5
+
+# x03.tap0a: x03.tap0 plus #<fn>, <r>: the A step agu_xr fn w2[26:22] (0 x+1, 1 x-1, 2 x+r, 3 x-r), r = R<w5[25:22]> (740)
+x03.tap0a	sL	s	3	6	s4
+x03.tap0a	An	a4	0	2	s1
+x03.tap0a	sB	s	5	8	s2
+x03.tap0a	sHi	s	9	12	s2
+x03.tap0a	sLo	s	7	10	s4
+x03.tap0a	=sL	s	1	4	s2
+x03.tap0a	=An	A	17	21	s2
+x03.tap0a	=An	A	0	4	s3
+x03.tap0a	=sHi	imm	29	31	s1
+x03.tap0a	=sHi>>3	imm	0	0	s2
+x03.tap0a	=sLo	s	9	12	s5
+x03.tap0a	fn	imm	22	26	s2
+x03.tap0a	r	R	22	25	s5
+
+# x03.repa: x03.rep plus #<fn>, <r>: the store pointer's agu_xr step (741)
+x03.repa	pidx	p	14	17	s5
+x03.repa	fn	imm	22	26	s2
+x03.repa	r	R	22	25	s5

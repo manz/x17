@@ -3035,7 +3035,9 @@ Emulator:
 | yd | imm | s5 | [5:5] |
 
 > x03.acp: second A dest, A<w2[21:17]> <- A<w3[4:0]> or (w5[5]) the Y read
-> (fact 193 / own-x03acp, own-x03ayd).
+> (fact 193 / own-x03acp, own-x03ayd).  The template's read slot is live: w4[6:3] = 7 with
+> w5[21] = 1 also loads s7 <- Y:[e<y_e>] (190) and sets yd, whatever #yd says (748, silicon:
+> s7 and yd both took the Y word under #0 and #1).
 
 ### `x00.slots`
 
@@ -3595,6 +3597,8 @@ Emulator:
 | x3_op | imm | s5 | [8:6] |
 | x3_sh | imm | s5 | [5:2] |
 | code | imm | head | [10:5] |
+| fn | imm | s2 | [26:22] |
+| r | r_reg | s5 | [25:22] |
 
 > x02.vc: x02.v with the third slot's head code h[10:5] as a trailing operand (549, 627, 628,
 > 730): 0-5 the adder (#x3_sh = n), 6 asr / 7 asrrs of b by a, x3_sh's top bit w5[5] negating a.
@@ -3624,6 +3628,8 @@ Emulator:
 | x3_sh | imm | s5 | [5:2] |
 | st_lo | imm | s1 | [31:29] |
 | st_hi | imm | s2 | [0:0] |
+| fn | imm | s2 | [26:22] |
+| r | r_reg | s5 | [25:22] |
 
 > x02.vs: x02.v with the X store on (w5[10:9] = 11, 513, 730): X:[old A<w4[21:17]>] <- sx24
 > s<{w2[0], w1[31:29]}> as #st_lo, #st_hi; A still steps, and the read slot yields xd, not memory.
@@ -3810,4 +3816,60 @@ Emulator:
 | dest_s | s | s1 | [11:8] |
 | a_s | s | s2 | [5:2] |
 | b_s | s | s1 | [7:4] |
+
+### `x03.tapa`
+
+- Syllables: 6
+- Base: `00000003` `00006800` `00000000` `00000000` `00002800` `00040002`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| sL | s | s4 | [6:3] |
+| An | a4 | s1 | [2:0] |
+| sB | s | s2 | [8:5] |
+| sHi | s | s2 | [12:9] |
+| sLo | s | s4 | [10:7] |
+| =sL | s | s2 | [4:1] |
+| =An | a_reg | s2 | [21:17] |
+| =An | a_reg | s3 | [4:0] |
+| =sHi | imm | s1 | [31:29] |
+| =sHi>>3 | imm | s2 | [0:0] |
+| =sLo | s | s5 | [12:9] |
+| fn | imm | s2 | [26:22] |
+| r | r_reg | s5 | [25:22] |
+
+> x03.tapa / x03.tap0a / x03.repa: x03.tap / x03.tap0 / x03.rep with the A step's agu_xr fn
+> w2[26:22] and R<w5[25:22]> as trailing operands (740, 741): 0 x + 1, 1 x - 1, 2 x + r, 3 x - r.
+
+### `x03.tap0a`
+
+- Syllables: 6
+- Base: `00000003` `00006000` `00000000` `00000000` `00002800` `00040002`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| sL | s | s4 | [6:3] |
+| An | a4 | s1 | [2:0] |
+| sB | s | s2 | [8:5] |
+| sHi | s | s2 | [12:9] |
+| sLo | s | s4 | [10:7] |
+| =sL | s | s2 | [4:1] |
+| =An | a_reg | s2 | [21:17] |
+| =An | a_reg | s3 | [4:0] |
+| =sHi | imm | s1 | [31:29] |
+| =sHi>>3 | imm | s2 | [0:0] |
+| =sLo | s | s5 | [12:9] |
+| fn | imm | s2 | [26:22] |
+| r | r_reg | s5 | [25:22] |
+
+### `x03.repa`
+
+- Syllables: 6
+- Base: `00000003` `60000002` `18106000` `85800008` `00004005` `001c0000`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| pidx | p | s5 | [17:14] |
+| fn | imm | s2 | [26:22] |
+| r | r_reg | s5 | [25:22] |
 

@@ -6325,7 +6325,7 @@ test "x02.v with the X store: the store lands at the old A, the read slot takes 
 }
 
 test "x02.vc assembles x02.v with the third slot's head code" {
-    const w = try asm_mod.assembleOne("x02.vc s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #2, #0, s4, s9, #0, #0, #7");
+    const w = try asm_mod.assembleOne("x02.vc s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #2, #0, s4, s9, #0, #0, #7, #0, R0");
     try testing.expectEqual(@as(u32, 0x00000002 | 7 << 5), w.slice()[0]);
     const v = try asm_mod.assembleOne("x02.v s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #2, #0, s4, s9, #0, #0");
     try testing.expectEqualSlices(u32, v.slice()[1..], w.slice()[1..]);
@@ -6333,7 +6333,7 @@ test "x02.vc assembles x02.v with the third slot's head code" {
 
 test "x02.vs stores at the old A while A steps; the read slot yields xd (fact 730)" {
     const gpa = testing.allocator;
-    const w = try asm_mod.assembleOne("x02.vs s3, A9, A9, A0, A9, s12, s1, s2, s0, #5, #2, #0, s4, s9, #0, #0, #7, #0");
+    const w = try asm_mod.assembleOne("x02.vs s3, A9, A9, A0, A9, s12, s1, s2, s0, #5, #2, #0, s4, s9, #0, #0, #7, #0, #0, R0");
     var prog: [9]u32 = undefined;
     @memcpy(prog[0..6], w.slice()[0..6]);
     prog[6] = 0x00000017;
@@ -6592,5 +6592,44 @@ test "x18 class 011's p write: cond 11 v <= 0, 13 v == 0, 0 true; w3[21] inert (
                 }
             }
         }
+    }
+}
+
+test "the A-step operand forms set fn w2[26:22] and R<w5[25:22]> over their bases (738, 740, 741)" {
+    for ([_][2][]const u8{
+        .{ "x02.vc s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #2, #0, s4, s9, #0, #0, #7, #2, R6", "x02.vc s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #2, #0, s4, s9, #0, #0, #7, #0, R0" },
+        .{ "x02.vs s3, A9, A9, A0, A9, s12, s1, s2, s0, #5, #2, #0, s4, s9, #0, #0, #7, #0, #2, R6", "x02.vs s3, A9, A9, A0, A9, s12, s1, s2, s0, #5, #2, #0, s4, s9, #0, #0, #7, #0, #0, R0" },
+        .{ "x03.tapa s3, #5, s7, s12, s11, #2, R6", "x03.tap s3, #5, s7, s12, s11" },
+        .{ "x03.tap0a s3, #5, s7, s12, s11, #2, R6", "x03.tap0 s3, #5, s7, s12, s11" },
+        .{ "x03.repa p3, #2, R6", "x03.rep p3" },
+    }) |k| {
+        const w = try asm_mod.assembleOne(k[0]);
+        const base = try asm_mod.assembleOne(k[1]);
+        const ws = w.slice();
+        const bs = base.slice();
+        try testing.expectEqual(bs[2] | 2 << 22, ws[2]);
+        try testing.expectEqual(bs[5] | 6 << 22, ws[5]);
+        for ([_]usize{ 0, 1, 3, 4 }) |i| try testing.expectEqual(bs[i], ws[i]);
+    }
+}
+
+test "x03.acp's template read slot also loads s7 and yd <- Y:[e<y_e>] under #0 and #1 (748)" {
+    const gpa = testing.allocator;
+    for ([_][]const u8{ "x03.acp A9, A5, e3, #0", "x03.acp A9, A5, e3, #1" }, [_]u32{ 0x100, 0x0BCD }) |src, a9| {
+        const w = try asm_mod.assembleOne(src);
+        var prog: [9]u32 = undefined;
+        @memcpy(prog[0..6], w.slice()[0..6]);
+        @memcpy(prog[6..9], &[3]u32{ 0x00000017, 0x31308000, 0xA0000000 });
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[5] = 0x100;
+        state.e[3] = 0x720;
+        state.s[7] = 0x5555;
+        state.yd = 0xA050;
+        try state.y_mem.put(gpa, 0x720, 0x0BCD);
+        _ = try emu.runFrom(gpa, &state, &prog, 0, 8);
+        try testing.expectEqual(a9, state.a[9]);
+        try testing.expectEqual(@as(u32, 0x0BCD), state.s[7]);
+        try testing.expectEqual(@as(u32, 0x0BCD), state.yd);
     }
 }
