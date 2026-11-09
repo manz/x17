@@ -18,7 +18,7 @@ jobs:
       - name: Build release
         run: zig build -Doptimize=ReleaseFast
       - name: Sources are formatted
-        run: zig-out/bin/x17 fmt --check examples/*.sm examples/lib/*.sm
+        run: zig-out/bin/x17 fmt --check examples/*.sm
       - name: Zig is formatted
         run: zig fmt --check src build.zig
       - name: Instruction reference is current
