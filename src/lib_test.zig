@@ -4490,6 +4490,7 @@ test "the ISA sources quote no image provenance" {
         .{ .path = "src/disasm.zig", .text = @embedFile("disasm.zig") },
         .{ .path = "src/image.zig", .text = @embedFile("image.zig") },
         .{ .path = "src/doc.zig", .text = @embedFile("doc.zig") },
+        .{ .path = "src/summaries.txt", .text = @embedFile("summaries.txt") },
         .{ .path = "src/dispatch.zig", .text = @embedFile("dispatch.zig") },
         .{ .path = "src/expand.zig", .text = @embedFile("expand.zig") },
         .{ .path = "src/fmt.zig", .text = @embedFile("fmt.zig") },

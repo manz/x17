@@ -1,0 +1,227 @@
+st.y	Stores the lane's data register to Y memory at the 16-bit address in head[20:5], optionally with a paired wr store through a Y address entry.
+ldi	Loads a 16-bit immediate into a destination register, which can be a source register or an address entry.
+wr	Operand syllable of a store: writes a chosen source register to Y memory at address entry e0..e15, read before the store updates e1.
+st1	Stores source register s<[25:22]> to Y memory at address entry e<[8:5]>, with no post-modify.
+lde	Loads a 16-bit immediate into a Y address entry (or an X address register A when k is 0), chosen by the k field.
+ld0e	Zeroes a source register and loads a 16-bit immediate into an A register selected by the second syllable; also has an ALU and predicate-conditional variant.
+alu	Computes an ALU operation, selected by the op field, on two source registers a and b and writes the result to a destination source register.
+rop	Applies a function to an address entry e and a modifier register R, writing the result to a source register and a modifier register R.
+ptst	Compares two source registers (signed 24-bit) with a selected relation such as <=, >= or == and writes the result to a predicate.
+plog	Combines two predicates with a selected logic function (and, or, xor, not, constant) and writes the result to a third predicate.
+yagu	Two-syllable bundle: address-unit function updates an address entry e and a modifier register R, and loads a source register from Y memory or a computed value.
+rli	Loads a 16-bit immediate into a modifier register R and a source register in one word.
+bcc	Two-syllable conditional branch: if the chosen predicate is set, jumps to a signed word offset after two delay slots.
+ystm	Two-syllable bundle: stores a source register to Y memory at an address entry, while an address-unit function updates e and a modifier register R.
+pc14	Two-syllable bundle that writes a predicate from a condition test on a source register and loads a source register with a mux-selected value (zero, inverted condition or immediate).
+xst	Two-syllable bundle that stores a source register, sign-extended to 24 bits, to X memory at an A-register address, while loading a source register.
+ypair	Two-syllable bundle that loads a source register from an address entry, the last Y word read, an immediate, or zero, suppressing the head's own load.
+yrm	Two-syllable bundle that copies an address entry e into a modifier register R, loads a source register from the last Y word read, and loads an immediate.
+ytst	Two-syllable bundle that reads Y memory at an address entry and sets a predicate to whether the word is even.
+jmp	Jumps to the instruction's own address plus a signed 16-bit offset after two delay slots, always or conditionally on a predicate or its negation.
+br	Branches to the instruction's own address plus a 15-bit offset after two delay slots when the chosen predicate is set.
+mv	Register move form whose encoding has a 5-bit register number and an address register field.
+agu10r	Two-syllable bundle: loads a 16-bit immediate into a source register and writes an address-unit result computed from e and R into a modifier register R.
+alu11	Two-syllable bundle that runs an ALU operation on source registers in parallel with an address-unit operation updating a modifier register R and address entry e.
+x19	Four-syllable VLIW bundle whose sub-form is chosen by the class bits of the second to fourth syllables; only the load sub-form is modelled.
+x17	Three-syllable bundle; its third syllable selects halt, continue, or an ALU op writing a source register from two source registers and a count.
+loop	Loop-bounding word that limits a fill; its bits 8:7 and 24:23 select V2 or V13 data registers (3 means none).
+ldy	Loads a source register from Y memory at address entry e<[8:5]>.
+dld	Dual load: reads X memory at an A register into one source register and Y memory at an address entry into another.
+ldy.r	Like ldy, but also writes the Y word read at address entry e<[8:5]> into a nonzero modifier register R.
+stx	Stores a source register, sign-extended to 24 bits, to X memory at the address held in an A register.
+zero	The all-zero word, which does nothing when it replaces a single syllable.
+x12.agu	Two-syllable bundle: an address-unit function of e and R produces one value that is written to address entry e, a source register and a modifier register R.
+x12.agu29	Same as x12.agu with head bit 29 set, which has no effect: one address-unit result written to e, a source register and R.
+x13.st	Two-syllable bundle whose modelled part is an ALU negate: a source register becomes 0 minus another source register; the paired X store is not modelled.
+x16.agu	Three-syllable bundle that computes an address-unit function of e and R, such as x+y or y+immediate, and writes it to a source register.
+x15.alu	Two-syllable bundle running an ALU op (only add modelled) on two source registers; the result can also land on a second source register.
+x17.agu2	Three-syllable x17 bundle that computes an address-unit function of R and a 16-bit immediate and writes it to both a source register and an address entry e.
+x19.agu	Four-syllable bundle that computes an address-unit function of e and R and writes it in parallel to a modifier register R and an address entry e.
+x19.alu	Four-syllable bundle that applies an ALU op (zero, a, b, a+1, a+2, saturating shift) to two source registers and writes a destination source register.
+x19.alum	Variant of x19.alu with a mode field: some modes operate on a+b, some on a alone, and one writes nothing.
+x19.e	Four-syllable bundle that loads a 16-bit immediate into an address entry e and writes a mux-selected value, such as another e, into a source register.
+x19.xrd	Four-syllable bundle that reads X memory at an A register selected by bit fields and writes the word into a source register.
+x19.a3	Four-syllable bundle that loads a source register from the AGU3 unit (only the function returning the immediate is modelled) and a modifier register R from AGU10 in parallel.
+x19.a3st	Four-syllable bundle that stores a source register to Y memory at an address entry.
+x19.aagu42	Four-syllable bundle like x19.aagu with one extra bit widening the immediate to (w3[14:0] << 1) | w2[31].
+x19.alu44	Same operation as x19.alu with the extra w2 bit 31 set.
+x19.a43	Four-syllable bundle that loads a source register from AGU3 function 25 applied to a 16-bit immediate formed from w3[14:0] and w2[31].
+x19.k00	Four-syllable bundle that writes a source register through a mux, selecting an address-unit result of e and R or the head's immediate.
+x19.kalu	x19.k00 variant that subtracts one source register from another (a minus b) into a source register.
+x19.kabs	x19.k00 variant that writes the absolute value of a source register into a source register.
+x19.kimm	x19.k00 variant that loads the head's 16-bit immediate into a source register.
+x19.kmux2	x19.k00 variant using mux value 010, which gives the same address-unit result of e and R as mux 001.
+x16.mul	Three-syllable bundle that multiplies two source registers, shifts the product right by 23 (truncating), and writes a source register.
+x13.agu	Two-syllable bundle that loads a 16-bit immediate into an address entry e and writes an address-unit result of e and R into a modifier register R.
+x02.mpy	Six-syllable VLIW that multiplies two source registers and writes the rounded product divided by 2^23 to a source register.
+x02.ainc	Six-syllable VLIW that increments an A register (A<w2[21:17]> <- A<w3[4:0]> + 1) and also performs the rounded multiply into s2.
+x18.eagu	Updates an element register e from an address-generation function (selected by a 4-bit field) applied to another e register, with y fixed at zero.
+x18.edec	Writes an e register with another e register plus or minus one, the sign chosen by a bit in the second syllable.
+x18.una	Applies a unary operation selected by a 3-bit op field (for example plus one or absolute value) to scalar s, writing the result to another s.
+x18.and	Bitwise ANDs two scalar s registers and writes the result to a third s register.
+x18.xrd	Reads X memory at the address held in an A register and loads the value into a scalar s register.
+x18.rimm	Loads an e register from a 16-bit immediate, or from an R register plus that immediate, depending on the op field.
+x18.q23	Multiplies two scalar s registers, scales the product by 2^23 (rounding or truncating), and writes the result to a destination s.
+x18.mpy	Integer-multiplies two scalar s registers, writing the low 24 bits of the product to one s register and the high part to another.
+x03.xrd	Reads X memory at the address in an A register, whose index is split across two instruction fields, and loads the value into scalar s.
+x03.yrd	Reads Y memory at the address in an e register and loads the value into a scalar s register.
+x02.c6	Reads X memory into an s register and also copies the same read value into a second slot's destination s register.
+x03.esrc	Copies an element register e into a scalar s register.
+x03.rslot	Computes an R register from an address-generation function of another R register, in the R slot of a six-syllable bundle.
+x03.xst	Stores a sign-extended 24-bit scalar s register to X memory at the address held in an A register.
+x03.xw2	Makes the second slot's destination s register also receive the X memory read performed by the bundle.
+x03.agu	Updates an A register from an address-generation function of another A register and a 16-bit immediate.
+x04.agu	Computes an R register from an address-generation function of another R register and a 16-bit immediate.
+x03.alu	Runs an ALU operation selected by a 6-bit op field on two scalar s registers, writing the result to a destination s register.
+x18.q23c	Signed 24-bit multiply of two scalar s registers, scaled by 2^23 (rounded) or by 2^24 when the shift bit is set.
+x02.yrd	Reads Y memory at the address held in an e register and loads the value into a scalar s register.
+x02.hdhi	Loads a 16-bit immediate into a scalar s register, like x02.imm; the extra high header bits have no effect.
+x16.mul2	Multiplies two scalar s registers, optionally rounding and halving, and shifts the product right by 23 into a destination s register.
+x16.hd	Runs an ALU operation on two scalar s registers, with the ALU word carried in the header and the second operand taken from the next syllable.
+x15.pt	Writes a scalar s register with a lookup function of a predicate bit p, such as the predicate itself or its negation.
+x18.br	Branches when a predicate p is set, adding a signed offset counted in bundles to the program counter.
+x02.agu	Computes an R register from an address-generation function of another R register, in the R slot of a six-syllable bundle.
+x02.esrc	Copies an element register e into a scalar s register.
+x02.asrc	Copies an A register plus one into a scalar s register.
+x03.mpy	Multiplies two scalar s registers and writes the product shifted right by 23, with rounding, to a destination s register.
+x02.x3	Third slot of a bundle: applies an ALU operation (such as subtract) to two s registers with a shift, writing a destination s register.
+x01.st	Seven-syllable bundle with stores; only its scalar copy from an element register e into a scalar s register is modelled.
+x12.aset	Sets an A register, selected by a 3-bit field, to the value of an R register.
+x02.xrd	Reads X memory at the address held in an A register and loads the value into a scalar s register.
+x02.imm	Loads a 16-bit immediate from the header into a scalar s register.
+x18.imm	Loads a 16-bit immediate from the header into a scalar s register.
+x19.imm	Updates an e register using an address-generation function of an e register, an R register and a 16-bit immediate.
+x19.mul	Multiplies two scalar s registers and writes the low 16 bits of the product to both an e register and an R register.
+ealu	Writes an e register with the result of a one-operand ALU operation on a scalar s register; only a plus-one operation is modelled.
+xld10	Loads a scalar s register from X memory at an A-register address, and also loads another s register with a 16-bit immediate.
+yld10	Loads a scalar s register from Y memory at the address held in an e register.
+condset	Sets a predicate register p from a condition code; only the always-true condition is modelled.
+ptest	Writes a scalar s register from a function of a predicate p: either the predicate or its negation.
+psel	Writes a scalar s register with an add of two s registers if predicate p is set, otherwise with the second operand unchanged.
+pair	Loads an element register e with a 16-bit immediate.
+ldi2	Loads a scalar s register with a 16-bit immediate.
+x19.aagu	Updates an A register from an address-generation function of another A register and a 15-bit immediate; one function computes x plus twice the immediate.
+x19.ld	Loads a scalar s from Y memory at an e-register address, and updates an e register using an address-generation function.
+x17.cont	Control bundle that changes no state, so execution simply continues with the next bundle.
+x17.halt	Stop bundle that ends execution.
+x17.imm	Loads a 16-bit immediate from the header into a scalar s register.
+x17.xld_a10	Loads a scalar s register from X memory at an address held in an A register.
+x17.xpm	Loads a scalar s register from X memory at an address held in an A register, in a continuing bundle.
+x17.rsub	Reverse subtract: writes an immediate minus a scalar s register (24-bit wrap) to a destination s register.
+x17.mve	Writes an element register e with a scalar s register plus one.
+x17.alu05	Runs an ALU operation, selected by a 6-bit op field in the header, on two scalar s registers and writes a destination s register.
+x17.ld	Arithmetic-shifts a scalar s register right by an immediate, and loads an element register from Y memory at an e-register address.
+x17.ldr	Computes an R register from an address-generation function of another R register and a 16-bit immediate.
+x17.e	Writes two e registers in a continuing bundle: e and s get the 16-bit immediate, and a second e gets another e minus one.
+x17.estop	The x17.e element write with S2 low bits set to 4, which stops the program one bundle later.
+x17.agu	Address-generation op in a continuing bundle: R destination gets the AGU function (fn_op) of an e register and an R register.
+x17.alu	ALU op in a continuing bundle: destination s gets op(a, b, n) from two s registers, with a 4-bit shift or count n.
+x19.aimm	Address-generation op that also loads the 16-bit immediate into an e register, alongside an R destination computed from e and R.
+x19.aagu5	Address-register (A) operation with an inert class-101 word: destination A gets fn_op applied to a source A and a 15-bit immediate.
+x19.imm4	Immediate-load variant with an inert second word, using function 0 on the x_e source; destination is split across two fields.
+x19.ragua	Writes R from the address-generation function 0 applied to a source A register.
+x16.alu2	ALU op: destination s gets one of eight operations (selected by op and neg) on s registers a and b.
+x16.alux	ALU op on s registers a and b, plus a load of X memory at A-indexed address xi into a second s destination.
+x16.ld	Loads X memory at the address in A register xi into destination s, and latches xi from a 5-bit field.
+x16.aset	Sets an odd A register (A of 2*n+1) to a 16-bit immediate.
+x16.ldi	Loads a 16-bit immediate into destination s.
+x16.mux	Address-generation op whose source is chosen by a mux field, with Y data and a 16-bit immediate; result goes to destination s.
+x16.xs	Loads a source selected from the X slot (or a 16-bit immediate) into destination s, with a Y e register operand.
+x16.stx	Stores source s into X memory at the address in A register a.
+x16.st2	Stores one s register to X memory at A-indexed address and another s register to Y memory at the address in an e register.
+x16.agumul	Multiply of two s registers a and b, with the result written to a destination s split across two fields.
+x16.agu2	Address-generation op: destination s gets function fn of e register x and R register y, with a table select and source mux.
+x16.xld	Loads X memory at the address in A register xi into destination s.
+x16.ldb	Loads the low byte of X memory at A-indexed address, shifted left by 8, into destination s.
+x18.pmov	Copies one predicate register p to another.
+x18.pnot	Writes the logical inverse of source predicate p into destination predicate p.
+x18.pset	Sets a predicate register to true.
+x18.pclr	Clears a predicate register to false.
+x18.pfn	General predicate write: destination p gets a selected function (f, code, op) of a source p.
+x18.pw	Writes predicate p from a chosen condition applied to the result of the s-register slot source.
+x18.c2x	Class-2 X slot: loads into destination s from a source selected by mux, an e register or a 16-bit immediate.
+x18.eagu2	Address-generation op writing an e register: dest_e gets function fn (AGU10 table when tab is 1) of an e register.
+x18.rag	Address-generation op writing R: dest_R gets AGU3 function fn of an A register and an R register; also steps e7.
+x18.rag101	Writes R from the AGU3 function of an A and an R register, plus an X-slot load into destination s.
+x18.eagu0	Address-generation op writing an e register, using the class-000 function table (fn and y low bits).
+x18.agu000	Class-000 e address-generation op feeding the X slot into destination s, with a Y-memory store of a source s.
+x18.e2nd	Second e slot: writes an e register with the value y minus one.
+x18.alu	ALU word slot: destination s gets code-selected op of s registers a and b, with mode m and shift sh.
+x18.br101	Conditional branch: jumps by an 11-bit offset when the selected predicate p is true; encoding also carries e bits.
+x18.mac	40-bit multiply-accumulate of s registers a and b with x operands; high and low parts go to two destination s registers.
+x18.macf	Variant of the 40-bit multiply-accumulate without the rounding bit, so hi is acc divided by 2^24 and chains as a running sum.
+x18.sh111	ALU op on s registers a and b with a left or right shift by sh, result to destination s, plus a Y-memory store.
+x18.rcl100	Writes R from the function fn of an e register and R register, plus a Y-memory store of a source s.
+x18.mpy100	Multiplies s registers a and b (mode selects variant) into destination s, plus a Y-memory store of a source s.
+x18.sh100	Shifts source s by n bits, left or right, into destination s.
+x18.yb100	Loads the low byte of Y memory at an e register address, shifted left by 8, into destination s.
+x18.rcl001	Writes R from an AGU function (AGU10B, or AGU3 when selected) of an e register and R register, plus a Y-memory store.
+lde.hi	Loads a 16-bit immediate into an e register, the lde variant with bit 31 set.
+lde.arm	Loads a 16-bit immediate into one of e8 to e15; it also arms the program halt countdown.
+rop.c4	Register operation: destination s and R get function fn of an e register x and R register y (class-100 encoding).
+aset0b	Loads destination s from Y memory at the address in an e register; it also writes A2 with the value.
+ragu0c	Writes R from the address-generation function fn over an A register and R0.
+ld0e.a	Load variant with a 16-bit address and no s destination, selected by a count n and op bit.
+ste	Loads a 16-bit immediate into an e register.
+rop.b21	Register operation: destination s and R get function fn of an e register x and R register y, with the inert bit 21 set.
+x04.ragu	Writes R from the address-generation function fn over an R register and a 16-bit immediate.
+x04.yd	Reads Y memory at an e register address into both destination R and destination s.
+x04.xst	Stores a source s into X memory at the address in an A register.
+x10.alu	ALU op: destination R gets code-selected function of s registers a and b, with mode m and count n.
+x17.end	Halts the program at the end of the bundle stream (the tail's stop).
+x17.eagu	Computes an address-unit result from an e register (selected function) and writes it to a source register s.
+x17.ms	Bundle that stores s to Y, loads an immediate, and loads Y through a mux into an R register, with e immediates.
+x17.sty	Stores a source register to Y:[e], then updates an e register from the address unit applied to the store pointer.
+x17.styi	Stores a register to Y:[e], then post-increments the e pointer by one into the chosen e register.
+x17.stys	Stores a register to Y:[e], then advances the e pointer by the stride held in an R register.
+x17.styr	Writes R <- s shifted left by an immediate amount, in the store form's R-write slot.
+x17.yld	Loads a source register s from Y memory at the address in e.
+x16.mac	Three-syllable 40-bit multiply-accumulate of two s registers with a mode field, writing high and low result halves to s registers.
+x03.acp	Copies one A register into a second A register, or alternatively loads it from the Y read, in a six-syllable bundle.
+x00.slots	Seven-syllable bundle with an s-register slot and X/Y stores, selecting a source, ALU op and e operands.
+x01.slots	Seven-syllable class-1 variant of the slot bundle: s-register slot plus X and Y stores, with enable and old-value fields.
+x00.alu	Seven-syllable bundle carrying an ALU operation with a shift and destination s register, with the MAC slot switched off.
+x00.mac	Seven-syllable bundle carrying a multiply into one s register and a 40-bit accumulate into another.
+x00.ctl	Seven-syllable control bundle: a jump (jr or ja) to an 8-bit target with two delay slots.
+x0e	Two-syllable ALU operation on s registers that also writes a muxed value or 16-bit immediate to a head s register.
+rimm	Loads a 16-bit immediate into an R register.
+stx0f	Stores a source register s to X memory at an A index built from head and syllable bits.
+stx0f.e	Like stx0f (X store of s), and also writes a 16-bit immediate into an e register.
+ste.n	Variant of ste that writes a 16-bit immediate into an e register, with a bare second syllable.
+ldi2.st	Loads a 16-bit immediate into s (ldi2 pair) and also stores a source register to Y at an e address.
+stk	Stores a source register to Y memory at the address in e register k.
+tst	Sets a predicate register p from a test function selected by two head fields.
+par	Single-syllable parallel move: stores an s register to X at an A address while loading from Y at an e address.
+mul13	Two-syllable multiply of two s operands, writing the result to a destination s register.
+st.wr	Stores a register to Y at the address in an e register, using the write second syllable of st.
+alu.m	Single-syllable ALU operation on s registers with extra m and n modifier fields.
+x16.b16	Bundle that loads s from Y at e and stores a register to X through the 16-bit address latch.
+x16.agu100	Bundle performing an address-unit function on an e register with a 16-bit immediate, writing s.
+x16.sh	Shifter bundle: shifts an s source by an amount into a destination s register, alongside a head immediate.
+x02.mac	Six-syllable multiply with selectable mode and sign handling, plus an X read from an A address into an s register.
+x18.e2nd17	Four-syllable class-0 bundle that writes a second e register, with a split two-part Y field.
+ldi.q	Loads a 16-bit immediate into a register, with the otherwise unused bits 29:26 given explicitly.
+st.sel	Stores to Y at a 16-bit address, with a two-bit select field in the head.
+x17.stop	Stops the engine and also stores a register to Y at the e address.
+x17.stopx	Stops the engine with the Y store of a register, with all otherwise unused head and S2 bits supplied explicitly.
+x03.rep	Counted loop that jumps to itself on a predicate, stepping an X store of s3 at A8 each pass; two delay slots run every pass.
+x19.mac	Four-syllable bundle combining a head ALU op, a MAC with mode, and R and A register updates, all fields explicit.
+pcond	Sets a predicate register p from a condition test comparing an R register against an A register.
+x03.jrc	Conditional relative jump inside the six-syllable bundle, taken on a chosen predicate with an 11-bit signed offset and a sense field.
+x02.v	Six-syllable bundle: X read into s, two A increments, a multiply into s with its low product half, and a three-operand shifted ALU result.
+x02.vc	Like x02.v, with the third slot's operation code exposed: adder variants or arithmetic shift right of b by a.
+x02.vs	Like x02.v but with an X store of a sign-extended value at the old A address, while A still steps.
+x02.aa	Computes an address-unit sum from an A register and an R register, writing it to one A and sum plus another A to a second A.
+ragu	Writes R from an address-unit function applied to an A register and an R register.
+x01.norm	Seven-syllable bundle that writes the count of redundant sign bits of one s register (24-bit) into another s.
+x01.selneg	Seven-syllable bundle that writes b into dest if b is negative, otherwise a 4-bit immediate.
+x03.tap	One-bundle FIR tap: loads sL from X at An, increments An, and adds 2*sL*sB into the 48-bit sum in sHi:sLo.
+x03.tap0	First FIR tap of a sum: loads sL from X at An, increments An, and sets sHi:sLo to 2*sL*sB without accumulating.
+x18.ytap	Y-side FIR tap: loads sL from Y at eN, increments eN, and adds 2*sL*sB to the 48-bit sum in sHi:sLo.
+x19.ldn	Loads s from Y at an e address (sign-extended) and steps an e register through the address unit.
+x18.or	Bitwise OR of two s registers into a destination s register, at 24 bits.
+x18.max	Signed 24-bit maximum of two s registers into a destination s register.
+x18.min	Signed 24-bit minimum of two s registers into a destination s register.
+x03.tapa	FIR tap like x03.tap, but the A step uses a selectable function (add or subtract one, or add or subtract R).
+x03.tap0a	First FIR tap like x03.tap0, but the A step uses a selectable function (add or subtract one, or add or subtract R).
+x03.repa	Counted loop like x03.rep, but the A step uses a selectable function (add or subtract one, or add or subtract R).
