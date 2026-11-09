@@ -34,13 +34,17 @@ pub fn build(b: *std.Build) void {
     asm_mod.addImport("isa", isa_mod);
     exe_mod.addImport("asm", asm_mod);
 
-    // The self-hosted x86_64 backend miscompiles the emulator (CI segfaults through a null
-    // State pointer in Linux debug tests); LLVM everywhere keeps CI and local builds alike.
-    const use_llvm = b.option(bool, "llvm", "Use the LLVM backend") orelse true;
+    // Zig 0.17's self-hosted x86_64 backend miscompiles parts of the emulator (Linux debug
+    // segfaults through a bad State pointer), so the exe and the two test binaries that hit
+    // it build with LLVM.  The rest keep the default backend, far quicker to compile.
+    // -Dllvm=true puts every artifact on LLVM.
+    const all_llvm = b.option(bool, "llvm", "Build every artifact with LLVM") orelse false;
+    const use_llvm: ?bool = if (all_llvm) true else null;
+    const needs_llvm: ?bool = true;
     const exe = b.addExecutable(.{
         .name = "x17",
         .root_module = exe_mod,
-        .use_llvm = use_llvm,
+        .use_llvm = needs_llvm,
     });
     b.installArtifact(exe);
 
@@ -133,7 +137,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(image_t).step);
     const emu_t = b.addTest(.{ .root_module = emu_mod, .use_llvm = use_llvm });
     test_step.dependOn(&b.addRunArtifact(emu_t).step);
-    const gates_t = b.addTest(.{ .root_module = gates_mod, .use_llvm = use_llvm });
+    const gates_t = b.addTest(.{ .root_module = gates_mod, .use_llvm = needs_llvm });
     test_step.dependOn(&b.addRunArtifact(gates_t).step);
     const lib_mod = b.createModule(.{
         .root_source_file = b.path("src/lib_test.zig"),
@@ -153,7 +157,7 @@ pub fn build(b: *std.Build) void {
     // -Dtest-filter=<name>: run only the ISA tests whose name contains it (mutation checks).
     const test_filter = b.option([]const u8, "test-filter", "run only lib_test tests matching this");
     const lib_filters: []const []const u8 = if (test_filter) |f| b.dupeStrings(&.{f}) else &.{};
-    const lib_t = b.addTest(.{ .root_module = lib_mod, .filters = lib_filters, .use_llvm = use_llvm });
+    const lib_t = b.addTest(.{ .root_module = lib_mod, .filters = lib_filters, .use_llvm = needs_llvm });
     const lib_run = b.addRunArtifact(lib_t);
     // X17_COMPAT_PROG names an external program the compat test reads; rerun rather than cache.
     if (b.graph.environ_map.get("X17_COMPAT_PROG") != null or b.graph.environ_map.get("X17_COMPAT_IMAGE") != null)
