@@ -6918,20 +6918,26 @@ test "0x00 control 6 / 7 ends the program after two delay slots (fact 759)" {
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x00000001, 0, 0, 6, 0, 0, 0 }));
 }
 
-test "0x00 control 0x08 / 0x0D falls through and parks the next arm once (fact 315)" {
+test "0x00 control 0x08 / 0x0D enables the decode arm (fact 761)" {
     const gpa = testing.allocator;
     const halt = [_]u32{ 0x00000000, 0, 0, 6, 0, 0, 0, 0x40000005, 0x40000005 };
-    for ([_]u32{ 8, 0xD }) |ctl| {
+    // s4 <- #1 (mux 6) beside the control; the run goes on to its END.
+    for ([_]u32{ 0, 8, 0xD, 0x10 }) |ctl| {
         var state = emu.State{};
         defer state.deinit(gpa);
-        // s4 <- #1 (mux 6) beside the control; the run goes on to its END.
         const prog = [_]u32{ 0x00000800, 0, 0, ctl, 0, 0, 0x0000400C } ++ halt;
         _ = try emu.runFrom(gpa, &state, &prog, 0, 16);
         try testing.expect(state.halted);
         try testing.expectEqual(@as(u32, 1), state.s[4]);
-        try testing.expectError(error.Parked, emu.runFrom(gpa, &state, &halt, 0, 16));
+        // The pass-1 arm always runs.
         _ = try emu.runFrom(gpa, &state, &halt, 0, 16);
         try testing.expect(state.halted);
+        if (ctl == 8 or ctl == 0xD) {
+            _ = try emu.decodeArm(gpa, &state, &halt, 0, 16);
+            try testing.expect(state.halted);
+            // A second decode arm without a new 0x08 is unmeasured.
+            try testing.expectError(error.UnknownForm, emu.decodeArm(gpa, &state, &halt, 0, 16));
+        } else try testing.expectError(error.DecodeNotEnabled, emu.decodeArm(gpa, &state, &halt, 0, 16));
     }
     // 230: a bare 0x08 in an empty bundle wedged.
     var state = emu.State{};
@@ -6989,7 +6995,7 @@ test "compat: external program from reset state" {
 // u32 run_count then runs { u32 cpu_addr, u32 len_bytes | width << 28, bytes }; P lane l row r
 // at 0x22020000 + l * 0x4000 + 4r (syllable 4r + l), X word a at 0x22030000 + 4a, Y word a at
 // 0x22038000 + 2a.  Set 1 is armed from syllable 0; set 2 is then loaded, Y:0xFD80..0xFD87
-// seeded with X17_COMPAT_PARAMS (eight hex halfwords), and armed from syllable 0 again.
+// seeded with X17_COMPAT_PARAMS (eight hex halfwords), and the decode arm runs from syllable 0.
 // Skipped when unset.  Reports only ran / refused / wedged, bundle counts and unset reads.
 const CompatImage = struct {
     bytes: []const u8,
@@ -7035,7 +7041,7 @@ const CompatImage = struct {
     }
 };
 
-fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label: []const u8) void {
+fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label: []const u8, decode: bool) void {
     var unset = emu.UnsetReads{};
     state.unset_reads = &unset;
     defer state.unset_reads = null;
@@ -7044,7 +7050,7 @@ fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label
     @memset(prof, 0);
     state.profile = prof;
     defer state.profile = null;
-    const r = emu.runFrom(gpa, state, prog, 0, 50_000_000);
+    const r = if (decode) emu.decodeArm(gpa, state, prog, 0, 50_000_000) else emu.runFrom(gpa, state, prog, 0, 50_000_000);
     var n: u64 = 0;
     for (prof) |c| n += c;
     const verdict: []const u8 = if (r) |_| (if (state.halted) "ran, halted" else "ran off the end") else |e| @errorName(e);
@@ -7063,12 +7069,12 @@ test "compat: set image, configure then decode arm" {
     defer state.deinit(gpa);
     var img = CompatImage{ .bytes = bytes };
     try img.applySet(gpa, prog, &state);
-    compatArm(gpa, &state, prog, "set 1");
+    compatArm(gpa, &state, prog, "set 1", false);
     try img.applySet(gpa, prog, &state);
     if (testing.environ.getPosix("X17_COMPAT_PARAMS")) |params| {
         var it = std.mem.tokenizeAny(u8, params, " ,");
         var a: u32 = 0xFD80;
         while (it.next()) |hw| : (a += 1) try state.y_mem.put(gpa, a, try std.fmt.parseInt(u32, hw, 16));
     }
-    compatArm(gpa, &state, prog, "set 2");
+    compatArm(gpa, &state, prog, "set 2 decode arm", true);
 }

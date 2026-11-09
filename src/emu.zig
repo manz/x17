@@ -82,8 +82,8 @@ pub const State = struct {
     wedge_pending: bool = false,
     /// Set by a 0x00 END (control 6 / 7, fact 759): two more bundles run, then the program halts.
     end_pending: bool = false,
-    /// Set by 0x00 control 0x08 / 0x0D (fact 315): the next arm parks (no completion, no halt).
-    next_arm_parks: bool = false,
+    /// The host decode arm's gate (fact 761): 0x00 control 0x08 / 0x0D makes it ready.
+    decode: DecodeGate = .off,
     /// Whether e0, the address entry, is known (fact 466, 468): see updateE0.
     e0_known: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
@@ -130,6 +130,9 @@ pub const State = struct {
 /// X / Y reads of never-written addresses, counted while `State.unset_reads` is set.
 pub const UnsetReads = struct { x: u64 = 0, y: u64 = 0, first_x: ?u32 = null, first_y: ?u32 = null };
 
+/// The decode arm's gate (fact 761): off until a 0x08 / 0x0D, used after one decode arm.
+pub const DecodeGate = enum { off, ready, used };
+
 pub const RunError = error{
     UnknownForm,
     LdiDestOpen, // ldi dest = 2..15 (marked OPEN in isa.toml)
@@ -138,8 +141,8 @@ pub const RunError = error{
     RunawayProgram,
     /// A halt too far after the latest armer never completes (fact 98, 477, 484).
     HaltDeadline,
-    /// The arm parked: a 0x08 / 0x0D in the previous run left the engine waiting (fact 315).
-    Parked,
+    /// A decode arm with no 0x08 / 0x0D since reset: the program does not run (fact 761).
+    DecodeNotEnabled,
 };
 
 /// Execute one bundle (1..7 syllables) against `state`.  Dispatches by
@@ -1422,12 +1425,12 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             if (x01) return RunError.UnknownForm;
             state.end_pending = true;
         },
-        // 315 (230, 244): 0x08 / 0x0D fall through and make the next arm park; the mechanism is
-        // OPEN.  A bare 0x08 in an otherwise empty bundle wedged (230): refused.
+        // 761 (superseding 315's park, which stays OPEN): 0x08 / 0x0D fall through and enable
+        // the host's decode arm.  A bare 0x08 in an otherwise empty bundle wedged (230): refused.
         8, 0xD => {
             if (x01) return RunError.UnknownForm;
             if (w1 | w2 | w4 | w5 | w6 | (h & ~@as(u32, 0x1F)) | (w3 & ~@as(u32, 0x1F)) == 0) return RunError.UnknownForm;
-            state.next_arm_parks = true;
+            state.decode = .ready;
         },
         0, 2, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
         else => return RunError.UnknownForm,
@@ -5457,6 +5460,18 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
     return runFrom(gpa, state, syllables, 0, 256);
 }
 
+/// The host's decode arm (+0x988 / +0x98C, fact 761): runs only after a 0x00 control 0x08 /
+/// 0x0D.  Whether it clears the gate and its entry syllable are unmeasured: a second decode arm
+/// without a new 0x08 is refused.
+pub fn decodeArm(gpa: std.mem.Allocator, state: *State, syllables: []const u32, start: usize, max_bundles: usize) RunError!usize {
+    switch (state.decode) {
+        .off => return RunError.DecodeNotEnabled,
+        .used => return RunError.UnknownForm,
+        .ready => state.decode = .used,
+    }
+    return runFrom(gpa, state, syllables, start, max_bundles);
+}
+
 /// runLinear from syllable `start`, with a bundle budget of `max_bundles`
 /// (a codec program runs far past runLinear's 256).
 pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, start: usize, max_bundles: usize) RunError!usize {
@@ -5469,11 +5484,6 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
     var since_armer: ?DeadlineGap = null;
     const lane0: usize = state.cur_lane;
     state.halted = false;
-    // 315: a parked arm runs nothing and clears the state, so the arm after it completes.
-    if (state.next_arm_parks) {
-        state.next_arm_parks = false;
-        return RunError.Parked;
-    }
     while (i < syllables.len) : (bundles_run += 1) {
         if (bundles_run >= max_bundles) return RunError.RunawayProgram;
         const head = syllables[i];
