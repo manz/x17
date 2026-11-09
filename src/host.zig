@@ -6,12 +6,12 @@
 //!
 //!   Q1 entry       `Config.entry`: syllable 0 of the program window
 //!                  (MEASURED); kept settable for tests.
-//!   Q2 packet in   STUB `Config.packet`: the host stages packet bytes in Y.
-//!                  On silicon they do not land in X or Y: the descriptor DMA
-//!                  feeds a stream port outside host-visible memory (fact 82);
-//!                  the instruction that reads it is OPEN.  Staging in Y is a
-//!                  test convenience, not the device's path.
-//!                  How the engine sees them is unknown.
+//!   Q2 packet in   the descriptor DMA feeds the input stream (fact 82); the
+//!                  program enables it with ld0e.sen and reads it with
+//!                  x16.getb (783).  A read past the queued bits waits for
+//!                  the next packet, and the bits run on across packets (784):
+//!                  `feed` then reports `waiting` and the next `feed` resumes
+//!                  at that read.
 //!   Q3 hand-back   one packet per run; the run ends at the stop form
 //!                  (MEASURED).  No CPU code writes the status header, so the
 //!                  hardware raises it (FIRMWARE); what makes it do so, and
@@ -68,10 +68,6 @@ pub const Config = struct {
     map: Map = .{},
     /// Q1: execution enters at syllable 0 of the program window (MEASURED).
     entry: usize = 0,
-    /// Q2 STUB: how the program reads packet bytes.  Until measured, the host
-    /// writes the length in bytes at `len_at` and the bytes from `base`,
-    /// big-endian pairs, two bytes per Y word.
-    packet: struct { base: u32 = 0x4000, len_at: u32 = 0x3FFF } = .{},
     /// STUB: codec parameters (an ALAC cookie's frame length, depth, Rice
     /// constants, channels) as Y words.  How they reach the program on
     /// silicon is unknown; the host writes them before each packet, after
@@ -99,7 +95,6 @@ pub const Error = emu.RunError || error{
     /// The program wrote a buffer the host still owned (MEASURED failure:
     /// with the ring full the hand-back stalls).
     OverwroteOwnedBuffer,
-    PacketTooLong,
 };
 
 pub const Host = struct {
@@ -112,6 +107,8 @@ pub const Host = struct {
     pcm: std.ArrayList(i16) = .empty,
     /// The entry that last tripped `OverwroteOwnedBuffer`.
     overwritten: ?u32 = null,
+    /// Where a run waiting on the stream stopped: the next `feed` resumes there (784).
+    resume_at: ?usize = null,
 
     pub fn init(gpa: std.mem.Allocator, cfg: Config) Error!Host {
         var h: Host = .{ .gpa = gpa, .cfg = cfg };
@@ -138,10 +135,12 @@ pub const Host = struct {
         try self.putY(addr, self.getY(addr) | v);
     }
 
-    pub const Report = struct { bundles: usize, units: usize };
+    /// `waiting`: the run read past the queued bits and waits for the next packet (784).
+    pub const Report = struct { bundles: usize, units: usize, waiting: bool = false };
 
-    /// One packet: stage it, run the program from the entry to its stop,
-    /// check the owned buffers survived, drain the ring.
+    /// One packet: queue it on the input stream, run the program from the entry (or from
+    /// the read a waiting run stopped at) to its stop, check the owned buffers survived,
+    /// drain the ring.
     pub fn feed(self: *Host, program: []const u32, packet: []const u8) Error!Report {
         const m = self.cfg.map;
         for (self.cfg.clobber) |r| {
@@ -149,7 +148,7 @@ pub const Host = struct {
             while (a <= r.hi) : (a += 1) try self.putY(a, self.cfg.clobber_value);
         }
         for (self.cfg.params) |q| try self.putY(q.addr, q.value);
-        try self.stage(packet);
+        try self.state.queueStream(self.gpa, packet);
 
         const guard = try self.snapshotOwned();
         defer self.gpa.free(guard);
@@ -157,8 +156,11 @@ pub const Host = struct {
         // Each run enters at the entry syllable (Q1), in its own lane, not the last run's halt
         // lane: runFrom counts lanes from cur_lane at syllable 0.
         self.state.cur_lane = 0;
-        const bundles = try emu.runFrom(self.gpa, &self.state, program, self.cfg.entry, self.cfg.max_bundles);
-        if (!self.state.halted) return error.NoStop;
+        const start = self.resume_at orelse self.cfg.entry;
+        self.resume_at = null;
+        const bundles = try emu.runFrom(self.gpa, &self.state, program, start, self.cfg.max_bundles);
+        if (self.state.stream_starved) self.resume_at = self.state.pc;
+        if (!self.state.halted and self.resume_at == null) return error.NoStop;
 
         for (guard) |g| {
             if (self.state.getY(g.addr) != g.value) {
@@ -166,21 +168,10 @@ pub const Host = struct {
                 return error.OverwroteOwnedBuffer;
             }
         }
+        if (self.resume_at != null) return .{ .bundles = bundles, .units = 0, .waiting = true };
         const before = self.pcm.items.len;
         if (self.getY(m.status) & 1 != 0 and self.getY(m.status + 1) == 0) try self.drain();
         return .{ .bundles = bundles, .units = self.pcm.items.len - before };
-    }
-
-    fn stage(self: *Host, packet: []const u8) Error!void {
-        const p = self.cfg.packet;
-        if (packet.len > 0xFFFF) return error.PacketTooLong;
-        try self.putY(p.len_at, @intCast(packet.len));
-        var i: usize = 0;
-        while (i < packet.len) : (i += 2) {
-            const hi: u32 = packet[i];
-            const lo: u32 = if (i + 1 < packet.len) packet[i + 1] else 0;
-            try self.putY(p.base + @as(u32, @intCast(i / 2)), hi << 8 | lo);
-        }
     }
 
     const Guard = struct { entry: u32, addr: u32, value: ?u32 };
@@ -274,15 +265,21 @@ test "init writes the parameter block" {
     try testing.expectEqual(@as(u32, 3), h.getY(0xFD83));
 }
 
-test "a packet is staged as big-endian pairs with its length" {
-    const prog = try assemble(&.{"x17.halt"});
+test "packets join one input stream; a read past them waits for the next (783, 784)" {
+    const prog = try assemble(&.{
+        "ldi s12, #1",      "ldi s14, #4",     "ld0e.sen #0, #0",
+        "x16.getb #7, #11", "x16.getb #6, #3", "x17.halt",
+    });
     defer testing.allocator.free(prog);
     var h = try Host.init(testing.allocator, .{});
     defer h.deinit();
-    _ = try h.feed(prog, &.{ 0xDE, 0xAD, 0xBE });
-    try testing.expectEqual(@as(u32, 3), h.getY(0x3FFF));
-    try testing.expectEqual(@as(u32, 0xDEAD), h.getY(0x4000));
-    try testing.expectEqual(@as(u32, 0xBE00), h.getY(0x4001));
+    const first = try h.feed(prog, &.{0xDE});
+    try testing.expect(first.waiting);
+    try testing.expectEqual(@as(?u32, null), h.state.getY(0x4000)); // nothing staged in Y
+    const second = try h.feed(prog, &.{ 0xAD, 0xBE });
+    try testing.expect(!second.waiting);
+    try testing.expectEqual(@as(u32, 0xDEA), h.state.a[15]); // 12 bits across both packets
+    try testing.expectEqual(@as(u32, 0xD), h.state.a[13]);
 }
 
 test "the host drains an owned entry once the status header is raised" {

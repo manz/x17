@@ -355,7 +355,13 @@ Offsets are from the sm1 block's MMIO base.
   entered is undefined. Test programs enter at q 0 (§45).
 - **Arm order:** +0x988, +0x98C, +0x118, +0xA8C.
 - **Input:** a DMA descriptor chain at +0x100 feeds a stream port that is not visible in SRAM
-  (§82).
+  (§82). The program reads it as a bit stream:
+  - `ld0e.sen #addr, #n` with s12 = 1 and s14 = 4 enables it (any s14 with bit 2 set and bits 1:0
+    clear). Until then reads give 0 and consume nothing (§783).
+  - `x16.getb #k, #n` loads A<2k+1> with the next n+1 bits (1 to 13), MSB first, right-aligned.
+    Each read continues where the last stopped, also across packets (§783, §784).
+  - A read with too few bits left stops the program at that read: +0xA98 = 0x04C00206, +0xC10 =
+    0x10000 | the read's q. Arming the next packet resumes it, with no feed answer (§784).
 - **Status, +0xA98:**
   - bit 2: completion, set by the program (§13). It raises VIC line 18; acknowledge with +0xC48 <- 4.
   - bit 26: running (§16).
@@ -365,7 +371,7 @@ Offsets are from the sm1 block's MMIO base.
   (§18, §35, §73).
 - **Do not touch +0x1004.** It is a driver scratch flag; poking it dropped the unit off USB (§331).
 
-The codec-side contract (parameter block, packet staging, output ring) is in `src/host.zig` and
+The codec-side contract (parameter block, input stream, output ring) is in `src/host.zig` and
 sosumi's `specs/questions.md`.
 
 ## 12. Instruction reference
