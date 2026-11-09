@@ -23,9 +23,11 @@
 //! (entry table, PCM buffers, status header), including the rule that the
 //! program must not write a buffer the host still owns.
 //!
-//! Y addresses are words.  The parameter block is Y:0xFD80 (FIRMWARE), so the
-//! status header is Y:0xFD94 (INFERRED).  The entry table and PCM at Y:0 and
-//! Y:0x80 are INFERRED; the map stays a parameter.
+//! Y addresses are words.  The parameter block is Y:0xFD80 (FIRMWARE).  The
+//! output ring is measured (fact 785): two slots used alternately per packet,
+//! slot k's PCM at Y:0x80 + 0x800k (2048 units), its entry owned at Y:2k+5 and
+//! length at Y:2k+6, the status header at Y:0xFD94 bit 0, then the stop.  The
+//! map stays a parameter.
 
 const std = @import("std");
 const emu = @import("emu");
@@ -47,13 +49,13 @@ pub fn rateIndex(hz: u32) u16 {
 pub const Map = struct {
     /// Entry table: +1 ring size, +2 units per buffer; entry i owned at
     /// +5 + 2i, length (16-bit units) at +6 + 2i.  MEASURED (byte offsets
-    /// +2, +4, +0xA + 4i, +0xC + 4i).  Y word INFERRED.
+    /// +2, +4, +0xA + 4i, +0xC + 4i); at Y:0 (fact 785).
     entry_table: u32 = 0x0000,
-    /// PCM buffers, buffer i at + i * units, interleaved 16-bit.  MEASURED
-    /// layout, Y word INFERRED.
+    /// PCM buffers, buffer i at + i * units, interleaved 16-bit; at Y:0x80
+    /// with 0x800 units per buffer (fact 785).
     pcm: u32 = 0x0080,
-    /// Status header: +0 bit 0 output ready, +1 must be 0.
-    /// Y word INFERRED from the param page's.
+    /// Status header: +0 bit 0 output ready, +1 must be 0; at Y:0xFD94
+    /// (fact 785).
     status: u32 = 0xFD94,
     /// Parameter block (Y:0xFD80, FIRMWARE): +0 flags, +3 rate
     /// index (FF06).
@@ -293,6 +295,22 @@ test "the host drains an owned entry once the status header is raised" {
     try testing.expectEqualSlices(i16, &.{ 1, -2, 3 }, h.pcm.items);
     try testing.expectEqual(@as(u32, 0), h.getY(5)); // owned flag cleared
     try testing.expectEqual(@as(u32, 1), h.idx);
+}
+
+test "the measured ring: two 0x800-unit slots taken alternately per packet (785)" {
+    const prog = try assemble(&.{"x17.halt"});
+    defer testing.allocator.free(prog);
+    var h = try Host.init(testing.allocator, .{});
+    defer h.deinit();
+    for ([_]i16{ 10, 11, 12 }, 0..) |s, n| {
+        const k: u32 = @intCast(n % 2);
+        try publish(&h, 2, 0x800, k, &.{ s, -s });
+        try testing.expectEqual(@as(u32, @as(u16, @bitCast(s))), h.getY(0x80 + 0x800 * k));
+        try testing.expectEqual(@as(u32, 2), h.getY(2 * k + 6));
+        try testing.expectEqual(@as(usize, 2), (try h.feed(prog, &.{})).units);
+        try testing.expectEqual(@as(u32, 0), h.getY(2 * k + 5)); // released
+    }
+    try testing.expectEqualSlices(i16, &.{ 10, -10, 11, -11, 12, -12 }, h.pcm.items);
 }
 
 test "no status bit, or a nonzero second word, takes nothing" {
