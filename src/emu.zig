@@ -2373,7 +2373,7 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             5 => b_lo -% xf_val,
             else => lo +% xf_val,
         } else switch (mode) {
-            0 => return RunError.UnknownForm,
+            0 => 0,
             1 => b_lo +% xf_val,
             2 => b_lo -% xf_val,
             3 => xf_val,

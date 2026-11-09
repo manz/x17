@@ -5958,7 +5958,7 @@ test "x18 class 110's two mode tables, w3[23] = 0 and 1, hi and lo (718)" {
     // a = s5 = 0x4000, b = s1 = 0x2000 (P hi 0x10, lo 0); index X s12 = 0xC2; field X s6 = 0x66.
     // hi dest s7, lo dest s12 (read at the bundle's start).
     const t1 = [8][2]u32{ .{ 0xB2, 0x66 }, .{ 0x4000, 0x2000 }, .{ 0x4000, 0x2000 }, .{ 0x40C2, 0x2066 }, .{ 0x40C2, 0x2066 }, .{ 0x3F3E, 0x1F9A }, .{ 0xD2, 0x66 }, .{ 0xD2, 0x66 } };
-    const t0 = [_][3]u32{ .{ 1, 0x40C2, 0x2066 }, .{ 2, 0x3F3E, 0x1F9A }, .{ 3, 0xC2, 0x66 }, .{ 4, 0x10, 0 } };
+    const t0 = [_][3]u32{ .{ 0, 0, 0 }, .{ 1, 0x40C2, 0x2066 }, .{ 2, 0x3F3E, 0x1F9A }, .{ 3, 0xC2, 0x66 }, .{ 4, 0x10, 0 } };
     for (0..2) |tab| for (0..8) |mode| {
         var want: [2]u32 = undefined;
         if (tab == 1) want = t1[mode] else {
