@@ -6918,6 +6918,27 @@ test "0x00 control 6 / 7 ends the program after two delay slots (fact 759)" {
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x00000001, 0, 0, 6, 0, 0, 0 }));
 }
 
+test "0x00 control 0x08 / 0x0D falls through and parks the next arm once (fact 315)" {
+    const gpa = testing.allocator;
+    const halt = [_]u32{ 0x00000000, 0, 0, 6, 0, 0, 0, 0x40000005, 0x40000005 };
+    for ([_]u32{ 8, 0xD }) |ctl| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        // s4 <- #1 (mux 6) beside the control; the run goes on to its END.
+        const prog = [_]u32{ 0x00000800, 0, 0, ctl, 0, 0, 0x0000400C } ++ halt;
+        _ = try emu.runFrom(gpa, &state, &prog, 0, 16);
+        try testing.expect(state.halted);
+        try testing.expectEqual(@as(u32, 1), state.s[4]);
+        try testing.expectError(error.Parked, emu.runFrom(gpa, &state, &halt, 0, 16));
+        _ = try emu.runFrom(gpa, &state, &halt, 0, 16);
+        try testing.expect(state.halted);
+    }
+    // 230: a bare 0x08 in an empty bundle wedged.
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0, 0, 0, 8, 0, 0, 0 }));
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};
