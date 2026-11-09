@@ -6030,3 +6030,24 @@ test "x18 class 110 mode 3 under w3[23] = 0 is +X for index 0 too (719)" {
         try testing.expectEqual(f[1], st.s[12]);
     };
 }
+
+test "x18 class 110 w3[23] = 1 integer: w3[21] = 0, and mode 0 (721)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // As 719: integer P hi 8, lo 0; Xi = s12 = 0xC2, Xf = s6 = 0x66; hi s7, lo s12.
+    const t = [8][2]u32{ .{ 8, 0x66 }, .{ 0x4000, 0x2000 }, .{ 0x4000, 0x2000 }, .{ 0x4000, 0x2066 }, .{ 8, 0 }, .{ 0xCA, 0x66 }, .{ 8, 0x66 }, .{ 8, 0x66 } };
+    for (0..9) |k| {
+        const w21: u32 = if (k == 8) 1 else 0;
+        const mode: u32 = if (k == 8) 0 else @intCast(k);
+        const want = if (k == 8) [2]u32{ 0x10, 0xCC } else t[k];
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x4000;
+        st.s[1] = 0x2000;
+        st.s[12] = 0xC2;
+        st.s[6] = 0x66;
+        const w3 = (0xC0741839 & ~@as(u32, (1 << 21) | (7 << 18))) | (1 << 24) | (1 << 23) | (w21 << 21) | (mode << 18);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, 0x80005AA0, 0x0C500E2B, w3 } ++ halt), 0, 8);
+        try testing.expectEqual(want[0], st.s[7]);
+        try testing.expectEqual(want[1], st.s[12] & 0xFFFF);
+    }
+}

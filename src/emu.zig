@@ -2352,13 +2352,13 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (uses_x and (xs_idx == 0 or x_reg == 0) and state.xd > 0xFFFF) return RunError.UnknownForm;
     const xs_val: u32 = if (xs_idx == 0) (state.xd << 8) & M24 else state.s[xs_idx];
     const xf_val: u32 = if (x_reg == 0) (state.xd << 8) & M24 else state.s[x_reg];
-    // w3[23] = 1 is a second table (718, 719).  Integer mode is measured with w3[21] = 1 and
-    // modes 1-7 only (mode 0 fits no single term, 719).
-    if (w23 and uses_x and integer and (!w21 or mode == 0)) return RunError.UnknownForm;
+    // w3[23] = 1 is a second table (718, 719, 721), measured in every form and mode.
     const lo_m: u32 = if (lo_dest == 0 or p_only) lo else blk: {
         const b_lo: u32 = state.s[b_s] & M24;
         const v: u32 = if (integer) (if (w23) switch (mode) {
-            // 719: integer, w3[21] = 1.
+            // 719, 721: integer; w3[21] only moves mode 0.  w3[21] = 1 mode 0 is 2 * Xf with P
+            // lo 0 (721); 2 * (P + Xf) is not ruled out, so a nonzero P is refused.
+            0 => if (!w21) lo +% xf_val else if (lo == 0) xf_val << 1 else return RunError.UnknownForm,
             1, 2 => b_lo,
             3 => b_lo +% xf_val,
             4 => lo,
@@ -2399,12 +2399,18 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     };
     const hi_m: u32 = if (p_only or hi_dest == 0) hi else blk: {
         if (integer) {
-            if (w23) break :blk (switch (mode) {
-                // 719: integer, w3[21] = 1.
+            if (w23) break :blk (if (w21) switch (mode) {
+                // 719, 721: integer, w3[21] = 1; mode 0 is 2P (Xi does not enter).
+                0 => hi << 1,
                 1, 2 => state.s[a_s],
                 3 => state.s[a_s] +% xs_val,
                 4 => hi,
                 else => hi +% xs_val,
+            } else switch (mode) {
+                // 721: integer, w3[21] = 0; hi drops Xi except in mode 5.
+                1, 2, 3 => state.s[a_s],
+                5 => hi +% xs_val,
+                else => hi,
             }) & 0xFFFF;
             // w3[21] = 0 with a field: no X term (712, 713); w3[21] = 1: hi +- the index X (714).
             if (mode != 5 and mode != 6) return RunError.UnknownForm;
