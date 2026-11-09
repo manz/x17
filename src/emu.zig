@@ -2352,21 +2352,35 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (uses_x and (xs_idx == 0 or x_reg == 0) and state.xd > 0xFFFF) return RunError.UnknownForm;
     const xs_val: u32 = if (xs_idx == 0) (state.xd << 8) & M24 else state.s[xs_idx];
     const xf_val: u32 = if (x_reg == 0) (state.xd << 8) & M24 else state.s[x_reg];
-    // w3[23] = 1 is a second table (718), measured fractional with w3[21] = 1 only.
-    if (w23 and uses_x and (integer or !w21)) return RunError.UnknownForm;
+    // w3[23] = 1 is a second table (718, 719).  Integer mode is measured with w3[21] = 1 and
+    // modes 1-7 only (mode 0 fits no single term, 719).
+    if (w23 and uses_x and integer and (!w21 or mode == 0)) return RunError.UnknownForm;
     const lo_m: u32 = if (lo_dest == 0 or p_only) lo else blk: {
         const b_lo: u32 = state.s[b_s] & M24;
-        if (integer) {
+        const v: u32 = if (integer) (if (w23) switch (mode) {
+            // 719: integer, w3[21] = 1.
+            1, 2 => b_lo,
+            3 => b_lo +% xf_val,
+            4 => lo,
+            else => lo +% xf_val,
+        } else switch (mode) {
             // 713, 717: P + X / P - X whatever w3[21]; other integer modes unmeasured.
-            break :blk switch (mode) {
-                5 => (lo +% xf_val) & M24,
-                6 => (lo -% xf_val) & M24,
-                else => return RunError.UnknownForm,
-            };
-        }
-        // Fractional with w3[21] = 0: the field went to hi and lo is P (713, modes 5 and 6).
-        if (!w21) break :blk if (mode == 5 or mode == 6) lo else return RunError.UnknownForm;
-        const v: u32 = if (w23) switch (mode) {
+            5 => lo +% xf_val,
+            6 => lo -% xf_val,
+            else => return RunError.UnknownForm,
+        }) else if (!w21) (if (w23) switch (mode) {
+            // 719: fractional, w3[21] = 0; modes 3, 6 and 7 add no X to lo.
+            0 => lo -% xf_val,
+            1, 2, 3 => b_lo,
+            4 => b_lo +% xf_val,
+            5 => b_lo -% xf_val,
+            else => lo,
+        } else switch (mode) {
+            // 713: the field went to hi and lo is P (modes 5, 6); mode 3 is +X (719).
+            3 => xf_val,
+            5, 6 => lo,
+            else => return RunError.UnknownForm,
+        }) else if (w23) switch (mode) {
             0 => xf_val -% lo,
             1, 2 => b_lo,
             3, 4 => b_lo +% xf_val,
@@ -2385,33 +2399,52 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     };
     const hi_m: u32 = if (p_only or hi_dest == 0) hi else blk: {
         if (integer) {
+            if (w23) break :blk (switch (mode) {
+                // 719: integer, w3[21] = 1.
+                1, 2 => state.s[a_s],
+                3 => state.s[a_s] +% xs_val,
+                4 => hi,
+                else => hi +% xs_val,
+            }) & 0xFFFF;
             // w3[21] = 0 with a field: no X term (712, 713); w3[21] = 1: hi +- the index X (714).
             if (mode != 5 and mode != 6) return RunError.UnknownForm;
             if (!w21) break :blk if (x_reg != 0) hi else return RunError.UnknownForm;
             break :blk (if (mode == 5) hi +% xs_val else hi -% xs_val) & 0xFFFF;
         }
-        // Mode 3 on index 0 inverts (689: ~(xd << 8)); whether that is index 0 alone is OPEN.
-        if (mode == 3 and xs_idx == 0) break :blk @as(u32, @truncate(@as(u64, @bitCast(~(@as(i64, state.xd) << 32) >> 24)))) & 0xFFFF;
-        const xv: u32 = if (w21 or mode == 3) xs_val else xf_val;
-        const x: i64 = @as(i64, sx24(xv)) << 24;
+        const xi: i64 = @as(i64, sx24(xs_val)) << 24;
+        const xf: i64 = @as(i64, sx24(xf_val)) << 24;
         const a_hi: i64 = @as(i64, state.s[a_s] & M24) << 24;
         const sp: i64 = (@as(i64, sx24(state.s[a_s])) * sx24(state.s[b_s])) << 1;
-        const acc: i64 = if (w23) switch (mode) {
-            0 => x - sp,
+        // Mode 3 under w3[23] = 0 is +index X with any index, 0 included (719; 689's ~ came
+        // from elsewhere in its word).
+        const acc: i64 = if (w23 and w21) switch (mode) {
+            0 => xi - sp,
             1, 2 => a_hi,
-            3, 4 => a_hi + x,
-            5 => a_hi - x,
-            else => sp + x,
-        } else switch (mode) {
-            0 => 0,
-            1 => a_hi + x,
-            2 => a_hi - x,
-            3 => x,
-            5 => sp + x,
-            6 => sp - x,
-            else => x - sp,
+            3, 4 => a_hi + xi,
+            5 => a_hi - xi,
+            else => sp + xi,
+        } else if (w23) switch (mode) {
+            // 719: fractional, w3[21] = 0.  Mode 0 is P + ~Xi, with no rounding carry.
+            0 => sp + ~xi,
+            1, 2 => a_hi,
+            3 => a_hi + xf,
+            4 => a_hi + xi,
+            5 => a_hi - xi,
+            else => sp + xf,
+        } else blk2: {
+            const x = if (w21 or mode == 3) xi else xf;
+            break :blk2 switch (mode) {
+                0 => 0,
+                1 => a_hi + x,
+                2 => a_hi - x,
+                3 => x,
+                5 => sp + x,
+                6 => sp - x,
+                else => x - sp,
+            };
         };
-        const half: i64 = if ((bundle[3] >> 22) & 1 == 1 and mode != 3) 1 << 23 else 0;
+        const no_round = mode == 3 or (w23 and !w21 and mode == 0);
+        const half: i64 = if ((bundle[3] >> 22) & 1 == 1 and !no_round) 1 << 23 else 0;
         break :blk @as(u32, @truncate(@as(u64, @bitCast((acc + half) >> 24)))) & 0xFFFF;
     };
     if (lo_dest != 0) state.s[lo_dest] = lo_m;

@@ -5172,7 +5172,8 @@ test "x18 class 110 hi output follows the mode w3[20:18], X the previous read (6
         .{ .mode = 7, .want = 0x19F4 },
         .{ .mode = 0, .want = 0 },
         .{ .mode = 2, .want = 0x4600 },
-        .{ .mode = 3, .want = 0xE5FF }, // never rounded (689)
+        // mode 3 read ~X on this word (689), but +X on 719's words with the same index and
+        // field: something else in this word inverts it, still open, so the cell is not pinned.
         .{ .mode = 1, .want = 0x7A00 }, // a + X: 0x6000 + 0x1A00
     }) |c| {
         var st = emu.State{};
@@ -5979,5 +5980,45 @@ test "x18 class 110's two mode tables, w3[23] = 0 and 1, hi and lo (718)" {
         _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, 0x80005AA0, 0x0C500E2B, w3 } ++ halt), 0, 8);
         try testing.expectEqual(want[0], st.s[7]);
         try testing.expectEqual(want[1], st.s[12]);
+    };
+}
+
+test "x18 class 110 w3[23] = 1: integer w3[21] = 1, fractional w3[21] = 0 (719)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // As 718: a = 0x4000, b = 0x2000, index X s12 = 0xC2, field X s6 = 0x66; hi s7, lo s12.
+    const int_t = [8][2]u32{ .{ 0, 0 }, .{ 0x4000, 0x2000 }, .{ 0x4000, 0x2000 }, .{ 0x40C2, 0x2066 }, .{ 8, 0 }, .{ 0xCA, 0x66 }, .{ 0xCA, 0x66 }, .{ 0xCA, 0x66 } };
+    const frac_t = [8][2]u32{ .{ 0xFF4D, 0xFF9A }, .{ 0x4000, 0x2000 }, .{ 0x4000, 0x2000 }, .{ 0x4066, 0x2000 }, .{ 0x40C2, 0x2066 }, .{ 0x3F3E, 0x1F9A }, .{ 0x76, 0 }, .{ 0x76, 0 } };
+    for (0..2) |form| for (0..8) |mode| {
+        if (form == 0 and mode == 0) continue; // integer mode 0: open
+        const want = if (form == 0) int_t[mode] else frac_t[mode];
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x4000;
+        st.s[1] = 0x2000;
+        st.s[12] = 0xC2;
+        st.s[6] = 0x66;
+        const ctl: u32 = if (form == 0) (1 << 24) | (1 << 21) else 0;
+        const w3 = (0xC0741839 & ~@as(u32, (1 << 24) | (1 << 21) | (7 << 18))) | (1 << 23) | ctl | (@as(u32, @intCast(mode)) << 18);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, 0x80005AA0, 0x0C500E2B, w3 } ++ halt), 0, 8);
+        try testing.expectEqual(want[0], st.s[7]);
+        try testing.expectEqual(want[1], st.s[12] & 0xFFFF);
+    };
+}
+
+test "x18 class 110 mode 3 under w3[23] = 0 is +X for index 0 too (719)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const w1: u32 = 0x80005AA0 & 0x1FFFFFFF;
+    const w2: u32 = 0x0C500E2B & ~@as(u32, 1);
+    for ([_]u32{ 0, 1 }) |w21| for ([_][2]u32{ .{ 6, 0x66 }, .{ 0, 0x1200 } }) |f| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x4000;
+        st.s[1] = 0x2000;
+        st.s[6] = 0x66;
+        st.xd = 0x12;
+        const w3 = (0xC0741839 & ~@as(u32, (1 << 21) | (7 << 18) | (0xF << 10))) | (w21 << 21) | (3 << 18) | (f[0] << 10);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, w1, w2, w3 } ++ halt), 0, 8);
+        try testing.expectEqual(@as(u32, 0x1200), st.s[7]);
+        try testing.expectEqual(f[1], st.s[12]);
     };
 }
