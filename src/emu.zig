@@ -1192,9 +1192,8 @@ fn x01Asr(m: u32, b: i64, i: i64, a: i32) RunError!u32 {
 
 /// 0x00's asr (727, 731, 732): ADDER_M[m](x = w2[8:6], y = b) >> s<a>, 696's class-05 asr
 /// (left shifts truncated, right arithmetic); w2[9] negates the count, as w5[5] does on x02.
-/// m 0-2 measured.
+/// Every m measured (732, 754).
 fn x00Asr(count: u32, b: i64, m: u32, n: u32) RunError!u32 {
-    if (m > 2) return RunError.UnknownForm;
     const t = adderM(@intCast(m), n & 7, b, 0);
     const v: i64 = t.x + t.y + t.c;
     if (v < -0x800000 or v > 0x7FFFFF) return RunError.UnknownForm;
@@ -1236,9 +1235,8 @@ fn x00Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
         },
         // 729, 749: never shifts; the same n split, the other result a.
         0x23 => if (cond646(n, state.p[4] != 0)) adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m) else @as(u32, @truncate(@as(u64, @bitCast(a)))) & M24,
+        // 728, 753: select on the adder's sign, every m; n and p4 ignored.
         0x26 => blk: {
-            // 732: n = 2 ignored; other n unmeasured.
-            if (m > 1 or (n != 0 and n != 2)) break :blk RunError.UnknownForm;
             const t = adderM(@intCast(m), a, b, 0);
             const sum: i64 = t.x + t.y + t.c;
             if (sum < -0x800000 or sum > 0x7FFFFF) break :blk RunError.UnknownForm;

@@ -3358,7 +3358,6 @@ test "0x00's class-05 slot: 0x14 adds, 0x06 asr by s<a>, 0x26 selects on the add
         .{ .code = 0x06, .a = 3, .want = 0x004C },
         .{ .code = 0x06, .a = 5, .want = 0x0000 }, // count -256
         .{ .code = 0x06, .a = 0, .want = 0x0130 },
-        .{ .code = 0x06, .a = 3, .m = 3, .want = null }, // m 3-7 unmeasured
         // 731: b = 1 / -1 over counts -8 .. 30
         .{ .code = 0x06, .a = 3, .b = 1, .sa = 0xFFFFF8, .want = 0x000100 },
         .{ .code = 0x06, .a = 3, .b = 0xFFFFFF, .sa = 0xFFFFF8, .want = 0xFFFF00 },
@@ -3375,7 +3374,6 @@ test "0x00's class-05 slot: 0x14 adds, 0x06 asr by s<a>, 0x26 selects on the add
         .{ .code = 0x26, .a = 3, .b = 0xFFFB00, .sa = 0x444, .want = 0xFFFB00 },
         .{ .code = 0x26, .a = 3, .m = 1, .b = 0x300, .sa = 0x444, .want = 0x300 },
         .{ .code = 0x26, .a = 3, .m = 1, .b = 0x500, .sa = 0x444, .want = 0x444 },
-        .{ .code = 0x26, .a = 3, .m = 2, .want = null },
     }) |k| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -3401,7 +3399,6 @@ test "0x00's slot with n set: asr adds i = w2[8:6] and w2[9] negates the count; 
         .{ .code = 0x06, .n = 11, .want = 0x206 },
         .{ .code = 0x06, .m = 1, .n = 11, .want = 0x1FA },
         .{ .code = 0x06, .n = 9, .want = 0x202 },
-        .{ .code = 0x06, .m = 3, .n = 3, .want = null },
         .{ .code = 0x14, .n = 1, .sa = 2, .b = 0x130, .want = 0x132 },
         .{ .code = 0x14, .m = 1, .n = 3, .sa = 2, .b = 0x130, .want = 0x12E },
         .{ .code = 0x14, .n = 2, .sa = 2, .b = 0x130, .want = 0xFFFECC }, // -(a + b) - 2
@@ -6806,6 +6803,43 @@ test "x18 class 011's S codes read 646's condition on p3 (fact 752)" {
             _ = try emu.runFrom(gpa, &state, &.{ x18c3Head(code), 0x00001970, 0x30000014 | n << 6, 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
             const want: u32 = if (alu) 8 else if (code == 0x10) 0xFFFFFE else 3;
             try testing.expectEqual(want, state.s[9]);
+        }
+    }
+}
+
+test "0x00's sel ignores n and p4 and takes every m; asr takes every m (facts 753, 754)" {
+    const gpa = testing.allocator;
+    for ([_]i64{ 2, -0x500 }) |a| for (0..8) |mm| for ([_]u32{ 0, 2, 4, 6 }) |n| for ([_]u8{ 0, 1 }) |p4| {
+        const m: u32 = @intCast(mm);
+        const b: i64 = 0x130;
+        const sum: i64 = switch (m) {
+            0 => a + b,
+            1 => b - a,
+            2 => b,
+            3 => b + 1,
+            4 => b - 1,
+            5 => a - b,
+            6 => -b,
+            else => b,
+        };
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[4] = p4;
+        state.s[1] = 0x130;
+        state.s[3] = @as(u32, @truncate(@as(u64, @bitCast(a)))) & 0xFFFFFF;
+        try runX00Slot(&state, 0x26, 3, m, n);
+        const want: i64 = if (sum < 0) b else a;
+        try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(want)))) & 0xFFFFFF, state.s[2]);
+    };
+    // 754: i = 3, b = 0x100, count 1: n 3 >> 1, n 11 << 1.
+    for ([_][3]u32{ .{ 3, 0x80, 0x202 }, .{ 4, 0x7F, 0x1FE }, .{ 5, 0xFFFF81, 0xFFFE06 }, .{ 6, 0xFFFF80, 0xFFFE00 }, .{ 7, 0x80, 0x200 } }) |k| {
+        for ([_]u32{ 3, 11 }, [_]u32{ k[1], k[2] }) |n, want| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.s[1] = 0x100;
+            state.s[3] = 1;
+            try runX00Slot(&state, 0x06, 3, k[0], n);
+            try testing.expectEqual(want, state.s[2]);
         }
     }
 }
