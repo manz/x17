@@ -7010,7 +7010,7 @@ test "compat: external program from reset state" {
 
 // Compatibility run of a set image read in place from X17_COMPAT_IMAGE: a sequence of sets, each
 // u32 run_count then runs { u32 cpu_addr, u32 len_bytes | width << 28, bytes }; P lane l row r
-// at 0x22020000 + l * 0x4000 + 4r (syllable 4r + l), X word a at 0x22030000 + 4a, Y word a at
+// at 0x22020000 + l * 0x4000 + 4r (syllable 8 * (r / 2) + 2l + r % 2, fact 45's order), X word a at 0x22030000 + 4a, Y word a at
 // 0x22038000 + 2a.  Set 1 is armed from syllable 0; set 2 is then loaded, Y:0xFD80..0xFD87
 // seeded with X17_COMPAT_PARAMS (eight hex halfwords), and the decode arm runs from syllable 0.
 // Skipped when unset.  Reports only ran / refused / wedged, bundle counts and unset reads.
@@ -7052,7 +7052,7 @@ const CompatImage = struct {
             var i: usize = 0;
             while (i + 4 <= data.len) : (i += 4) {
                 const row = (rel % 0x4000 + i) / 4;
-                prog[row * 4 + lane] = std.mem.readInt(u32, data[i..][0..4], .little);
+                prog[8 * (row / 2) + 2 * lane + row % 2] = std.mem.readInt(u32, data[i..][0..4], .little);
             }
         }
     }
