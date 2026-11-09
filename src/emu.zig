@@ -3338,14 +3338,22 @@ fn execEalu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     const op_bit: u32 = (s1 >> 11) & 1;
     const op: u32 = (s1 >> 12) & 0x7;
     const a_val: u32 = state.s[src_s] & M24;
+    // 766: w[11] = 0, op 4 is a + b with b = 0 (w[28:22], w[2:0] inert).
     const v: u32 = switch (op_bit) {
         1 => switch (op) {
             5 => (a_val +% 1) & M24,
             else => return RunError.UnknownForm,
         },
-        else => return RunError.UnknownForm,
+        else => switch (op) {
+            4 => a_val,
+            else => return RunError.UnknownForm,
+        },
     };
     if (dest_e != 0) state.e[dest_e] = v;
+    // 767: w[10:7] one-hot picks s1 / s2 / s4 / s8 <- #sx16(head[26:11]); two or more bits write
+    // nothing (487's 1001).
+    const side: u32 = (s1 >> 7) & 0xF;
+    if (@popCount(side) == 1) state.s[side] = sx16To24((bundle[0] >> 11) & 0xFFFF);
 }
 
 fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

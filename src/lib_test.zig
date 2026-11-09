@@ -6980,6 +6980,27 @@ test "st.y with a class-001 store second stores s<w[24:21]> at the old e, w[25] 
     }
 }
 
+test "ealu10 op 4 copies a into e; w[10:7] one-hot writes #sx16(head[26:11]) (facts 766, 767)" {
+    const gpa = testing.allocator;
+    for ([_]struct { mask: u32, dest: ?u32 }{
+        .{ .mask = 1, .dest = 1 },
+        .{ .mask = 2, .dest = 2 },
+        .{ .mask = 4, .dest = 4 },
+        .{ .mask = 8, .dest = 8 },
+        .{ .mask = 9, .dest = null }, // two bits: no write (487)
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[5] = 0x505;
+        for ([_]u32{ 1, 2, 4, 8 }) |r| state.s[r] = 0x77;
+        // a = s5, e4, op 4, w[28:22] = 1 and w[2:0] = 7 inert; head[26:11] = 0xADE1.
+        try emu.executeBundle(gpa, &state, &.{ 0xFD6F0810, 0xC0404027 | 5 << 18 | k.mask << 7 });
+        try testing.expectEqual(@as(u32, 0x505), state.e[4]);
+        for ([_]u32{ 1, 2, 4, 8 }) |r|
+            try testing.expectEqual(if (k.dest == r) @as(u32, 0xFFADE1) else 0x77, state.s[r]);
+    }
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};
