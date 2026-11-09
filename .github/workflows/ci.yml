@@ -6,9 +6,7 @@ on:
   pull_request:
 
 jobs:
-  # Three jobs run side by side: the tests are the slow one (LLVM compiles every test
-  # binary), so the release build, the format and reference checks and the action
-  # self-test don't wait for them.
+  # Three jobs run side by side; none waits for another.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -28,8 +26,8 @@ jobs:
           version: '0.17.0'
       - name: Zig is formatted
         run: zig fmt --check src build.zig
-      - name: Build release
-        run: zig build -Doptimize=ReleaseFast
+      - name: Build
+        run: zig build
       - name: Sources are formatted
         run: zig-out/bin/x17 fmt --check examples/*.sm
       - name: Instruction reference is current
@@ -43,6 +41,7 @@ jobs:
         uses: ./
         with:
           zig-version: '0.17.0'
+          optimize: Debug
       - name: Verify x17 on PATH
         run: |
           which x17
