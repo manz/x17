@@ -4024,6 +4024,8 @@ fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const w3 = bundle[3];
     const op: u32 = (w1 >> 11) & 0x7;
     if (op != 0 and op != 4) return RunError.UnknownForm;
+    // w1[16] = 1 gives d + x instead (312, OPEN): refused.
+    if ((w1 >> 16) & 1 == 1) return RunError.UnknownForm;
     // X store (312, 384): w2[23:22] = 11 stores sx24 s<{w2[0], w1[31:29]}> at X:[A<{w1[2:0],
     // h[31:30]}>] as-is, both read before the bundle's writes; the store's own A step is
     // unmeasured (none seen).
@@ -4044,7 +4046,8 @@ fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     var hi: u32 = 0;
     if (hi_s != 0) {
         if (op != 4) return RunError.UnknownForm;
-        const h: i64 = if (wide) prod >> 24 else if ((w1 >> 15) & 1 == 1) @min(roundShr(prod, 23), 0x7FFFFF) else return RunError.UnknownForm; // sat: 402
+        // w1[17] = 0: w1[15] = 1 rounds half up, 0 truncates (312); sat: 402.
+        const h: i64 = if (wide) prod >> 24 else if ((w1 >> 15) & 1 == 1) @min(roundShr(prod, 23), 0x7FFFFF) else @min(prod >> 23, 0x7FFFFF);
         hi = @as(u32, @truncate(@as(u64, @bitCast(h)))) & M24;
     }
     const a_dest: u32 = (w2 >> 17) & 0xF;
