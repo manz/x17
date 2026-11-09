@@ -2087,10 +2087,13 @@ test "x02's Y side: Y:[e<w3[30:27]>] with w5[12], else yd" {
         .{ .w5 = 0x30021628, .s3 = 0x567 },
         .{ .w4 = 0x00242818, .w5 = 0x30020628, .s3 = 0x246 },
         .{ .w4 = 0x00242818, .w5 = 0x30021628, .s3 = 0x567 },
+        // 736, 739: this row has w5[10:9] = 11, so its read slot is xd (0x999 from an earlier
+        // read of X:0x340), not memory.
         .{ .w4 = 0x00242818, .w5 = 0x30024628, .s3 = 0x999 },
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
+        state.xd = 0x999;
         state.yd = 0x246;
         state.e[8] = 0x720;
         state.a[18] = 0x340;
@@ -6274,5 +6277,138 @@ test "st.x's head immediate is inert with no e, R or s consumer (723)" {
         for (1..16) |k| try testing.expectEqual(0x100 + @as(u32, @intCast(k)), state.s[k]);
         for (state.r) |r| try testing.expectEqual(@as(u32, 0), r);
         for (state.e) |e| try testing.expectEqual(@as(u32, 0), e);
+    }
+}
+
+test "x02.v's third slot codes 0/4/7 and plain product low half (fact 730)" {
+    const gpa = testing.allocator;
+    // s3 <- X:[A9], A9 + 1, s12 <- low product (w1[17] = 1: P, not 2P), s6 <- code(a = s4, b = s9).
+    for ([_]struct { code: u32, n: u32 = 0, a: u32, b: u32, want: u32 }{
+        .{ .code = 0, .a = 1, .b = 0x102, .want = 0x103 },
+        .{ .code = 4, .n = 2, .a = 1, .b = 0x102, .want = 0x41 },
+        .{ .code = 7, .a = 1, .b = 0x103, .want = 0x82 },
+        .{ .code = 7, .a = 1, .b = 0xFFFEFD, .want = 0xFFFF7F }, // -0x103 -> -129
+        .{ .code = 7, .a = 1, .b = 0xFFFFFD, .want = 0xFFFFFF }, // -3 -> -1
+        .{ .code = 7, .a = 0xFFFFFF, .b = 0x103, .want = 0x206 },
+        .{ .code = 7, .a = 0xFFFFFF, .b = 0xFFFEFD, .want = 0xFFFDFA }, // -518
+        .{ .code = 7, .a = 0xFFFFFF, .b = 0xFFFFFD, .want = 0xFFFFFA }, // -6
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x60;
+        try state.x_mem.put(gpa, 0x60, 0x5000);
+        state.s[1] = 0x300;
+        state.s[2] = 0x11;
+        state.s[4] = k.a;
+        state.s[9] = k.b;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002 | k.code << 5, 0x0002A000, 0x00120042, 0x00000009, 0xA5122E18, 0x00004201 | k.n << 2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(k.want, state.s[6]);
+        try testing.expectEqual(@as(u32, 0x5000), state.s[3]);
+        try testing.expectEqual(@as(u32, 0x61), state.a[9]);
+        try testing.expectEqual(@as(u32, 0x3300), state.s[12]);
+    }
+}
+
+test "x02.v with the X store: the store lands at the old A, the read slot takes xd (fact 730)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.a[9] = 0x60;
+    try state.x_mem.put(gpa, 0x60, 0x5000);
+    state.xd = 0x3000;
+    state.s[7] = 0x1357;
+    _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0x0002A000 | 7 << 29, 0x00120042, 0x00000009, 0xA5122E18, 0x00004201 | 3 << 9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(?u32, 0x1357), state.x_mem.get(0x60));
+    try testing.expectEqual(@as(u32, 0x3000), state.s[3]);
+    try testing.expectEqual(@as(u32, 0x61), state.a[9]);
+}
+
+test "x02 w2-slot modes 1 / 2 are x +/- (xd << 8) at 24 bits; w1[17] refused (fact 733)" {
+    const gpa = testing.allocator;
+    // s3 <- X:[A9], A9 + 1, s10 <- mode(x = s4, X = xd << 8), s6 <- s4 + s9; xd = v from the read before.
+    for ([_]struct { mode: u32, w17: u32 = 0, v: u32, want: ?u32 }{
+        .{ .mode = 1, .v = 0x1234, .want = 0x123900 },
+        .{ .mode = 1, .v = 0xFFF234, .want = 0xF23900 },
+        .{ .mode = 2, .v = 0x1234, .want = 0xEDD100 },
+        .{ .mode = 2, .v = 0xFFF234, .want = 0x0DD100 },
+        .{ .mode = 1, .w17 = 1, .v = 0x1234, .want = null }, // sign collapse: scale OPEN
+        .{ .mode = 2, .w17 = 1, .v = 0x1234, .want = null },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x60;
+        try state.x_mem.put(gpa, 0x60, k.v);
+        try state.x_mem.put(gpa, 0x61, 0x5000);
+        state.s[4] = 0x500;
+        const w1: u32 = 0x00008000 | k.mode << 11 | k.w17 << 17;
+        const bundle = [6]u32{ 0x00000002, w1, 0x00121448, 0x00000009, 0xA5122E18, 0x00004201 };
+        // The plain read before: s9 <- X:[A9] = v (sets xd), A9 + 1 undone by the A slot target.
+        const r = emu.runFrom(gpa, &state, &.{ 0x00000002, 0x00002000, 0x00120000, 0x00000009, 0xA5122E48, 0x00004200, bundle[0], bundle[1], bundle[2], bundle[3], bundle[4], bundle[5], 0x00000017, 0x31308000, 0xA0000000 }, 0, 32);
+        if (k.want) |want| {
+            _ = try r;
+            try testing.expectEqual(want, state.s[10]);
+            try testing.expectEqual((0x500 + k.v) & 0xFFFFFF, state.s[6]); // u + v beside it
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "x02 mode 1 under the 11 override reads yd beside the X store (fact 734)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.yd = 0xA050;
+    state.xd = 0x777;
+    state.e[8] = 0x720;
+    state.a[18] = 0x340;
+    state.s[12] = 0xABC;
+    try state.x_mem.put(gpa, 0x340, 0x999);
+    try state.x_mem.put(gpa, 0x350, 0x777);
+    _ = try runX02(gpa, &state, .{ 0x000001c2, 0x80000040, 0x00014001, 0x40080000, 0x00240818, 0x30024628 });
+    try testing.expectEqual(@as(u32, 0xA050), state.s[3]);
+    try testing.expectEqual(@as(?u32, 0xABC), state.x_mem.get(0x340));
+}
+
+test "x02 w2-slot modes 4-7 take X = xd << 8 at 24 bits (fact 735)" {
+    const gpa = testing.allocator;
+    // 733's setup, x = s4 = 0x4000, s2 = 0x7FFF: P = 0x40 (the warm-up read's third slot off).
+    for ([_]struct { mode: u32, v: u32, want: u32 }{
+        .{ .mode = 4, .v = 0x1234, .want = 0x40 },
+        .{ .mode = 5, .v = 0x1234, .want = 0x123440 },
+        .{ .mode = 6, .v = 0x1234, .want = 0xEDCC40 },
+        .{ .mode = 7, .v = 0x1234, .want = 0x1233C0 },
+        .{ .mode = 4, .v = 0xFFF234, .want = 0x40 },
+        .{ .mode = 5, .v = 0xFFF234, .want = 0xF23440 },
+        .{ .mode = 6, .v = 0xFFF234, .want = 0x0DCC40 },
+        .{ .mode = 7, .v = 0xFFF234, .want = 0xF233C0 },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x60;
+        try state.x_mem.put(gpa, 0x60, k.v);
+        try state.x_mem.put(gpa, 0x61, 0x5000);
+        state.s[4] = 0x4000;
+        state.s[2] = 0x7FFF;
+        const w1: u32 = 0x00008000 | k.mode << 11;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0x00002000, 0x00120000, 0x00000009, 0x25122E48, 0x00004200, 0x00000002, w1, 0x00121448, 0x00000009, 0xA5122E18, 0x00004201, 0x00000017, 0x31308000, 0xA0000000 }, 0, 32);
+        try testing.expectEqual(k.want, state.s[10]);
+    }
+}
+
+test "x02's w5[10:9] gates the mode-5 read: only 01 reads X memory (fact 739)" {
+    const gpa = testing.allocator;
+    for ([_]struct { g: u32, want: u32 }{
+        .{ .g = 1, .want = 0x999 },
+        .{ .g = 0, .want = 0x777 },
+        .{ .g = 2, .want = 0x777 },
+        .{ .g = 3, .want = 0x777 },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x60;
+        try state.x_mem.put(gpa, 0x60, 0x999);
+        state.xd = 0x777;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0x0002A000, 0x00120042, 0x00000009, 0xA5122E18, 0x00004001 | k.g << 9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(k.want, state.s[3]);
+        try testing.expectEqual(@as(u32, 0x61), state.a[9]);
     }
 }

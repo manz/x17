@@ -684,13 +684,18 @@ fn execX02Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         prod >> 24
     else
         @min(roundShr(prod, 23), 0x7FFFFF); // -1 * -1 saturates (fact 402)
-    // Modes (fact 161): X = xd before the bundle, at the [15:0] slice;
-    // 1 = a + X, 5 = P + X, 7 = X - P, otherwise P.
-    const xv: i64 = @intCast((state.xd_pre << 8) & 0xFFFF);
-    const r: i64 = switch ((w1 >> 11) & 7) {
-        1 => @as(i64, sx24(state.s[a_s])) + xv,
-        5 => scaled + xv,
-        7 => xv - scaled,
+    // Modes (fact 161, 733, 735): X = xd << 8 at 24 bits, xd the X word read before the bundle.
+    // 1 = a + X, 2 = a - X (with w1[17] they collapse to xd's sign, scale OPEN, refused);
+    // 5 = P + X, 6 = P - X, 7 = X - P; otherwise P.
+    const x24: i64 = @intCast((state.xd_pre << 8) & M24);
+    const mode: u32 = (w1 >> 11) & 7;
+    if ((mode == 1 or mode == 2) and (w1 >> 17) & 1 == 1) return RunError.UnknownForm;
+    const r: i64 = switch (mode) {
+        1 => @as(i64, sx24(state.s[a_s])) + x24,
+        2 => @as(i64, sx24(state.s[a_s])) - x24,
+        5 => scaled + x24,
+        6 => scaled - x24,
+        7 => x24 - scaled,
         else => scaled,
     };
     const v: u32 = @truncate(@as(u64, @bitCast(r)) & M24);
@@ -1716,7 +1721,11 @@ fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const mode: u32 = (w4 >> 11) & 7;
     const e_src: u32 = state.e[(w3 >> 27) & 0xF];
     const v: u32 = if (mode == 5) blk: {
-        if ((w5 >> 14) & 1 == 1) break :blk state.readX(state.a[(w4 >> 17) & 0x1F]) orelse 0;
+        if ((w5 >> 14) & 1 == 1) {
+            // 739: w5[10:9] gates the read: 01 reads X memory; 00 / 10 / 11 (the store, 730) give xd.
+            if ((w5 >> 9) & 3 != 1) break :blk state.xd;
+            break :blk state.readX(state.a[(w4 >> 17) & 0x1F]) orelse 0;
+        }
         break :blk x02YSide(state, bundle);
     } else switch ((w5 >> 28) & 3) {
         0 => if (mode == 1) (bundle[0] >> 11) & 0xFFFF else e_src,

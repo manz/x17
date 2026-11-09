@@ -3840,7 +3840,8 @@ const GATES = [_]Gate{
     },
     .{
         .name = "own-x02mac",
-        // A reads X:[A2] (0x7EFD) into s4; B: s2 <- P + xd[15:0] = 0x30 + 0xFD00.
+        // A reads X:[A2] (0x7EFD) into s4; B: s2 <- P + (xd << 8) = 0x30 + 0x7EFD00 (735), read
+        // back through a 16-bit view.
         .pre = &.{
             .{ .bank = .s, .index = 1, .value = 0x4000 },
             .{ .bank = .s, .index = 2, .value = 0x6000 },
@@ -3854,7 +3855,7 @@ const GATES = [_]Gate{
         ,
         .post = &.{
             .{ .s_reg = .{ .index = 4, .value = 0x7EFD } },
-            .{ .s_reg = .{ .index = 2, .value = 0xFD30 } },
+            .{ .s_reg = .{ .index = 2, .value = 0xFD30, .mask = 0xFFFF } },
         },
     },
     .{
