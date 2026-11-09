@@ -5895,10 +5895,6 @@ test "x18 class 110 hi X under w3[21] = 1 is the s at index 12 here, not xd; lo 
         _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ h[0], h[1], h[2], c.w3 } ++ halt), 0, 8);
         try testing.expectEqual(c.want, st.s[7]);
     };
-    // w3[23] = 1 halves the term (365): refused.
-    var st = emu.State{};
-    defer st.deinit(testing.allocator);
-    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &([_]u32{ h[0], h[1], h[2], 0xC0741839 | (1 << 23) } ++ halt), 0, 8));
     // lo mode 7, fractional, w3[21] = 1, field 6: lo = s6 - P.
     var st2 = emu.State{};
     defer st2.deinit(testing.allocator);
@@ -5955,4 +5951,33 @@ test "x18 class 110 lo field 0 adds the incoming xd << 8, both forms (717)" {
         _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, 0x80005AA0, 0x0C500E2B & ~@as(u32, 0xF << 9), w3 } ++ halt), 0, 8);
         try testing.expectEqual(c[2], st.s[12] & (if (c[0] == 1) @as(u32, 0xFFFF) else 0xFFFFFF));
     }
+}
+
+test "x18 class 110's two mode tables, w3[23] = 0 and 1, hi and lo (718)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // a = s5 = 0x4000, b = s1 = 0x2000 (P hi 0x10, lo 0); index X s12 = 0xC2; field X s6 = 0x66.
+    // hi dest s7, lo dest s12 (read at the bundle's start).
+    const t1 = [8][2]u32{ .{ 0xB2, 0x66 }, .{ 0x4000, 0x2000 }, .{ 0x4000, 0x2000 }, .{ 0x40C2, 0x2066 }, .{ 0x40C2, 0x2066 }, .{ 0x3F3E, 0x1F9A }, .{ 0xD2, 0x66 }, .{ 0xD2, 0x66 } };
+    const t0 = [_][3]u32{ .{ 1, 0x40C2, 0x2066 }, .{ 2, 0x3F3E, 0x1F9A }, .{ 3, 0xC2, 0x66 }, .{ 4, 0x10, 0 } };
+    for (0..2) |tab| for (0..8) |mode| {
+        var want: [2]u32 = undefined;
+        if (tab == 1) want = t1[mode] else {
+            var found = false;
+            for (t0) |r| if (r[0] == mode) {
+                want = .{ r[1], r[2] };
+                found = true;
+            };
+            if (!found) continue;
+        }
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x4000;
+        st.s[1] = 0x2000;
+        st.s[12] = 0xC2;
+        st.s[6] = 0x66;
+        const w3 = (0xC0741839 & ~@as(u32, (1 << 23) | (7 << 18))) | (@as(u32, @intCast(tab)) << 23) | (@as(u32, @intCast(mode)) << 18);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, 0x80005AA0, 0x0C500E2B, w3 } ++ halt), 0, 8);
+        try testing.expectEqual(want[0], st.s[7]);
+        try testing.expectEqual(want[1], st.s[12]);
+    };
 }
