@@ -90,6 +90,10 @@ Emulator:
 
 > alu head shifts (774, [25:19] = 0): n = s<[14:11]> signed 24-bit, b = s<[29:26]>, 24-bit results.  0x06 asr: n >= 0 b >> n arithmetic (n >= 24 the sign), n < 0 (b << -n)[23:0] (0 from -24).  0x08 lsr: logical right on [23:0] (n >= 24 0), left as asr.  0x07 asrrs: right (b + 2^(n-1)) >> n (n >= 24 0), left saturating to 0x7FFFFF / 0x800000.  Counts 0..48 and -1..-25, b = 0x5A5A / 0xFFA5A5.
 > alu clr 0x22 with modifiers (775): d <- 0 for every m and # (0/2/5); other clr codes with modifiers OPEN.
+> alu code 0x28 is a move, not a clear (779, 240 cells, own-movq): a inert; # = [22:19] zero-extended;
+>   m 5/6 d <- s<b> (# when b's index is 0); m 1/4 d <- # (0 when b's index is 0); m 0/2/3/7 d <- #.
+>   0x29 matched on 32 cells (INFERRED the same).  0x20/0x2E/0x2F/0x39 gave 0 on that sweep, 0x21 and
+>   0x3B did not; all stay refused with modifiers.
 
 ### `rop`
 

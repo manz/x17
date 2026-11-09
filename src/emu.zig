@@ -5268,6 +5268,17 @@ pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
     if (m == 0 and s_mod == 0) {
         return alu05Eval(op, a_s, b_s);
     }
+    // 779: code 0x28 is a move, not a clear (0x29 INFERRED the same); a is inert, # is
+    // [22:19] zero-extended.  m 5/6: d <- s<b> (# when b's index is 0); m 1/4: d <- #
+    // (0 when b's index is 0); m 0/2/3/7: d <- #.
+    if (code == 0x28 or code == 0x29) {
+        const b_zero = (h >> 26) & 0xF == 0;
+        return switch (m) {
+            5, 6 => if (b_zero) s_mod else b24,
+            1, 4 => if (b_zero) 0 else s_mod,
+            else => s_mod,
+        };
+    }
     // clr with modifiers: 0x22 writes 0 for every m and # (775); the other clr codes are OPEN.
     if (op == .clr) return if (code == 0x22) 0 else null;
     // mova/asr/asrrs/lsr with s == 0: modifier m is ignored.

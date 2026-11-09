@@ -7411,3 +7411,25 @@ fn runImagePass(gpa: std.mem.Allocator, state: *emu.State, p: []const u32, pass:
     _ = try emu.arm(gpa, state, p, kind, 64);
     try testing.expect(state.halted);
 }
+
+test "alu code 0x28 moves s<b> or # by m, a inert (fact 779)" {
+    const gpa = testing.allocator;
+    // head = b<<26 | m<<23 | #<<19 | d<<15 | a<<11 | 0x28<<5 | 0x05, class [31:30] = 01.
+    for ([_]struct { b: u32, m: u32, n: u32, want: u32 }{
+        .{ .b = 10, .m = 5, .n = 0, .want = 0x00ABCD }, // 6a850505: s10 <- s10
+        .{ .b = 2, .m = 6, .n = 5, .want = 0x000222 }, // m 6: s<b> whatever # is
+        .{ .b = 0, .m = 5, .n = 8, .want = 8 }, // b index 0: #
+        .{ .b = 2, .m = 4, .n = 15, .want = 15 }, // m 4: #
+        .{ .b = 0, .m = 1, .n = 5, .want = 0 }, // m 1, b index 0: 0
+        .{ .b = 2, .m = 7, .n = 1, .want = 1 }, // m 7: #
+    }) |row| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[2] = 0x222;
+        state.s[10] = 0xABCD;
+        state.s[12] = 0x777;
+        const head: u32 = 0x40000000 | row.b << 26 | row.m << 23 | row.n << 19 | 10 << 15 | 12 << 11 | 0x28 << 5 | 0x05;
+        try emu.executeBundle(gpa, &state, &.{head});
+        try testing.expectEqual(row.want, state.s[10]);
+    }
+}
