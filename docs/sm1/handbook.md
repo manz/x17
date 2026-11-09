@@ -362,6 +362,11 @@ Offsets are from the sm1 block's MMIO base.
     Each read continues where the last stopped, also across packets (§783, §784).
   - A read with too few bits left stops the program at that read: +0xA98 = 0x04C00206, +0xC10 =
     0x10000 | the read's q. Arming the next packet resumes it, with no feed answer (§784).
+- **Output:** a two-slot ring in Y, filled alternately per packet (§785):
+  - slot k's samples at Y:0x80 + 0x800k, up to 2048 16-bit units;
+  - slot k's entry: Y:2k+5 = 1 (owned), Y:2k+6 = length in units;
+  - then Y:0xFD94 bit 0 = 1, and the stop with bit 2.
+  - The host releases a slot by writing 0 to its owned word.
 - **Status, +0xA98:**
   - bit 2: completion, set by the program (§13). It raises VIC line 18; acknowledge with +0xC48 <- 4.
   - bit 26: running (§16).
