@@ -3408,7 +3408,8 @@ test "0x00's slot with n set: asr adds i = w2[8:6] and w2[9] negates the count; 
         .{ .code = 0x14, .n = 4, .sa = 0xFFFB00, .b = 0x130, .want = 0x0003CE },
         .{ .code = 0x14, .m = 1, .n = 8, .sa = 2, .b = 0x130, .want = 0xFFFED2 }, // a - b
         .{ .code = 0x14, .m = 1, .n = 2, .sa = 0xFFFB00, .b = 0x130, .want = 0xFFF9D0 },
-        .{ .code = 0x14, .n = 5, .sa = 2, .b = 0x130, .want = null },
+        .{ .code = 0x14, .n = 5, .sa = 2, .b = 0x130, .want = 0xFFFECC }, // 749
+        .{ .code = 0x14, .n = 6, .sa = 2, .b = 0x130, .want = 0x132 }, // 749: 6 adds
         .{ .code = 0x14, .m = 2, .n = 2, .sa = 2, .b = 0x130, .want = null },
         .{ .code = 0x26, .m = 1, .n = 2, .sa = 2, .b = 1, .want = 1 },
         .{ .code = 0x26, .m = 1, .n = 2, .sa = 0x444, .b = 0x500, .want = 0x444 },
@@ -3436,7 +3437,8 @@ test "0x00's code 0x23 never shifts: n picks the adder or a (fact 729)" {
         .{ .n = 4, .m = 1, .want = 0x100 },
         .{ .n = 8, .want = 0x100 },
         .{ .n = 15, .want = 0x100 },
-        .{ .n = 5, .want = null }, // unmeasured
+        .{ .n = 5, .want = 0x100 }, // 749
+        .{ .n = 6, .want = 0x130 }, // 749: 6 adds
     }) |k| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -6709,5 +6711,24 @@ test "x03.acp's template read slot also loads s7 and yd <- Y:[e<y_e>] under #0 a
         try testing.expectEqual(a9, state.a[9]);
         try testing.expectEqual(@as(u32, 0x0BCD), state.s[7]);
         try testing.expectEqual(@as(u32, 0x0BCD), state.yd);
+    }
+}
+
+test "0x00's codes 0x14 / 0x23 run the adder for n in {0, 1, 3, 6, 9}, all 16 n (fact 749)" {
+    const gpa = testing.allocator;
+    for (0..16) |nn| {
+        const n: u32 = @intCast(nn);
+        const adds = n == 0 or n == 1 or n == 3 or n == 6 or n == 9;
+        for ([_]u32{ 0, 1 }) |m| {
+            for ([_]u32{ 0x14, 0x23 }) |code| {
+                var state = emu.State{};
+                defer state.deinit(gpa);
+                state.s[1] = 0x130;
+                state.s[3] = 2;
+                try runX00Slot(&state, code, 3, m, n);
+                const want: u32 = if (adds) (if (m == 0) 0x132 else 0x12E) else if (code == 0x23) 2 else if (m == 0) 0xFFFECC else 0xFFFED2;
+                try testing.expectEqual(want, state.s[2]);
+            }
+        }
     }
 }

@@ -1202,6 +1202,15 @@ fn x00Asr(count: u32, b: i64, m: u32, n: u32) RunError!u32 {
     return alu05Shift(c, @as(u32, @truncate(@as(u64, @bitCast(v)))) & M24, .asr);
 }
 
+/// The n = w2[9:6] values that run 0x00's adder under codes 0x14 and 0x23 (749): fact 646's
+/// condition table read false; which state it reads is OPEN.
+fn x00AdderN(n: u32) bool {
+    return switch (n) {
+        0, 1, 3, 6, 9 => true,
+        else => false,
+    };
+}
+
 /// The 0x00 class-05 slot (725, 727-729, 732): 0x01's a = s<w6[23:20]> and m = w5[29:27], n = w2[9:6].
 /// 0x14 adds; 0x23 adds unshifted for n in {0, 1, 3, 9} and is a for n in {2, 4, 8, 15};
 /// 0x14 splits on n too (732); 0x06 is x00Asr; 0x26 selects b when ADDER_M[m](a, b) < 0, else a.
@@ -1215,20 +1224,15 @@ fn x00Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
     const b: i64 = sx24(state.s[(w2 >> 2) & 0xF]);
     return switch (code) {
         0x06 => x00Asr(state.s[a_idx], b, m, n),
-        // 727, 732: never shifts; n in {0, 1, 3} the adder, {2, 4, 8} m0 -(a + b) - 2, m1 a - b.
+        // 727, 732, 749: never shifts; n in {0, 1, 3, 6, 9} the adder (646's condition table
+        // read false), other n m0 -(a + b) - 2, m1 a - b.
         0x14 => blk: {
             if (m > 1) break :blk RunError.UnknownForm;
-            break :blk switch (n) {
-                0, 1, 3 => adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m),
-                2, 4, 8 => @as(u32, @truncate(@as(u64, @bitCast(if (m == 0) -(a + b) - 2 else a - b)))) & M24,
-                else => RunError.UnknownForm,
-            };
+            if (x00AdderN(n)) break :blk adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m);
+            break :blk @as(u32, @truncate(@as(u64, @bitCast(if (m == 0) -(a + b) - 2 else a - b)))) & M24;
         },
-        0x23 => switch (n) {
-            0, 1, 3, 9 => adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m),
-            2, 4, 8, 15 => @as(u32, @truncate(@as(u64, @bitCast(a)))) & M24,
-            else => RunError.UnknownForm,
-        },
+        // 729, 749: never shifts; the same n split, the other result a.
+        0x23 => if (x00AdderN(n)) adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m) else @as(u32, @truncate(@as(u64, @bitCast(a)))) & M24,
         0x26 => blk: {
             // 732: n = 2 ignored; other n unmeasured.
             if (m > 1 or (n != 0 and n != 2)) break :blk RunError.UnknownForm;
