@@ -2356,9 +2356,9 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const lo_m: u32 = if (lo_dest == 0 or p_only) lo else blk: {
         const b_lo: u32 = state.s[b_s] & M24;
         const v: u32 = if (integer) (if (w23) switch (mode) {
-            // 719, 721: integer; w3[21] only moves mode 0.  w3[21] = 1 mode 0 is 2 * Xf with P
-            // lo 0 (721); 2 * (P + Xf) is not ruled out, so a nonzero P is refused.
-            0 => if (!w21) lo +% xf_val else if (lo == 0) xf_val << 1 else return RunError.UnknownForm,
+            // 719, 721: integer; w3[21] only moves mode 0, which is 2 * (P + Xf) under
+            // w3[21] = 1 (721, 722).
+            0 => if (!w21) lo +% xf_val else (lo +% xf_val) << 1,
             1, 2 => b_lo,
             3 => b_lo +% xf_val,
             4 => lo,

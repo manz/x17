@@ -6051,3 +6051,19 @@ test "x18 class 110 w3[23] = 1 integer: w3[21] = 0, and mode 0 (721)" {
         try testing.expectEqual(want[1], st.s[12] & 0xFFFF);
     }
 }
+
+test "x18 class 110 w3[23] = 1 integer mode 0 lo is 2 * (P + Xf) (722)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    for ([_][3]u32{ .{ 0x123, 0x10, 0x252C }, .{ 0x123, 0x20, 0x498C }, .{ 0xC0, 0x10, 0x18CC } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = c[0];
+        st.s[1] = c[1];
+        st.s[12] = 0xC2;
+        st.s[6] = 0x66;
+        const w3 = (0xC0741839 & ~@as(u32, 7 << 18)) | (1 << 24) | (1 << 23);
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, 0x80005AA0, 0x0C500E2B, w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c[2], st.s[12]);
+        try testing.expectEqual(@as(u32, 0), st.s[7]);
+    }
+}
