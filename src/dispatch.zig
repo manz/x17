@@ -8,9 +8,9 @@ const isa = @import("isa");
 const asm_mod = @import("asm");
 const emu = @import("emu");
 const image_mod = @import("image");
-const disasm = @import("disasm");
-const fmt_mod = @import("fmt");
-const doc = @import("doc");
+const disasm = @import("disasm.zig");
+const fmt_mod = @import("fmt.zig");
+const doc = @import("doc.zig");
 
 const Writer = std.Io.Writer;
 const Handler = *const fn (gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) anyerror!void;

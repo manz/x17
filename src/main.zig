@@ -1,7 +1,7 @@
 //! x17 dev rig entry point.  Thin: read argv, hand off to the dispatcher.
 
 const std = @import("std");
-const dispatch = @import("dispatch");
+const dispatch = @import("dispatch.zig");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -31,4 +31,15 @@ pub fn main(init: std.process.Init) !void {
         },
         else => return e,
     };
+}
+
+test {
+    // The CLI's files (dispatch, disasm, doc, fmt) and the test-only suites run in this binary
+    // (see build.zig).
+    _ = dispatch;
+    _ = @import("disasm.zig");
+    _ = @import("doc.zig");
+    _ = @import("fmt.zig");
+    _ = @import("lib_test.zig");
+    _ = @import("silicon_gates.zig");
 }
