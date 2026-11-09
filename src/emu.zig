@@ -3378,16 +3378,19 @@ fn execEalu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     const op_bit: u32 = (s1 >> 11) & 1;
     const op: u32 = (s1 >> 12) & 0x7;
     const a_val: u32 = state.s[src_s] & M24;
-    // 766: w[11] = 0, op 4 is a + b with b = 0 (w[28:22], w[2:0] inert).
-    const v: u32 = switch (op_bit) {
-        1 => switch (op) {
-            5 => (a_val +% 1) & M24,
-            else => return RunError.UnknownForm,
-        },
-        else => switch (op) {
-            4 => a_val,
-            else => return RunError.UnknownForm,
-        },
+    const neg_a: u32 = (0 -% a_val) & M24;
+    // 766: w[11] = 0, op 4 is a + b with b = 0 (w[28:22], w[2:0] inert).  132 (table 119's
+    // w[11] = 0 row): op 5 = a, op 7 = -a; head[9] = 1 turns op 5 into -a.  Table-only rows
+    // (op 6, w[11] = 1 ops 4/6/7, head[9] elsewhere) stay refused until measured in ealu.
+    // head[9] is inert at op 4 (767), -a at op 5 (132), OPEN at the other ops.
+    const h9 = (bundle[0] >> 9) & 1 == 1;
+    const sel: u32 = op_bit << 3 | op;
+    if (h9 and sel != 4 and sel != 5) return RunError.UnknownForm;
+    const v: u32 = if (h9 and sel == 5) neg_a else switch (sel) {
+        4, 5 => a_val,
+        7 => neg_a,
+        8 | 5 => (a_val +% 1) & M24,
+        else => return RunError.UnknownForm,
     };
     if (dest_e != 0) state.e[dest_e] = v;
     // 767: w[10:7] one-hot picks s1 / s2 / s4 / s8 <- #sx16(head[26:11]); two or more bits write

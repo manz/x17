@@ -7346,3 +7346,18 @@ test "x16 b16 under any S1 class with S1[18] and S2 0xE004 (fact 778)" {
     try testing.expectEqual(@as(?u32, 0x123456), state.x_mem.get(0x40));
     try testing.expectEqual(@as(u32, 0x000777), state.s[12]);
 }
+
+test "ealu op 5 is a, op 7 is -a, head[9] makes op 5 -a (fact 132)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, w: u32, want: u32 }{
+        .{ .h = 0x000001d0, .w = 0xc0305048, .want = 0x000123 }, // 132's own word: e9 <- s12
+        .{ .h = 0x000001d0, .w = 0xc0307048, .want = 0xFFFEDD }, // op 7: -a
+        .{ .h = 0x000003d0, .w = 0xc0305048, .want = 0xFFFEDD }, // head[9]: op 5 gives -a
+    }) |row| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[12] = 0x123;
+        try emu.executeBundle(gpa, &state, &.{ row.h, row.w });
+        try testing.expectEqual(row.want, state.e[9]);
+    }
+}
