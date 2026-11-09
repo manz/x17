@@ -1386,6 +1386,8 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             if ((w5 >> 4) & 1 == 0) return RunError.UnknownForm;
             break :blk (state.getY(state.e[(w4 >> 5) & 0xF]) orelse 0) & 0xFFFF;
         }
+        // 762: 0x00 mode 0 without w4[22] writes 0; product and X unused.
+        if (!x01 and mode == 0) break :blk 0;
         // 0x01 mode 4 (496, 507): rnd(a * b >> 23), X ignored, w4[22] inert; measured with
         // w1[17:14] = 0010 and operands inside 16 bits only.
         if (x01 and mode == 4) {

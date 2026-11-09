@@ -2196,7 +2196,7 @@ test "x00's multiply slot swap reads memory in mode 0" {
         .{ .w = .{ 0x0018b000, 0x00000000, 0x000c0000, 0x00d00000, 0x0060c0c0, 0x06000032, 0x00060000 }, .dest = 6, .want = 0x135 },
         .{ .w = .{ 0x0018b000, 0x00000000, 0x000c0000, 0x00d00000, 0x0064c0c0, 0x06000032, 0x00060000 }, .dest = 6, .want = 0x777 },
         .{ .w = .{ 0x0018b000, 0x00000000, 0x000c0000, 0x00d00000, 0x0064c0c0, 0x06000022, 0x00060000 }, .dest = 6, .want = null },
-        .{ .w = .{ 0x0018b000, 0x00000000, 0x000c0000, 0x00d00000, 0x0020c0c0, 0x06000032, 0x00060000 }, .dest = 6, .want = null }, // plain mode 0
+        .{ .w = .{ 0x0018b000, 0x00000000, 0x000c0000, 0x00d00000, 0x0020c0c0, 0x06000032, 0x00060000 }, .dest = 6, .want = 0 }, // plain mode 0 writes 0 (762)
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -6943,6 +6943,23 @@ test "0x00 control 0x08 / 0x0D enables the decode arm (fact 761)" {
     var state = emu.State{};
     defer state.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0, 0, 0, 8, 0, 0, 0 }));
+}
+
+test "0x00 multiply mode 0 without w4[22] writes 0 and wins over the MAC slot (fact 762)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[2] = 0x40;
+    state.s[3] = 0x300;
+    state.s[4] = 0x20;
+    state.a[9] = 0x10;
+    try state.x_mem.put(gpa, 0x10, 0x777);
+    // multiply dest s3 (s4 * s2, A9 in w2[22:18]), mode 0, w1[17:14] = 0.
+    try emu.executeBundle(gpa, &state, &.{ 0, 0, 9 << 18, 0, 0, 0, 0x24030000 });
+    try testing.expectEqual(@as(u32, 0), state.s[3]);
+    // Both slots name s4: the multiply slot's X word lands (w4[22], w4[18] = 0), the MAC write is lost.
+    try emu.executeBundle(gpa, &state, &.{ 0, 0, 9 << 18, 0, 1 << 22, 0, 0x24040400 });
+    try testing.expectEqual(@as(u32, 0x777), state.s[4]);
 }
 
 test "unset_reads counts X / Y reads of never-written addresses" {
