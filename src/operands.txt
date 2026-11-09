@@ -1371,6 +1371,45 @@ x02.v	x3_b	s	26	29	s4
 x02.v	x3_op	imm	6	8	s5
 x02.v	x3_sh	imm	2	5	s5
 
+# x02.vc: x02.v's operands, then #<code>
+x02.vc	xrd_d	s	3	6	s4
+x02.vc	xrd_a	A	17	20	s4
+x02.vc	inc_d1	A	17	21	s2
+x02.vc	inc_d2	A	10	14	s3
+x02.vc	inc_s	A	0	4	s3
+x02.vc	mpy_d	s	9	12	s2
+x02.vc	mpy_a	s	1	4	s2
+x02.vc	mpy_b	s	5	8	s2
+x02.vc	plo	s	7	10	s4
+x02.vc	sgn	imm	15	17	s1
+x02.vc	x3_dlo	imm	0	1	s5
+x02.vc	x3_dhi	imm	30	31	s4
+x02.vc	x3_a	s	22	25	s4
+x02.vc	x3_b	s	26	29	s4
+x02.vc	x3_op	imm	6	8	s5
+x02.vc	x3_sh	imm	2	5	s5
+x02.vc	code	imm	5	10	head
+
+# x02.vs: x02.v's operands, then #<st_lo>, #<st_hi>
+x02.vs	xrd_d	s	3	6	s4
+x02.vs	xrd_a	A	17	20	s4
+x02.vs	inc_d1	A	17	21	s2
+x02.vs	inc_d2	A	10	14	s3
+x02.vs	inc_s	A	0	4	s3
+x02.vs	mpy_d	s	9	12	s2
+x02.vs	mpy_a	s	1	4	s2
+x02.vs	mpy_b	s	5	8	s2
+x02.vs	plo	s	7	10	s4
+x02.vs	sgn	imm	15	17	s1
+x02.vs	x3_dlo	imm	0	1	s5
+x02.vs	x3_dhi	imm	30	31	s4
+x02.vs	x3_a	s	22	25	s4
+x02.vs	x3_b	s	26	29	s4
+x02.vs	x3_op	imm	6	8	s5
+x02.vs	x3_sh	imm	2	5	s5
+x02.vs	st_lo	imm	29	31	s1
+x02.vs	st_hi	imm	0	0	s2
+
 # x02.aa <dest_A>, <x_A>, <r_R>, #<fn>, <dest2_A>, <add_A>
 x02.aa	dest_A	A	17	21	s2
 x02.aa	x_A	A	0	4	s3

@@ -853,6 +853,14 @@ x03.jrc    6   0x00000003   0x00000000   0x10000000   0x00000000   0x00000000   
 # x3 s<{w5[1:0], w4[31:30]}> <- (s<w4[25:22]> op w5[8:6] s<w4[29:26]>) << w5[5:2].
 x02.v      6   0x00000002   0x00002000   0x00000000   0x00000000   0x00002800   0x00004200
 
+# x02.vc: x02.v with the third slot's head code h[10:5] as a trailing operand (549, 627, 628,
+# 730): 0-5 the adder (#x3_sh = n), 6 asr / 7 asrrs of b by a, x3_sh's top bit w5[5] negating a.
+x02.vc     6   0x00000002   0x00002000   0x00000000   0x00000000   0x00002800   0x00004200
+
+# x02.vs: x02.v with the X store on (w5[10:9] = 11, 513, 730): X:[old A<w4[21:17]>] <- sx24
+# s<{w2[0], w1[31:29]}> as #st_lo, #st_hi; A still steps, and the read slot yields xd, not memory.
+x02.vs     6   0x00000002   0x00002000   0x00000000   0x00000000   0x00002800   0x00004600
+
 # x02 A slot alone, mode 0 (fact 403): sum = agu_xr(fn w2[26:22], A<w3[4:0]>, R<w5[25:22]>);
 # A<w2[21:17]> <- sum; A<w3[14:10]> <- sum + A<w3[9:5]> (fn < 16).
 x02.aa     6   0x00000002   0x00000000   0x00000000   0x00000000   0x00000000   0x00000000

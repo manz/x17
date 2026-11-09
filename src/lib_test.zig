@@ -6323,6 +6323,33 @@ test "x02.v with the X store: the store lands at the old A, the read slot takes 
     try testing.expectEqual(@as(u32, 0x61), state.a[9]);
 }
 
+test "x02.vc assembles x02.v with the third slot's head code" {
+    const w = try asm_mod.assembleOne("x02.vc s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #2, #0, s4, s9, #0, #0, #7");
+    try testing.expectEqual(@as(u32, 0x00000002 | 7 << 5), w.slice()[0]);
+    const v = try asm_mod.assembleOne("x02.v s3, A9, A9, A0, A9, s0, s1, s2, s12, #5, #2, #0, s4, s9, #0, #0");
+    try testing.expectEqualSlices(u32, v.slice()[1..], w.slice()[1..]);
+}
+
+test "x02.vs stores at the old A while A steps; the read slot yields xd (fact 730)" {
+    const gpa = testing.allocator;
+    const w = try asm_mod.assembleOne("x02.vs s3, A9, A9, A0, A9, s12, s1, s2, s0, #5, #2, #0, s4, s9, #0, #0, #7, #0");
+    var prog: [9]u32 = undefined;
+    @memcpy(prog[0..6], w.slice()[0..6]);
+    prog[6] = 0x00000017;
+    prog[7] = 0x31308000;
+    prog[8] = 0xA0000000;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.a[9] = 0x60;
+    try state.x_mem.put(gpa, 0x60, 0x5000);
+    state.xd = 0x3000;
+    state.s[7] = 0x1357;
+    _ = try emu.runFrom(gpa, &state, &prog, 0, 16);
+    try testing.expectEqual(@as(?u32, 0x1357), state.x_mem.get(0x60));
+    try testing.expectEqual(@as(u32, 0x3000), state.s[3]);
+    try testing.expectEqual(@as(u32, 0x61), state.a[9]);
+}
+
 test "x02 w2-slot modes 1 / 2 are x +/- (xd << 8) at 24 bits; w1[17] refused (fact 733)" {
     const gpa = testing.allocator;
     // s3 <- X:[A9], A9 + 1, s10 <- mode(x = s4, X = xd << 8), s6 <- s4 + s9; xd = v from the read before.
