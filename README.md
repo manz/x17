@@ -21,7 +21,7 @@ CI runs the harness.  Nobody but codec authors touches this repo.
 Downstream codec repos put `x17` on PATH with one composite action step:
 
 ```yaml
-runs-on: ubuntu-24.04-arm
+runs-on: ubuntu-26.04-arm
 steps:
   - uses: manz/x17@v0.1.0
 ```

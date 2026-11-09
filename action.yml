@@ -5,7 +5,7 @@ branding:
   icon: 'cpu'
   color: 'blue'
 
-# On an ARM64 Linux runner (e.g. ubuntu-24.04-arm) with a release tag, the action downloads
+# On an ARM64 Linux runner (e.g. ubuntu-26.04-arm) with a release tag, the action downloads
 # that release's prebuilt binary.  Anywhere else, or without a release, it builds x17 from
 # the action's own checkout.
 
