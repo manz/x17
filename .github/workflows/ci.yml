@@ -10,7 +10,7 @@ jobs:
   test:
     runs-on: ubuntu-26.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
           version: '0.17.0'
@@ -20,7 +20,7 @@ jobs:
   checks:
     runs-on: ubuntu-26.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
           version: '0.17.0'
@@ -36,7 +36,7 @@ jobs:
   action-selftest:
     runs-on: ubuntu-26.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Consume setup-x17 from this checkout
         uses: ./
         with:

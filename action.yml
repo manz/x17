@@ -54,7 +54,7 @@ runs:
     - name: Cache x17 binary
       id: cache
       if: steps.release.outputs.found != 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ${{ github.action_path }}/zig-out/bin/x17
         key: x17-${{ runner.os }}-${{ runner.arch }}-${{ github.action_ref }}-${{ inputs.zig-version }}-${{ inputs.optimize }}
