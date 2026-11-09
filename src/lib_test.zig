@@ -6869,3 +6869,31 @@ test "0x00's MAC low half reads xd << 8 when w4[15:13] = 0 (fact 755)" {
         try testing.expectEqual(k[1], state.s[4]);
     }
 }
+
+// Compatibility run of an external program read in place from X17_COMPAT_PROG (a little-endian
+// u32 syllable stream).  Skipped when unset.  Reports only ran / refused / wedged and the
+// bundle count.
+test "compat: external program from reset state" {
+    const path = testing.environ.getPosix("X17_COMPAT_PROG") orelse return error.SkipZigTest;
+    const gpa = testing.allocator;
+    const bytes = std.Io.Dir.cwd().readFileAlloc(testing.io, path, gpa, .limited(1 << 20)) catch return error.SkipZigTest;
+    defer gpa.free(bytes);
+    const words = try gpa.alloc(u32, bytes.len / 4);
+    defer gpa.free(words);
+    for (words, 0..) |*w, i| w.* = std.mem.readInt(u32, bytes[i * 4 ..][0..4], .little);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    // The profile only feeds the total bundle count; nothing per syllable is kept.
+    const prof = try gpa.alloc(u64, words.len);
+    defer gpa.free(prof);
+    @memset(prof, 0);
+    state.profile = prof;
+    const r = emu.runFrom(gpa, &state, words, 0, 50_000_000);
+    if (r) |n| {
+        std.debug.print("compat: ran, {d} bundles, halted={}\n", .{ n, state.halted });
+    } else |e| {
+        var n: u64 = 0;
+        for (prof) |c| n += c;
+        std.debug.print("compat: {s} after {d} bundles\n", .{ @errorName(e), n });
+    }
+}

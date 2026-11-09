@@ -140,6 +140,8 @@ pub fn build(b: *std.Build) void {
     const lib_filters: []const []const u8 = if (test_filter) |f| b.dupeStrings(&.{f}) else &.{};
     const lib_t = b.addTest(.{ .root_module = lib_mod, .filters = lib_filters });
     const lib_run = b.addRunArtifact(lib_t);
+    // X17_COMPAT_PROG names an external program the compat test reads; rerun rather than cache.
+    if (b.graph.environ_map.get("X17_COMPAT_PROG") != null) lib_run.has_side_effects = true;
     test_step.dependOn(&lib_run.step);
     b.step("test-lib", "Only lib_test.zig (pair with -Dtest-filter)").dependOn(&lib_run.step);
     const disasm_t = b.addTest(.{ .root_module = disasm_mod });
