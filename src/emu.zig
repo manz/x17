@@ -1224,12 +1224,12 @@ fn x00Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
     const b: i64 = sx24(state.s[(w2 >> 2) & 0xF]);
     return switch (code) {
         0x06 => x00Asr(state.s[a_idx], b, m, n),
-        // 727, 732, 749: never shifts; n in {0, 1, 3, 6, 9} the adder (646's condition table
-        // read false), other n m0 -(a + b) - 2, m1 a - b.
+        // 727, 732, 749, 750: never shifts; (x, y, c) = ADDER_M[m](a, b): n in {0, 1, 3, 6, 9}
+        // (646's condition table read false) x + y + c, other n ~x + ~y + c.
         0x14 => blk: {
-            if (m > 1) break :blk RunError.UnknownForm;
-            if (x00AdderN(n)) break :blk adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m);
-            break :blk @as(u32, @truncate(@as(u64, @bitCast(if (m == 0) -(a + b) - 2 else a - b)))) & M24;
+            const t = adderM(@intCast(m), a, b, 0);
+            const r: i64 = if (x00AdderN(n)) t.x + t.y + t.c else ~t.x + ~t.y + t.c;
+            break :blk @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
         },
         // 729, 749: never shifts; the same n split, the other result a.
         0x23 => if (x00AdderN(n)) adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m) else @as(u32, @truncate(@as(u64, @bitCast(a)))) & M24,

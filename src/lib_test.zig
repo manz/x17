@@ -3410,7 +3410,7 @@ test "0x00's slot with n set: asr adds i = w2[8:6] and w2[9] negates the count; 
         .{ .code = 0x14, .m = 1, .n = 2, .sa = 0xFFFB00, .b = 0x130, .want = 0xFFF9D0 },
         .{ .code = 0x14, .n = 5, .sa = 2, .b = 0x130, .want = 0xFFFECC }, // 749
         .{ .code = 0x14, .n = 6, .sa = 2, .b = 0x130, .want = 0x132 }, // 749: 6 adds
-        .{ .code = 0x14, .m = 2, .n = 2, .sa = 2, .b = 0x130, .want = null },
+        .{ .code = 0x14, .m = 2, .n = 2, .sa = 2, .b = 0x130, .want = 0xFFFECE }, // 750: -b - 2
         .{ .code = 0x26, .m = 1, .n = 2, .sa = 2, .b = 1, .want = 1 },
         .{ .code = 0x26, .m = 1, .n = 2, .sa = 0x444, .b = 0x500, .want = 0x444 },
     }) |k| {
@@ -6728,6 +6728,45 @@ test "0x00's codes 0x14 / 0x23 run the adder for n in {0, 1, 3, 6, 9}, all 16 n 
                 try runX00Slot(&state, code, 3, m, n);
                 const want: u32 = if (adds) (if (m == 0) 0x132 else 0x12E) else if (code == 0x23) 2 else if (m == 0) 0xFFFECC else 0xFFFED2;
                 try testing.expectEqual(want, state.s[2]);
+            }
+        }
+    }
+}
+
+test "0x00's code 0x14 over every m: x + y + c on the adder n, ~x + ~y + c otherwise (fact 750)" {
+    const gpa = testing.allocator;
+    const b: i64 = 0x130;
+    for ([_]i64{ 2, -0x500 }) |a| {
+        for (0..8) |mm| {
+            const m: u32 = @intCast(mm);
+            // second result by m (750); the adder side is ADDER_M[m](a, b)'s sum
+            const second: i64 = switch (m) {
+                0 => -(a + b) - 2,
+                1 => a - b,
+                2 => -b - 2,
+                3, 4 => -b - 1,
+                5 => b - a,
+                6 => b,
+                else => -b - 2, // -|b| - 2, b > 0
+            };
+            const first: i64 = switch (m) {
+                0 => a + b,
+                1 => b - a,
+                2 => b,
+                3 => b + 1,
+                4 => b - 1,
+                5 => a - b,
+                6 => -b,
+                else => b,
+            };
+            for ([_]u32{ 0, 2 }) |n| {
+                var state = emu.State{};
+                defer state.deinit(gpa);
+                state.s[1] = 0x130;
+                state.s[3] = @as(u32, @truncate(@as(u64, @bitCast(a)))) & 0xFFFFFF;
+                try runX00Slot(&state, 0x14, 3, m, n);
+                const want = if (n == 0) first else second;
+                try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(want)))) & 0xFFFFFF, state.s[2]);
             }
         }
     }
