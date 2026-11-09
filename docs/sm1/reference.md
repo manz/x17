@@ -3354,6 +3354,8 @@ Counted loop like x03.rep, but the A step uses a selectable function (add or sub
 
 ### `x16.getb`
 
+Reads the next n+1 bits of the input stream, most significant first, into the odd A register A<2k+1>.
+
 - Syllables: 3
 - Base: `c0000016` `00040000` `e0000000`
 
@@ -3362,10 +3364,9 @@ Counted loop like x03.rep, but the A step uses a selectable function (add or sub
 | k | imm | s1 | [3:0] |
 | n | imm | s2 | [7:4] |
 
-> x16.getb: the stream read (fact 783): A<2*S1[3:0]+1> <- the next S2[7:4]+1 stream bits,
-> MSB first; 0 before the ld0e.sen enable, and the program waits at it for bytes (784).
-
 ### `ld0e.sen`
+
+ld0e whose ALU word enables the input stream when s12 is 1 and s14 has bit 2 set with bits 1:0 clear.
 
 - Syllables: 2
 - Base: `c400000e` `e02500c0`
@@ -3374,7 +3375,4 @@ Counted loop like x03.rep, but the A step uses a selectable function (add or sub
 |---|---|---|---|
 | addr | imm | head | [20:5] |
 | n | imm | s1 | [3:1] |
-
-> ld0e.sen: ld0e whose ALU word (code 0x22, m 2, a = s12, b = s14) enables the stream when
-> s12 = 1 and s14 has bit 2 set, bits 1:0 clear (fact 783); A<4n+1> <- addr as ld0e.
 
