@@ -7492,3 +7492,24 @@ test "x17sty stop form: the store lands, then the run ends with no completion (f
     defer away.deinit(gpa);
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &away, &.{ 0x28200017, 0x60012d53, 0x61fcb804 }));
 }
+
+test "x02.asrc and x02.esrc also write A1 (157, 795)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const Case = struct { src: []const u8, s5: u32, a1: u32 };
+    for ([_]Case{
+        .{ .src = "x02.asrc s5, A9", .s5 = 0x41, .a1 = 0x41 },
+        .{ .src = "x02.esrc s5, e3", .s5 = 0x77, .a1 = 0x101 },
+    }) |c| {
+        const b = try asm_mod.assembleOne(c.src);
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.a[1] = 0x100;
+        st.a[9] = 0x40;
+        st.e[3] = 0x77;
+        const w = b.slice();
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ w[0], w[1], w[2], w[3], w[4], w[5] } ++ halt), 0, 8);
+        try testing.expectEqual(c.s5, st.s[5]);
+        try testing.expectEqual(c.a1, st.a[1]);
+        try testing.expectEqual(@as(u32, 0x40), st.a[9]);
+    }
+}
