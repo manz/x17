@@ -6067,3 +6067,19 @@ test "x18 class 110 w3[23] = 1 integer mode 0 lo is 2 * (P + Xf) (722)" {
         try testing.expectEqual(@as(u32, 0), st.s[7]);
     }
 }
+
+test "st.x's head immediate is inert with no e, R or s consumer (723)" {
+    const gpa = testing.allocator;
+    for ([_]u32{ 0, 1 << 9, 1 << 10, 1 << 11, 1 << 14, 1 << 18 }) |flip| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |k| state.s[k] = 0x100 + @as(u32, @intCast(k));
+        state.a[4] = 0x40;
+        // op[14:11] = 0, op[6:3] = 0, head[24:21] = 0: X:[A4] <- s6 and nothing else.
+        _ = try emu.runFrom(gpa, &state, &.{ 0x0000246f ^ flip, 0xac500001, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u32, 0x106), state.x_mem.get(0x40).?);
+        for (1..16) |k| try testing.expectEqual(0x100 + @as(u32, @intCast(k)), state.s[k]);
+        for (state.r) |r| try testing.expectEqual(@as(u32, 0), r);
+        for (state.e) |e| try testing.expectEqual(@as(u32, 0), e);
+    }
+}
