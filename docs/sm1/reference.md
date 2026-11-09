@@ -3912,3 +3912,29 @@ Emulator:
 | fn | imm | s2 | [26:22] |
 | r | r_reg | s5 | [25:22] |
 
+### `x16.getb`
+
+- Syllables: 3
+- Base: `c0000016` `00040000` `e0000000`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| k | imm | s1 | [3:0] |
+| n | imm | s2 | [7:4] |
+
+> x16.getb: the stream read (fact 783): A<2*S1[3:0]+1> <- the next S2[7:4]+1 stream bits,
+> MSB first; 0 before the ld0e.sen enable, and the program waits at it for bytes (784).
+
+### `ld0e.sen`
+
+- Syllables: 2
+- Base: `c400000e` `e02500c0`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| addr | imm | head | [20:5] |
+| n | imm | s1 | [3:1] |
+
+> ld0e.sen: ld0e whose ALU word (code 0x22, m 2, a = s12, b = s14) enables the stream when
+> s12 = 1 and s14 has bit 2 set, bits 1:0 clear (fact 783); A<4n+1> <- addr as ld0e.
+
