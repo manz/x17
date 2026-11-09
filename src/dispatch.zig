@@ -7,6 +7,7 @@ const clap = @import("clap");
 const isa = @import("isa");
 const asm_mod = @import("asm");
 const emu = @import("emu");
+const image_mod = @import("image");
 const disasm = @import("disasm");
 const fmt_mod = @import("fmt");
 const doc = @import("doc");
@@ -27,6 +28,7 @@ pub const Verb = struct {
 
 pub const top = [_]Verb{
     .{ .name = "asm", .help = "assemble a .sm file; prints hex syllables", .run = &cmdAsm },
+    .{ .name = "image", .help = "assemble passes + host data into an x17 image (+ debug sidecar)", .run = &cmdImage },
     .{ .name = "run", .help = "assemble + execute a .sm file; prints s/Y state", .run = &cmdRun },
     .{ .name = "fmt", .help = "format .sm files in place (--check: report only)", .run = &cmdFmt },
     .{ .name = "disasm", .help = "decode syllables (hex arg or .bin file) to .sm", .run = &cmdDisasm },
@@ -219,6 +221,60 @@ fn cmdAsm(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
 }
 
 // ---------------------------------------------------------------------------
+// Verb: image
+// ---------------------------------------------------------------------------
+
+const image_params = clap.parseParamsComptime(
+    \\-h, --help               show help for `x17 image`
+    \\-o, --out <str>          image path (required)
+    \\-g, --debug <str>        debug sidecar path (JSON)
+    \\<str>                    source file path (.sm)
+    \\
+);
+
+fn cmdImage(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void {
+    var iter: SliceIter = .{};
+    var parsed = try parseVerb(&image_params, gpa, args, "image", out, &iter);
+    defer parsed.deinit();
+    if (parsed.args.help != 0) {
+        try out.writeAll("usage: x17 image -o <out.x17i> [-g <out.json>] <file.sm>\n");
+        return;
+    }
+    const path = parsed.positionals[0] orelse {
+        try out.writeAll("image: missing <file.sm>\n");
+        return error.MissingFile;
+    };
+    const out_path = parsed.args.out orelse {
+        try out.writeAll("image: missing -o <out.x17i>\n");
+        return error.MissingFile;
+    };
+    const src = readSource(gpa, path) catch |e| {
+        try out.print("image: cannot read '{s}': {s}\n", .{ path, @errorName(e) });
+        return e;
+    };
+    defer gpa.free(src);
+    var prog = switch (try asm_mod.assembleProgram(gpa, src, .{ .path = path, .loader = .{ .load = loadInclude } })) {
+        .ok => |p| p,
+        .err => |fe| {
+            try renderFileError(fe, path, out);
+            return error.AssemblyFailed;
+        },
+    };
+    defer prog.deinit();
+    const bytes = try image_mod.write(gpa, &prog);
+    defer gpa.free(bytes);
+    try writeFile(gpa, out_path, bytes);
+    if (parsed.args.debug) |dbg_path| {
+        const j = try image_mod.debugJson(gpa, &prog);
+        defer gpa.free(j);
+        try writeFile(gpa, dbg_path, j);
+    }
+    for (prog.passes, 0..) |*pass, i| {
+        try out.print("pass {d} {s}: rows 0x{x}..0x{x}, {d} syllables, {d} data blocks\n", .{ i, @tagName(pass.kind), pass.base_row, pass.endRow(), pass.syllables.len, pass.data.len });
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Verb: fmt
 // ---------------------------------------------------------------------------
 
@@ -251,6 +307,18 @@ fn cmdFmt(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void 
     if (check and unformatted) return error.Unformatted;
 }
 
+const ImageBytes = union(enum) { ok: []u8, err: asm_mod.FileError };
+
+/// A source's image bytes (caller frees), or the error that stops it assembling.
+fn imageBytes(gpa: std.mem.Allocator, src: []const u8, path: []const u8) !ImageBytes {
+    var prog = switch (try asm_mod.assembleProgram(gpa, src, .{ .path = path, .loader = .{ .load = loadInclude } })) {
+        .ok => |p| p,
+        .err => |fe| return .{ .err = fe },
+    };
+    defer prog.deinit();
+    return .{ .ok = try image_mod.write(gpa, &prog) };
+}
+
 /// Formats one file; returns whether it was (or would be) changed.  Refuses
 /// to write a result that assembles to different bytes.
 fn fmtOne(gpa: std.mem.Allocator, path: []const u8, check: bool, out: *Writer) !bool {
@@ -263,7 +331,8 @@ fn fmtOne(gpa: std.mem.Allocator, path: []const u8, check: bool, out: *Writer) !
     defer gpa.free(formatted);
     if (std.mem.eql(u8, src, formatted)) return false;
 
-    const before = switch (try assemblePath(gpa, src, path)) {
+    // Compare whole images, so passes and host data are checked as well as code.
+    const before = switch (try imageBytes(gpa, src, path)) {
         .ok => |w| w,
         .err => |fe| {
             try renderFileError(fe, path, out);
@@ -272,7 +341,7 @@ fn fmtOne(gpa: std.mem.Allocator, path: []const u8, check: bool, out: *Writer) !
         },
     };
     defer gpa.free(before);
-    const after = switch (try assemblePath(gpa, formatted, path)) {
+    const after = switch (try imageBytes(gpa, formatted, path)) {
         .ok => |w| w,
         .err => |fe| {
             try renderFileError(fe, path, out);
@@ -281,7 +350,7 @@ fn fmtOne(gpa: std.mem.Allocator, path: []const u8, check: bool, out: *Writer) !
         },
     };
     defer gpa.free(after);
-    if (!std.mem.eql(u32, before, after)) {
+    if (!std.mem.eql(u8, before, after)) {
         try out.print("fmt: bug: formatting '{s}' changes its bytes; left as it is\n", .{path});
         return error.FormatChangedBytes;
     }

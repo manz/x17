@@ -2,6 +2,7 @@
 const std = @import("std");
 const asm_mod = @import("asm");
 const emu = @import("emu");
+const image = @import("image");
 
 const testing = std.testing;
 
@@ -4487,6 +4488,7 @@ test "the ISA sources quote no image provenance" {
         .{ .path = "src/host.zig", .text = @embedFile("host.zig") },
         .{ .path = "src/asm.zig", .text = @embedFile("asm.zig") },
         .{ .path = "src/disasm.zig", .text = @embedFile("disasm.zig") },
+        .{ .path = "src/image.zig", .text = @embedFile("image.zig") },
     } ++ libs_scan;
     for (files) |f| for (banned) |b| if (std.mem.indexOf(u8, f.text, b)) |at| {
         std.debug.print("{s}: offset {d} carries '{s}'\n", .{ f.path, at, b });
@@ -7360,4 +7362,52 @@ test "ealu op 5 is a, op 7 is -a, head[9] makes op 5 -a (fact 132)" {
         try emu.executeBundle(gpa, &state, &.{ row.h, row.w });
         try testing.expectEqual(row.want, state.e[9]);
     }
+}
+
+test "image: init pass then decode arm from one x17 image" {
+    const gpa = testing.allocator;
+    var prog = switch (try asm_mod.assembleProgram(gpa,
+        \\.pass init
+        \\.xdata 0x10, 0x123456
+        \\x17.halt
+        \\.pass decoder
+        \\.ydata 0x20, 0xBEEF
+        \\.param 0xFD83, 4
+        \\x17.halt
+    , .{})) {
+        .ok => |p| p,
+        .err => return error.TestUnexpectedResult,
+    };
+    defer prog.deinit();
+    const bytes = try image.write(gpa, &prog);
+    defer gpa.free(bytes);
+    var img = try image.parse(gpa, bytes);
+    defer img.deinit(gpa);
+
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    const p = try gpa.alloc(u32, 0x4000);
+    defer gpa.free(p);
+    @memset(p, 0);
+    var pass: ?u8 = null;
+    for (img.sections) |sec| {
+        if (pass != null and pass.? != sec.pass) try runImagePass(gpa, &state, p, pass.?);
+        pass = sec.pass;
+        switch (sec.kind) {
+            .p => image.placeRows(p, sec),
+            .x => for (sec.words, 0..) |w, k| try state.x_mem.put(gpa, sec.addr + @as(u32, @intCast(k)), w),
+            .y, .param => for (sec.words, 0..) |w, k| try state.y_mem.put(gpa, sec.addr + @as(u32, @intCast(k)), w),
+        }
+    }
+    try runImagePass(gpa, &state, p, pass.?);
+    try testing.expectEqual(@as(?u32, 0x123456), state.x_mem.get(0x10));
+    try testing.expectEqual(@as(?u32, 4), state.y_mem.get(0xFD83));
+}
+
+fn runImagePass(gpa: std.mem.Allocator, state: *emu.State, p: []const u32, pass: u8) !void {
+    state.halted = false;
+    state.cur_lane = 0;
+    const kind: emu.Arm = if (pass == image.decoder_pass) .{ .decode = 256 } else .pass1;
+    _ = try emu.arm(gpa, state, p, kind, 64);
+    try testing.expect(state.halted);
 }

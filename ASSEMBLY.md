@@ -35,8 +35,9 @@ about the ISA, not borrowed wholesale from 65c816 / any other target.
 .const SAMPLE_RATE  = 44100
 .const WINDOW_LEN   = 0x400
 
-.place main_row = 0x40          # where this program lands (default 0x40)
-.align row                      # pad up to the next row boundary
+.pass decoder                   # this program loads at row 0x40 (q256)
+.ydata 0x20, 0x1234, -1         # host-written Y for this pass
+.org 0x44                       # move forward to row 0x44 (zero fill)
 
 # -------------------- instructions ------------------
 
@@ -115,14 +116,67 @@ bits, has none.
 
 ## Placement and layout
 
-- Default: `main_row = 0x40` (from isa.toml); bundles pack sequentially.
-- `.place main_row = <n>` overrides it.
-- `.align row` pads to the next row boundary (4 syllables).
-- Rows and lanes are a 2D layout: the assembler lays bundles in PC q
-  order (`8*(row/2) + 2*lane + row%2`) and emits the byte image sm1's
-  loader eats.
-- A bundle may NOT cross a row-pair boundary in ways that break PC q
-  order; the assembler catches this and errors (`E_CROSS_ROW_PAIR`).
+An image build (`x17 image -o out.x17i [-g out.json] file.sm`) takes a source
+of passes; the flat `x17 asm` takes one program at q0 and refuses the pass and
+data directives.
+
+```
+.pass init                      # an init pass: loads at row 0 (q0), arms in turn
+.xdata 0x100, 0x123456, -1      # host-written X for this pass (24-bit words)
+.ydata 0x40, 0xBEEF             # host-written Y for this pass (16-bit words)
+    ...code that halts...
+.pass init                      # the next init pass, again at q0
+    ...
+.pass decoder                   # the decoder: loads at row 0x40 = q256 (fact 770)
+.param 0xFD83, 4                # the parameter block, Y:0xFD80..0xFD93
+    ...code...
+```
+
+- Bundles pack in q order, `q = 8*(row/2) + 2*lane + row%2` (fact 45); a
+  row holds 4 syllables, one per lane, and rows go in pairs.
+- `.pass init` / `.pass decoder`: init passes come first, in load order;
+  at most one decoder, last.  A source with no `.pass` is one init pass.
+  Every pass needs at least one bundle.  Labels are q values, so a decoder
+  label reads 256 and up.
+- `.org row`: move forward to an even row inside the current pass,
+  zero-filling.  **A zero syllable is not a no-op** (low5 0x00 heads a
+  7-syllable bundle): code must jump over the gap or halt before it, never
+  fall into it.  Backwards and odd rows are refused.
+- `.xdata addr, w...` (X below 0x1C00, fact 653; 24-bit words),
+  `.ydata addr, w...` (Y below 0x2E80, fact 760; 16-bit words, fact 758),
+  `.param addr, w...` (decoder pass only, Y:0xFD80..0xFD93; Y:0xFD94 is the
+  engine's status header).  Words are constant expressions; negatives store
+  as two's complement.  Blocks of one space must not overlap inside a pass.
+- Each pass is followed by two zero rows (fact 72), and those rows count:
+  the program plus its zero rows must stay within row 0xFFF (fact 771), and
+  an init pass's must stay below the decoder's row 0x40.
+
+### The image file (version 1, little-endian)
+
+```
+0   "X17I"
+4   u16 version = 1
+6   u16 section count
+8   sections, back to back:
+      u8  kind     1 P, 2 X, 3 Y, 4 param
+      u8  pass     init passes 0..N-1 in load order, 0xFF the decoder
+      u16 0
+      u32 addr     P: first row; X, Y, param: first word address
+      u32 count    P: rows; X, Y, param: words
+      payload      P: count*4 u32, row by row, lanes 0..3 per row
+                   X: count u32 (24-bit); Y, param: count u32 (16-bit)
+```
+
+Sections come pass by pass: each pass's P, then its data blocks in source
+order.  A P section runs from the pass's base row through its two zero
+rows; lane l of row r goes to the host's P lane l, row r (handbook §2).
+
+### The debug sidecar (`-g`, JSON)
+
+`{"version":1,"passes":[{"pass","kind","base_row","end_row","bundles":[...],"labels":{name: q}}]}`.
+Each bundle: `q`, `len`, `slots` (`[row, lane]` per syllable), `file`,
+`line`, `text`, and `macro` (`name`, `file`, `line` of the call) when it
+came from a macro body.
 
 ## What v1 ships, what waits
 
@@ -150,7 +204,10 @@ bits, has none.
   runs aligned).  Only whitespace moves; the file is assembled before and
   after and left alone if its bytes would change.  CI checks `examples/`.
   Shipped.
-- Still to come: `.place`, round-trip gate on a whole program.
+- Passes, `.org`, `.xdata` / `.ydata` / `.param`, the image file and its
+  debug sidecar (`x17 image`; see Placement and layout).  Shipped.
+- Still to come: round-trip gate on a whole program; a silicon-safe gate
+  (measured forms only) over an image.
 
 `.align` is deliberately absent: a zero syllable is not a no-op (low5 0x00
 heads a 7-syllable bundle), so padding needs a measured no-op form first.

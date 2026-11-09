@@ -52,6 +52,13 @@ pub fn build(b: *std.Build) void {
     emu_mod.addImport("isa", isa_mod);
     emu_mod.addImport("asm", asm_mod);
 
+    const image_mod = b.addModule("image", .{
+        .root_source_file = b.path("src/image.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    image_mod.addImport("asm", asm_mod);
+
     const dispatch_mod = b.createModule(.{
         .root_source_file = b.path("src/dispatch.zig"),
         .target = target,
@@ -62,6 +69,7 @@ pub fn build(b: *std.Build) void {
     dispatch_mod.addImport("isa", isa_mod);
     dispatch_mod.addImport("asm", asm_mod);
     dispatch_mod.addImport("emu", emu_mod);
+    dispatch_mod.addImport("image", image_mod);
     exe_mod.addImport("dispatch", dispatch_mod);
     exe_mod.addImport("emu", emu_mod);
 
@@ -117,6 +125,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(isa_t).step);
     const asm_t = b.addTest(.{ .root_module = asm_mod });
     test_step.dependOn(&b.addRunArtifact(asm_t).step);
+    const image_t = b.addTest(.{ .root_module = image_mod });
+    test_step.dependOn(&b.addRunArtifact(image_t).step);
     const emu_t = b.addTest(.{ .root_module = emu_mod });
     test_step.dependOn(&b.addRunArtifact(emu_t).step);
     const gates_t = b.addTest(.{ .root_module = gates_mod });
@@ -135,6 +145,7 @@ pub fn build(b: *std.Build) void {
     lib_mod.addAnonymousImport("PROBES.md", .{ .root_source_file = b.path("PROBES.md") });
     lib_mod.addAnonymousImport("reference.md", .{ .root_source_file = b.path("docs/sm1/reference.md") });
     lib_mod.addImport("host", host_mod);
+    lib_mod.addImport("image", image_mod);
     // -Dtest-filter=<name>: run only the ISA tests whose name contains it (mutation checks).
     const test_filter = b.option([]const u8, "test-filter", "run only lib_test tests matching this");
     const lib_filters: []const []const u8 = if (test_filter) |f| b.dupeStrings(&.{f}) else &.{};
