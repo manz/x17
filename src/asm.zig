@@ -19,7 +19,12 @@
 //!
 //! `.include` and macros expand before pass 1 (expand.zig).
 //!
-//! What waits: data placement in X/Y, `.assert cycles`.
+//! Placement and images (`assembleProgram`, image.zig): `.pass init` /
+//! `.pass decoder` open a program at row 0 / row 0x40, `.org row` moves
+//! forward to a row, and `.xdata` / `.ydata` / `.param` carry a pass's host
+//! data.  The flat entry (`assembleFile*`) takes `.org` but refuses the rest.
+//!
+//! What waits: `.assert cycles`.
 
 const std = @import("std");
 const isa = @import("isa");
@@ -75,6 +80,8 @@ pub const ErrorCode = enum {
     e0027_bad_macro,
     e0028_macro_call,
     e0029_form_collision,
+    e0030_bad_placement,
+    e0031_data_range,
 
     pub fn text(c: ErrorCode) []const u8 {
         return switch (c) {
@@ -107,6 +114,8 @@ pub const ErrorCode = enum {
             .e0027_bad_macro => "E0027",
             .e0028_macro_call => "E0028",
             .e0029_form_collision => "E0029",
+            .e0030_bad_placement => "E0030",
+            .e0031_data_range => "E0031",
         };
     }
 };
@@ -639,6 +648,8 @@ pub const Env = struct {
     symbols: *const SymbolTable,
     pc: u32 = 0,
     sizing: bool = false,
+    /// An image build: `.pass`, `.xdata`, `.ydata` and `.param` are allowed.
+    image: bool = false,
 };
 
 const Value = struct {
@@ -1295,14 +1306,153 @@ pub fn assembleFile(gpa: std.mem.Allocator, source: []const u8) !FileResult {
     return assembleFileWith(gpa, source, .{});
 }
 
-/// Assemble a multi-line source file: expand `.include` and macros
-/// (expand.zig), then two passes (see the file header).  Blank lines and
-/// lines starting with `;` or `#` are comments.  A line is
+/// Assemble a multi-line source file to one flat program at q0: expand
+/// `.include` and macros (expand.zig), then two passes (see the file header).
+/// Blank lines and lines starting with `;` or `#` are comments.  A line is
 /// `[label:] [instruction | directive]`.  Directives: `.const NAME = expr`,
-/// `.assert expr` (checked in pass 2).  On success, returns a newly
+/// `.assert expr` (checked in pass 2), `.org row`.  On success, returns a newly
 /// allocated slice of syllables (caller frees).  On failure, returns a
 /// `FileError` attached to the offending line.
 pub fn assembleFileWith(gpa: std.mem.Allocator, source: []const u8, opts: FileOptions) !FileResult {
+    var r = try assembleProgramWith(gpa, source, opts, false);
+    switch (r) {
+        .err => |fe| return .{ .err = fe },
+        .ok => |*prog| {
+            defer prog.deinit();
+            return .{ .ok = try gpa.dupe(u32, prog.passes[0].syllables) };
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Programs: passes, placement and host data
+// ---------------------------------------------------------------------------
+
+/// The layout facts an image build checks (handbook §2, §11).
+pub const layout = struct {
+    /// Program memory rows (fact 771); a row holds 4 syllables, one per lane.
+    pub const p_rows: u32 = 0x1000;
+    pub const lanes: u32 = 4;
+    /// Zero rows after a program's last row (fact 72).
+    pub const tail_rows: u32 = 2;
+    /// An init pass loads at row 0, the decoder at row 0x40 = q256 (facts 763, 770).
+    pub const init_row: u32 = 0;
+    pub const decoder_row: u32 = 0x40;
+    /// Host-written X stays below 0x1C00 (fact 653); words are 24-bit.
+    pub const x_words: u32 = 0x1C00;
+    /// Host-written Y stays below 0x2E80 (fact 760); words are 16-bit (fact 758).
+    pub const y_words: u32 = 0x2E80;
+    /// The parameter block, Y:0xFD80 up to the status header at Y:0xFD94.
+    pub const param_lo: u32 = 0xFD80;
+    pub const param_hi: u32 = 0xFD94;
+
+    /// q order runs column-major over row pairs (fact 45).
+    pub fn qOf(row: u32, lane: u32) u32 {
+        return 8 * (row / 2) + 2 * lane + row % 2;
+    }
+    pub fn rowOf(q: u32) u32 {
+        return 2 * (q / 8) + q % 2;
+    }
+    pub fn laneOf(q: u32) u32 {
+        return (q % 8) / 2;
+    }
+    /// The highest row any of q in [base, end) sits in; `end > base`.
+    pub fn lastRow(base: u32, end: u32) u32 {
+        var hi: u32 = 0;
+        var q = base;
+        while (q < end) : (q += 1) hi = @max(hi, rowOf(q));
+        return hi;
+    }
+};
+
+pub const PassKind = enum { init, decoder };
+pub const Space = enum { x, y, param };
+
+pub const DataBlock = struct {
+    space: Space,
+    addr: u32,
+    /// X: 24-bit, Y and param: 16-bit, already masked.
+    words: []const u32,
+    file: []const u8,
+    line: usize,
+};
+
+pub const Pass = struct {
+    kind: PassKind,
+    /// The pass's first row: 0 for init, 0x40 for the decoder.
+    base_row: u32,
+    /// Syllables from q = qOf(base_row, 0), in q order.
+    syllables: []const u32,
+    data: []const DataBlock,
+    sites: []const BundleSite,
+
+    pub fn baseQ(self: *const Pass) u32 {
+        return layout.qOf(self.base_row, 0);
+    }
+    /// The last row the program writes, the two zero rows after it included.
+    pub fn endRow(self: *const Pass) u32 {
+        const b = self.baseQ();
+        return layout.lastRow(b, b + @as(u32, @intCast(self.syllables.len))) + layout.tail_rows;
+    }
+};
+
+pub const Label = struct { name: []const u8, q: u32, pass: usize };
+
+/// Where one bundle of a pass came from (full strings, unlike the fixed-size `Site`).
+pub const BundleSite = struct {
+    q: u32,
+    len: u32,
+    file: []const u8,
+    line: usize,
+    text: []const u8,
+    /// The macro call the line was expanded from, if any.
+    call: ?struct { name: []const u8, file: []const u8, line: usize } = null,
+};
+
+/// An assembled source: init passes in load order, then at most one decoder.
+pub const Program = struct {
+    arena: std.heap.ArenaAllocator,
+    passes: []const Pass = &.{},
+    labels: []const Label = &.{},
+
+    pub fn deinit(self: *Program) void {
+        self.arena.deinit();
+    }
+};
+
+pub const ProgramResult = union(enum) { ok: Program, err: FileError };
+
+/// Assemble a source as an image: `.pass` blocks, `.org`, and per-pass host data
+/// (see the file header).  A source with no `.pass` is one init pass.
+pub fn assembleProgram(gpa: std.mem.Allocator, source: []const u8, opts: FileOptions) !ProgramResult {
+    return assembleProgramWith(gpa, source, opts, true);
+}
+
+const PassBuild = struct {
+    kind: PassKind,
+    base_row: u32,
+    opened_at: ?usize,
+    syllables: std.ArrayList(u32) = .empty,
+    data: std.ArrayList(DataBlock) = .empty,
+    sites: std.ArrayList(BundleSite) = .empty,
+    last_line: ?usize = null,
+
+    fn finish(self: *PassBuild) Pass {
+        return .{
+            .kind = self.kind,
+            .base_row = self.base_row,
+            .syllables = self.syllables.items,
+            .data = self.data.items,
+            .sites = self.sites.items,
+        };
+    }
+};
+
+fn passDiag(span: Span, msg: []const u8, hint: []const u8) Diagnostic {
+    return diagAt(.e0030_bad_placement, span, msg, hint).err;
+}
+
+fn assembleProgramWith(gpa: std.mem.Allocator, source: []const u8, opts: FileOptions, image: bool) !ProgramResult {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
     var x: expand.Expander = .{ .arena = arena_state.allocator(), .gpa = gpa, .loader = opts.loader };
@@ -1313,46 +1463,174 @@ pub fn assembleFileWith(gpa: std.mem.Allocator, source: []const u8, opts: FileOp
 
     var symbols: SymbolTable = .empty;
     defer symbols.deinit(gpa);
-    var list: std.ArrayList(u32) = .empty;
-    errdefer list.deinit(gpa);
+    var prog: Program = .{ .arena = std.heap.ArenaAllocator.init(gpa) };
+    errdefer prog.deinit();
 
     for ([_]bool{ true, false }) |sizing| {
-        var pc: u32 = 0;
-        for (x.out.items) |l| {
-            const env: Env = .{ .symbols = &symbols, .pc = pc, .sizing = sizing };
-            const r = try fileLine(gpa, l.text, &symbols, env);
-            switch (r) {
-                .err => |d| {
-                    list.deinit(gpa);
-                    return .{ .err = FileError.from(l, d) };
-                },
-                .none => {},
-                .bundle => |b| {
-                    if (!sizing) {
-                        try list.appendSlice(gpa, b.slice());
-                        if (opts.sites) |out| {
-                            var site: Site = .{ .pc = pc, .line = l.site.line };
-                            site.file.set(l.site.file);
-                            site.text.set(std.mem.trim(u8, l.text, " \t"));
-                            if (l.call) |c| {
-                                site.call_file.set(c.site.file);
-                                site.call_line = c.site.line;
-                            }
-                            try out.append(gpa, site);
-                        }
-                    }
-                    pc += b.len;
-                },
-            }
+        var b: Builder = .{ .gpa = gpa, .pa = prog.arena.allocator(), .sizing = sizing, .opts = opts, .lines = x.out.items };
+        if (try b.run(&symbols, image)) |fail| {
+            prog.deinit();
+            return .{ .err = fail };
+        }
+        if (!sizing) {
+            prog.passes = b.passes.items;
+            prog.labels = b.labels.items;
         }
     }
-    return .{ .ok = try list.toOwnedSlice(gpa) };
+    return .{ .ok = prog };
 }
+
+/// One walk over the expanded lines (either pass): tracks the open pass, its q, and
+/// collects syllables, data and labels on the second walk.
+const Builder = struct {
+    gpa: std.mem.Allocator,
+    pa: std.mem.Allocator,
+    sizing: bool,
+    opts: FileOptions,
+    lines: []const expand.Line,
+    passes: std.ArrayList(Pass) = .empty,
+    labels: std.ArrayList(Label) = .empty,
+    cur: PassBuild = .{ .kind = .init, .base_row = 0, .opened_at = null },
+    pc: u32 = 0,
+    explicit: bool = false,
+    has_decoder: bool = false,
+    implicit_used: bool = false,
+    /// The line of each init pass's last bundle once its end row reaches the decoder's.
+    init_overlap: ?usize = null,
+
+    fn fail(self: *Builder, at: usize, d: Diagnostic) FileError {
+        return FileError.from(self.lines[at], d);
+    }
+
+    fn run(self: *Builder, symbols: *SymbolTable, image: bool) !?FileError {
+        for (self.lines, 0..) |l, i| {
+            const env: Env = .{ .symbols = symbols, .pc = self.pc, .sizing = self.sizing, .image = image };
+            var label: ?[]const u8 = null;
+            const r = try fileLine(self.gpa, l.text, symbols, env, &label);
+            if (label) |name| {
+                if (!self.sizing) try self.labels.append(self.pa, .{ .name = try self.pa.dupe(u8, name), .q = self.pc, .pass = self.passes.items.len });
+            }
+            const fe: ?FileError = switch (r) {
+                .err => |d| self.fail(i, d),
+                .none => null,
+                .bundle => |b| try self.bundle(l, i, b),
+                .pass => |p| try self.open(i, p.kind, p.span),
+                .org => |o| try self.org(i, o.row, o.span),
+                .data => |blk| try self.addData(l, i, blk),
+            };
+            if (fe != null) return fe;
+        }
+        if (try self.close()) |fe| return fe;
+        if (self.has_decoder) {
+            if (self.init_overlap) |at| return self.fail(at, passDiag(.{ .start = 0, .end = 0 }, "an init pass reaches row 0x40 with its two zero rows", "init passes stay below the decoder's row 0x40"));
+        }
+        return null;
+    }
+
+    fn bundle(self: *Builder, l: expand.Line, i: usize, b: Bundle) !?FileError {
+        if (self.cur.opened_at == null) self.implicit_used = true;
+        if (!self.sizing) {
+            try self.cur.syllables.appendSlice(self.pa, b.slice());
+            const text = std.mem.trim(u8, l.text, " \t");
+            var bs: BundleSite = .{ .q = self.pc, .len = @intCast(b.len), .file = try self.pa.dupe(u8, l.site.file), .line = l.site.line, .text = try self.pa.dupe(u8, text) };
+            if (l.call) |c| bs.call = .{ .name = try self.pa.dupe(u8, c.name), .file = try self.pa.dupe(u8, c.site.file), .line = c.site.line };
+            try self.cur.sites.append(self.pa, bs);
+            if (self.opts.sites) |out| {
+                var site: Site = .{ .pc = self.pc, .line = l.site.line };
+                site.file.set(l.site.file);
+                site.text.set(text);
+                if (l.call) |c| {
+                    site.call_file.set(c.site.file);
+                    site.call_line = c.site.line;
+                }
+                try out.append(self.gpa, site);
+            }
+        }
+        self.cur.last_line = i;
+        self.pc += b.len;
+        return null;
+    }
+
+    /// `.pass kind`: close the open pass, start the next at its base row.
+    fn open(self: *Builder, i: usize, kind: PassKind, span: Span) !?FileError {
+        if (self.implicit_used and !self.explicit)
+            return self.fail(i, passDiag(span, "'.pass' after code or data outside any pass", "put every bundle and data line under a '.pass'"));
+        if (self.has_decoder)
+            return self.fail(i, passDiag(span, "a pass after the decoder", "init passes come first; the decoder is the last pass"));
+        if (self.explicit) {
+            if (try self.close()) |fe| return fe;
+        }
+        self.explicit = true;
+        if (kind == .decoder) self.has_decoder = true;
+        const row = if (kind == .decoder) layout.decoder_row else layout.init_row;
+        self.cur = .{ .kind = kind, .base_row = row, .opened_at = i };
+        self.pc = layout.qOf(row, 0);
+        return null;
+    }
+
+    fn close(self: *Builder) !?FileError {
+        const at = self.cur.opened_at orelse 0;
+        if (self.cur.last_line == null) {
+            if (self.cur.opened_at == null and self.passes.items.len == 0 and self.cur.data.items.len == 0) {
+                // An empty flat source: one empty pass.
+                if (!self.sizing) try self.passes.append(self.pa, self.cur.finish());
+                return null;
+            }
+            return self.fail(at, passDiag(.{ .start = 0, .end = 0 }, "a pass with no bundles", "every pass is a program; add its code or drop the '.pass'"));
+        }
+        const last = self.cur.last_line.?;
+        const end = layout.lastRow(layout.qOf(self.cur.base_row, 0), self.pc) + layout.tail_rows;
+        if (end >= layout.p_rows)
+            return self.fail(last, passDiag(.{ .start = 0, .end = 0 }, "the program runs past row 0xFFF with its two zero rows", "program memory is rows 0..0xFFF (fact 771)"));
+        if (self.cur.kind == .init and end >= layout.decoder_row and self.init_overlap == null) self.init_overlap = last;
+        if (!self.sizing) try self.passes.append(self.pa, self.cur.finish());
+        return null;
+    }
+
+    fn org(self: *Builder, i: usize, row: u32, span: Span) !?FileError {
+        if (row >= layout.p_rows) return self.fail(i, passDiag(span, "'.org' row past 0xFFF", "program memory is rows 0..0xFFF"));
+        if (row % 2 != 0) return self.fail(i, passDiag(span, "'.org' to an odd row", "q order runs over row pairs; an odd row starts mid-pair"));
+        const q = layout.qOf(row, 0);
+        if (q < self.pc) return self.fail(i, passDiag(span, "'.org' moves backwards", "'.org' only moves forward from the current q"));
+        if (!self.sizing) try self.cur.syllables.appendNTimes(self.pa, 0, q - self.pc);
+        self.pc = q;
+        return null;
+    }
+
+    fn addData(self: *Builder, l: expand.Line, i: usize, blk: DataLine) !?FileError {
+        defer self.gpa.free(blk.words);
+        if (self.cur.opened_at == null) self.implicit_used = true;
+        if (blk.space == .param and self.cur.kind != .decoder)
+            return self.fail(i, diagAt(.e0031_data_range, blk.span, "'.param' outside the decoder pass", "the parameter block is written before the decode arm").err);
+        if (self.sizing) return null;
+        for (self.cur.data.items) |o| {
+            if (o.space == blk.space and blk.addr < o.addr + o.words.len and o.addr < blk.addr + blk.words.len) {
+                var buf: [128]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "overlaps the block at line {d}", .{o.line}) catch buf[0..0];
+                return self.fail(i, diagAt(.e0031_data_range, blk.span, msg, "one pass writes each address once").err);
+            }
+        }
+        try self.cur.data.append(self.pa, .{
+            .space = blk.space,
+            .addr = blk.addr,
+            .words = try self.pa.dupe(u32, blk.words),
+            .file = try self.pa.dupe(u8, l.site.file),
+            .line = l.site.line,
+        });
+        return null;
+    }
+};
+
+const DataLine = struct { space: Space, addr: u32, words: []u32, span: Span };
 
 const LineResult = union(enum) {
     none,
     bundle: Bundle,
     err: Diagnostic,
+    pass: struct { kind: PassKind, span: Span },
+    org: struct { row: u32, span: Span },
+    /// `words` is gpa-allocated; the builder frees it.
+    data: DataLine,
 };
 
 fn lineErr(r: Result) LineResult {
@@ -1362,7 +1640,7 @@ fn lineErr(r: Result) LineResult {
 /// One file line in either pass.  Pass 1 (env.sizing) binds labels and
 /// constants; pass 2 re-evaluates constants with every symbol known and
 /// checks asserts.
-fn fileLine(gpa: std.mem.Allocator, raw: []const u8, symbols: *SymbolTable, env: Env) !LineResult {
+fn fileLine(gpa: std.mem.Allocator, raw: []const u8, symbols: *SymbolTable, env: Env, label: *?[]const u8) !LineResult {
     var lex = Lexer{ .src = raw };
     var start: usize = 0;
     // `name:` at the start of the line binds name to this bundle's q
@@ -1373,6 +1651,7 @@ fn fileLine(gpa: std.mem.Allocator, raw: []const u8, symbols: *SymbolTable, env:
     if (first.kind == .ident and peekKind(&lex) == .colon) {
         _ = lex.next();
         start = lex.i;
+        label.* = first.text;
         if (env.sizing) {
             if (try define(gpa, symbols, first, env.pc)) |d| return .{ .err = d };
         }
@@ -1461,11 +1740,126 @@ fn directive(gpa: std.mem.Allocator, lex: *Lexer, dir: Token, symbols: *SymbolTa
         }
         return .none;
     }
+    if (std.mem.eql(u8, dir.text, ".org")) {
+        const val = switch (parseExpr(lex, env)) {
+            .ok => |v| v,
+            .err => |r| return lineErr(r),
+        };
+        if (expectEnd(lex)) |d| return .{ .err = d };
+        if (val.v < 0 or val.v > 0xFFFF_FFFF) return lineErr(diagAt(.e0030_bad_placement, val.span, "'.org' row out of range", "rows are 0..0xFFF"));
+        return .{ .org = .{ .row = @intCast(val.v), .span = val.span } };
+    }
+    const image_only = [_][]const u8{ ".pass", ".xdata", ".ydata", ".param" };
+    for (image_only) |name| if (std.mem.eql(u8, dir.text, name) and !env.image) {
+        var d = Diagnostic{ .code = .e0023_bad_directive, .span = tokSpan(dir) };
+        var buf: [96]u8 = undefined;
+        d.setMsg(std.fmt.bufPrint(&buf, "'{s}' needs an image build", .{dir.text}) catch buf[0..0]);
+        d.setHint("build passes and host data with `x17 image`");
+        return .{ .err = d };
+    };
+    if (std.mem.eql(u8, dir.text, ".pass")) return passDirective(lex, dir);
+    if (std.mem.eql(u8, dir.text, ".xdata")) return dataDirective(gpa, lex, .x, env);
+    if (std.mem.eql(u8, dir.text, ".ydata")) return dataDirective(gpa, lex, .y, env);
+    if (std.mem.eql(u8, dir.text, ".param")) return dataDirective(gpa, lex, .param, env);
     var d = Diagnostic{ .code = .e0023_bad_directive, .span = tokSpan(dir) };
     var buf: [96]u8 = undefined;
     d.setMsg(std.fmt.bufPrint(&buf, "unknown directive '{s}'", .{dir.text}) catch buf[0..0]);
-    d.setHint("directives: .const NAME = expr, .assert expr");
+    d.setHint("directives: .const, .assert, .org, .pass, .xdata, .ydata, .param");
     return .{ .err = d };
+}
+
+fn passDirective(lex: *Lexer, dir: Token) LineResult {
+    const kind_tok = switch (nextTok(lex)) {
+        .tok => |t| t,
+        .err => |r| return lineErr(r),
+    };
+    const kind: ?PassKind = if (kind_tok.kind != .ident)
+        null
+    else if (std.mem.eql(u8, kind_tok.text, "init"))
+        .init
+    else if (std.mem.eql(u8, kind_tok.text, "decoder"))
+        .decoder
+    else
+        null;
+    if (kind == null) {
+        var d = Diagnostic{ .code = .e0023_bad_directive, .span = tokSpan(kind_tok) };
+        setExpected(&d, "'init' or 'decoder'", kind_tok);
+        d.setHint(".pass init | .pass decoder");
+        return .{ .err = d };
+    }
+    if (expectEnd(lex)) |d| return .{ .err = d };
+    return .{ .pass = .{ .kind = kind.?, .span = .{ .start = dir.start, .end = kind_tok.start + kind_tok.text.len } } };
+}
+
+/// `.xdata addr, w...` / `.ydata addr, w...` / `.param addr, w...`: range-checked in pass 2.
+fn dataDirective(gpa: std.mem.Allocator, lex: *Lexer, space: Space, env: *const Env) !LineResult {
+    const addr = switch (parseExpr(lex, env)) {
+        .ok => |v| v,
+        .err => |r| return lineErr(r),
+    };
+    var words: std.ArrayList(u32) = .empty;
+    errdefer words.deinit(gpa);
+    var last_span = addr.span;
+    while (true) {
+        const t = switch (nextTok(lex)) {
+            .tok => |tok| tok,
+            .err => |r| {
+                words.deinit(gpa);
+                return lineErr(r);
+            },
+        };
+        if (t.kind == .end) break;
+        if (t.kind != .comma) {
+            words.deinit(gpa);
+            var d = Diagnostic{ .code = .e0006_missing_comma, .span = tokSpan(t) };
+            setExpected(&d, "','", t);
+            return .{ .err = d };
+        }
+        const v = switch (parseExpr(lex, env)) {
+            .ok => |v| v,
+            .err => |r| {
+                words.deinit(gpa);
+                return lineErr(r);
+            },
+        };
+        last_span = v.span;
+        if (!env.sizing) {
+            if (dataValueDiag(space, v)) |d| {
+                words.deinit(gpa);
+                return .{ .err = d };
+            }
+        }
+        const mask: i64 = if (space == .x) 0xFFFFFF else 0xFFFF;
+        try words.append(gpa, @intCast(v.v & mask));
+    }
+    const span: Span = .{ .start = addr.span.start, .end = last_span.end };
+    if (words.items.len == 0) {
+        return lineErr(diagAt(.e0005_missing_operand, span, "no data words", "write the words after the address: .xdata addr, w0, w1"));
+    }
+    if (!env.sizing) {
+        if (dataAddrDiag(space, addr.v, words.items.len, span)) |d| {
+            words.deinit(gpa);
+            return .{ .err = d };
+        }
+    }
+    return .{ .data = .{ .space = space, .addr = @intCast(std.math.clamp(addr.v, 0, 0xFFFF_FFFF)), .words = try words.toOwnedSlice(gpa), .span = span } };
+}
+
+fn dataValueDiag(space: Space, v: Value) ?Diagnostic {
+    const lo: i64, const hi: i64 = if (space == .x) .{ -0x800000, 0xFFFFFF } else .{ -0x8000, 0xFFFF };
+    if (v.v >= lo and v.v <= hi) return null;
+    const hint = if (space == .x) "X words are 24-bit" else "Y words are 16-bit (fact 758)";
+    return diagAt(.e0031_data_range, v.span, "data word out of range", hint).err;
+}
+
+fn dataAddrDiag(space: Space, addr: i64, n: usize, span: Span) ?Diagnostic {
+    const lo: i64, const hi: i64, const hint: []const u8 = switch (space) {
+        .x => .{ 0, layout.x_words, "host-written X stays below 0x1C00 (fact 653)" },
+        .y => .{ 0, layout.y_words, "host-written Y stays below 0x2E80 (fact 760)" },
+        .param => .{ layout.param_lo, layout.param_hi, "the parameter block is Y:0xFD80..0xFD93" },
+    };
+    if (addr >= lo and addr + @as(i64, @intCast(n)) <= hi) return null;
+    return diagAt(.e0031_data_range, span, "data block outside its window", hint).err;
 }
 
 /// Thin wrapper that drops diagnostics and returns the bundle.
@@ -1859,8 +2253,132 @@ test "file: a false .assert fails in pass 2" {
 }
 
 test "file: unknown directive" {
-    const fe = try fileErr(".org 0x40");
+    const fe = try fileErr(".align 2");
     try testing.expectEqual(ErrorCode.e0023_bad_directive, fe.diag.code);
+}
+
+fn progOk(src: []const u8) !Program {
+    return switch (try assembleProgram(testing.allocator, src, .{})) {
+        .ok => |p| p,
+        .err => |fe| {
+            var buf: [2048]u8 = undefined;
+            const n = renderDiagAt(&buf, "test", fe.line, fe.lineText(), fe.diag);
+            std.debug.print("{s}", .{buf[0..n]});
+            return error.TestUnexpectedResult;
+        },
+    };
+}
+
+fn progErr(src: []const u8) !FileError {
+    switch (try assembleProgram(testing.allocator, src, .{})) {
+        .ok => |p| {
+            var q = p;
+            q.deinit();
+            return error.TestUnexpectedResult;
+        },
+        .err => |fe| return fe,
+    }
+}
+
+test "layout: q order runs column-major over row pairs (fact 45)" {
+    try testing.expectEqual(@as(u32, 256), layout.qOf(0x40, 0));
+    try testing.expectEqual(@as(u32, 1), layout.qOf(1, 0));
+    try testing.expectEqual(@as(u32, 2), layout.qOf(0, 1));
+    for (0..64) |q| {
+        const qq: u32 = @intCast(q);
+        try testing.expectEqual(qq, layout.qOf(layout.rowOf(qq), layout.laneOf(qq)));
+    }
+}
+
+test "file: .org pads with zero syllables to the row's q" {
+    const w = try fileOk("x17.halt\n.org 2\nx17.halt");
+    defer testing.allocator.free(w);
+    try testing.expectEqual(@as(usize, 11), w.len);
+    try testing.expectEqual(@as(u32, 0), w[3]);
+    try testing.expectEqual(@as(u32, 0x00000017), w[8]);
+}
+
+test "file: .org refuses backwards, odd and past-the-end rows" {
+    for ([_][]const u8{ "x17.halt\nx17.halt\nx17.halt\n.org 0", ".org 3", ".org 0x1000" }) |src| {
+        const fe = try fileErr(src);
+        try testing.expectEqual(ErrorCode.e0030_bad_placement, fe.diag.code);
+    }
+}
+
+test "file: image directives need an image build" {
+    for ([_][]const u8{ ".pass init", ".xdata 0, 1", ".ydata 0, 1", ".param 0xFD80, 1" }) |src| {
+        const fe = try fileErr(src);
+        try testing.expectEqual(ErrorCode.e0023_bad_directive, fe.diag.code);
+    }
+}
+
+test "program: init passes at q0, the decoder at row 0x40 = q256" {
+    var p = try progOk(
+        \\.pass init
+        \\.xdata 0x10, 1, -1
+        \\a: x17.halt
+        \\.pass init
+        \\.ydata 0x2E7F, 0xFFFF
+        \\x17.halt
+        \\.pass decoder
+        \\.param 0xFD83, 4
+        \\top: x17.halt
+    );
+    defer p.deinit();
+    try testing.expectEqual(@as(usize, 3), p.passes.len);
+    try testing.expectEqual(PassKind.decoder, p.passes[2].kind);
+    try testing.expectEqual(@as(u32, 256), p.passes[2].baseQ());
+    try testing.expectEqual(@as(u32, 0xFFFFFF), p.passes[0].data[0].words[1]);
+    try testing.expectEqual(Space.param, p.passes[2].data[0].space);
+    try testing.expectEqual(@as(u32, 256), p.labels[1].q);
+    try testing.expectEqual(@as(usize, 2), p.labels[1].pass);
+    // 3 syllables at q256..258 sit in rows 0x40 and 0x41; two zero rows follow.
+    try testing.expectEqual(@as(u32, 0x43), p.passes[2].endRow());
+}
+
+test "program: a source without .pass is one init pass" {
+    var p = try progOk("x17.halt\n.xdata 0, 5");
+    defer p.deinit();
+    try testing.expectEqual(@as(usize, 1), p.passes.len);
+    try testing.expectEqual(PassKind.init, p.passes[0].kind);
+}
+
+test "program: pass order and content rules" {
+    for ([_][]const u8{
+        "x17.halt\n.pass init\nx17.halt", // code before the first .pass
+        ".pass decoder\nx17.halt\n.pass init\nx17.halt", // a pass after the decoder
+        ".pass init\n.pass decoder\nx17.halt", // an empty pass
+    }) |src| {
+        const fe = try progErr(src);
+        try testing.expectEqual(ErrorCode.e0030_bad_placement, fe.diag.code);
+    }
+}
+
+test "program: data windows and word widths" {
+    for ([_][]const u8{
+        ".pass init\nx17.halt\n.xdata 0x1BFF, 1, 2", // X past 0x1C00 (fact 653)
+        ".pass init\nx17.halt\n.ydata 0x2E80, 1", // Y past 0x2E80 (fact 760)
+        ".pass init\nx17.halt\n.ydata 0, 0x10000", // Y is 16-bit (fact 758)
+        ".pass init\nx17.halt\n.xdata 0, 0x1000000", // X is 24-bit
+        ".pass init\nx17.halt\n.param 0xFD83, 4", // .param outside the decoder
+        ".pass decoder\nx17.halt\n.param 0xFD94, 1", // the status header is the engine's
+        ".pass init\nx17.halt\n.xdata 0, 1, 2\n.xdata 1, 3", // overlap in one pass
+    }) |src| {
+        const fe = try progErr(src);
+        try testing.expectEqual(ErrorCode.e0031_data_range, fe.diag.code);
+    }
+}
+
+test "program: init passes stay below the decoder's row 0x40" {
+    const fe = try progErr(".pass init\n.org 0x3C\nx17.halt\nx17.halt\nx17.halt\n.pass decoder\nx17.halt");
+    try testing.expectEqual(ErrorCode.e0030_bad_placement, fe.diag.code);
+    var ok = try progOk(".pass init\n.org 0x3C\nx17.halt\n.pass decoder\nx17.halt");
+    ok.deinit();
+}
+
+test "program: a program's two zero rows stay inside row 0xFFF" {
+    const fe = try progErr(".pass decoder\n.org 0xFFE\nx17.halt");
+    try testing.expectEqual(ErrorCode.e0030_bad_placement, fe.diag.code);
 }
 
 test "file: an immediate out of range reports the value and the field" {
