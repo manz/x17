@@ -5469,15 +5469,23 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
     return runFrom(gpa, state, syllables, 0, 256);
 }
 
-/// A host arm (+0x984, or the decode arm +0x988 / +0x98C: the same, 768), entering at q0 (763,
-/// 769).  After a 0x08 / 0x0D the next arm is abnormal (block 1 never stores; what runs moves
-/// with layout, OPEN): reported as Parked, and the arm after it runs (315).
-pub fn arm(gpa: std.mem.Allocator, state: *State, syllables: []const u32, max_bundles: usize) RunError!usize {
+/// The host's two arms (770): pass-1 (+0x984) enters q0; decode (+0x98C) enters at the engine-
+/// order syllable the host wrote to +0x988.
+pub const Arm = union(enum) { pass1, decode: usize };
+
+/// Run a host arm.  After a 0x08 / 0x0D the next arm is abnormal (block 1 never stores; what runs
+/// moves with layout, OPEN): reported as Parked, and the arm after it runs (315, 768, 769).
+pub fn arm(gpa: std.mem.Allocator, state: *State, syllables: []const u32, kind: Arm, max_bundles: usize) RunError!usize {
     if (state.next_arm_parks) {
         state.next_arm_parks = false;
         return RunError.Parked;
     }
-    return runFrom(gpa, state, syllables, 0, max_bundles);
+    const entry: usize = switch (kind) {
+        .pass1 => 0,
+        .decode => |q| q,
+    };
+    if (entry >= syllables.len) return RunError.UnknownBundleLength;
+    return runFrom(gpa, state, syllables, entry, max_bundles);
 }
 
 /// runLinear from syllable `start`, with a bundle budget of `max_bundles`
