@@ -218,7 +218,6 @@ x01.selneg	Seven-syllable bundle that writes b into dest if b is negative, other
 x03.tap	One-bundle FIR tap: loads sL from X at An, increments An, and adds 2*sL*sB into the 48-bit sum in sHi:sLo.
 x03.tap0	First FIR tap of a sum: loads sL from X at An, increments An, and sets sHi:sLo to 2*sL*sB without accumulating.
 x18.ytap	Y-side FIR tap: loads sL from Y at eN, increments eN, and adds 2*sL*sB to the 48-bit sum in sHi:sLo.
-x19.ldn	Loads s from Y at an e address (sign-extended) and steps an e register through the address unit.
 x18.or	Bitwise OR of two s registers into a destination s register, at 24 bits.
 x18.max	Signed 24-bit maximum of two s registers into a destination s register.
 x18.min	Signed 24-bit minimum of two s registers into a destination s register.

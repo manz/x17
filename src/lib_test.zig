@@ -5836,8 +5836,8 @@ test "two-pointer taps: x19ld + x03.tap and x02 load + x18.ytap, primed, exact (
     var prng = std.Random.DefaultPrng.init(705);
     const rnd = prng.random();
     // Pair B: s4 <- Y:[e2], e2 += 1 (sign-extended); then x03.tap s2, #2, s4, s10, s9.
-    const yl = try asm_mod.assembleOne("x19.ldn s4, #1, e2, #2");
-    try testing.expectEqualSlices(u32, &.{ 0x00000019, 0x00100129, 0x00001000, 0xE4000403 }, yl.slice()[0..4]);
+    const yl = try asm_mod.assembleOne("x19.ld s4, #1, e2, #2");
+    try testing.expectEqualSlices(u32, &.{ 0x00000019, 0x00000109, 0x00001000, 0xE4000403 }, yl.slice()[0..4]);
     const yld = yl.slice()[0..4].*;
     const tb = try asm_mod.assembleOne("x03.tap s2, #2, s4, s10, s9");
     // Pair A: s2 <- X:[A9], A9 += 1; then x18.ytap s1, e3, s2, s4, s6 (Y zero-extends).
@@ -5895,10 +5895,10 @@ test "two-pointer taps: x19ld + x03.tap and x02 load + x18.ytap, primed, exact (
     };
 }
 
-test "Y 0x8000: x18.ytap zero-extends, x19.ldn sign-extends and stores nothing (705)" {
+test "Y 0x8000: x18.ytap zero-extends, x19.ld sign-extends and stores nothing (705)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
     const yt = try asm_mod.assembleOne("x18.ytap s1, e3, s2, s4, s6");
-    const ln = try asm_mod.assembleOne("x19.ldn s4, #1, e2, #2");
+    const ln = try asm_mod.assembleOne("x19.ld s4, #1, e2, #2");
     var st = emu.State{};
     defer st.deinit(testing.allocator);
     try st.y_mem.put(testing.allocator, 0x40, 0x8000);
@@ -5929,7 +5929,7 @@ test "x18 class 110 code 11 op 1: w3[26:25] picks the relation (706)" {
     };
 }
 
-test "x19.ld stores nothing; w1[20] and w1[5] are inert (707)" {
+test "x19.ld stores nothing (707); w1[20] or w1[5] is refused (793)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
     const base = try asm_mod.assembleOne("x19.ld s5, #5, e10, #2");
     for ([_]u32{ 0, 1 << 20, 1 << 5, (1 << 20) | (1 << 5) }) |extra| {
@@ -5940,7 +5940,12 @@ test "x19.ld stores nothing; w1[20] and w1[5] are inert (707)" {
         try st.y_mem.put(testing.allocator, 0x700, 0x111);
         try st.y_mem.put(testing.allocator, 0x701, 0xAAAA);
         const w = base.slice();
-        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ w[0], w[1] | extra, w[2], w[3] } ++ halt), 0, 8);
+        const prog = [_]u32{ w[0], w[1] | extra, w[2], w[3] } ++ halt;
+        if (extra != 0) {
+            try testing.expectError(error.UnknownForm, emu.runFrom(testing.allocator, &st, &prog, 0, 8));
+            continue;
+        }
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
         try testing.expectEqual(@as(u32, 0x111), st.s[5]);
         try testing.expectEqual(@as(u32, 0x701), st.e[10]);
         try testing.expectEqual(@as(?u32, 0xAAAA), st.getY(0x701));

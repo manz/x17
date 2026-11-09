@@ -3240,20 +3240,6 @@ Y-side FIR tap: loads sL from Y at eN, increments eN, and adds 2*sL*sB to the 48
 | =sHi | s | s1 | [31:28] |
 | =sLo | s | s2 | [3:0] |
 
-### `x19.ldn`
-
-Loads s from Y at an e address (sign-extended) and steps an e register through the address unit.
-
-- Syllables: 4
-- Base: `00000019` `00100028` `00000000` `e0000403`
-
-| operand | kind | syllable | bits |
-|---|---|---|---|
-| dest_s | s | s2 | [13:10] |
-| dest_e_half | imm | s1 | [2:0] |
-| y_src_e | e | s3 | [28:25] |
-| fn_op | imm | s1 | [10:7] |
-
 ### `x18.or`
 
 Bitwise OR of two s registers into a destination s register, at 24 bits.

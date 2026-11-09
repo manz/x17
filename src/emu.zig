@@ -4177,8 +4177,9 @@ fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const y_src_e: u32 = (w3 >> 25) & 0xF;
     const fn_op: u32 = (w1 >> 7) & 0xF;
 
-    // w1 outside its operand fields: w1[3] set, w1[20] and w1[5] inert (707); others refused.
-    if (w1 & ~@as(u32, 0x1007A7) != 0x8) return RunError.UnknownForm;
+    // w1 outside its operand fields: w1[3] set, the rest clear.  w1[20] and w1[5] write an A
+    // (from the last X access's index) and grow the e step on later loads (793): refused.
+    if (w1 & ~@as(u32, 0x0787) != 0x8) return RunError.UnknownForm;
 
     // 1) Load from Y memory using the pre-state element register, sign-extended (705).
     const src_e_val: u32 = if (y_src_e == 0) 0 else state.e[y_src_e];

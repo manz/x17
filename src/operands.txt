@@ -1469,10 +1469,6 @@ x18.ytap	=sL	s	24	27	s2
 x18.ytap	=eN	e	20	23	s1
 x18.ytap	=sHi	s	28	31	s1
 x18.ytap	=sLo	s	0	3	s2
-x19.ldn	dest_s	s	10	13	s2
-x19.ldn	dest_e_half	imm	0	2	s1
-x19.ldn	y_src_e	e	25	28	s3
-x19.ldn	fn_op	imm	7	10	s1
 x18.or	dest_s	s	8	11	s1
 x18.or	a_s	s	2	5	s2
 x18.or	b_s	s	4	7	s1
