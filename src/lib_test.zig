@@ -7067,6 +7067,8 @@ fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label
     @memset(prof, 0);
     state.profile = prof;
     defer state.profile = null;
+    // Syllable i sits in lane i mod 4 of the whole image, so each arm counts lanes from 0.
+    state.cur_lane = 0;
     const r = if (decode) emu.decodeArm(gpa, state, prog, 0, 50_000_000) else emu.runFrom(gpa, state, prog, 0, 50_000_000);
     var n: u64 = 0;
     for (prof) |c| n += c;
