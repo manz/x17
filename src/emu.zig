@@ -127,8 +127,15 @@ pub const State = struct {
     }
 };
 
-/// X / Y reads of never-written addresses, counted while `State.unset_reads` is set.
-pub const UnsetReads = struct { x: u64 = 0, y: u64 = 0, first_x: ?u32 = null, first_y: ?u32 = null };
+/// X / Y reads of never-written addresses (and OPEN p skips), counted while `State.unset_reads` is set.
+pub const UnsetReads = struct {
+    x: u64 = 0,
+    y: u64 = 0,
+    first_x: ?u32 = null,
+    first_y: ?u32 = null,
+    /// x18 class-011 p writes left alone because their compare is OPEN (776).
+    open_p: u64 = 0,
+};
 
 pub const RunError = error{
     UnknownForm,
@@ -2876,6 +2883,8 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32, p3: bool) RunError!u32 {
     const op = (w1 >> 15) & 7;
     const n = (w2 >> 6) & 0xF;
     return switch ((h >> 25) & 0x3F) {
+        // 777: 0x0E op 0 is a + b at every n; n only picks 776's p write.
+        0x0E => if (op == 0) x18C3SlotAlu(op, a, b) else if (n != 0) RunError.UnknownForm else x18C3SlotAlu(op, a, b),
         // 644: 0x11 runs as 0x10.
         0x10, 0x11 => if (cond646(n, p3)) x18C3SlotAlu(op, a, b) else x18C3TableB(op, a, b),
         0x23 => if (cond646(n, p3)) x18C3SlotAlu(op, a, b) else b & M24,
@@ -2956,7 +2965,7 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (ld_dest != 0) state.s[ld_dest] = ld_val;
     if (dest_r != 0) state.r[dest_r] = r_val;
     if (dest_a != 0) state.a[dest_a] = v;
-    if (try x18C3Cond(h, w1, w2, v)) |bit| {
+    if (try x18C3Cond(h, w1, w2, v, if (state.unset_reads) |u| &u.open_p else null)) |bit| {
         const pd: u32 = (w2 >> 14) & 0xF;
         // p0 reads 1 (682): cond 0's true into p0 changes nothing; other p0 writes are unmeasured.
         if (pd != 0) state.p[pd] = @intFromBool(bit) else if ((h >> 25) & 0xF != 0) return RunError.UnknownForm;
@@ -2969,7 +2978,7 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 /// or b != s0 b enters the compare (OPEN): p is left alone, as 743 left the unmeasured conds,
 /// so the measured value rows (641-644) keep running.  Codes 0x10 up keep 743: cond 0 true,
 /// 11 v <= 0, 13 v == 0, others leave p alone.  null: no write.
-fn x18C3Cond(h: u32, w1: u32, w2: u32, v: u32) RunError!?bool {
+fn x18C3Cond(h: u32, w1: u32, w2: u32, v: u32, open_p: ?*u64) RunError!?bool {
     const code: u32 = (h >> 25) & 0x3F;
     const cond: u32 = code & 0xF;
     const n: u32 = (w2 >> 6) & 0xF;
@@ -2979,7 +2988,10 @@ fn x18C3Cond(h: u32, w1: u32, w2: u32, v: u32) RunError!?bool {
         else => true,
     };
     if (code < 0x10) {
-        if (n != 0 or (w1 >> 4) & 0xF != 0) return null;
+        if (n != 0 or (w1 >> 4) & 0xF != 0) {
+            if (open_p) |c| c.* += 1;
+            return null;
+        }
         return switch (cond) {
             2, 5, 8 => sv >= 0,
             11, 12 => sv <= 0,

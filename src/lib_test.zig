@@ -7141,6 +7141,20 @@ test "x18 class 011 codes below 0x10 always write p (fact 776)" {
     try testing.expectEqual(@as(u8, 1), state.p[12]);
 }
 
+test "x18 class 011 code 0x0E op 0 is a + b at every n (fact 777)" {
+    const gpa = testing.allocator;
+    for ([_][3]u32{ .{ 0, 0, 0 }, .{ 0x123, 0x10, 0x133 }, .{ 0xFFFFFF, 0x10, 0xF }, .{ 0x123, 0xFFFFF0, 0x113 } }) |k| for (0..16) |nn| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = k[0];
+        state.s[5] = k[1];
+        const n: u32 = @intCast(nn);
+        // dest s9 (w1[11:8]), b = s5 (w1[7:4]), a = s3 (w2[5:2]), p dest p12.
+        try emu.executeBundle(gpa, &state, &.{ 0x0E << 25 | 0x18, 9 << 8 | 5 << 4, 12 << 14 | n << 6 | 3 << 2, 0x60000009 });
+        try testing.expectEqual(k[2], state.s[9]);
+    };
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};
@@ -7253,7 +7267,7 @@ fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label
     var n: u64 = 0;
     for (prof) |c| n += c;
     const verdict: []const u8 = if (r) |_| (if (state.halted) "ran, halted" else "ran off the end") else |e| @errorName(e);
-    std.debug.print("compat {s}: {s} after {d} bundles, unset reads X {d} Y {d}\n", .{ label, verdict, n, unset.x, unset.y });
+    std.debug.print("compat {s}: {s} after {d} bundles, unset reads X {d} Y {d}, OPEN p skips {d}\n", .{ label, verdict, n, unset.x, unset.y, unset.open_p });
 }
 
 test "compat: set image, configure then decode arm" {
