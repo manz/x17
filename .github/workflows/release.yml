@@ -28,7 +28,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tar -C out/bin -czf x17-aarch64-linux.tar.gz x17
-          # v0.0.1a0, v1.0.0b2, v1.0.0rc1: alpha, beta and release-candidate tags are prereleases.
-          pre=""
-          [[ "$GITHUB_REF_NAME" =~ [0-9](a|b|rc)[0-9]+$ ]] && pre="--prerelease"
-          gh release create "$GITHUB_REF_NAME" x17-aarch64-linux.tar.gz --title "$GITHUB_REF_NAME" --generate-notes $pre
+          gh release create "$GITHUB_REF_NAME" x17-aarch64-linux.tar.gz --title "$GITHUB_REF_NAME" --generate-notes
