@@ -102,6 +102,7 @@ pub const State = struct {
         const v = self.y_mem.get(addr);
         if (v == null) if (self.unset_reads) |u| {
             u.y += 1;
+            if (u.first_y == null) u.first_y = addr;
         };
         return if (v) |w| w & 0xFFFF else null;
     }
@@ -110,6 +111,7 @@ pub const State = struct {
         const v = self.x_mem.get(addr);
         if (v == null) if (self.unset_reads) |u| {
             u.x += 1;
+            if (u.first_x == null) u.first_x = addr;
         };
         return v;
     }
@@ -124,7 +126,7 @@ pub const State = struct {
 };
 
 /// X / Y reads of never-written addresses, counted while `State.unset_reads` is set.
-pub const UnsetReads = struct { x: u64 = 0, y: u64 = 0 };
+pub const UnsetReads = struct { x: u64 = 0, y: u64 = 0, first_x: ?u32 = null, first_y: ?u32 = null };
 
 pub const RunError = error{
     UnknownForm,

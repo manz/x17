@@ -6931,7 +6931,7 @@ test "unset_reads counts X / Y reads of never-written addresses" {
     _ = state.getY(1);
     _ = state.getY(2);
     _ = state.getY(3);
-    try testing.expectEqual(emu.UnsetReads{ .x = 1, .y = 2 }, unset);
+    try testing.expectEqual(emu.UnsetReads{ .x = 1, .y = 2, .first_x = 2, .first_y = 2 }, unset);
 }
 
 // Compatibility run of an external program read in place from X17_COMPAT_PROG (a little-endian
@@ -6962,4 +6962,92 @@ test "compat: external program from reset state" {
         for (prof) |c| n += c;
         std.debug.print("compat: {s} after {d} bundles, unset reads X {d} Y {d}\n", .{ @errorName(e), n, unset.x, unset.y });
     }
+}
+
+// Compatibility run of a set image read in place from X17_COMPAT_IMAGE: a sequence of sets, each
+// u32 run_count then runs { u32 cpu_addr, u32 len_bytes | width << 28, bytes }; P lane l row r
+// at 0x22020000 + l * 0x4000 + 4r (syllable 4r + l), X word a at 0x22030000 + 4a, Y word a at
+// 0x22038000 + 2a.  Set 1 is armed from syllable 0; set 2 is then loaded, Y:0xFD80..0xFD87
+// seeded with X17_COMPAT_PARAMS (eight hex halfwords), and armed from syllable 0 again.
+// Skipped when unset.  Reports only ran / refused / wedged, bundle counts and unset reads.
+const CompatImage = struct {
+    bytes: []const u8,
+    off: usize = 0,
+
+    fn word(self: *CompatImage) !u32 {
+        if (self.off + 4 > self.bytes.len) return error.Truncated;
+        defer self.off += 4;
+        return std.mem.readInt(u32, self.bytes[self.off..][0..4], .little);
+    }
+
+    /// Apply the next set to `prog` and `state`'s X / Y.
+    fn applySet(self: *CompatImage, gpa: std.mem.Allocator, prog: []u32, state: *emu.State) !void {
+        const runs = try self.word();
+        for (0..runs) |_| {
+            const addr = try self.word();
+            const len: usize = (try self.word()) & 0x0FFFFFFF;
+            if (self.off + len > self.bytes.len) return error.Truncated;
+            const data = self.bytes[self.off..][0..len];
+            self.off += len;
+            try storeRun(gpa, prog, state, addr, data);
+        }
+    }
+
+    fn storeRun(gpa: std.mem.Allocator, prog: []u32, state: *emu.State, addr: u32, data: []const u8) !void {
+        if (addr >= 0x22038000) {
+            var i: usize = 0;
+            while (i + 2 <= data.len) : (i += 2)
+                try state.y_mem.put(gpa, (addr - 0x22038000 + @as(u32, @intCast(i))) / 2, std.mem.readInt(u16, data[i..][0..2], .little));
+        } else if (addr >= 0x22030000) {
+            var i: usize = 0;
+            while (i + 4 <= data.len) : (i += 4)
+                try state.x_mem.put(gpa, (addr - 0x22030000 + @as(u32, @intCast(i))) / 4, std.mem.readInt(u32, data[i..][0..4], .little) & 0xFFFFFF);
+        } else {
+            const rel = addr - 0x22020000;
+            const lane = rel / 0x4000;
+            var i: usize = 0;
+            while (i + 4 <= data.len) : (i += 4) {
+                const row = (rel % 0x4000 + i) / 4;
+                prog[row * 4 + lane] = std.mem.readInt(u32, data[i..][0..4], .little);
+            }
+        }
+    }
+};
+
+fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label: []const u8) void {
+    var unset = emu.UnsetReads{};
+    state.unset_reads = &unset;
+    defer state.unset_reads = null;
+    const prof = gpa.alloc(u64, prog.len) catch return;
+    defer gpa.free(prof);
+    @memset(prof, 0);
+    state.profile = prof;
+    defer state.profile = null;
+    const r = emu.runFrom(gpa, state, prog, 0, 50_000_000);
+    var n: u64 = 0;
+    for (prof) |c| n += c;
+    const verdict: []const u8 = if (r) |_| (if (state.halted) "ran, halted" else "ran off the end") else |e| @errorName(e);
+    std.debug.print("compat {s}: {s} after {d} bundles, unset reads X {d} Y {d}\n", .{ label, verdict, n, unset.x, unset.y });
+}
+
+test "compat: set image, configure then decode arm" {
+    const path = testing.environ.getPosix("X17_COMPAT_IMAGE") orelse return error.SkipZigTest;
+    const gpa = testing.allocator;
+    const bytes = std.Io.Dir.cwd().readFileAlloc(testing.io, path, gpa, .limited(1 << 22)) catch return error.SkipZigTest;
+    defer gpa.free(bytes);
+    const prog = try gpa.alloc(u32, 0x4000);
+    defer gpa.free(prog);
+    @memset(prog, 0);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    var img = CompatImage{ .bytes = bytes };
+    try img.applySet(gpa, prog, &state);
+    compatArm(gpa, &state, prog, "set 1");
+    try img.applySet(gpa, prog, &state);
+    if (testing.environ.getPosix("X17_COMPAT_PARAMS")) |params| {
+        var it = std.mem.tokenizeAny(u8, params, " ,");
+        var a: u32 = 0xFD80;
+        while (it.next()) |hw| : (a += 1) try state.y_mem.put(gpa, a, try std.fmt.parseInt(u32, hw, 16));
+    }
+    compatArm(gpa, &state, prog, "set 2");
 }
