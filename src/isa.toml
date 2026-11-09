@@ -276,6 +276,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x17 S1 class 001 + S2 class 000: v = AGU10[S1[10:7]](y = R<head[30:27]>, i = head[26:11]); s<S2[13:10]>, e<2*S1[2:0]> <- v;
 # S1[27] = 0 wedges; S2[8] and S2[5:2] OPEN (fact 136, own-x17agu).
 # x17sty R mux w2[3:1] = 7 (543): R<w1[14:11]> <- AGU10[w1[10:7]](x = e<w1[18:15]>, the store's address register, y = R<h[30:27]>, i = #h[26:11]), beside the Y store; muxes 1/5 stay 439's ALU.  Under mux 7 the e<2*w1[2:0] + h[31]> side write (658) reads back 0, source OPEN (664): refused when nonzero.  own-x17styr
+# x17.sty e side write fn 6 (773): e<2*w1[2:0] + h[31]> <- e<k> + R<h[30:27]>, 16-bit wrap (R = 1, 2, 0xFFFF; 0xFFFE + 3 = 1), after the store at the old e<k>; in place when d = k.  fn 2 = x + 1 again.  own-x17sty6
 # x17agu2 (540): R<S1[14:11]> also takes the AGU value (x17ld's R field); s<S1[22:19]> is written from an OPEN source (not X17LD_OP), unmodelled.  own-x17a2r
 # x17 S1 class 000 + S2 class 011: s<S1[22:19]> <- OP[head[10:5]](s<S2[28:25]>, n = S1[26:23]) (op 3 = asr);
 # e<2*S1[2:0]+head[31]> <- Y:[e<S1[18:15]>] when S2[3] (fact 137, own-x17ld).

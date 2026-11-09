@@ -1201,7 +1201,7 @@ const Collision = struct {
 fn collides(form: []const u8, operand: []const u8, v: u32) ?Collision {
     // x17.sty needs S1 class != 0 (fact 275); S1[31:29] is src_lo. Silicon has run
     // sources s1, s9, s5 and s3 only; class 000 there is unmeasured.
-    if ((std.mem.eql(u8, form, "x17.sty") or std.mem.eql(u8, form, "x17.styi")) and std.mem.eql(u8, operand, "src_lo") and v & 7 == 0)
+    if ((std.mem.eql(u8, form, "x17.sty") or std.mem.eql(u8, form, "x17.styi") or std.mem.eql(u8, form, "x17.stys")) and std.mem.eql(u8, operand, "src_lo") and v & 7 == 0)
         return .{
             .msg = "x17.sty from s0 or s8 makes S1 class 000: x17 decodes that as x17.ld, and silicon has never run it",
             .hint = "copy the value to a register whose index is not a multiple of 8 first (s1, s3, s5, s9 are measured)",

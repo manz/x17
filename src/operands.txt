@@ -1072,6 +1072,7 @@ x17.eagu	y_hi	imm	30	31	s1
 x17.eagu	fn	imm	25	28	s2
 
 # x17.sty <y_e>, #<src_lo>, #<src_hi>
+# x17.stys <y_e>, #<src_lo>, #<src_hi>, <inc_e>, <step_R>
 # x17.ms <ld_s>, #<imm>, <st_s>, <y_e>, #<ld_en>, #<e_lo>, #<e_hi>, <dest_R>, #<mux>
 x17.ms	ld_s	s	21	24	head
 x17.ms	imm	imm	5	20	head
@@ -1090,6 +1091,11 @@ x17.styi	y_e	e	15	18	s1
 x17.styi	src_lo	imm	29	31	s1
 x17.styi	src_hi	imm	0	0	s2
 x17.styi	inc_e	eh	0	2	s1
+x17.stys	y_e	e	15	18	s1
+x17.stys	src_lo	imm	29	31	s1
+x17.stys	src_hi	imm	0	0	s2
+x17.stys	inc_e	eh	0	2	s1
+x17.stys	step_R	R	27	30	head
 x17.styr	dest_R	R	11	14	s1
 x17.styr	src_s	s	25	28	s2
 x17.styr	shift	imm	23	26	s1

@@ -731,6 +731,11 @@ x17.sty    3   0x00000017   0x08000108   0x60003800
 # steps the store pointer and saves an x18.eagu.
 x17.styi   3   0x00000017   0x08000100   0x60003800
 
+# x17.stys: x17.sty stepping its pointer by an R stride (fact 773): e<d> <- e<k> + R<h[30:27]>
+# after the store (S1[10:7] = 6, AGU10 x + y, 16-bit wrap), the store at the old e<k>, d =
+# 2*S1[2:0] + h[31].  `x17.stys e3, #3, #0, e3, R2` stores s3 at e3, then e3 += R2.
+x17.stys   3   0x00000017   0x08000300   0x60003800
+
 # x17.styr: the x17sty row's R write, S2[3:1] = 1, S1[27] = 1, S2[12:11] = 10 (fact 439):
 # R<S1[14:11]> <- s<S2[28:25]> << S1[26:23] (X17LD_OP row 0, h[10:5] = 0).
 x17.styr   3   0x00000017   0xA8000000   0x60001202

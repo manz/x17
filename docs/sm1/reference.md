@@ -389,6 +389,7 @@ Emulator:
 > x17 S1 class 001 + S2 class 000: v = AGU10[S1[10:7]](y = R<head[30:27]>, i = head[26:11]); s<S2[13:10]>, e<2*S1[2:0]> <- v;
 > S1[27] = 0 wedges; S2[8] and S2[5:2] OPEN (fact 136, own-x17agu).
 > x17sty R mux w2[3:1] = 7 (543): R<w1[14:11]> <- AGU10[w1[10:7]](x = e<w1[18:15]>, the store's address register, y = R<h[30:27]>, i = #h[26:11]), beside the Y store; muxes 1/5 stay 439's ALU.  Under mux 7 the e<2*w1[2:0] + h[31]> side write (658) reads back 0, source OPEN (664): refused when nonzero.  own-x17styr
+> x17.sty e side write fn 6 (773): e<2*w1[2:0] + h[31]> <- e<k> + R<h[30:27]>, 16-bit wrap (R = 1, 2, 0xFFFF; 0xFFFE + 3 = 1), after the store at the old e<k>; in place when d = k.  fn 2 = x + 1 again.  own-x17sty6
 > x17agu2 (540): R<S1[14:11]> also takes the AGU value (x17ld's R field); s<S1[22:19]> is written from an OPEN source (not X17LD_OP), unmodelled.  own-x17a2r
 > x17 S1 class 000 + S2 class 011: s<S1[22:19]> <- OP[head[10:5]](s<S2[28:25]>, n = S1[26:23]) (op 3 = asr);
 > e<2*S1[2:0]+head[31]> <- Y:[e<S1[18:15]>] when S2[3] (fact 137, own-x17ld).
@@ -2986,6 +2987,23 @@ Emulator:
 > x17.styi: x17.sty plus the post-increment it carries anyway (fact 658): e<d> <- e<k> + 1
 > after the store, d = 2*S1[2:0] + h[31] (S1[10:7] = 2, AGU10 x + 1). `x17.styi e3, #3, #0, e3`
 > steps the store pointer and saves an x18.eagu.
+
+### `x17.stys`
+
+- Syllables: 3
+- Base: `00000017` `08000300` `60003800`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| y_e | e | s1 | [18:15] |
+| src_lo | imm | s1 | [31:29] |
+| src_hi | imm | s2 | [0:0] |
+| inc_e | eh | s1 | [2:0] |
+| step_R | r_reg | head | [30:27] |
+
+> x17.stys: x17.sty stepping its pointer by an R stride (fact 773): e<d> <- e<k> + R<h[30:27]>
+> after the store (S1[10:7] = 6, AGU10 x + y, 16-bit wrap), the store at the old e<k>, d =
+> 2*S1[2:0] + h[31].  `x17.stys e3, #3, #0, e3, R2` stores s3 at e3, then e3 += R2.
 
 ### `x17.styr`
 

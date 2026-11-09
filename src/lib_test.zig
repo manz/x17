@@ -5056,6 +5056,36 @@ test "x17.styi steps its pointer in the store bundle (658)" {
     try testing.expectEqual(@as(u32, 0x2E33), st.e[12]);
 }
 
+test "x17.stys steps its pointer by R<h[30:27]> after the store (fact 773)" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\        x17.stys e3, #3, #0, e3, R1
+        \\        x17.stys e3, #5, #0, e3, R2
+        \\        x17.stys e3, #3, #0, e2, R4
+        \\        x17.stys e5, #3, #0, e5, R5
+        \\        x17.halt
+    );
+    defer gpa.free(prog);
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    st.e[3] = 0x2E10;
+    st.e[5] = 0xFFFE;
+    st.r[1] = 1;
+    st.r[2] = 2;
+    st.r[4] = 0xFFFF;
+    st.r[5] = 3;
+    st.s[3] = 0x11;
+    st.s[5] = 0x22;
+    _ = try emu.runFrom(gpa, &st, prog, 0, 16);
+    try testing.expectEqual(@as(?u32, 0x11), st.y_mem.get(0x2E10));
+    try testing.expectEqual(@as(?u32, 0x22), st.y_mem.get(0x2E11));
+    try testing.expectEqual(@as(?u32, 0x11), st.y_mem.get(0x2E13));
+    try testing.expectEqual(@as(u32, 0x2E13), st.e[3]);
+    try testing.expectEqual(@as(u32, 0x2E12), st.e[2]); // -1 via R4 = 0xFFFF
+    try testing.expectEqual(@as(?u32, 0x11), st.y_mem.get(0xFFFE));
+    try testing.expectEqual(@as(u32, 0x0001), st.e[5]); // 16-bit wrap
+}
+
 test "x19alu sets p<w2[17:14]> under w3[23:20] = 0xE (647)" {
     for ([_]struct { pk: u32, s4: u32 }{ .{ .pk = 2, .s4 = 0x12 }, .{ .pk = 3, .s4 = 0 }, .{ .pk = 15, .s4 = 0x12 } }) |c| {
         var st = emu.State{};
