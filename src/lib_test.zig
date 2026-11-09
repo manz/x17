@@ -6356,7 +6356,7 @@ test "x02.vs stores at the old A while A steps; the read slot yields xd (fact 73
     try testing.expectEqual(@as(u32, 0x61), state.a[9]);
 }
 
-test "x02 w2-slot modes 1 / 2 are x +/- (xd << 8) at 24 bits; w1[17] refused (fact 733)" {
+test "x02 w2-slot modes 1 / 2 are x +/- (xd << 8) at 24 bits; w1[17] keeps the sign (facts 733, 756)" {
     const gpa = testing.allocator;
     // s3 <- X:[A9], A9 + 1, s10 <- mode(x = s4, X = xd << 8), s6 <- s4 + s9; xd = v from the read before.
     for ([_]struct { mode: u32, w17: u32 = 0, v: u32, want: ?u32 }{
@@ -6364,8 +6364,19 @@ test "x02 w2-slot modes 1 / 2 are x +/- (xd << 8) at 24 bits; w1[17] refused (fa
         .{ .mode = 1, .v = 0xFFF234, .want = 0xF23900 },
         .{ .mode = 2, .v = 0x1234, .want = 0xEDD100 },
         .{ .mode = 2, .v = 0xFFF234, .want = 0x0DD100 },
-        .{ .mode = 1, .w17 = 1, .v = 0x1234, .want = null }, // sign collapse: scale OPEN
-        .{ .mode = 2, .w17 = 1, .v = 0x1234, .want = null },
+        // 756: w1[17] = 1 adds sx16(xd[15:0]) << 8 >> 24 (mode 2: of its negation).
+        .{ .mode = 1, .w17 = 1, .v = 0x001234, .want = 0x500 },
+        .{ .mode = 2, .w17 = 1, .v = 0x001234, .want = 0x4FF },
+        .{ .mode = 1, .w17 = 1, .v = 0x008000, .want = 0x4FF },
+        .{ .mode = 2, .w17 = 1, .v = 0x008000, .want = 0x500 },
+        .{ .mode = 1, .w17 = 1, .v = 0x010000, .want = 0x500 },
+        .{ .mode = 2, .w17 = 1, .v = 0x010000, .want = 0x500 },
+        .{ .mode = 1, .w17 = 1, .v = 0x400000, .want = 0x500 },
+        .{ .mode = 2, .w17 = 1, .v = 0x400000, .want = 0x500 },
+        .{ .mode = 1, .w17 = 1, .v = 0xC00000, .want = 0x500 },
+        .{ .mode = 2, .w17 = 1, .v = 0xC00000, .want = 0x500 },
+        .{ .mode = 1, .w17 = 1, .v = 0x7FFF00, .want = 0x4FF },
+        .{ .mode = 2, .w17 = 1, .v = 0x7FFF00, .want = 0x500 },
     }) |k| {
         var state = emu.State{};
         defer state.deinit(gpa);
