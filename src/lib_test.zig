@@ -3238,7 +3238,7 @@ test "0x00's s-slot sub-mux 11 reads D (fact 595)" {
     for ([_]struct { w4: u32 = 0x20, w5: u32, want: u32 }{
         .{ .w5 = 0xC3800910, .want = 0x1234 },
         .{ .w4 = 0x120, .w5 = 0xC3800910, .want = 0x7777 }, // w4[8:5] = 9
-        .{ .w5 = 0xC3800900, .want = 0xA050 }, // yd
+        .{ .w5 = 0xC3800900, .want = 0xA050 }, // yd (s1 gets it sign-extended, 726)
     }) |k| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -3248,9 +3248,70 @@ test "0x00's s-slot sub-mux 11 reads D (fact 595)" {
         try state.y_mem.put(gpa, 0x720, 0x1234);
         try state.y_mem.put(gpa, 0x760, 0x7777);
         _ = try emu.runFrom(gpa, &state, &.{ 0x28001000, 0x0002A005 | (3 << 7), 0xE8010000, 0x00000020, k.w4, k.w5, 0x35001002, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
-        try testing.expectEqual(k.want, state.s[1]);
+        try testing.expectEqual(if (k.want & 0x8000 != 0) k.want | 0xFF0000 else k.want, state.s[1]);
         // The fresh read sets yd; the yd copy leaves it.
         try testing.expectEqual(k.want, state.yd);
+    }
+}
+
+fn runX00Mux(state: *emu.State, mux: u32, w5: u32) !void {
+    // 595's bundle (s1 <- the s slot, D = Y:[e1] with w5[4]) with w6[3:1] = mux.
+    const w6: u32 = (0x35001002 & ~@as(u32, 0xE)) | mux << 1;
+    _ = try emu.runFrom(testing.allocator, state, &.{ 0x28001000, 0x0002A005 | (3 << 7), 0xE8010000, 0x00000020, 0x20, w5, w6, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+}
+
+test "0x00's s-slot muxes read D: 1 sign-, 2/4/5 zero-extended, 3 D << 8 (facts 724, 726, 729)" {
+    const gpa = testing.allocator;
+    for ([_]struct { mux: u32, y: u32, want: u32 }{
+        .{ .mux = 1, .y = 0x1234, .want = 0x001234 },
+        .{ .mux = 3, .y = 0x1234, .want = 0x123400 },
+        .{ .mux = 4, .y = 0x1234, .want = 0x091A00 },
+        .{ .mux = 5, .y = 0x1234, .want = 0x001234 },
+        .{ .mux = 3, .y = 0x00C5, .want = 0x00C500 },
+        .{ .mux = 4, .y = 0x00C5, .want = 0x006280 },
+        .{ .mux = 1, .y = 0x8000, .want = 0xFF8000 },
+        .{ .mux = 3, .y = 0x8000, .want = 0x800000 },
+        .{ .mux = 4, .y = 0x8000, .want = 0x400000 },
+        .{ .mux = 5, .y = 0x8000, .want = 0x008000 },
+        .{ .mux = 1, .y = 0xFF00, .want = 0xFFFF00 },
+        .{ .mux = 3, .y = 0xFF00, .want = 0xFF0000 },
+        .{ .mux = 4, .y = 0xFF00, .want = 0x7F8000 },
+        .{ .mux = 5, .y = 0xFF00, .want = 0x00FF00 },
+        .{ .mux = 2, .y = 0x8000, .want = 0x008000 }, // 729: mux 2 zero-extends
+        .{ .mux = 2, .y = 0xFF00, .want = 0x00FF00 },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0x720;
+        state.yd = 0xA050;
+        try state.y_mem.put(gpa, 0x720, k.y);
+        try runX00Mux(&state, k.mux, 0xC3800910);
+        try testing.expectEqual(k.want, state.s[1]);
+        try testing.expectEqual(k.y, state.yd); // the raw word
+    }
+}
+
+test "0x00's s-slot muxes 3/4/5 ignore w5[24:23] and read yd with w5[4] = 0 (fact 726)" {
+    const gpa = testing.allocator;
+    for ([_]u32{ 3, 4, 5 }) |mux| {
+        for ([_]u32{ 0, 1, 2, 3 }) |sub| {
+            for ([_]u32{ 0, 1 }) |fresh| {
+                var state = emu.State{};
+                defer state.deinit(gpa);
+                state.e[1] = 0x720;
+                state.yd = 0x0BCD;
+                try state.y_mem.put(gpa, 0x720, 0x1234);
+                try runX00Mux(&state, mux, (0xC2000900 | sub << 23) | fresh << 4);
+                const d: u32 = if (fresh == 1) 0x1234 else 0x0BCD;
+                const want: u32 = switch (mux) {
+                    3 => d << 8,
+                    4 => d << 7,
+                    else => d,
+                };
+                try testing.expectEqual(want, state.s[1]);
+                try testing.expectEqual(d, state.yd);
+            }
+        }
     }
 }
 

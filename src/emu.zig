@@ -1074,10 +1074,19 @@ fn x00Op(x01: bool, op: u32, a: u32, b: u32) RunError!u32 {
     return r & 0xFFFF;
 }
 
+/// 0x00's D (595, 550's rule): w5[4] = 1 a fresh Y:[e<w4[8:5]>] (setting yd), 0 yd.
+fn x00D(state: *const State, w4: u32, w5: u32, yd_new: *?u32) u32 {
+    if ((w5 >> 4) & 1 == 0) return state.yd & 0xFFFF;
+    const ri: u32 = (w4 >> 5) & 0xF;
+    const v = (state.getY(if (ri == 0) 0 else state.e[ri]) orelse 0) & 0xFFFF;
+    yd_new.* = v;
+    return v;
+}
+
 /// The 7-word 0x00 bundle and 0x01 (head[29] inert), slots latched then
 /// written (fact 227-230, 234, 241-244, 286):
-/// s slot s<w6[15:12]> <- mux w6[3:1] (0 / sub / sub / D / D / D / #head[26:11] / 0),
-///   sub-mux w5[24:23] (#imm / 1 / the w1[10:7] op / D); D is not modelled;
+/// s slot s<w6[15:12]> <- mux w6[3:1] (0 / sub / sub / D << 8 / D << 7 / D / #head[26:11] / 0),
+///   sub-mux w5[24:23] (#imm / 1 / the w1[10:7] op / D), D = x00D (595, 724);
 /// Y store Y:[e<w4[8:5]>] <- s<w4[16:13]>, X store X:[A<w2[22:18]>] <- sx24 s<w2[13:10]>,
 ///   enabled by w5[5:4] / w5[2:1] = 11 on 0x00 and 8 bits higher on 0x01;
 /// ALU slot s<w6[7:4]> <- ALU05[head[10:5]](0, s<w2[5:2]>) with shift w2[9:6];
@@ -1185,20 +1194,26 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             // 0x01 (508, 509): rows 10/11 are y + i, y - i (y = R<head[30:27]>, i = head[26:11]).
             // The rest is w5[11] = 1: AGU10 (x = e<w4[8:5]>), 0: 234's table (512).
             2 => if (x01) try x01Table(state, h, w4, w5, op, imm) else try x00Op(x01, op, state.e[(w4 >> 5) & 0xF], state.e[(w4 >> 1) & 0xF]),
-            // 0x00 sub-mux 3 reads D (595, 550's rule): w5[4] = 1 Y:[e<w4[8:5]>], 0 yd.
-            3 => if (x01) return RunError.UnknownForm else if ((w5 >> 4) & 1 == 0) state.yd & 0xFFFF else blk3: {
-                const ri: u32 = (w4 >> 5) & 0xF;
-                const v = (state.getY(if (ri == 0) 0 else state.e[ri]) orelse 0) & 0xFFFF;
-                yd_new = v;
-                break :blk3 v;
-            },
+            3 => if (x01) return RunError.UnknownForm else x00D(state, w4, w5, &yd_new),
             else => unreachable,
         };
         break :blk switch (src) {
             0, 7 => 0,
-            1, 2 => sub_val,
+            // 726, 729: sub-mux D sign-extends on mux 1, zero-extends on mux 2.
+            1 => if (sub == 3) sx16To24(sub_val) else sub_val,
+            2 => sub_val,
+            // 724, 726: muxes 3/4/5 ignore w5[24:23]; 3 = D << 8, 4 = zx(D) << 7, 5 = zx(D).
+            3, 4, 5 => blk2: {
+                if (x01) return RunError.UnknownForm;
+                const d = x00D(state, w4, w5, &yd_new);
+                break :blk2 switch (src) {
+                    3 => (d << 8) & M24,
+                    4 => d << 7,
+                    else => d,
+                };
+            },
             6 => imm,
-            else => return RunError.UnknownForm,
+            else => unreachable,
         };
     };
 
