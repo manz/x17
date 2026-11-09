@@ -1116,7 +1116,8 @@ fn x00D(state: *const State, w4: u32, w5: u32, yd_new: *?u32) u32 {
 ///   enabled by w5[5:4] / w5[2:1] = 11 on 0x00 and 8 bits higher on 0x01;
 /// ALU slot s<w6[7:4]> <- ALU05[head[10:5]](s<w6[23:20]>, s<w2[5:2]>), shift w2[9:6], m w5[29:27] (725);
 /// MAC slot s<w6[11:8]> <- w4[23] = 1: xd (w4[17] = 1); else acc[15:0],
-///   acc = mode w1[13:11]({s<w2[13:10]> : sx24 s<w4[15:13]>}, 2 s<w6[27:24]> s<w6[31:28]>);
+///   acc = mode w1[13:11]({s<w2[13:10]> : X_lo}, 2 s<w6[27:24]> s<w6[31:28]>),
+///   X_lo = sx24 s<w4[15:13]>, or xd << 8 when w4[15:13] = 0 (755);
 /// multiply s<w6[19:16]> <- mode w1[13:11](X = s<w2[13:10]>, P = s*s >> 23 (24 if w1[17])
 ///   rounded when w1[15] = 1);
 /// control w3[4:0]: jr +w1[25:18], ja w1[25:18], two delay slots.
@@ -1331,9 +1332,10 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             break :blk state.xd & 0xFFFF;
         }
         if (mode == 0) break :blk 0;
+        // 755: w4[15:13] = 0 reads X_lo = xd << 8, not s0.
         const xl: u32 = (w4 >> 13) & 7;
-        if (xl == 0) return RunError.UnknownForm;
-        const x40: i64 = (xs << 24) + sx24(state.s[xl]);
+        const x_lo: u32 = if (xl == 0) (state.xd << 8) & M24 else state.s[xl];
+        const x40: i64 = (xs << 24) + sx24(x_lo);
         const p2: i64 = 2 * pa * pb;
         const acc: i64 = switch (mode) {
             3 => x40,

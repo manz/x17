@@ -6843,3 +6843,18 @@ test "0x00's sel ignores n and p4 and takes every m; asr takes every m (facts 75
         }
     }
 }
+
+test "0x00's MAC low half reads xd << 8 when w4[15:13] = 0 (fact 755)" {
+    const gpa = testing.allocator;
+    // mode 7 (X - 2P): s6 = 0x100, s3 = 0x4000, s5 = 0x2345, dest s4.
+    for ([_][2]u32{ .{ 0x3333, 0xB300 }, .{ 0x0012, 0x9200 }, .{ 0x008A, 0x0A00 } }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[6] = 0x100;
+        state.s[3] = 0x4000;
+        state.s[5] = 0x2345;
+        state.xd = k[0];
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000000, 0x0000F828, 0x00001800, 0x00000000, 0x00100000, 0x06000000, 0x53090400 }, 0, 1);
+        try testing.expectEqual(k[1], state.s[4]);
+    }
+}
