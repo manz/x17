@@ -861,24 +861,32 @@ fn x03AccXIndex(bundle: []const u32) u32 {
 /// The running MAC's accumulator (701): 48 bits, hi = acc[47:24] and lo = acc[23:0], both
 /// 24-bit, fed back as X = sx24(hi) << 24 + lo (unsigned); 24-bit signed operands, P = 2ab.
 /// The sum saturates at both ends of [-2^47, 2^47 - 1] (701, 702).
-fn mac48(x_hi: u32, x_lo: u32, a: u32, b: u32) i64 {
-    const acc: i64 = (@as(i64, sx24(x_hi)) << 24) + (x_lo & M24) + 2 * @as(i64, sx24(a)) * sx24(b);
+/// Modes 6 / 7 run the same acc as 2ab - X / X - 2ab (737).
+fn mac48(mode: u32, x_hi: u32, x_lo: u32, a: u32, b: u32) i64 {
+    const x: i64 = (@as(i64, sx24(x_hi)) << 24) + (x_lo & M24);
+    const p: i64 = 2 * @as(i64, sx24(a)) * sx24(b);
+    const acc: i64 = switch (mode) {
+        4 => p,
+        6 => p - x,
+        7 => x - p,
+        else => x + p,
+    };
     return std.math.clamp(acc, -(@as(i64, 1) << 47), (@as(i64, 1) << 47) - 1);
 }
 
-/// x03 modes 4 and 5 with w1[15] = 0 and w1[17:16] = 0 (670's row): the 701 running MAC;
-/// mode 4 starts it, acc = 2ab with the X registers ignored (702).
+/// x03 modes 4-7 with w1[15] = 0 and w1[17:16] = 0 (670's row): the 701 running MAC;
+/// mode 4 starts it, acc = 2ab with the X registers ignored (702); 6 / 7 subtract (737).
 fn x03Mac48(state: *const State, bundle: []const u32) RunError!?i64 {
     const w1 = bundle[1];
     const w2 = bundle[2];
     const mode = (w1 >> 11) & 7;
-    if ((mode != 4 and mode != 5) or (w1 >> 14) & 1 == 0 or (w1 >> 15) & 7 != 0) return null;
+    if (mode < 4 or (w1 >> 14) & 1 == 0 or (w1 >> 15) & 7 != 0) return null;
     const a = state.s[(w2 >> 1) & 0xF];
     const b = state.s[(w2 >> 5) & 0xF];
-    if (mode == 4) return mac48(0, 0, a, b);
+    if (mode == 4) return mac48(4, 0, 0, a, b);
     const x_hi_s = x03AccXIndex(bundle);
     if (x_hi_s == 0) return RunError.UnknownForm;
-    return mac48(state.s[x_hi_s], state.s[(bundle[5] >> 9) & 0xF], a, b);
+    return mac48(mode, state.s[x_hi_s], state.s[(bundle[5] >> 9) & 0xF], a, b);
 }
 
 fn x03ProductHigh(state: *const State, bundle: []const u32) RunError!?SWrite {
@@ -2935,7 +2943,7 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // Mode 5 floor (w3[8] = 0): the 701 running MAC, 24-bit operands and a 48-bit acc.
     const mac48_on = mode == 5 and (w3 >> 8) & 1 == 0;
     if ((hi_dest != 0 or lo_dest != 0) and mac48_on) {
-        acc = mac48(state.s[(w1 >> 28) & 0xF], state.s[w2 & 0xF], state.s[(w2 >> 24) & 0xF], state.s[(w2 >> 28) & 0xF]);
+        acc = mac48(5, state.s[(w1 >> 28) & 0xF], state.s[w2 & 0xF], state.s[(w2 >> 24) & 0xF], state.s[(w2 >> 28) & 0xF]);
     } else if (hi_dest != 0 or lo_dest != 0) {
         // a and b are measured at 16-bit magnitudes only (665): wider values refused.
         const a_v: i64 = sx24(state.s[(w2 >> 24) & 0xF]);

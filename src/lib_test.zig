@@ -3682,7 +3682,8 @@ test "x03 mode-5-path high dest: modes 6/7 and w1[15] rounding (after fact 605)"
             state.s[4] = if (c.big) 0x0C00 else 5;
             const w1: u32 = 0x00004000 | c.mode << 11 | rnd << 15;
             _ = try emu.runFrom(gpa, &state, &.{ 0x80000003, w1, 0x01441485, 0x00000007, 0x00002C90, 0x00041402, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
-            try testing.expectEqual(if (rnd == 1) c.round else c.floor, state.s[10]);
+            // 605's values are a 16-bit view (0xF780 for the 24-bit 0xFFF780 of 737's 48-bit acc).
+            try testing.expectEqual(if (rnd == 1) c.round else c.floor, state.s[10] & 0xFFFF);
         }
     }
 }
@@ -6437,5 +6438,41 @@ test "x02's w5[10:9] gates the mode-5 read: only 01 reads X memory (fact 739)" {
         _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0x0002A000, 0x00120042, 0x00000009, 0xA5122E18, 0x00004001 | k.g << 9, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(k.want, state.s[3]);
         try testing.expectEqual(@as(u32, 0x61), state.a[9]);
+    }
+}
+
+test "x03 modes 7 / 6 on the 48-bit acc: sat48(X - 2cd) / sat48(2cd - X) (fact 737)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // 701's x03 row: a s2, b s4, hi s10, lo s9.  Mode 4 (2ab), reload, then mode 7 or 6 (2cd).
+    const row = [_]u32{ 0x80000003, 0x40006800, 0x01441485, 0x00000007, 0x00002c80, 0x00041202 };
+    const cases = [_]struct { a: i64, b: i64, c: i64, d: i64 }{
+        .{ .a = 0x123456, .b = 0x0ABCDE, .c = 0x654321, .d = 0x00FEDC },
+        .{ .a = 0x100, .b = 0x200, .c = 0x300, .d = 0x400 },
+        .{ .a = -0x800000, .b = 0x7FFFFF, .c = 0x7FFFFF, .d = 0x7FFFFF }, // saturates low on 7
+        .{ .a = 0x7FFFFF, .b = 0x7FFFFF, .c = -0x800000, .d = 0x7FFFFF }, // saturates high on 7
+    };
+    for (cases) |c| {
+        for ([_]u32{ 7, 6 }) |mode| {
+            var st = emu.State{};
+            defer st.deinit(testing.allocator);
+            var prog: [9]u32 = undefined;
+            @memcpy(prog[0..6], &row);
+            prog[1] = 0x40006000; // mode 4
+            @memcpy(prog[6..9], &halt);
+            st.s[2] = @as(u32, @truncate(@as(u64, @bitCast(c.a)))) & 0xFFFFFF;
+            st.s[4] = @as(u32, @truncate(@as(u64, @bitCast(c.b)))) & 0xFFFFFF;
+            _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+            prog[1] = 0x40006000 | mode << 11;
+            st.s[2] = @as(u32, @truncate(@as(u64, @bitCast(c.c)))) & 0xFFFFFF;
+            st.s[4] = @as(u32, @truncate(@as(u64, @bitCast(c.d)))) & 0xFFFFFF;
+            _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+            const lo48 = -(@as(i64, 1) << 47);
+            const hi48 = (@as(i64, 1) << 47) - 1;
+            const x = std.math.clamp(2 * c.a * c.b, lo48, hi48);
+            const p = 2 * c.c * c.d;
+            const want = std.math.clamp(if (mode == 7) x - p else p - x, lo48, hi48);
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(want >> 24)) & 0xFFFFFF)), st.s[10]);
+            try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(want)) & 0xFFFFFF)), st.s[9]);
+        }
     }
 }
