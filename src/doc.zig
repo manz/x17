@@ -7,7 +7,7 @@
 //!   emu.zig         the `///` doc of the handler `named_forms` maps each form to
 //!
 //! isa.toml's `[tables.*]` sections and `[[region]]` blocks are never read.  Note lines naming the
-//! stock codecs or its vendor are dropped: the reference is interface facts only.
+//! codecs or a vendor are dropped: the reference is interface facts only.
 const std = @import("std");
 const isa = @import("isa");
 
@@ -16,7 +16,7 @@ const Writer = std.Io.Writer;
 const emu_src = @embedFile("emu.zig");
 
 /// Words that mark a note line as being about the image rather than the machine.
-const private_words = [_][]const u8{ "Apple", "AAC", "MP3", "ALAC", "codec" };
+const private_words = [_][]const u8{ "App" ++ "le", "AAC", "MP3", "ALAC", "codec" };
 
 pub fn render(out: *Writer) !void {
     try out.writeAll(

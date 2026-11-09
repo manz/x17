@@ -4489,6 +4489,11 @@ test "the ISA sources quote no image provenance" {
         .{ .path = "src/asm.zig", .text = @embedFile("asm.zig") },
         .{ .path = "src/disasm.zig", .text = @embedFile("disasm.zig") },
         .{ .path = "src/image.zig", .text = @embedFile("image.zig") },
+        .{ .path = "src/doc.zig", .text = @embedFile("doc.zig") },
+        .{ .path = "src/dispatch.zig", .text = @embedFile("dispatch.zig") },
+        .{ .path = "src/expand.zig", .text = @embedFile("expand.zig") },
+        .{ .path = "src/fmt.zig", .text = @embedFile("fmt.zig") },
+        .{ .path = "src/main.zig", .text = @embedFile("main.zig") },
     } ++ libs_scan;
     for (files) |f| for (banned) |b| if (std.mem.indexOf(u8, f.text, b)) |at| {
         std.debug.print("{s}: offset {d} carries '{s}'\n", .{ f.path, at, b });
