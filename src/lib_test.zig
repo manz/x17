@@ -6569,3 +6569,28 @@ test "dld does both loads in one word, with no pointer step (fact 742)" {
         try testing.expectEqual(@as(u32, 0x720), state.e[6]);
     }
 }
+
+test "x18 class 011's p write: cond 11 v <= 0, 13 v == 0, 0 true; w3[21] inert (fact 743)" {
+    const gpa = testing.allocator;
+    // 16000018 00000000 0000800C 60000101: p2 <- cond head[28:25] of op w1[17:15](a = s3).
+    const vs = [_]u32{ 1, 0xFFFFFF, 0, 0x4000 };
+    for ([_]struct { cond: u32, want: [4]u8 }{
+        .{ .cond = 11, .want = .{ 0, 1, 1, 0 } },
+        .{ .cond = 13, .want = .{ 0, 0, 1, 0 } },
+        .{ .cond = 0, .want = .{ 1, 1, 1, 1 } },
+    }) |k| {
+        for ([_]u32{ 0, 2 }) |op| {
+            for ([_]u32{ 0, 1 }) |w21| {
+                for (vs, k.want) |v, want| {
+                    var state = emu.State{};
+                    defer state.deinit(gpa);
+                    state.s[3] = v;
+                    state.p[2] = 1 - want;
+                    const h: u32 = (0x16000018 & ~@as(u32, 0xF << 25)) | k.cond << 25;
+                    _ = try emu.runFrom(gpa, &state, &.{ h, op << 15, 0x0000800C, 0x60000101 | w21 << 21, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
+                    try testing.expectEqual(want, state.p[2]);
+                }
+            }
+        }
+    }
+}

@@ -2859,7 +2859,7 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
 
 /// Class 011 (fact 168, 179, 200, 206, 683): the slot result goes to
 /// s<w1[11:8]> and R<w3[10:7]> (#head[20:5] when w3[3] = 1, 688), and p<w2[17:14]> <- cond head[28:25] of it.
-/// Only cond 11 (negative) is measured; other conds leave p alone.
+/// Conds 0 (true), 11 (v <= 0) and 13 (v == 0) are measured (743); other conds leave p alone.
 /// w3[0] = 0 is the branch form (178), not modelled.
 fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
@@ -2903,9 +2903,17 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (ld_dest != 0) state.s[ld_dest] = ld_val;
     if (dest_r != 0) state.r[dest_r] = r_val;
     if (dest_a != 0) state.a[dest_a] = v;
-    if (((h >> 25) & 0xF) == 11) {
+    // 743: cond 11 v <= 0, 13 v == 0, 0 true (179's "negative" never met v = 0).
+    const cond: u32 = (h >> 25) & 0xF;
+    // p0 reads 1 (682), so cond 0's true into p0 changes nothing.
+    if ((cond == 0 and (w2 >> 14) & 0xF != 0) or cond == 11 or cond == 13) {
         if ((w2 >> 14) & 0xF == 0) return RunError.UnknownForm; // p0 write: unmeasured
-        state.p[(w2 >> 14) & 0xF] = if (sx16(v) < 0) 1 else 0;
+        const sv = sx16(v);
+        state.p[(w2 >> 14) & 0xF] = @intFromBool(switch (cond) {
+            11 => sv <= 0,
+            13 => sv == 0,
+            else => true,
+        });
     }
 }
 
