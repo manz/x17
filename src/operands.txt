@@ -1517,3 +1517,11 @@ x03.tap0a	r	R	22	25	s5
 x03.repa	pidx	p	14	17	s5
 x03.repa	fn	imm	22	26	s2
 x03.repa	r	R	22	25	s5
+
+# x16.getb #<k>, #<n>: A<2k+1> <- the next n+1 stream bits (fact 783).
+x16.getb	k	imm	0	3	s1
+x16.getb	n	imm	4	7	s2
+
+# ld0e.sen #<addr>, #<n>: the stream enable (fact 783), A<4n+1> <- addr.
+ld0e.sen	addr	imm	5	20	head
+ld0e.sen	n	imm	1	3	s1

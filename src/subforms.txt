@@ -922,3 +922,11 @@ x18.min    4   0x4C000018   0x00010000   0x00004000   0x61D53805
 x03.tapa   6   0x00000003   0x00006800   0x00000000   0x00000000   0x00002800   0x00040002
 x03.tap0a  6   0x00000003   0x00006000   0x00000000   0x00000000   0x00002800   0x00040002
 x03.repa   6   0x00000003   0x60000002   0x18106000   0x85800008   0x00004005   0x001C0000
+
+# x16.getb: the stream read (fact 783): A<2*S1[3:0]+1> <- the next S2[7:4]+1 stream bits,
+# MSB first; 0 before the ld0e.sen enable, and the program waits at it for bytes (784).
+x16.getb   3   0xC0000016   0x00040000   0xE0000000
+
+# ld0e.sen: ld0e whose ALU word (code 0x22, m 2, a = s12, b = s14) enables the stream when
+# s12 = 1 and s14 has bit 2 set, bits 1:0 clear (fact 783); A<4n+1> <- addr as ld0e.
+ld0e.sen   2   0xC400000E   0xE02500C0

@@ -99,9 +99,26 @@ pub const State = struct {
     /// When set, counts X / Y reads of addresses nothing has written (compat runs).
     unset_reads: ?*UnsetReads = null,
 
+    /// The input stream (fact 783): packet bytes the host queued, read MSB first, one bit
+    /// stream across packets (784).
+    stream: std.ArrayList(u8) = .empty,
+    /// Bits of `stream` already read.
+    stream_bit: usize = 0,
+    /// Set by the ld0e enable word (783); reads give 0 before it.
+    stream_on: bool = false,
+    /// Set when a read found too few bits queued: the run stops at that read, which runs
+    /// again once the host queues more (784).
+    stream_starved: bool = false,
+
     pub fn deinit(self: *State, gpa: std.mem.Allocator) void {
         self.y_mem.deinit(gpa);
         self.x_mem.deinit(gpa);
+        self.stream.deinit(gpa);
+    }
+
+    /// The host arms a packet: its bytes join the stream after any still unread (784).
+    pub fn queueStream(self: *State, gpa: std.mem.Allocator, bytes: []const u8) error{OutOfMemory}!void {
+        try self.stream.appendSlice(gpa, bytes);
     }
 
     /// Y words are 16 bits (700): a store keeps s[15:0], so only those bits read back.
@@ -311,6 +328,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s2_class == 0b110 and s1_class16 == 0 and s2_mode <= 7) return execX16Mul(gpa, state, bundle);
         if (s2_class == 0b110 and s1_class16 == 1) return execX16Mac(state, bundle);
         if (s2_class == 0b100) return execX16Agu100(state, bundle);
+        // 783: head[31] with head[30:25] 0x20-0x22, S1 class 000 with S1[18]: the stream read.
+        const code16: u32 = (head >> 25) & 0x3F;
+        if (s2_class == 0b111 and s1_class16 == 0 and head >> 31 == 1 and code16 >= 0x20 and code16 <= 0x22 and (bundle[1] >> 18) & 1 == 1) return execStreamRead(state, bundle);
         // 778: S1[18] with S2 & 0xE0050000 = 0xE0040000 is b16 under S1 classes other than
         // 000; class 000 keeps x16alu (563, 571 measured bundles match the same pattern).
         if (s2_class == 0b111 and s1_class16 != 0 and ((bundle[1] >> 18) & 1 == 1 and bundle[2] & 0xE0050000 == 0xE0040000)) return execX16B16(gpa, state, bundle);
@@ -2350,6 +2370,42 @@ fn execX16AluX(state: *State, bundle: []const u32) RunError!void {
     if (xi == 0) return RunError.UnknownForm;
     const dest: u32 = (bundle[0] >> 21) & 0xF;
     if (dest != 0) state.s[dest] = (state.readX(state.a[xi & 0x1F]) orelse 0) & 0xFFFF;
+}
+
+/// x16.getb, the stream read (fact 783): A<2*S1[3:0] + 1> <- the next S2[7:4] + 1 stream bits,
+/// MSB first, right-aligned.  head[30:25] = 0x21 or 0x22 writes 0 and reads nothing.  Before the
+/// ld0e enable a read gives 0 and does not advance; with too few bits queued the program stops
+/// at the read until the host queues more (784).  Admitted: the measured shape, head[24:5] = 0,
+/// S1 only [18] and [3:0] (index 7 and up wrote none of the odd A, refused), S2[28:13] = 0
+/// (S2[12:8] and [3:0] inert), 1 to 13 bits.  head[24:21]'s s write beside the read is refused.
+fn execStreamRead(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    if ((h >> 5) & 0xFFFFF != 0) return RunError.UnknownForm;
+    if (s1 & ~@as(u32, 0x0004000F) != 0) return RunError.UnknownForm;
+    if (s2 & 0x1FFFE000 != 0) return RunError.UnknownForm;
+    const k: u32 = s1 & 0xF;
+    if (k >= 8) return RunError.UnknownForm;
+    const count: usize = ((s2 >> 4) & 0xF) + 1;
+    if (count > 13) return RunError.UnknownForm;
+    const dest: u32 = 2 * k + 1;
+    if ((h >> 25) & 0x3F != 0x20 or !state.stream_on) {
+        state.a[dest] = 0;
+        return;
+    }
+    if (state.stream_bit + count > state.stream.items.len * 8) {
+        state.stream_starved = true;
+        return;
+    }
+    var v: u32 = 0;
+    for (0..count) |_| {
+        const b = state.stream_bit;
+        const byte = state.stream.items[b >> 3];
+        v = (v << 1) | ((byte >> @intCast(7 - (b & 7))) & 1);
+        state.stream_bit += 1;
+    }
+    state.a[dest] = v;
 }
 
 /// S1/S2 class 000 (fact 115, 122, 217): S2[3] latches xi <- S2[8:4];
@@ -5583,6 +5639,7 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
     state.halted = false;
     state.silent_stop = false;
     state.stop_now = false;
+    state.stream_starved = false;
     while (i < syllables.len) : (bundles_run += 1) {
         if (bundles_run >= max_bundles) return RunError.RunawayProgram;
         const head = syllables[i];
@@ -5603,6 +5660,13 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             try executeBundle(gpa, state, slice);
             if (!sameY(&before, &state.y_mem)) return RunError.UnknownForm;
         } else try executeBundle(gpa, state, slice);
+        if (state.stream_starved) {
+            // 784: the read waits for the next packet and nothing in its bundle ran; the
+            // caller queues bytes and resumes with runFrom at state.pc.  Inside a jump's delay
+            // or a stop's shadow unmeasured.
+            if (state.jump_delay > 0 or state.pending_jmp_offset != null or shadow != null) return RunError.UnknownForm;
+            return bundles_run;
+        }
         if (state.stop_now) {
             // 667: the store lands and the engine never reaches the next bundle; inside a
             // jump's delay or a stop's shadow unmeasured.
@@ -6030,6 +6094,19 @@ fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     // op b = s<S[31:28]>, code head[30:25], m S[17:15]: measured codes 14 (m 0 / 2), 22, 51, 6
     // at m 0; 16-21 / 35 / 36 read a + b (569's override set) and the rest are OPEN.
     const alu_dest: u32 = (s1 >> 8) & 0xF;
+    // 783: code 0x22 at m 2 over a = s12, b = s14 enables the stream when s12 = 1 and s14 has
+    // bit 2 set and bits 1:0 clear; other values leave it off.  s14 with bits 2:1 = 11 starts
+    // elsewhere, other operand registers and the ALU result are unmeasured: refused.
+    if ((head >> 25) & 0x3F == 0x22 and (s1 >> 15) & 7 == 2) {
+        if ((s1 >> 4) & 0xF != 12 or s1 >> 28 != 14 or alu_dest != 0) return RunError.UnknownForm;
+        const a12: u32 = state.s[12] & M24;
+        const b14: u32 = state.s[14] & M24;
+        if (a12 == 1 and b14 & 4 != 0) switch (b14 & 3) {
+            0 => state.stream_on = true,
+            2 => return RunError.UnknownForm,
+            else => {},
+        };
+    }
     const alu_val: u32 = if (alu_dest == 0) 0 else blk: {
         const code: u32 = (head >> 25) & 0x3F;
         const m: u32 = (s1 >> 15) & 7;
@@ -6702,4 +6779,82 @@ test "aluOpen matches op, m and #s together" {
     try testing.expect(!aluOpen(&xld_alu_open, add_m5_12 ^ (1 << 19)));
     try testing.expect(!aluOpen(&xld_alu_open, add_m5_12 ^ (1 << 23)));
     try testing.expect(!aluOpen(&xld_alu_open, (add_m5_12 & ~@as(u32, 0x3F << 5)) | (0x10 << 5))); // sub
+}
+
+test "stream read (783): 0 before the enable, then MSB-first bits across bytes" {
+    const gpa = std.testing.allocator;
+    var state = State{};
+    defer state.deinit(gpa);
+    try state.queueStream(gpa, &.{ 0xA5, 0x5A });
+    const read3_a15 = [_]u32{ 0xC0000016, 0x00040007, 0xE0000020 };
+    const read8_a11 = [_]u32{ 0xC0000016, 0x00040005, 0xE0000070 };
+    state.a[15] = 0x77;
+    try executeBundle(gpa, &state, &read3_a15);
+    try testing.expectEqual(@as(u32, 0), state.a[15]);
+    try testing.expectEqual(@as(usize, 0), state.stream_bit);
+    // ld0e.sen: s12 = 1, s14 = 4; its A13 load runs as any ld0e's.
+    state.s[12] = 1;
+    state.s[14] = 4;
+    try executeBundle(gpa, &state, &.{ 0xC400000E | (0x123 << 5), 0xE02500C0 | (3 << 1) });
+    try testing.expect(state.stream_on);
+    try testing.expectEqual(@as(u32, 0x123), state.a[13]);
+    try executeBundle(gpa, &state, &read3_a15);
+    try testing.expectEqual(@as(u32, 0b101), state.a[15]); // 0xA5 = 101 00101
+    try executeBundle(gpa, &state, &read8_a11);
+    try testing.expectEqual(@as(u32, 0b00101_010), state.a[11]); // 00101 then 0x5A's 010
+    // head[30:25] = 0x21 writes 0 and reads nothing.
+    try executeBundle(gpa, &state, &.{ 0xC2000016, 0x00040007, 0xE0000020 });
+    try testing.expectEqual(@as(u32, 0), state.a[15]);
+    try testing.expectEqual(@as(usize, 11), state.stream_bit);
+}
+
+test "stream enable (783): other values leave it off; the unmeasured ones refuse" {
+    const gpa = std.testing.allocator;
+    const sen = [_]u32{ 0xC400000E, 0xE02500C0 };
+    for ([_][2]u32{ .{ 1, 5 }, .{ 1, 8 }, .{ 2, 4 }, .{ 0, 12 } }) |v| {
+        var state = State{};
+        state.s[12] = v[0];
+        state.s[14] = v[1];
+        try executeBundle(gpa, &state, &sen);
+        try testing.expect(!state.stream_on);
+    }
+    var state = State{};
+    state.s[12] = 1;
+    state.s[14] = 6; // starts elsewhere
+    try testing.expectError(RunError.UnknownForm, executeBundle(gpa, &state, &sen));
+    state.s[14] = 4;
+    try testing.expectError(RunError.UnknownForm, executeBundle(gpa, &state, &.{ sen[0], sen[1] | (1 << 8) })); // an ALU dest
+    try testing.expectError(RunError.UnknownForm, executeBundle(gpa, &state, &.{ 0xC0000016, 0x00040008, 0xE0000020 })); // A17
+    try testing.expectError(RunError.UnknownForm, executeBundle(gpa, &state, &.{ 0xC0200016, 0x00040007, 0xE0000020 })); // an s write
+}
+
+test "stream underrun (784): the run stops at the read and resumes when bytes arrive" {
+    const gpa = std.testing.allocator;
+    const prog = switch (try asm_mod.assembleFile(gpa,
+        \\        ldi s12, #1
+        \\        ldi s14, #4
+        \\        ld0e.sen #0, #0
+        \\        x16.getb #7, #12
+        \\        x16.getb #6, #2
+        \\        x17.halt
+        \\
+    )) {
+        .ok => |p| p,
+        .err => return error.Assemble,
+    };
+    defer gpa.free(prog);
+    var state = State{};
+    defer state.deinit(gpa);
+    try state.queueStream(gpa, &.{0xFF});
+    _ = try runFrom(gpa, &state, prog, 0, 100);
+    try testing.expect(state.stream_starved);
+    try testing.expect(!state.halted);
+    const at = state.pc;
+    try state.queueStream(gpa, &.{ 0x80, 0x00 }); // the next packet: one stream with the first
+    _ = try runFrom(gpa, &state, prog, at, 100);
+    try testing.expect(!state.stream_starved);
+    try testing.expect(state.halted);
+    try testing.expectEqual(@as(u32, 0x1FF0), state.a[15]); // 11111111 10000
+    try testing.expectEqual(@as(u32, 0), state.a[13]);
+    try testing.expectEqual(@as(usize, 16), state.stream_bit);
 }
