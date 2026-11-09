@@ -5463,8 +5463,8 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
 }
 
 /// The host's decode arm (+0x988 / +0x98C, fact 761): runs only after a 0x00 control 0x08 /
-/// 0x0D.  Whether it clears the gate and its entry syllable are unmeasured: a second decode arm
-/// without a new 0x08 is refused.
+/// 0x0D, and enters at syllable 0 like the pass-1 arm (763).  Whether it clears the gate is
+/// unmeasured: a second decode arm without a new 0x08 is refused.
 pub fn decodeArm(gpa: std.mem.Allocator, state: *State, syllables: []const u32, start: usize, max_bundles: usize) RunError!usize {
     switch (state.decode) {
         .off => return RunError.DecodeNotEnabled,
