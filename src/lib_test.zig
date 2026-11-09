@@ -6918,7 +6918,7 @@ test "0x00 control 6 / 7 ends the program after two delay slots (fact 759)" {
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x00000001, 0, 0, 6, 0, 0, 0 }));
 }
 
-test "host arms: 0x08 / 0x0D park the next arm once; control 0 / 0x10 leave the entry open (facts 315, 768)" {
+test "host arms: 0x08 / 0x0D park the next arm once; other controls enter q0 (facts 315, 768, 769)" {
     const gpa = testing.allocator;
     // END (control 6) then two nop slots: no control-0 bundle, so the next entry is q0.
     const halt = [_]u32{ 0x00000000, 0, 0, 6, 0, 0, 0, 0x40000005, 0x40000005 };
@@ -6934,19 +6934,17 @@ test "host arms: 0x08 / 0x0D park the next arm once; control 0 / 0x10 leave the 
         _ = try emu.arm(gpa, &state, &halt, 16);
         try testing.expect(state.halted);
     }
-    for ([_]u32{ 0, 0x10 }) |ctl| {
+    // 769: control 0 / 0x10 / 0x18 leave the next arm entering at q0.
+    for ([_]u32{ 0, 0x10, 0x18 }) |ctl| {
         var state = emu.State{};
         defer state.deinit(gpa);
         const prog = [_]u32{ 0x00000800, 0, 0, ctl, 0, 0, 0x0000400C } ++ halt;
         _ = try emu.arm(gpa, &state, &prog, 16);
-        try testing.expectError(error.EntryOpen, emu.arm(gpa, &state, &halt, 16));
+        _ = try emu.arm(gpa, &state, &prog, 16);
+        try testing.expect(state.halted);
     }
-    // A run ending on END alone leaves the next arm entering at q0.
     var state = emu.State{};
     defer state.deinit(gpa);
-    _ = try emu.arm(gpa, &state, &halt, 16);
-    _ = try emu.arm(gpa, &state, &halt, 16);
-    try testing.expect(state.halted);
     // 230: a bare 0x08 in an empty bundle wedged.
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0, 0, 0, 8, 0, 0, 0 }));
 }
