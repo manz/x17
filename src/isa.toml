@@ -78,6 +78,8 @@ mask = "0xC3F8001F"
 value = "0x40000005"
 evidence = "MEASURED"
 ref = "fact 65 pass 91, 93 pass 119: dest s<[18:15]>, a s<[14:11]>, b s<[29:26]> ([29] = 1 is the 011 'class': s8..s15), op [10:5] (table in emu.ALU05); [25:19] = 0 only; own-alu-sub, own-alu-hi"
+# alu head shifts (774, [25:19] = 0): n = s<[14:11]> signed 24-bit, b = s<[29:26]>, 24-bit results.  0x06 asr: n >= 0 b >> n arithmetic (n >= 24 the sign), n < 0 (b << -n)[23:0] (0 from -24).  0x08 lsr: logical right on [23:0] (n >= 24 0), left as asr.  0x07 asrrs: right (b + 2^(n-1)) >> n (n >= 24 0), left saturating to 0x7FFFFF / 0x800000.  Counts 0..48 and -1..-25, b = 0x5A5A / 0xFFA5A5.
+# alu clr 0x22 with modifiers (775): d <- 0 for every m and # (0/2/5); other clr codes with modifiers OPEN.
 
 [[form]]
 name = "rop"

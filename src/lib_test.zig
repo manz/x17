@@ -7077,6 +7077,41 @@ test "0x00 jump control 3 is taken iff p<w4[31:28]>, code 0 always (fact 772)" {
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0, 16 << 18, 0, 1, 0xD0000000, 0, 0 }));
 }
 
+test "alu head shifts asr / asrrs / lsr over every count (fact 774); clr 0x22 with modifiers (775)" {
+    const gpa = testing.allocator;
+    const Row = struct { n: i32, b: u32, asr: u32, lsr: u32, rs: u32 };
+    for ([_]Row{
+        .{ .n = 0, .b = 0x005A5A, .asr = 0x005A5A, .lsr = 0x005A5A, .rs = 0x005A5A },
+        .{ .n = 7, .b = 0x005A5A, .asr = 0xB4, .lsr = 0xB4, .rs = 0xB5 },
+        .{ .n = 12, .b = 0x005A5A, .asr = 5, .lsr = 5, .rs = 6 },
+        .{ .n = 1, .b = 0xFFA5A5, .asr = 0xFFD2D2, .lsr = 0x7FD2D2, .rs = 0xFFD2D3 },
+        .{ .n = 23, .b = 0xFFA5A5, .asr = 0xFFFFFF, .lsr = 1, .rs = 0 },
+        .{ .n = 24, .b = 0xFFA5A5, .asr = 0xFFFFFF, .lsr = 0, .rs = 0 },
+        .{ .n = 48, .b = 0xFFA5A5, .asr = 0xFFFFFF, .lsr = 0, .rs = 0 },
+        .{ .n = 32, .b = 0x005A5A, .asr = 0, .lsr = 0, .rs = 0 },
+        .{ .n = -8, .b = 0x005A5A, .asr = 0x5A5A00, .lsr = 0x5A5A00, .rs = 0x5A5A00 },
+        .{ .n = -12, .b = 0x005A5A, .asr = 0xA5A000, .lsr = 0xA5A000, .rs = 0x7FFFFF },
+        .{ .n = -12, .b = 0xFFA5A5, .asr = 0x5A5000, .lsr = 0x5A5000, .rs = 0x800000 },
+        .{ .n = -23, .b = 0xFFA5A5, .asr = 0x800000, .lsr = 0x800000, .rs = 0x800000 },
+        .{ .n = -24, .b = 0x005A5A, .asr = 0, .lsr = 0, .rs = 0x7FFFFF },
+    }) |k| for ([_]u32{ 6, 8, 7 }, [_]u32{ k.asr, k.lsr, k.rs }) |code, want| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = @as(u32, @bitCast(k.n)) & 0xFFFFFF;
+        state.s[2] = k.b;
+        // dest s3, n = s1, b = s2, [25:19] = 0.
+        try emu.executeBundle(gpa, &state, &.{0x40000005 | 2 << 26 | 3 << 15 | 1 << 11 | code << 5});
+        try testing.expectEqual(want, state.s[3]);
+    };
+    // 775: clr 0x22 with m = 3, # = 2 writes 0.
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[14] = 0x123;
+    state.s[12] = 0x55;
+    try emu.executeBundle(gpa, &state, &.{0x41976445});
+    try testing.expectEqual(@as(u32, 0), state.s[14]);
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};

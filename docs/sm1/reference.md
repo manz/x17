@@ -88,6 +88,9 @@ Emulator:
 | b | s | head | [29:26] |
 | op | imm | head | [10:5] |
 
+> alu head shifts (774, [25:19] = 0): n = s<[14:11]> signed 24-bit, b = s<[29:26]>, 24-bit results.  0x06 asr: n >= 0 b >> n arithmetic (n >= 24 the sign), n < 0 (b << -n)[23:0] (0 from -24).  0x08 lsr: logical right on [23:0] (n >= 24 0), left as asr.  0x07 asrrs: right (b + 2^(n-1)) >> n (n >= 24 0), left saturating to 0x7FFFFF / 0x800000.  Counts 0..48 and -1..-25, b = 0x5A5A / 0xFFA5A5.
+> alu clr 0x22 with modifiers (775): d <- 0 for every m and # (0/2/5); other clr codes with modifiers OPEN.
+
 ### `rop`
 
 - Encoding: `word & 0xE000001F == 0x40000007`

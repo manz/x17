@@ -1994,11 +1994,13 @@ fn alu05Shift(a: u32, b: u32, kind: ShiftKind) u32 {
         }
         return @as(u32, @bitCast(@as(i32, @truncate(shifted)))) & M24;
     }
-    var vv: i32 = v_signed;
-    if (kind == .asrrs and n > 0) vv += @as(i32, 1) << @as(u5, @intCast(n - 1));
-    const shift: u5 = @intCast(@min(n, 24));
-    const shifted: i32 = vv >> shift;
-    return @as(u32, @bitCast(shifted)) & M24;
+    // 774: n >= 24 gives the sign (asr) or 0 (lsr; asrrs, whose half-up bias reaches 2^23).
+    if (kind == .asrrs and n >= 24) return 0;
+    var vv: i64 = v_signed;
+    if (kind == .asrrs and n > 0) vv += @as(i64, 1) << @as(u6, @intCast(n - 1));
+    const shift: u6 = @intCast(@min(n, 24));
+    const shifted: i64 = vv >> shift;
+    return @as(u32, @truncate(@as(u64, @bitCast(shifted)))) & M24;
 }
 
 fn execX16Hd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -5210,8 +5212,8 @@ pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
     if (m == 0 and s_mod == 0) {
         return alu05Eval(op, a_s, b_s);
     }
-    // clr with modifiers: the Python model marks the source OPEN.
-    if (op == .clr) return null;
+    // clr with modifiers: 0x22 writes 0 for every m and # (775); the other clr codes are OPEN.
+    if (op == .clr) return if (code == 0x22) 0 else null;
     // mova/asr/asrrs/lsr with s == 0: modifier m is ignored.
     if ((op == .mova or op == .asr or op == .asrrs or op == .lsr) and s_mod == 0) {
         return alu05Eval(op, a_s, b_s);
