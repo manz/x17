@@ -1168,6 +1168,7 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
         }
         var d: Diagnostic = undefined;
         const field = matchOperand(op, tok, &d) orelse return .{ .err = d };
+        if (collides(sf.name, op.name, field)) |c| return .{ .err = c.at(tokSpan(tok)) };
         if (op.syll >= sf.syllables) {
             var dx = Diagnostic{ .code = .e0001_unknown_mnemonic, .span = tokSpan(tok) };
             dx.setMsg("operand table names a syllable past the bundle length");
@@ -1208,15 +1209,43 @@ const Collision = struct {
     }
 };
 
+/// An operand range outside which a sub-form's bundle decodes as a different form: the
+/// operand's field shares bits with a unit class that picks the form.
+const ClassRule = struct {
+    forms: []const []const u8,
+    operand: []const u8,
+    min: u32,
+    max: u32,
+    msg: []const u8,
+    hint: []const u8,
+};
+
+const class_rules = [_]ClassRule{
+    // x17.sty needs S1 class != 0 (fact 275); S1[31:29] is src_lo.  Silicon has run sources
+    // s1, s9, s5 and s3 only; class 000 there is unmeasured.
+    .{ .forms = &.{ "x17.sty", "x17.styi", "x17.stys" }, .operand = "src_lo", .min = 1, .max = 7, .msg = "x17.sty from s0 or s8 makes S1 class 000: x17 decodes that as x17.ld, and silicon has never run it", .hint = "copy to a register not a multiple of 8 first (s1, s3, s5, s9 are measured)" },
+    // x16 picks its form from (S1 class, S2 class); these fields overlap S1[31:29].
+    .{ .forms = &.{"x16.xld"}, .operand = "dest_s", .min = 6, .max = 7, .msg = "x16.xld's destination is also its S1 class: only s6 and s7 keep class 011, others decode as another x16 form", .hint = "load into s6 or s7, then copy" },
+    .{ .forms = &.{"x16.st2"}, .operand = "x_src", .min = 6, .max = 7, .msg = "x16.st2's X source is also its S1 class: only s6 and s7 keep class 011, others decode as another x16 form", .hint = "store from s6 or s7" },
+    .{ .forms = &.{"x16.b16"}, .operand = "st_src", .min = 2, .max = 15, .msg = "x16.b16 from s0 or s1 makes S1 class 000: x16 decodes that as its ALU or the stream read", .hint = "store from s2..s15" },
+    .{ .forms = &.{"x16.agu2"}, .operand = "fn", .min = 0, .max = 7, .msg = "x16.agu2 fn 8-15 sets S1[29]: class 001 decodes as x16.agumul", .hint = "fn 0..7 only in this form" },
+    .{ .forms = &.{"x16.agumul"}, .operand = "dest_lo", .min = 1, .max = 3, .msg = "x16.agumul with dest_lo 0 makes S1 class 000: x16 decodes that as x16.agu2", .hint = "pick a destination whose index is not a multiple of 4" },
+    .{ .forms = &.{"x16.mac"}, .operand = "xhi_lo", .min = 1, .max = 1, .msg = "x16.mac's xhi_lo is its S1 class: only 1 runs the MAC, other values decode as another x16 form", .hint = "xhi_lo must be #1" },
+};
+
+comptime {
+    // Diagnostic buffers: 128-byte message, 96-byte hint.
+    for (class_rules) |r| if (r.msg.len > 128 or r.hint.len > 96) @compileError("class rule text too long: " ++ r.msg);
+}
+
 /// Operand values that turn a sub-form's bundle into a different form.
 fn collides(form: []const u8, operand: []const u8, v: u32) ?Collision {
-    // x17.sty needs S1 class != 0 (fact 275); S1[31:29] is src_lo. Silicon has run
-    // sources s1, s9, s5 and s3 only; class 000 there is unmeasured.
-    if ((std.mem.eql(u8, form, "x17.sty") or std.mem.eql(u8, form, "x17.styi") or std.mem.eql(u8, form, "x17.stys")) and std.mem.eql(u8, operand, "src_lo") and v & 7 == 0)
-        return .{
-            .msg = "x17.sty from s0 or s8 makes S1 class 000: x17 decodes that as x17.ld, and silicon has never run it",
-            .hint = "copy the value to a register whose index is not a multiple of 8 first (s1, s3, s5, s9 are measured)",
+    for (class_rules) |r| {
+        if (!std.mem.eql(u8, r.operand, operand)) continue;
+        for (r.forms) |f| if (std.mem.eql(u8, f, form)) {
+            if (v < r.min or v > r.max) return .{ .msg = r.msg, .hint = r.hint };
         };
+    }
     return null;
 }
 
@@ -2427,6 +2456,27 @@ test "file: an error inside a macro names the body line and the call" {
     try testing.expectEqualStrings("        ldi s3, #0x10000", fe.lineText());
     try testing.expectEqualStrings("bad", fe.call_name.get());
     try testing.expectEqual(@as(usize, 5), fe.call_line);
+}
+
+test "x16 forms refuse operands that flip their S1 class" {
+    const Case = struct { bad: []const u8, good: []const u8 };
+    for ([_]Case{
+        .{ .bad = "x16.xld s5, #10", .good = "x16.xld s6, #10" },
+        .{ .bad = "x16.st2 s8, #6, e4, s6", .good = "x16.st2 s7, #6, e4, s6" },
+        .{ .bad = "x16.b16 s10, #0x300, s1, e5", .good = "x16.b16 s10, #0x300, s2, e5" },
+        .{ .bad = "x16.agu2 s3, e2, R3, #8, #1, #1", .good = "x16.agu2 s3, e2, R3, #7, #1, #1" },
+        .{ .bad = "x16.agumul #0, #0, s3, s5", .good = "x16.agumul #1, #0, s3, s5" },
+        .{ .bad = "x16.mac s7, s6, #0, #0, s2, s3, s5, #1", .good = "x16.mac s7, s6, #1, #0, s2, s3, s5, #1" },
+    }) |c| {
+        switch (assembleOneResult(c.bad)) {
+            .err => |d| try std.testing.expectEqual(ErrorCode.e0029_form_collision, d.code),
+            .ok => return error.TestUnexpectedResult,
+        }
+        switch (assembleOneResult(c.good)) {
+            .err => return error.TestUnexpectedResult,
+            .ok => {},
+        }
+    }
 }
 
 test "x17.sty refuses s0 and s8, whose bundle decodes as x17.ld" {
