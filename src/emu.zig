@@ -2415,8 +2415,8 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         const xf: i64 = @as(i64, sx24(xf_val)) << 24;
         const a_hi: i64 = @as(i64, state.s[a_s] & M24) << 24;
         const sp: i64 = (@as(i64, sx24(state.s[a_s])) * sx24(state.s[b_s])) << 1;
-        // Mode 3 under w3[23] = 0 is +index X with any index, 0 included (719; 689's ~ came
-        // from elsewhere in its word).
+        // Mode 3 under w3[23] = 0 is +index X with any index, 0 included (719, 720; 689's ~
+        // cell is withdrawn).
         const acc: i64 = if (w23 and w21) switch (mode) {
             0 => xi - sp,
             1, 2 => a_hi,

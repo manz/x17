@@ -5172,8 +5172,7 @@ test "x18 class 110 hi output follows the mode w3[20:18], X the previous read (6
         .{ .mode = 7, .want = 0x19F4 },
         .{ .mode = 0, .want = 0 },
         .{ .mode = 2, .want = 0x4600 },
-        // mode 3 read ~X on this word (689), but +X on 719's words with the same index and
-        // field: something else in this word inverts it, still open, so the cell is not pinned.
+        // mode 3: 689's ~X cell is withdrawn (720); pinned below with a known latch.
         .{ .mode = 1, .want = 0x7A00 }, // a + X: 0x6000 + 0x1A00
     }) |c| {
         var st = emu.State{};
@@ -5204,6 +5203,15 @@ test "x18 class 110 hi output follows the mode w3[20:18], X the previous read (6
     _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x00000018, 0x00005000, w2, w3 } ++ halt), 0, 8);
     try testing.expectEqual(@as(u32, 0x550C), st.s[4]);
     try testing.expectEqual(@as(u32, 0xE01A), st.xd);
+    // 720: this word's mode 3 with the latch at 0x12 is +(xd << 8), not inverted.
+    var st3 = emu.State{};
+    defer st3.deinit(testing.allocator);
+    st3.s[1] = 0x6000;
+    st3.s[2] = 0x1000;
+    st3.xd = 0x12;
+    const w3m: u32 = (0xC1500001 & ~@as(u32, (7 << 18) | (1 << 24))) | (3 << 18);
+    _ = try emu.runFrom(testing.allocator, &st3, &([_]u32{ 0x00000018, 0, (1 << 1) | (2 << 5) | (4 << 9), w3m } ++ halt), 0, 8);
+    try testing.expectEqual(@as(u32, 0x1200), st3.s[4]);
 }
 
 test "one X latch: an x03 read sets the X that x18 class 110's mode uses; stores leave it (690)" {
