@@ -508,6 +508,7 @@ Emulator:
 > x18 class 011 codes 0x36-0x39 (645): 0x36/37/38 op 2 shr/rshr/lsr(a, b); op 3 at n = 2 shr(a, -b) (0x37 rounding it), n < 2 a; op 4 at n = 2 as op 2, n < 2 a; op 6 rot24(a, b), 0x36/37 rotating a | (a < 0).  0x39: n < 2 shlz(a, b) (0 for b < 0); n = 2 op 3 asrz (sign of a for b < 0), others lsrz (0 for b < 0).  |b| <= 12 (also for 644's b shifts).  The head's load slot: s<head[24:21]> <- Y:[e<w3[28:25]>]; a Y word at or above 0x8000, or a dest shared with the slot dest or operands, is refused.  own-x18rot, own-x18b/s/l/m (re-pinned words)
 > x18 class 101 (201): w2[30:29] = 00 -> branch if p<{w3[2:0], w2[31]}> (0 = always) by sext(w1[28:18]), 2 delay slots; 10 wedges (OPEN).  own-x18br101, own-x18br101-not, own-x18br101-e
 > x18 class 101 (744): in the branch form w1[18] is only bit 0 of sext(w1[28:18]); odd offsets land like even ones, and not taken every decoded slot still writes.  Only w2[30:29] = 10 (wedges, 201) stays unknown.  own-x18br101odd
+> x18 class 001 multiply (745, 746): s<w2[15:12]> <- s<w2[19:16]> * s<w2[23:20]>, signed 24-bit, w3[0] = 1 rounds >> 23, 0 truncates (as class 010, 684); w3[2:0] = 101 >> 24, 100 unsigned 24 x unsigned 24 >> 24 truncated (747, class 100's).  w1[26] = 0 wedges (refused); the e slot writes either way.  own-x18q23c1
 > x02 third slot (182): s<{w5[1:0], w4[31:30]}> <- (a op w5[8:6] b) << w5[5:2], a = s<w4[25:22]>, b = s<w4[29:26]>; ops a+b, b-a, b, b+1, b-1, a-b, -b, |b|; w5[16] X read.  own-x02x3
 > x02 s<w4[10:7]> (183): the w2 multiply's low half, (P << (w1[17] ? 0 : 1))[15:0]; mode 000 0; w5[20] X read.  own-x02plo
 > x02 (184): third slot and w2 slot on one register: the third slot's value stays.  own-x02coll
@@ -1332,7 +1333,8 @@ Emulator:
 | shift_bit | imm | s3 | [2:2] |
 
 > x18.q23c: low5 0x18 w3 class 001 (fact 173 / own-x18q23c).
-> Multiply-round like q23, /2^23 default or /2^24 when w3[2] = 1.
+> Signed 24-bit multiply: the base's w3[0] = 1 rounds /2^23 (745, 746); #shift_bit 1 is w3[2:0] = 101,
+> /2^24.  w3[0] = 0 (truncating /2^23, or unsigned /2^24 with w3[2], 747) has no operand here.
 
 ### `x02.yrd`
 

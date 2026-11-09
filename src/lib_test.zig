@@ -6635,6 +6635,62 @@ test "x18 class-101 branch: w1[18] is only the offset's bit 0 (fact 744)" {
     }
 }
 
+test "x18 class-001 multiply rounds on w3[0]; w1[26] = 0 refused (facts 745, 747)" {
+    const gpa = testing.allocator;
+    // 04000418 04000000 40B88000 2000000x: s8 <- s8 * s11 (mode P), product / 2^23 = 64.63.
+    for ([_]struct { w1: u32 = 0x04000000, w3lo: u32, want: ?u32 }{
+        .{ .w3lo = 1, .want = 0x41 },
+        .{ .w3lo = 0, .want = 0x40 },
+        .{ .w3lo = 5, .want = 0x20 },
+        .{ .w3lo = 4, .want = 0xFF4333 }, // 747: unsigned x unsigned >> 24
+        .{ .w1 = 0x00000000, .w3lo = 1, .want = null }, // w1[26] = 0 wedges
+        .{ .w1 = 0x08000000, .w3lo = 1, .want = null },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[8] = 0xFF8808; // -0x77F8
+        state.s[11] = 0xFFBB0B; // -0x44F5
+        const r = emu.runFrom(gpa, &state, &.{ 0x04000418, k.w1, 0x40B88000, 0x20000000 | k.w3lo, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[8]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "x18 class-001 multiply reads signed 24-bit operands (fact 746)" {
+    const gpa = testing.allocator;
+    for ([_][3]u32{
+        .{ 0x00C000, 0x004000, 0x000060 },
+        .{ 0x004000, 0x00C000, 0x000060 },
+        .{ 0x010000, 0x004000, 0x000080 },
+        .{ 0x004000, 0x004000, 0x000020 },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[8] = k[0];
+        state.s[11] = k[1];
+        _ = try emu.runFrom(gpa, &state, &.{ 0x04000418, 0x04000000, 0x40B88000, 0x20000001, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
+        try testing.expectEqual(k[2], state.s[8]);
+    }
+}
+
+test "x18 class-001 multiply w3[2:0] = 100 is unsigned 24 x unsigned 24 >> 24, truncated (fact 747)" {
+    const gpa = testing.allocator;
+    for ([_][3]u32{
+        .{ 0x004000, 0xFFC000, 0x003FF0 },
+        .{ 0xFF8808, 0xFFBB0B, 0xFF4333 },
+        .{ 0x007000, 0x007000, 0x000031 },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[8] = k[0];
+        state.s[11] = k[1];
+        _ = try emu.runFrom(gpa, &state, &.{ 0x04000418, 0x04000000, 0x40B88000, 0x20000004, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
+        try testing.expectEqual(k[2], state.s[8]);
+    }
+}
+
 test "x03.acp's template read slot also loads s7 and yd <- Y:[e<y_e>] under #0 and #1 (748)" {
     const gpa = testing.allocator;
     for ([_][]const u8{ "x03.acp A9, A5, e3, #0", "x03.acp A9, A5, e3, #1" }, [_]u32{ 0x100, 0x0BCD }) |src, a9| {

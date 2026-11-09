@@ -229,7 +229,8 @@ x04.agu    6   0x00000004   0x00000000   0x00004000   0x08000000   0x00008000   
 x03.alu    6   0x00000003   0x00000500   0x00004000   0x08080000   0x00008000   0x07000000
 
 # x18.q23c: low5 0x18 w3 class 001 (fact 173 / own-x18q23c).
-# Multiply-round like q23, /2^23 default or /2^24 when w3[2] = 1.
+# Signed 24-bit multiply: the base's w3[0] = 1 rounds /2^23 (745, 746); #shift_bit 1 is w3[2:0] = 101,
+# /2^24.  w3[0] = 0 (truncating /2^23, or unsigned /2^24 with w3[2], 747) has no operand here.
 x18.q23c   4   0x00000018   0x04001000   0x40000000   0x21B03001
 
 # x02.yrd: 6-syllable low5 0x02 w4 mode 5 with w5[12]=1 (Y-read variant).

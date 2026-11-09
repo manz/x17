@@ -731,6 +731,8 @@ fn execX18C1(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const w1 = bundle[1];
     const w2 = bundle[2];
     const w3 = bundle[3];
+    // 745: w1[26] = 0 wedges the probe (6/6).
+    if ((w1 >> 26) & 1 == 0) return RunError.UnknownForm;
     const xe_val: u32 = state.e[(w3 >> 25) & 0xF];
     const y: u32 = state.r[(w3 >> 11) & 0xF];
     const dest_r: u32 = (w3 >> 7) & 0xF;
@@ -756,12 +758,16 @@ fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const b_s: u32 = (w2 >> 20) & 0xF;
     const mode: u32 = (w2 >> 28) & 0x7;
     if (dest_s == 0) return;
-    const av: u32 = if (a_s == 0) 0 else state.s[a_s] & 0xFFFF;
-    const bv: u32 = if (b_s == 0) 0 else state.s[b_s] & 0xFFFF;
-    const prod: u32 = av *% bv;
-    const shift: u5 = if ((w3 >> 2) & 1 == 1) 24 else 23;
+    // 745, 746: signed 24-bit operands; w3[0] = 1 rounds >> 23, 0 truncates (as class 010, 684);
+    // w3[2:0] = 101 is >> 24.  747: 100 is unsigned 24 x unsigned 24 >> 24, truncated (class 100's).
+    const rnd = w3 & 1 == 1;
+    const unsigned = (w3 >> 2) & 1 == 1 and !rnd;
+    const av: i64 = if (a_s == 0) 0 else if (unsigned) state.s[a_s] & M24 else sx24(state.s[a_s]);
+    const bv: i64 = if (b_s == 0) 0 else if (unsigned) state.s[b_s] & M24 else sx24(state.s[b_s]);
+    const prod: i64 = av * bv;
+    const r: i64 = if ((w3 >> 2) & 1 == 1) prod >> 24 else if (rnd) roundShr(prod, 23) else prod >> 23;
     const v: u32 = switch (mode) {
-        4 => (prod >> shift) & M24,
+        4 => @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24,
         else => return,
     };
     state.s[dest_s] = v;
