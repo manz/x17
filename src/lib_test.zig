@@ -6897,9 +6897,25 @@ test "st.y with a class-011 second writes e and the 326 mux, no store (fact 757)
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x0002468F, 0x60000000 }));
 }
 
+test "unset_reads counts X / Y reads of never-written addresses" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    var unset = emu.UnsetReads{};
+    state.unset_reads = &unset;
+    try state.x_mem.put(gpa, 1, 5);
+    try state.y_mem.put(gpa, 1, 5);
+    _ = state.readX(1);
+    _ = state.readX(2);
+    _ = state.getY(1);
+    _ = state.getY(2);
+    _ = state.getY(3);
+    try testing.expectEqual(emu.UnsetReads{ .x = 1, .y = 2 }, unset);
+}
+
 // Compatibility run of an external program read in place from X17_COMPAT_PROG (a little-endian
 // u32 syllable stream).  Skipped when unset.  Reports only ran / refused / wedged and the
-// bundle count.
+// bundle count, plus counts of X / Y reads before any write.
 test "compat: external program from reset state" {
     const path = testing.environ.getPosix("X17_COMPAT_PROG") orelse return error.SkipZigTest;
     const gpa = testing.allocator;
@@ -6915,12 +6931,14 @@ test "compat: external program from reset state" {
     defer gpa.free(prof);
     @memset(prof, 0);
     state.profile = prof;
+    var unset = emu.UnsetReads{};
+    state.unset_reads = &unset;
     const r = emu.runFrom(gpa, &state, words, 0, 50_000_000);
     if (r) |n| {
-        std.debug.print("compat: ran, {d} bundles, halted={}\n", .{ n, state.halted });
+        std.debug.print("compat: ran, {d} bundles, halted={}, unset reads X {d} Y {d}\n", .{ n, state.halted, unset.x, unset.y });
     } else |e| {
         var n: u64 = 0;
         for (prof) |c| n += c;
-        std.debug.print("compat: {s} after {d} bundles\n", .{ @errorName(e), n });
+        std.debug.print("compat: {s} after {d} bundles, unset reads X {d} Y {d}\n", .{ @errorName(e), n, unset.x, unset.y });
     }
 }

@@ -87,6 +87,9 @@ pub const State = struct {
     /// The 0x18 class-000 phase T, flipped by w2[17] = 0 (fact 180).
     x18_t: bool = false,
 
+    /// When set, counts X / Y reads of addresses nothing has written (compat runs).
+    unset_reads: ?*UnsetReads = null,
+
     pub fn deinit(self: *State, gpa: std.mem.Allocator) void {
         self.y_mem.deinit(gpa);
         self.x_mem.deinit(gpa);
@@ -94,21 +97,32 @@ pub const State = struct {
 
     /// Y words are 16 bits (700): a store keeps s[15:0], so only those bits read back.
     pub fn getY(self: *const State, addr: u32) ?u32 {
-        return if (self.y_mem.get(addr)) |v| v & 0xFFFF else null;
+        const v = self.y_mem.get(addr);
+        if (v == null) if (self.unset_reads) |u| {
+            u.y += 1;
+        };
+        return if (v) |w| w & 0xFFFF else null;
     }
 
     pub fn getX(self: *const State, addr: u32) ?u32 {
-        return self.x_mem.get(addr);
+        const v = self.x_mem.get(addr);
+        if (v == null) if (self.unset_reads) |u| {
+            u.x += 1;
+        };
+        return v;
     }
 
     /// An executor's X read: also latches xd, the last X word read
     /// (fact 161, 241).
     pub fn readX(self: *State, addr: u32) ?u32 {
-        const v = self.x_mem.get(addr);
+        const v = self.getX(addr);
         self.xd = v orelse 0;
         return v;
     }
 };
+
+/// X / Y reads of never-written addresses, counted while `State.unset_reads` is set.
+pub const UnsetReads = struct { x: u64 = 0, y: u64 = 0 };
 
 pub const RunError = error{
     UnknownForm,
