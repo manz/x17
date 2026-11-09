@@ -21,13 +21,18 @@ CI runs the harness.  Nobody but codec authors touches this repo.
 Downstream codec repos put `x17` on PATH with one composite action step:
 
 ```yaml
-- uses: manz/x17@master
-  # Pin to a tag once releases are cut: manz/x17@v0.3.0
+runs-on: ubuntu-26.04-arm
+steps:
+  - uses: manz/x17@v0.1.0
 ```
 
-The action builds x17 from source with the matching Zig toolchain and
-caches the binary across runs (key: OS + action ref + Zig version).
-Override Zig with `zig-version: '0.17.0'` if your consumer needs it.
+On an ARM64 Linux runner pinned to a release tag, the action downloads that
+release's static binary. On any other runner, or at a branch ref, it builds
+x17 from source with Zig (`zig-version`, default 0.17.0) and caches the
+binary per OS, arch, ref and Zig version.
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the
+stripped aarch64-linux binary, smoke-tests it and attaches it to the release.
 
 ## Layout
 

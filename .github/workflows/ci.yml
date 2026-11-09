@@ -8,9 +8,9 @@ on:
 jobs:
   # Three jobs run side by side; none waits for another.
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
           version: '0.17.0'
@@ -18,9 +18,9 @@ jobs:
         run: zig build test --summary all
 
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: mlugg/setup-zig@v2
         with:
           version: '0.17.0'
@@ -34,9 +34,9 @@ jobs:
         run: zig-out/bin/x17 doc --check docs/sm1/reference.md
 
   action-selftest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Consume setup-x17 from this checkout
         uses: ./
         with:

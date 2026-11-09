@@ -1,43 +1,73 @@
 name: 'Setup x17'
-description: 'Build and install the x17 assembler / emulator for sm1 DSP'
+description: 'Install the x17 assembler / emulator for the sm1 DSP'
 author: 'manz'
 branding:
   icon: 'cpu'
   color: 'blue'
 
+# On an ARM64 Linux runner (e.g. ubuntu-26.04-arm) with a release tag, the action downloads
+# that release's prebuilt binary.  Anywhere else, or without a release, it builds x17 from
+# the action's own checkout.
+
 inputs:
+  version:
+    description: 'Release tag to download (default: the action ref when it is a v* tag)'
+    required: false
+    default: ''
   zig-version:
-    description: 'Zig toolchain version used to build x17'
+    description: 'Zig toolchain version used when building from source'
     required: false
     default: '0.17.0'
   optimize:
-    description: 'Zig optimize mode for the x17 build'
+    description: 'Zig optimize mode when building from source'
     required: false
     default: 'ReleaseFast'
 
 runs:
   using: composite
   steps:
+    - name: Download release binary
+      id: release
+      if: runner.os == 'Linux' && runner.arch == 'ARM64'
+      shell: bash
+      env:
+        TAG: ${{ inputs.version != '' && inputs.version || github.action_ref }}
+      run: |
+        bin="${{ runner.temp }}/x17-bin"
+        case "$TAG" in v*) ;; *) echo "No release tag; building from source."; exit 0 ;; esac
+        mkdir -p "$bin"
+        url="https://github.com/manz/x17/releases/download/$TAG/x17-aarch64-linux.tar.gz"
+        if curl -fsSL "$url" | tar -xz -C "$bin"; then
+          echo "$bin" >> "$GITHUB_PATH"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "x17 $TAG downloaded to $bin"
+        else
+          echo "No release asset at $url; building from source."
+        fi
+
     - name: Install Zig
+      if: steps.release.outputs.found != 'true'
       uses: mlugg/setup-zig@v2
       with:
         version: ${{ inputs.zig-version }}
 
     - name: Cache x17 binary
       id: cache
-      uses: actions/cache@v4
+      if: steps.release.outputs.found != 'true'
+      uses: actions/cache@v6
       with:
         path: ${{ github.action_path }}/zig-out/bin/x17
-        key: x17-${{ runner.os }}-${{ github.action_ref }}-${{ inputs.zig-version }}-${{ inputs.optimize }}
+        key: x17-${{ runner.os }}-${{ runner.arch }}-${{ github.action_ref }}-${{ inputs.zig-version }}-${{ inputs.optimize }}
 
     - name: Build x17
-      if: steps.cache.outputs.cache-hit != 'true'
+      if: steps.release.outputs.found != 'true' && steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ github.action_path }}
       run: zig build -Doptimize=${{ inputs.optimize }}
 
     - name: Add x17 to PATH
+      if: steps.release.outputs.found != 'true'
       shell: bash
       run: |
         echo "${{ github.action_path }}/zig-out/bin" >> "$GITHUB_PATH"
-        echo "x17 installed at ${{ github.action_path }}/zig-out/bin/x17"
+        echo "x17 built at ${{ github.action_path }}/zig-out/bin/x17"
