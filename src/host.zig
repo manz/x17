@@ -7,6 +7,10 @@
 //!   Q1 entry       `Config.entry`: syllable 0 of the program window
 //!                  (MEASURED); kept settable for tests.
 //!   Q2 packet in   STUB `Config.packet`: the host stages packet bytes in Y.
+//!                  On silicon they do not land in X or Y: the descriptor DMA
+//!                  feeds a stream port outside host-visible memory (fact 82);
+//!                  the instruction that reads it is OPEN.  Staging in Y is a
+//!                  test convenience, not the device's path.
 //!                  How the engine sees them is unknown.
 //!   Q3 hand-back   one packet per run; the run ends at the stop form
 //!                  (MEASURED).  No CPU code writes the status header, so the

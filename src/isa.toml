@@ -572,6 +572,8 @@ name = "param"     # entry 12: the host-shared parameter page (0x2203FF00)
 # x17agu2 (630, 631): AGU x = e<S2[24:21]>; S2[5:2] = k != 0 writes e<k> <- e<{S2[1:0], S1[31:30]}> - 1, read before the writes (S1[31:30] is inert only when k = 0); k = the AGU dest e refused.  own-x17a2x, own-x17a2e
 # x17sty stop form (648, 667): S1[28:27] = 00, S1[5] = 0; k = S1[2:0]: k = 1 stops iff p1, k = 3 runs away (refused), other k stop.
 #   The Y store lands once, then the engine never reaches the next bundle; bit 2 never rises (host sees a wedge, as 457).
+#   782: to the host the stop is an invalid-word wedge (+0xA98 = 0x04C00202: bit 26 up, bit 2 down, no bit 12; +0xC4C = 0x6D0,
+#   as aset [20] = 0), not the feed wait; a feed answer does not resume it.
 # x17sty R mux S2[3:1] = 2 (781): same as mux 7, R<S1[14:11]> <- AGU10[S1[10:7]](x = e<S1[18:15]>, y = R<h[30:27]>, i = #h[26:11]).  own-x17stym2
 # x17agu2 fn 11 (780): y - i into e<2*S1[2:0] + h[31]> (R8 0x600, #0x83 -> 0x57D; fn 10 0x683, fn 12 0x600); x17ld's fn 11 wedge (443) was that bundle, fn 11 stays refused there until measured.  own-a2f11
 # x17agu2 s<S1[22:19]> (629): bare alu05 op h[10:5] of a = s<S1[18:15]>, b = s<S2[28:25]> (no h[25:19] modifiers): add, sub, rsub, xor, mova, movb, addi -> b, clr, asr; others refused; codes beyond the measured one per class INFERRED.  own-x17a2s
