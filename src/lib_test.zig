@@ -7112,6 +7112,35 @@ test "alu head shifts asr / asrrs / lsr over every count (fact 774); clr 0x22 wi
     try testing.expectEqual(@as(u32, 0), state.s[14]);
 }
 
+test "x18 class 011 codes below 0x10 always write p (fact 776)" {
+    const gpa = testing.allocator;
+    // code / cond head[28:25], op 0, n = 0, a = s3, b = s0, p dest p12, w3 shape 011 with w3[3].
+    for ([_]struct { code: u32, v: u32, want: u8 }{
+        .{ .code = 2, .v = 5, .want = 1 },
+        .{ .code = 2, .v = 0xFFFFFB, .want = 0 },
+        .{ .code = 8, .v = 0xFFFFFB, .want = 0 },
+        .{ .code = 11, .v = 0, .want = 1 },
+        .{ .code = 12, .v = 5, .want = 0 },
+        .{ .code = 13, .v = 0, .want = 1 },
+        .{ .code = 13, .v = 5, .want = 0 },
+        .{ .code = 4, .v = 0xFFFFFB, .want = 1 },
+        .{ .code = 15, .v = 0, .want = 1 },
+    }) |k| for ([_]u8{ 0, 1 }) |pre| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = k.v;
+        state.p[12] = pre;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000018 | k.code << 25, 0, 12 << 14 | 3 << 2, 0x60000009 });
+        try testing.expectEqual(k.want, state.p[12]);
+    };
+    // 0x0E: p <- n not in {2, 5, 6, 7, 9}, operand-free (n = 0 here; other n await the value).
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.p[12] = 0;
+    try emu.executeBundle(gpa, &state, &.{ 0x0E << 25 | 0x18, 0, 12 << 14, 0x60000009 });
+    try testing.expectEqual(@as(u8, 1), state.p[12]);
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};

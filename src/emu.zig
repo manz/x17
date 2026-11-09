@@ -2956,18 +2956,43 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (ld_dest != 0) state.s[ld_dest] = ld_val;
     if (dest_r != 0) state.r[dest_r] = r_val;
     if (dest_a != 0) state.a[dest_a] = v;
-    // 743: cond 11 v <= 0, 13 v == 0, 0 true (179's "negative" never met v = 0).
-    const cond: u32 = (h >> 25) & 0xF;
-    // p0 reads 1 (682), so cond 0's true into p0 changes nothing.
-    if ((cond == 0 and (w2 >> 14) & 0xF != 0) or cond == 11 or cond == 13) {
-        if ((w2 >> 14) & 0xF == 0) return RunError.UnknownForm; // p0 write: unmeasured
-        const sv = sx16(v);
-        state.p[(w2 >> 14) & 0xF] = @intFromBool(switch (cond) {
-            11 => sv <= 0,
+    if (try x18C3Cond(h, w1, w2, v)) |bit| {
+        const pd: u32 = (w2 >> 14) & 0xF;
+        // p0 reads 1 (682): cond 0's true into p0 changes nothing; other p0 writes are unmeasured.
+        if (pd != 0) state.p[pd] = @intFromBool(bit) else if ((h >> 25) & 0xF != 0) return RunError.UnknownForm;
+    }
+}
+
+/// The class-011 p<w2[17:14]> write, cond = head[28:25] (the code's low bits).  Codes below
+/// 0x10 always write (776): 0x0E is p <- n not in {2, 5, 6, 7, 9}, operand-free; the others,
+/// at n = 0 with b = s0, 2 / 5 / 8 v >= 0, 11 / 12 v <= 0, 13 v == 0, the rest 1.  With n != 0
+/// or b != s0 b enters the compare (OPEN): p is left alone, as 743 left the unmeasured conds,
+/// so the measured value rows (641-644) keep running.  Codes 0x10 up keep 743: cond 0 true,
+/// 11 v <= 0, 13 v == 0, others leave p alone.  null: no write.
+fn x18C3Cond(h: u32, w1: u32, w2: u32, v: u32) RunError!?bool {
+    const code: u32 = (h >> 25) & 0x3F;
+    const cond: u32 = code & 0xF;
+    const n: u32 = (w2 >> 6) & 0xF;
+    const sv = sx16(v);
+    if (code == 0x0E) return switch (n) {
+        2, 5, 6, 7, 9 => false,
+        else => true,
+    };
+    if (code < 0x10) {
+        if (n != 0 or (w1 >> 4) & 0xF != 0) return null;
+        return switch (cond) {
+            2, 5, 8 => sv >= 0,
+            11, 12 => sv <= 0,
             13 => sv == 0,
             else => true,
-        });
+        };
     }
+    return switch (cond) {
+        0 => true,
+        11 => sv <= 0,
+        13 => sv == 0,
+        else => null,
+    };
 }
 
 /// Class 111 (fact 174, 202, 203, 206).  40-bit MAC: P =
