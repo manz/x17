@@ -3946,14 +3946,22 @@ fn execX19RAgua(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunE
 ///   w2[24]), R<w3[10:7]> <- P (0 if w2[28]); s<w2[12:9]> <- floor(xy / 2^24) (w1[17] = 1)
 ///   or floor(xy / 2^23 + 1/2) (w1[17] = 0, w1[15] = 1)
 ///   A slot: A<w2[20:17]> <- agu_xr(w3[24:20], A<w3[19:15]>, R<w3[14:11]>); dest 0 is no
-///   write and A0 reads 0.  The X store (w2[23:22] = 3) is OPEN.
+///   write and A0 reads 0.  X store (w2[23:22] = 3, 312 / 384): X:[A<{w1[2:0], h[31:30]}>] <-
+///   sx24 s<{w2[0], w1[31:29]}>, read before the writes.
 fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const w1 = bundle[1];
     const w2 = bundle[2];
     const w3 = bundle[3];
-    if ((w2 >> 22) & 3 == 3) return RunError.UnknownForm;
     const op: u32 = (w1 >> 11) & 0x7;
     if (op != 0 and op != 4) return RunError.UnknownForm;
+    // X store (312, 384): w2[23:22] = 11 stores sx24 s<{w2[0], w1[31:29]}> at X:[A<{w1[2:0],
+    // h[31:30]}>] as-is, both read before the bundle's writes; the store's own A step is
+    // unmeasured (none seen).
+    const x_on = (w2 >> 22) & 3 == 3;
+    // 521: w2 = 0x80C80000 (store on, w2[31] = 1) wedged twice; w2[31] is necessary to it.
+    if (x_on and w2 >> 31 == 1) return RunError.UnknownForm;
+    const x_addr: u32 = state.a[((w1 & 7) << 2) | (bundle[0] >> 30)];
+    const x_val: u32 = state.s[((w2 & 1) << 3) | (w1 >> 29)] & M24;
     const xs: u32 = (w2 >> 5) & 0xF;
     const ys: u32 = (w2 >> 1) & 0xF;
     const x: i64 = if (xs == 0) 0 else sx24(state.s[xs]);
@@ -3980,6 +3988,7 @@ fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_r != 0) state.r[dest_r] = if ((w2 >> 28) & 1 == 1) 0 else p;
     if (hi_s != 0) state.s[hi_s] = hi;
     if (a_dest != 0) state.a[a_dest] = a_val;
+    if (x_on) state.x_mem.put(gpa, x_addr, x_val) catch return RunError.OutOfMemory;
 }
 
 /// x19aagu (fact 144, 152, 335, 341, 342), every slot reading before any writes:

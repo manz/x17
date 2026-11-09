@@ -305,7 +305,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # (w1[17] = 1) or floor(xy / 2^23 + 1/2) (w1[17] = 0, w1[15] = 1): exact, no saturation to |xy| = 2^41 (386).  Head ALU
 # (w1 class 010/101): s<h[18:15]> <- ALU05[h[10:5]](s<h[14:11]>, s<h[29:26]>).  A slot: A<w2[20:17]> <- agu_xr(fn w3[24:20],
 # x = A<w3[19:15]>, r = R<w3[14:11]>) (385; A0 reads 0, dest 0 no write, own-x19mac-a0).  X store X:[A<(w1[2:0] << 2) | h[31:30]>] <- s<{w2[0],
-# w1[31:29]}> when w2[23:22] = 3 (not modelled).  A readback 6 nops after one wedged, 13 worked (harness note, OPEN).
+# w1[31:29]}> (sx24) when w2[23:22] = 3, A<k> as-is (no step seen), both read before the bundle's writes (312, 384; modelled).  A readback 6 nops after one wedged, 13 worked (harness note, OPEN).
 # own-x19mul, own-x19macw*, own-x19head, own-x19mac-aslot, own-x19mac-combined
 # 0x0C [31] = 1 (fact 282, 378): one form.  R<[30:27]> <- agu_xr(fn [11:7], x = A<[16:12]>, r = R<[20:17]>); with
 # R dest 0, p<[24:21]> <- c22-27 R >0 >=0 <=0 <0 !=0 ==0, c28-31 R<A R>=A R!=A R==A (signed).  [5] = 1 required.  OPEN:

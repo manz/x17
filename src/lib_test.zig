@@ -7175,6 +7175,24 @@ test "0x0B head[31:30] = 10 loads Y:[e] into s, R and A (facts 258, 259, 324)" {
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{0xB416A02B}));
 }
 
+test "x19mac's X store: X:[A<{w1[2:0], h[31:30]}>] <- s<{w2[0], w1[31:29]}> before the writes (facts 312, 384)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    for (0..32) |k| state.a[k] = 0x100 + 0x10 * @as(u32, @intCast(k));
+    state.s[13] = 0x00ABCD;
+    state.s[12] = 3;
+    // The decode stop's shape: w1 class 101 + w2[0] = 1 -> s13; head ALU off; k = (w1[2:0] << 2) | h[31:30].
+    const w1: u32 = 0xA002A008 | 5; // w1[2:0] = 5, op 4, e1 <- P
+    try emu.executeBundle(gpa, &state, &.{ 0x40000019, w1, 0x21C0019B, 0xC0000580 });
+    try testing.expectEqual(@as(?u32, 0x00ABCD), state.getX(0x100 + 0x10 * ((5 << 2) | 1)));
+    // Head ALU rewriting s13 (s13 <- s0 + s0): the store keeps the old s13.
+    state.s[13] = 0x000777;
+    try emu.executeBundle(gpa, &state, &.{ 0x40000019 | 13 << 15, w1, 0x21C0019B, 0xC0000580 });
+    try testing.expectEqual(@as(?u32, 0x000777), state.getX(0x100 + 0x10 * ((5 << 2) | 1)));
+    try testing.expectEqual(@as(u32, 0), state.s[13]);
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};
