@@ -1013,7 +1013,7 @@ rop.c4	y_R	R	13	16	head
 rop.c4	fn	imm	17	20	head
 
 # aset0b <dest_s>, <src_e>
-aset0b	dest_s	s	26	28	head
+aset0b	dest_s	s	26	29	head
 aset0b	src_e	e	5	8	head
 
 # ragu0c <dest_R>, <x_A>, #<fn>

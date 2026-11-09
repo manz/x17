@@ -7155,6 +7155,26 @@ test "x18 class 011 code 0x0E op 0 is a + b at every n (fact 777)" {
     };
 }
 
+test "0x0B head[31:30] = 10 loads Y:[e] into s, R and A (facts 258, 259, 324)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[1] = 0x700;
+    state.yd = 0x0BCD;
+    try state.y_mem.put(gpa, 0x700, 0x1234);
+    // class 101: s13 <- v, R dest 0, A13 <- v ([14:13] = 01), e1.
+    try emu.executeBundle(gpa, &state, &.{0xB416A02B});
+    try testing.expectEqual(@as(u32, 0x1234), state.s[13]);
+    try testing.expectEqual(@as(u32, 0x1234), state.a[13]);
+    // class 100 with R5 and A4 from yd ([14:13] = 00); [20] = 0 wedges.
+    try emu.executeBundle(gpa, &state, &.{0x8000000B | 3 << 26 | 5 << 22 | 1 << 20 | 4 << 15 | 1 << 5});
+    try testing.expectEqual([3]u32{ 0x1234, 0x1234, 0x0BCD }, [3]u32{ state.s[3], state.r[5], state.a[4] });
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{0x8000000B | 3 << 26 | 1 << 5}));
+    // 16-bit value with bit 15 into A: widening unmeasured.
+    try state.y_mem.put(gpa, 0x700, 0x8001);
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{0xB416A02B}));
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};

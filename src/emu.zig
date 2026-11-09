@@ -264,7 +264,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const high3: u32 = (head >> 29) & 0x7;
         if (high3 == 0b010 or high3 == 0b011) return execJmp(gpa, state, head);
         if (high3 == 0b001 and (head >> 19) & 1 == 1) return execPlog(gpa, state, head);
-        if (high3 == 0b100) return execAset0b(state, head);
+        if (high3 == 0b100 or high3 == 0b101) return execAset0b(state, head);
     }
     // jr2 (302, 303, 617): 0x11 + a class-100 second with w1[23:21] = 001.
     if (low5 == 0x11 and bundle.len == 2 and bundle[1] >> 29 == 0b100 and (bundle[1] >> 21) & 7 == 1) return execJr2(gpa, state, bundle);
@@ -6011,11 +6011,21 @@ fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     state.a[a_idx] = addr;
 }
 
-/// 0x0B class 100 (fact 259): s<[28:26]> <- Y:[e<[8:5]>].  The A<[18:15]>
-/// side named in the note is not modelled.
+/// 0x0B with head[31:30] = 10 (fact 258, 259, 324): v = Y:[e<[8:5]>]; s<[29:26]> ([29] = bit 3,
+/// so classes 100 and 101 are one op), R<[25:22]> <- v, A<[18:15]> <- v when [14:13] = 01, else
+/// yd.  [20] = 0 wedges (258); [19], [10:9] inert.  How the 16-bit value widens into a 24-bit A
+/// is unmeasured: refused when its bit 15 is set.
 fn execAset0b(state: *State, head: u32) RunError!void {
-    const dest: u32 = (head >> 26) & 7;
-    if (dest != 0) state.s[dest] = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
+    if ((head >> 20) & 1 == 0) return RunError.UnknownForm;
+    const v: u32 = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
+    const dest_s: u32 = (head >> 26) & 0xF;
+    const dest_r: u32 = (head >> 22) & 0xF;
+    const dest_a: u32 = (head >> 15) & 0xF;
+    const a_val: u32 = if ((head >> 13) & 3 == 1) v else state.yd & 0xFFFF;
+    if (dest_a != 0 and a_val & 0x8000 != 0) return RunError.UnknownForm;
+    if (dest_s != 0) state.s[dest_s] = v;
+    if (dest_r != 0) state.r[dest_r] = v;
+    if (dest_a != 0) state.a[dest_a] = a_val;
 }
 
 /// 0x0C with [31] = 1 (fact 282, 378; measured 2026-11-06): one form.

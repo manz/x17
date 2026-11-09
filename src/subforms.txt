@@ -679,7 +679,8 @@ lde.arm    1   0xA0000006
 # rop.c4: rop at class 100, [21] inert (fact 285 / own-x07rop4).
 rop.c4     1   0x80200007
 
-# aset0b: 0x0B class 100, s <- Y:[e] (fact 259 / own-x0baset).
+# aset0b: 0x0B head[31:30] = 10, s<[29:26]> <- Y:[e] (fact 259, 324 / own-x0baset); [29] = 1 is
+# class 101 (s8..s15).  The template's [18:15] = 2 / [14:13] = 01 also writes A2 <- v (258).
 aset0b     1   0x8011200B
 
 # ragu0c: 0x0C [31] = 1, R <- agu_xr over A and R0 (fact 282, 378 / own-x0cragu).

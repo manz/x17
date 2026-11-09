@@ -2803,10 +2803,11 @@ Emulator:
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
-| dest_s | s | head | [28:26] |
+| dest_s | s | head | [29:26] |
 | src_e | e | head | [8:5] |
 
-> aset0b: 0x0B class 100, s <- Y:[e] (fact 259 / own-x0baset).
+> aset0b: 0x0B head[31:30] = 10, s<[29:26]> <- Y:[e] (fact 259, 324 / own-x0baset); [29] = 1 is
+> class 101 (s8..s15).  The template's [18:15] = 2 / [14:13] = 01 also writes A2 <- v (258).
 
 ### `ragu0c`
 
