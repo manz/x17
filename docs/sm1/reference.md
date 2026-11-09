@@ -533,6 +533,7 @@ Emulator:
 > x17 S1 class 000 + S2 class 111 (554): S2[4:3] = 11 stores Y:[e<S2[24:21]>] <- s<2*S2[2:0]> (pre-move), beside the s<S1[27:24]> write; S2[4:3] = 01 and source 0 OPEN, refused.
 > x12.agu every head[31:29] (562, retracting 553): e<h[12:9]>, s<2*w1[2:0] + h[31]>, R<w1[24:21]> <- AGU10 all write; w1[28] unread.  own: cbe012d2 23780001 / 33780001, e6 = 0x760.
 > ste (552): 0x0F with a class-001 second and e index {w1[0], h[31:29]} = 0 writes s<h[24:21]> <- e<w1[20:17]> (+1 with w1[2]) instead of an e.
+> st.y class-011 second (757): 2 words; e<{w1[0], h[31:29]}> <- #h[20:5]; s<h[24:21]> (when nonzero) <- 326's mux on w1[2:1]: 0, R<h[28:25]>, e<w1[8:5]>, 0.  w1[16:15] = 00: no store, w1[28:1] otherwise inert (8 of 8).  Store forms and index 0 unmeasured, refused; the loop head 0x6044800x keeps its row.
 > class aliases (618-621): agu12 and agu13 S class 011 as 001; x17agu2 S1 111 as 001; x17sub any S1[31:29].
 > class aliases (551): x19k w2 classes 000-011; x17agu2 S1 011/101 as 001; x19mac w2 000/101 with w3 110; aset12 S 111 as 101.  st.y's 011 alias is not taken: it would shadow loop (0x6044800x).  xst class 000 is ytst, not an alias.  own-x19kal
 > yd reads (550): 0x00's R slot Y source with w5[4] = 0 (0x01 unaffected) and x17 S2 class 101 with S1[28] = 0 read yd, the last Y read, through the same muxes (490's 0 / 0xA050 was yd).  x00's multiply slot s<w6[19:16]> in mode 0 with w4[22] (316's swap): X:[A<w2[22:18]>] when w4[18] = 0, Y:[e<w4[8:5]>] when w4[18] and w5[4]; yd unmeasured, refused.  x17sty R mux 0: yd[15:0].

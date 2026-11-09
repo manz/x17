@@ -256,6 +256,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w1 >> 29 == 0b001 and (head >> 29) != 0b001) return execSte(state, bundle);
         if (w1 >> 29 == 0b101 and w1 & 0x00500000 == 0x00500000) return execStx0f(gpa, state, bundle);
         if (w1 >> 29 == 0b101) return execRimm(state, bundle);
+        // 757: st.y with a class-011 second; the loop head (0x6044800x) keeps its own row.
+        if (w1 >> 29 == 0b011 and head & 0xFFFFFFF0 != 0x60448000) return execSte011(state, bundle);
     }
     if (low5 == 0x08 and (head >> 29) == 0b010 and (head >> 5) & 0x30 == 0x30) {
         return execStk(gpa, state, head);
@@ -5979,6 +5981,25 @@ fn execSte(state: *State, bundle: []const u32) RunError!void {
         return;
     }
     state.s[(bundle[0] >> 21) & 0xF] = (state.e[(w1 >> 17) & 0xF] +% ((w1 >> 2) & 1)) & 0xFFFF;
+}
+
+/// 0x0F with a class-011 second (fact 757): e<{w1[0], head[31:29]}> <- #head[20:5]; when
+/// head[24:21] != 0, s<head[24:21]> <- 326's mux on w1[2:1] (0, R<head[28:25]>, e<w1[8:5]>, 0).
+/// Measured with w1[16:15] = 00 only (no store); the store forms and index 0 are refused.
+fn execSte011(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    if ((w1 >> 15) & 3 != 0) return RunError.UnknownForm;
+    const dest: u32 = ((w1 & 1) << 3) | (h >> 29);
+    if (dest == 0) return RunError.UnknownForm;
+    const s_dest: u32 = (h >> 21) & 0xF;
+    const s_val: u32 = switch ((w1 >> 1) & 3) {
+        1 => state.r[(h >> 25) & 0xF],
+        2 => state.e[(w1 >> 5) & 0xF],
+        else => 0,
+    };
+    state.e[dest] = (h >> 5) & 0xFFFF;
+    if (s_dest != 0) state.s[s_dest] = s_val;
 }
 
 fn execLde(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

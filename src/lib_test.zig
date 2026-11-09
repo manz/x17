@@ -6870,6 +6870,33 @@ test "0x00's MAC low half reads xd << 8 when w4[15:13] = 0 (fact 755)" {
     }
 }
 
+test "st.y with a class-011 second writes e and the 326 mux, no store (fact 757)" {
+    const gpa = testing.allocator;
+    // Own words: head 4002468F (e2 <- #0x1234, s0), w1[28:1] inert with w1[16:15] = 00.
+    for ([_]u32{ 0x6A4C2468, 0x75B20900, 0x60000000, 0x7FFE7FFE }) |w1| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try emu.executeBundle(gpa, &state, &.{ 0x4002468F, w1 & ~@as(u32, 0x00018001) });
+        try testing.expectEqual(@as(u32, 0x1234), state.e[2]);
+        try testing.expectEqual(@as(u32, 0), state.y_mem.count());
+    }
+    // s<head[24:21]> by w1[2:1]: 0, R<head[28:25]>, e<w1[8:5]>, 0.
+    for ([_][2]u32{ .{ 0, 0 }, .{ 1, 0x777 }, .{ 2, 0x555 }, .{ 3, 0 } }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[5] = 0x999;
+        state.r[3] = 0x777;
+        state.e[4] = 0x555;
+        try emu.executeBundle(gpa, &state, &.{ 0x4002468F | 3 << 25 | 5 << 21, 0x60000000 | 4 << 5 | k[0] << 1 });
+        try testing.expectEqual(k[1], state.s[5]);
+    }
+    // Store forms (w1[16:15] != 00) and index 0 are unmeasured.
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x4002468F, 0x60008000 }));
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x0002468F, 0x60000000 }));
+}
+
 // Compatibility run of an external program read in place from X17_COMPAT_PROG (a little-endian
 // u32 syllable stream).  Skipped when unset.  Reports only ran / refused / wedged and the
 // bundle count.
