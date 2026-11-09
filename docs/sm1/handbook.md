@@ -191,10 +191,12 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
   - `mul13`: s <- round(a b / 2^23) (§128, §697), plus a head ALU slot and, with
     S[16:15] = 11, the `x13.st` X store, all reading before any write (§535): a Q23 product, an
     ALU op and a store for the cost of one bundle.
-  - `x19.mac`: an integer multiply. Its s slot takes the product's high part, floor(xy / 2^24)
-    or floor(xy / 2^23 + 1/2), exact with no saturation up to |xy| = 2^41 (§145, §386), while
-    P = low16(xy) can go to an e or R. A head ALU op, an A step and an X store share the bundle
-    (§312, §384, §385).
+  - `x19.mac`: a multiply whose s slot takes the product's high part and whose low part can go
+    to an e or R (§145, §386), with no saturation through |xy| = 2^41, the measured range. A
+    head ALU op, an A step and an X store share the bundle (§312, §384, §385). By w1[17]:
+    - 0 (the pmul form): high = round-half-up(xy / 2^23) at 24 bits (1.5 -> 2, -1.5 -> -1),
+      low = (2xy)[15:0], the doubled product;
+    - 1: high = floor(xy / 2^24), low = low16(xy), undoubled.
 - **Third-slot ops on x02 (§627, §628).** Besides the adder codes, the third slot runs code 6
   (asr b by a, no rounding, no saturation), code 7 (asrrs: rounds right, saturates left), codes
   22/31 (a logic table: xor, xnor, or, and, not a, a; code 22 then shifts left by w5[5:2]) and
@@ -388,7 +390,8 @@ Offsets are from the sm1 block's MMIO base.
   - then Y:0xFD94 bit 0 = 1, and the stop with bit 2.
   - A slot is reused only once its owned word is 0; the host releases it by writing 0 there.
     With both slots owned, the program writes Y:0xFD95 = 0x21 and stops in the bit-12 feed
-    wait (+0xA98 = 0x04801202), the descriptor still queued (+0x114 = 4) (§797).
+    wait (+0xA98 = 0x04801202), the descriptor still queued (+0x114 = 4) (§797). Whether
+    releasing a slot and arming then resumes that program is unmeasured.
   - A slot's length is that frame's samples times its own channel count: a mono frame stays
     mono, and an MPEG-2 frame is half an MPEG-1 one (§797).
 - **Status, +0xA98:**
