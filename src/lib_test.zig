@@ -3315,6 +3315,138 @@ test "0x00's s-slot muxes 3/4/5 ignore w5[24:23] and read yd with w5[4] = 0 (fac
     }
 }
 
+fn runX00Slot(state: *emu.State, code: u32, a: u32, m: u32, n: u32) !void {
+    // own-x00tab's bundle, ALU slot s2 <- code(a = s<a>, b = s1), m, shift n.
+    _ = try emu.runFrom(testing.allocator, state, &.{ 0x28001000 | code << 5, 0x0002A005, 0xE8010004 | n << 6, 0x00000020, 0x20, 0xC0000000 | m << 27, 0x00000020 | a << 20, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+}
+
+test "0x00's class-05 slot takes a = s<w6[23:20]> and m = w5[29:27]; 0x23 adds (fact 725)" {
+    const gpa = testing.allocator;
+    // own-x00tab's bundle, ALU slot s2 <- code(a, b = s<w2[5:2]> = s1), shift 0.
+    for ([_]struct { code: u32 = 0, a: u32, m: u32 = 0, want: ?u32 }{
+        .{ .a = 3, .want = 0x0130 },
+        .{ .a = 5, .want = 0x0080 },
+        .{ .a = 0, .want = 0x0030 },
+        .{ .a = 3, .m = 1, .want = 0xFFFF30 }, // b - a
+        .{ .a = 3, .m = 2, .want = 0x0030 }, // a dropped
+        .{ .code = 0x12, .a = 3, .want = null }, // rsub with a: OPEN
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = 0x30;
+        state.s[3] = 0x100;
+        state.s[5] = 0x50;
+        const r = runX00Slot(&state, k.code, k.a, k.m, 0);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "0x00's class-05 slot: 0x14 adds, 0x06 asr by s<a>, 0x26 selects on the adder sign (facts 727, 728, 731)" {
+    const gpa = testing.allocator;
+    for ([_]struct { code: u32, a: u32, m: u32 = 0, n: u32 = 0, b: u32 = 0x130, sa: u32 = 2, want: ?u32 }{
+        .{ .code = 0x14, .a = 3, .want = 0x0132 },
+        .{ .code = 0x14, .a = 3, .m = 1, .want = 0x012E }, // b - a
+        .{ .code = 0x14, .a = 5, .want = 0x0030 },
+        .{ .code = 0x14, .a = 5, .m = 1, .want = 0x0230 },
+        .{ .code = 0x14, .a = 0, .want = 0x0130 },
+        .{ .code = 0x06, .a = 3, .want = 0x004C },
+        .{ .code = 0x06, .a = 5, .want = 0x0000 }, // count -256
+        .{ .code = 0x06, .a = 0, .want = 0x0130 },
+        .{ .code = 0x06, .a = 3, .m = 3, .want = null }, // m 3-7 unmeasured
+        // 731: b = 1 / -1 over counts -8 .. 30
+        .{ .code = 0x06, .a = 3, .b = 1, .sa = 0xFFFFF8, .want = 0x000100 },
+        .{ .code = 0x06, .a = 3, .b = 0xFFFFFF, .sa = 0xFFFFF8, .want = 0xFFFF00 },
+        .{ .code = 0x06, .a = 3, .b = 1, .sa = 0xFFFFEA, .want = 0x400000 },
+        .{ .code = 0x06, .a = 3, .b = 0xFFFFFF, .sa = 0xFFFFEA, .want = 0xC00000 },
+        .{ .code = 0x06, .a = 3, .b = 1, .sa = 0xFFFFE9, .want = 0x800000 },
+        .{ .code = 0x06, .a = 3, .b = 0xFFFFFF, .sa = 0xFFFFE9, .want = 0x800000 },
+        .{ .code = 0x06, .a = 3, .b = 1, .sa = 0xFFFFE8, .want = 0 },
+        .{ .code = 0x06, .a = 3, .b = 0xFFFFFF, .sa = 0xFFFFE2, .want = 0 },
+        .{ .code = 0x06, .a = 3, .b = 1, .sa = 23, .want = 0 },
+        .{ .code = 0x06, .a = 3, .b = 0xFFFFFF, .sa = 24, .want = 0xFFFFFF },
+        .{ .code = 0x06, .a = 3, .b = 0xFFFFFF, .sa = 30, .want = 0xFFFFFF },
+        .{ .code = 0x26, .a = 3, .m = 1, .b = 1, .want = 1 }, // min
+        .{ .code = 0x26, .a = 3, .b = 0xFFFB00, .sa = 0x444, .want = 0xFFFB00 },
+        .{ .code = 0x26, .a = 3, .m = 1, .b = 0x300, .sa = 0x444, .want = 0x300 },
+        .{ .code = 0x26, .a = 3, .m = 1, .b = 0x500, .sa = 0x444, .want = 0x444 },
+        .{ .code = 0x26, .a = 3, .m = 2, .want = null },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = k.b;
+        state.s[3] = k.sa;
+        state.s[5] = 0xFFFF00;
+        const r = runX00Slot(&state, k.code, k.a, k.m, k.n);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "0x00's slot with n set: asr adds i = w2[8:6] and w2[9] negates the count; 0x14 splits on n (fact 732)" {
+    const gpa = testing.allocator;
+    for ([_]struct { code: u32, m: u32 = 0, n: u32, sa: u32 = 1, b: u32 = 0x100, want: ?u32 }{
+        .{ .code = 0x06, .n = 3, .want = 0x81 },
+        .{ .code = 0x06, .m = 1, .n = 3, .want = 0x7E },
+        .{ .code = 0x06, .m = 2, .n = 3, .want = 0x80 },
+        .{ .code = 0x06, .n = 8, .want = 0x200 },
+        .{ .code = 0x06, .m = 1, .n = 8, .want = 0x200 },
+        .{ .code = 0x06, .n = 11, .want = 0x206 },
+        .{ .code = 0x06, .m = 1, .n = 11, .want = 0x1FA },
+        .{ .code = 0x06, .n = 9, .want = 0x202 },
+        .{ .code = 0x06, .m = 3, .n = 3, .want = null },
+        .{ .code = 0x14, .n = 1, .sa = 2, .b = 0x130, .want = 0x132 },
+        .{ .code = 0x14, .m = 1, .n = 3, .sa = 2, .b = 0x130, .want = 0x12E },
+        .{ .code = 0x14, .n = 2, .sa = 2, .b = 0x130, .want = 0xFFFECC }, // -(a + b) - 2
+        .{ .code = 0x14, .n = 4, .sa = 0xFFFB00, .b = 0x130, .want = 0x0003CE },
+        .{ .code = 0x14, .m = 1, .n = 8, .sa = 2, .b = 0x130, .want = 0xFFFED2 }, // a - b
+        .{ .code = 0x14, .m = 1, .n = 2, .sa = 0xFFFB00, .b = 0x130, .want = 0xFFF9D0 },
+        .{ .code = 0x14, .n = 5, .sa = 2, .b = 0x130, .want = null },
+        .{ .code = 0x14, .m = 2, .n = 2, .sa = 2, .b = 0x130, .want = null },
+        .{ .code = 0x26, .m = 1, .n = 2, .sa = 2, .b = 1, .want = 1 },
+        .{ .code = 0x26, .m = 1, .n = 2, .sa = 0x444, .b = 0x500, .want = 0x444 },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = k.b;
+        state.s[3] = k.sa;
+        const r = runX00Slot(&state, k.code, 3, k.m, k.n);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
+test "0x00's code 0x23 never shifts: n picks the adder or a (fact 729)" {
+    const gpa = testing.allocator;
+    for ([_]struct { n: u32, m: u32 = 0, want: ?u32 }{
+        .{ .n = 0, .want = 0x130 },
+        .{ .n = 1, .want = 0x130 },
+        .{ .n = 3, .m = 1, .want = 0xFFFF30 },
+        .{ .n = 9, .m = 2, .want = 0x030 },
+        .{ .n = 2, .want = 0x100 },
+        .{ .n = 4, .m = 1, .want = 0x100 },
+        .{ .n = 8, .want = 0x100 },
+        .{ .n = 15, .want = 0x100 },
+        .{ .n = 5, .want = null }, // unmeasured
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = 0x30;
+        state.s[3] = 0x100;
+        const r = runX00Slot(&state, 0x23, 3, k.m, k.n);
+        if (k.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.s[2]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
 test "x18 class 111 muxes 4 and 5 fresh reads set yd too (after fact 597)" {
     const gpa = testing.allocator;
     for ([_][2]u32{ .{ 4, 0x5B00 }, .{ 5, 0x12B6 } }) |k| {

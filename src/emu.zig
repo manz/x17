@@ -1089,7 +1089,7 @@ fn x00D(state: *const State, w4: u32, w5: u32, yd_new: *?u32) u32 {
 ///   sub-mux w5[24:23] (#imm / 1 / the w1[10:7] op / D), D = x00D (595, 724);
 /// Y store Y:[e<w4[8:5]>] <- s<w4[16:13]>, X store X:[A<w2[22:18]>] <- sx24 s<w2[13:10]>,
 ///   enabled by w5[5:4] / w5[2:1] = 11 on 0x00 and 8 bits higher on 0x01;
-/// ALU slot s<w6[7:4]> <- ALU05[head[10:5]](0, s<w2[5:2]>) with shift w2[9:6];
+/// ALU slot s<w6[7:4]> <- ALU05[head[10:5]](s<w6[23:20]>, s<w2[5:2]>), shift w2[9:6], m w5[29:27] (725);
 /// MAC slot s<w6[11:8]> <- w4[23] = 1: xd (w4[17] = 1); else acc[15:0],
 ///   acc = mode w1[13:11]({s<w2[13:10]> : sx24 s<w4[15:13]>}, 2 s<w6[27:24]> s<w6[31:28]>);
 /// multiply s<w6[19:16]> <- mode w1[13:11](X = s<w2[13:10]>, P = s*s >> 23 (24 if w1[17])
@@ -1108,6 +1108,12 @@ fn x01Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
     const i: i64 = (w2 >> 6) & 0xF;
     if (code == 0x1C) return x01Xori(m, b, i);
     if (code == 0x06) return x01Asr(m, b, i, sx24(state.s[a_idx]));
+    return adderSlot(state, code, w2, a_idx, m);
+}
+
+/// The 0x00 / 0x01 class-05 slot over a = s<a_idx>, b = s<w2[5:2]>, shift w2[9:6], m (499, 725):
+/// adder codes take a and m; other codes with a or m set are OPEN, refused.
+fn adderSlot(state: *const State, code: u32, w2: u32, a_idx: u32, m: u32) RunError!u32 {
     const adder = switch (ALU05[code]) {
         .add, .addi, .sub => true,
         else => false,
@@ -1157,6 +1163,57 @@ fn x01Asr(m: u32, b: i64, i: i64, a: i32) RunError!u32 {
     const r: i64 = v << @intCast(-a);
     if (v < 0 and r < -0x800000) return RunError.UnknownForm;
     return @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
+}
+
+/// 0x00's asr (727, 731, 732): ADDER_M[m](x = w2[8:6], y = b) >> s<a>, 696's class-05 asr
+/// (left shifts truncated, right arithmetic); w2[9] negates the count, as w5[5] does on x02.
+/// m 0-2 measured.
+fn x00Asr(count: u32, b: i64, m: u32, n: u32) RunError!u32 {
+    if (m > 2) return RunError.UnknownForm;
+    const t = adderM(@intCast(m), n & 7, b, 0);
+    const v: i64 = t.x + t.y + t.c;
+    if (v < -0x800000 or v > 0x7FFFFF) return RunError.UnknownForm;
+    const c: u32 = if (n & 8 != 0) (0 -% count) & M24 else count & M24;
+    return alu05Shift(c, @as(u32, @truncate(@as(u64, @bitCast(v)))) & M24, .asr);
+}
+
+/// The 0x00 class-05 slot (725, 727-729, 732): 0x01's a = s<w6[23:20]> and m = w5[29:27], n = w2[9:6].
+/// 0x14 adds; 0x23 adds unshifted for n in {0, 1, 3, 9} and is a for n in {2, 4, 8, 15};
+/// 0x14 splits on n too (732); 0x06 is x00Asr; 0x26 selects b when ADDER_M[m](a, b) < 0, else a.
+/// Unmeasured corners refused.
+fn x00Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
+    const code: u32 = (h >> 5) & 0x3F;
+    const a_idx: u32 = (w6 >> 20) & 0xF;
+    const m: u32 = (w5 >> 27) & 7;
+    const n: u32 = (w2 >> 6) & 0xF;
+    const a: i64 = sx24(state.s[a_idx]);
+    const b: i64 = sx24(state.s[(w2 >> 2) & 0xF]);
+    return switch (code) {
+        0x06 => x00Asr(state.s[a_idx], b, m, n),
+        // 727, 732: never shifts; n in {0, 1, 3} the adder, {2, 4, 8} m0 -(a + b) - 2, m1 a - b.
+        0x14 => blk: {
+            if (m > 1) break :blk RunError.UnknownForm;
+            break :blk switch (n) {
+                0, 1, 3 => adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m),
+                2, 4, 8 => @as(u32, @truncate(@as(u64, @bitCast(if (m == 0) -(a + b) - 2 else a - b)))) & M24,
+                else => RunError.UnknownForm,
+            };
+        },
+        0x23 => switch (n) {
+            0, 1, 3, 9 => adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m),
+            2, 4, 8, 15 => @as(u32, @truncate(@as(u64, @bitCast(a)))) & M24,
+            else => RunError.UnknownForm,
+        },
+        0x26 => blk: {
+            // 732: n = 2 ignored; other n unmeasured.
+            if (m > 1 or (n != 0 and n != 2)) break :blk RunError.UnknownForm;
+            const t = adderM(@intCast(m), a, b, 0);
+            const sum: i64 = t.x + t.y + t.c;
+            if (sum < -0x800000 or sum > 0x7FFFFF) break :blk RunError.UnknownForm;
+            break :blk @as(u32, @truncate(@as(u64, @bitCast(if (sum < 0) b else a)))) & M24;
+        },
+        else => adderSlot(state, code, w2, a_idx, m),
+    };
 }
 
 fn x01Table(state: *const State, h: u32, w4: u32, w5: u32, op: u32, imm: u32) RunError!u32 {
@@ -1230,8 +1287,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const alu_dest: u32 = (w6 >> 4) & 0xF;
     const alu_val: u32 = if (alu_dest == 0) 0 else if (x01) try x01Alu(state, h, w2, w5, w6) else blk: {
         if ((w4 >> 19) & 1 == 1) return RunError.UnknownForm;
-        const word: u32 = (((h >> 5) & 0x3F) << 5) | (((w2 >> 6) & 0xF) << 19);
-        break :blk (try aluWord(word, 0, sx24(state.s[(w2 >> 2) & 0xF]))) orelse return RunError.UnknownForm;
+        break :blk try x00Alu(state, h, w2, w5, w6);
     };
 
     const mode: u32 = (w1 >> 11) & 7;
