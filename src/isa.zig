@@ -258,6 +258,9 @@ pub const MAX_SUBFORMS: usize = 256;
 
 pub const subforms_txt = @embedFile("subforms.txt");
 
+/// One plain sentence per form name (`name<TAB>sentence`), for `x17 doc`.
+pub const summaries_txt = @embedFile("summaries.txt");
+
 const subforms_parsed = parseSubForms(subforms_txt);
 
 pub const subforms: []const SubForm = subforms_parsed.items[0..subforms_parsed.len];
