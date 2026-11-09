@@ -84,6 +84,11 @@ pub const State = struct {
     end_pending: bool = false,
     /// Set by 0x00 control 0x08 / 0x0D (315, 768, 769): the next arm is abnormal (OPEN).
     next_arm_parks: bool = false,
+    /// Set by an x17sty stop form (648, 667): the run ends after this bundle, no bundle after
+    /// it runs and no completion rises.
+    stop_now: bool = false,
+    /// Set when a run ended at such a stop: the host sees a wedge, not a halt.
+    silent_stop: bool = false,
     /// Whether e0, the address entry, is known (fact 466, 468): see updateE0.
     e0_known: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
@@ -4289,24 +4294,26 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         return;
     }
     if ((s2 >> 11) & 3 != 3) return RunError.UnknownForm;
-    // Mux 7: R<S1[14:11]> <- AGU10[S1[10:7]](x = e<S1[18:15]>, the store's own address
-    // register, y = R<h[30:27]>, i = #h[26:11]) (fact 543, own-x17styr); mux 0: yd[15:0]
-    // (550).
+    // Mux 7 and 2 (781, own-x17stym2): R<S1[14:11]> <- AGU10[S1[10:7]](x = e<S1[18:15]>, the
+    // store's own address register, y = R<h[30:27]>, i = #h[26:11]) (fact 543, own-x17styr);
+    // mux 0: yd[15:0] (550).
     const h = bundle[0];
     const r_val: ?u32 = switch (r_mode) {
-        7 => try agu10ImmEval((s1 >> 7) & 0xF, state.e[(s1 >> 15) & 0xF], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF),
+        2, 7 => try agu10ImmEval((s1 >> 7) & 0xF, state.e[(s1 >> 15) & 0xF], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF),
         0 => state.yd & 0xFFFF,
         else => null,
     };
     // S1[28:27] = 00 with S1[5] = 0 is a stop form keyed by S1[2:0] (648, 667): k = 1 stops
-    // after the store iff p1, k = 3 runs away, any other k stops. Only k = 1 with p1 clear
-    // (a plain store) is modelled; the stops' shadows are unmeasured.
-    if ((s1 >> 27) & 3 == 0 and (s1 >> 5) & 1 == 0 and (s1 & 7 != 1 or state.p[1] != 0)) return RunError.UnknownForm;
+    // after the store iff p1, k = 3 runs away (refused), any other k stops.  A stop lands the
+    // store once and ends the run with no completion (bit 2 never rises): `stop_now`.
+    const stop_form = (s1 >> 27) & 3 == 0 and (s1 >> 5) & 1 == 0;
+    if (stop_form and s1 & 7 == 3) return RunError.UnknownForm;
+    const stops = stop_form and (s1 & 7 != 1 or state.p[1] != 0);
     // e<2*S1[2:0] + h[31]> <- AGU10[S1[10:7]](x = e<k>), written after the store (fact 658,
     // 429), measured with R mux 0 (fns x and x+1). Under mux 7 the e write lands elsewhere:
     // refused.
     const ec_dest: u32 = ((s1 & 7) << 1) | (h >> 31);
-    if (ec_dest != 0 and r_mode != 0) return RunError.UnknownForm;
+    if (ec_dest != 0 and r_mode != 0 and !stops) return RunError.UnknownForm;
     const k: u32 = (s1 >> 15) & 0xF;
     const e_post: u32 = if (ec_dest == 0) 0 else try agu10ImmEval((s1 >> 7) & 0xF, state.e[k], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF);
     const v: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
@@ -4315,7 +4322,9 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         const dest: u32 = (s1 >> 11) & 0xF;
         if (dest != 0) state.r[dest] = r;
     }
-    if (ec_dest != 0) state.e[ec_dest] = e_post;
+    // Under a non-zero mux the e write lands elsewhere; after a stop nothing reads it.
+    if (ec_dest != 0 and r_mode == 0) state.e[ec_dest] = e_post;
+    if (stops) state.stop_now = true;
 }
 
 /// (S1 class 100, S2 class 100) with S2[3:0] = 10 (fact 273):
@@ -5572,6 +5581,8 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
     var since_armer: ?DeadlineGap = null;
     const lane0: usize = state.cur_lane;
     state.halted = false;
+    state.silent_stop = false;
+    state.stop_now = false;
     while (i < syllables.len) : (bundles_run += 1) {
         if (bundles_run >= max_bundles) return RunError.RunawayProgram;
         const head = syllables[i];
@@ -5592,6 +5603,14 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             try executeBundle(gpa, state, slice);
             if (!sameY(&before, &state.y_mem)) return RunError.UnknownForm;
         } else try executeBundle(gpa, state, slice);
+        if (state.stop_now) {
+            // 667: the store lands and the engine never reaches the next bundle; inside a
+            // jump's delay or a stop's shadow unmeasured.
+            state.stop_now = false;
+            if (state.jump_delay > 0 or state.pending_jmp_offset != null or shadow != null) return RunError.UnknownForm;
+            state.silent_stop = true;
+            return bundles_run + 1;
+        }
         updateE0(state, slice);
         if (shadow == null) {
             if (isHaltBundle(slice)) {

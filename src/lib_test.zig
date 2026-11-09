@@ -4988,18 +4988,22 @@ test "x17.sty keeps S1[27]; S1[28:27] = 00 is a stop form keyed by S1[2:0] (648,
         st.s[3] = 0x99;
         st.p[1] = p1;
         const prog = [_]u32{ t.slice()[0], (t.slice()[1] & ~@as(u32, 1 << 27)) | 1, t.slice()[2], 0x00000017, 0x31308000, 0xA0000000 };
-        const r = emu.runFrom(testing.allocator, &st, &prog, 0, 8);
-        if (p1 == 1) try testing.expectError(emu.RunError.UnknownForm, r) else {
-            _ = try r;
-            try testing.expectEqual(@as(?u32, 0x99), st.y_mem.get(0x2E40));
-        }
+        _ = try emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        // The store lands either way; with p1 the run then stops without a halt (667).
+        try testing.expectEqual(@as(?u32, 0x99), st.y_mem.get(0x2E40));
+        try testing.expectEqual(p1 == 1, st.silent_stop);
+        try testing.expectEqual(p1 == 0, st.halted);
     }
-    // k = 3 runs away and k = 0, 2, 4..7 stop whatever p is (667): all refused
+    // k = 0, 2, 4..7 stop whatever p is (667); k = 3 runs away: refused.
     for ([_]u32{ 0, 2, 3, 7 }) |k| {
         var st = emu.State{};
         defer st.deinit(testing.allocator);
         const prog = [_]u32{ t.slice()[0], (t.slice()[1] & ~@as(u32, 1 << 27)) | k, t.slice()[2], 0x00000017, 0x31308000, 0xA0000000 };
-        try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(testing.allocator, &st, &prog, 0, 8));
+        const r = emu.runFrom(testing.allocator, &st, &prog, 0, 8);
+        if (k == 3) try testing.expectError(emu.RunError.UnknownForm, r) else {
+            _ = try r;
+            try testing.expect(st.silent_stop);
+        }
     }
 }
 
@@ -7306,7 +7310,7 @@ fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label
     const r = emu.arm(gpa, state, prog, kind, 50_000_000);
     var n: u64 = 0;
     for (prof) |c| n += c;
-    const verdict: []const u8 = if (r) |_| (if (state.halted) "ran, halted" else "ran off the end") else |e| @errorName(e);
+    const verdict: []const u8 = if (r) |_| (if (state.halted) "ran, halted" else if (state.silent_stop) "ran, stopped without completion" else "ran off the end") else |e| @errorName(e);
     std.debug.print("compat {s}: {s} after {d} bundles, unset reads X {d} Y {d}, OPEN p skips {d}\n", .{ label, verdict, n, unset.x, unset.y, unset.open_p });
 }
 
@@ -7455,4 +7459,25 @@ test "x17agu2 fn 11 is y - i into e<2*S1[2:0] + h[31]> (fact 780)" {
     hi.r[8] = 0x600;
     try emu.executeBundle(gpa, &hi, &.{ 0xC0041817, 0x68000581, 0x00140066 });
     try testing.expectEqual(@as(u32, 0x57D), hi.e[3]);
+}
+
+test "x17sty stop form: the store lands, then the run ends with no completion (fact 667)" {
+    const gpa = testing.allocator;
+    // The decoder's bundle (k = 0, R mux 2), then an ldi that must not run.
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[2] = 0x420;
+    state.r[5] = 0x123;
+    state.s[3] = 0x4567;
+    const n = try emu.runFrom(gpa, &state, &.{ 0x28200017, 0x60012d50, 0x61fcb804, 0x00a00010, 0xe6420080 }, 0, 16);
+    try testing.expectEqual(@as(usize, 1), n);
+    try testing.expect(state.silent_stop);
+    try testing.expect(!state.halted);
+    try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x420));
+    // 781: R mux 2 is the AGU, fn 0xA = y + i = R5 + 0x400.
+    try testing.expectEqual(@as(u32, 0x523), state.r[5]);
+    // k = 3 runs away: refused.
+    var away = emu.State{};
+    defer away.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &away, &.{ 0x28200017, 0x60012d53, 0x61fcb804 }));
 }
