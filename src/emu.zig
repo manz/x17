@@ -82,8 +82,10 @@ pub const State = struct {
     wedge_pending: bool = false,
     /// Set by a 0x00 END (control 6 / 7, fact 759): two more bundles run, then the program halts.
     end_pending: bool = false,
-    /// The host decode arm's gate (fact 761): 0x00 control 0x08 / 0x0D makes it ready.
-    decode: DecodeGate = .off,
+    /// Set by 0x00 control 0x08 / 0x0D (315, 768): the next arm parks (runs nothing visible).
+    next_arm_parks: bool = false,
+    /// Set by a 0x00 bundle with control 0 / 0x10 (768): the next arm's entry is OPEN.
+    entry_open: bool = false,
     /// Whether e0, the address entry, is known (fact 466, 468): see updateE0.
     e0_known: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
@@ -130,9 +132,6 @@ pub const State = struct {
 /// X / Y reads of never-written addresses, counted while `State.unset_reads` is set.
 pub const UnsetReads = struct { x: u64 = 0, y: u64 = 0, first_x: ?u32 = null, first_y: ?u32 = null };
 
-/// The decode arm's gate (fact 761): off until a 0x08 / 0x0D, used after one decode arm.
-pub const DecodeGate = enum { off, ready, used };
-
 pub const RunError = error{
     UnknownForm,
     LdiDestOpen, // ldi dest = 2..15 (marked OPEN in isa.toml)
@@ -141,8 +140,10 @@ pub const RunError = error{
     RunawayProgram,
     /// A halt too far after the latest armer never completes (fact 98, 477, 484).
     HaltDeadline,
-    /// A decode arm with no 0x08 / 0x0D since reset: the program does not run (fact 761).
-    DecodeNotEnabled,
+    /// The arm parked: a 0x08 / 0x0D in the previous run (315, 768).
+    Parked,
+    /// The previous run executed a 0x00 bundle with control 0 / 0x10: the entry is OPEN (768).
+    EntryOpen,
 };
 
 /// Execute one bundle (1..7 syllables) against `state`.  Dispatches by
@@ -1427,14 +1428,17 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             if (x01) return RunError.UnknownForm;
             state.end_pending = true;
         },
-        // 761 (superseding 315's park, which stays OPEN): 0x08 / 0x0D fall through and enable
-        // the host's decode arm.  A bare 0x08 in an otherwise empty bundle wedged (230): refused.
+        // 315 (768, retracting 761): 0x08 / 0x0D fall through and park the next arm.  A bare 0x08
+        // in an otherwise empty bundle wedged (230): refused.
         8, 0xD => {
             if (x01) return RunError.UnknownForm;
             if (w1 | w2 | w4 | w5 | w6 | (h & ~@as(u32, 0x1F)) | (w3 & ~@as(u32, 0x1F)) == 0) return RunError.UnknownForm;
-            state.decode = .ready;
+            state.next_arm_parks = true;
         },
-        0, 2, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
+        0, 0x10 => if (!x01) {
+            state.entry_open = true;
+        },
+        2, 5, 0xC, 0x18, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
         else => return RunError.UnknownForm,
     }
 
@@ -5472,16 +5476,17 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
     return runFrom(gpa, state, syllables, 0, 256);
 }
 
-/// The host's decode arm (+0x988 / +0x98C, fact 761): runs only after a 0x00 control 0x08 /
-/// 0x0D, and enters at syllable 0 like the pass-1 arm (763).  Whether it clears the gate is
-/// unmeasured: a second decode arm without a new 0x08 is refused.
-pub fn decodeArm(gpa: std.mem.Allocator, state: *State, syllables: []const u32, start: usize, max_bundles: usize) RunError!usize {
-    switch (state.decode) {
-        .off => return RunError.DecodeNotEnabled,
-        .used => return RunError.UnknownForm,
-        .ready => state.decode = .used,
+/// A host arm (+0x984, or the decode arm +0x988 / +0x98C: the same, 768), entering at q0 (763).
+/// After a 0x08 / 0x0D it parks once (315); after a 0x00 control 0 / 0x10 bundle the entry is
+/// OPEN (768: the next run's first store came from q32): refused.
+pub fn arm(gpa: std.mem.Allocator, state: *State, syllables: []const u32, max_bundles: usize) RunError!usize {
+    if (state.next_arm_parks) {
+        state.next_arm_parks = false;
+        state.entry_open = false;
+        return RunError.Parked;
     }
-    return runFrom(gpa, state, syllables, start, max_bundles);
+    if (state.entry_open) return RunError.EntryOpen;
+    return runFrom(gpa, state, syllables, 0, max_bundles);
 }
 
 /// runLinear from syllable `start`, with a bundle budget of `max_bundles`

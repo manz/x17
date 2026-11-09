@@ -6918,30 +6918,36 @@ test "0x00 control 6 / 7 ends the program after two delay slots (fact 759)" {
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x00000001, 0, 0, 6, 0, 0, 0 }));
 }
 
-test "0x00 control 0x08 / 0x0D enables the decode arm (fact 761)" {
+test "host arms: 0x08 / 0x0D park the next arm once; control 0 / 0x10 leave the entry open (facts 315, 768)" {
     const gpa = testing.allocator;
+    // END (control 6) then two nop slots: no control-0 bundle, so the next entry is q0.
     const halt = [_]u32{ 0x00000000, 0, 0, 6, 0, 0, 0, 0x40000005, 0x40000005 };
-    // s4 <- #1 (mux 6) beside the control; the run goes on to its END.
-    for ([_]u32{ 0, 8, 0xD, 0x10 }) |ctl| {
+    for ([_]u32{ 8, 0xD }) |ctl| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        // s4 <- #1 (mux 6) beside the control; the run goes on to its END.
+        const prog = [_]u32{ 0x00000800, 0, 0, ctl, 0, 0, 0x0000400C } ++ halt;
+        _ = try emu.arm(gpa, &state, &prog, 16);
+        try testing.expect(state.halted);
+        try testing.expectEqual(@as(u32, 1), state.s[4]);
+        try testing.expectError(error.Parked, emu.arm(gpa, &state, &halt, 16));
+        _ = try emu.arm(gpa, &state, &halt, 16);
+        try testing.expect(state.halted);
+    }
+    for ([_]u32{ 0, 0x10 }) |ctl| {
         var state = emu.State{};
         defer state.deinit(gpa);
         const prog = [_]u32{ 0x00000800, 0, 0, ctl, 0, 0, 0x0000400C } ++ halt;
-        _ = try emu.runFrom(gpa, &state, &prog, 0, 16);
-        try testing.expect(state.halted);
-        try testing.expectEqual(@as(u32, 1), state.s[4]);
-        // The pass-1 arm always runs.
-        _ = try emu.runFrom(gpa, &state, &halt, 0, 16);
-        try testing.expect(state.halted);
-        if (ctl == 8 or ctl == 0xD) {
-            _ = try emu.decodeArm(gpa, &state, &halt, 0, 16);
-            try testing.expect(state.halted);
-            // A second decode arm without a new 0x08 is unmeasured.
-            try testing.expectError(error.UnknownForm, emu.decodeArm(gpa, &state, &halt, 0, 16));
-        } else try testing.expectError(error.DecodeNotEnabled, emu.decodeArm(gpa, &state, &halt, 0, 16));
+        _ = try emu.arm(gpa, &state, &prog, 16);
+        try testing.expectError(error.EntryOpen, emu.arm(gpa, &state, &halt, 16));
     }
-    // 230: a bare 0x08 in an empty bundle wedged.
+    // A run ending on END alone leaves the next arm entering at q0.
     var state = emu.State{};
     defer state.deinit(gpa);
+    _ = try emu.arm(gpa, &state, &halt, 16);
+    _ = try emu.arm(gpa, &state, &halt, 16);
+    try testing.expect(state.halted);
+    // 230: a bare 0x08 in an empty bundle wedged.
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0, 0, 0, 8, 0, 0, 0 }));
 }
 
@@ -7097,7 +7103,7 @@ const CompatImage = struct {
     }
 };
 
-fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label: []const u8, decode: bool) void {
+fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label: []const u8) void {
     var unset = emu.UnsetReads{};
     state.unset_reads = &unset;
     defer state.unset_reads = null;
@@ -7108,7 +7114,7 @@ fn compatArm(gpa: std.mem.Allocator, state: *emu.State, prog: []const u32, label
     defer state.profile = null;
     // Syllable i sits in lane i mod 4 of the whole image, so each arm counts lanes from 0.
     state.cur_lane = 0;
-    const r = if (decode) emu.decodeArm(gpa, state, prog, 0, 50_000_000) else emu.runFrom(gpa, state, prog, 0, 50_000_000);
+    const r = emu.arm(gpa, state, prog, 50_000_000);
     var n: u64 = 0;
     for (prof) |c| n += c;
     const verdict: []const u8 = if (r) |_| (if (state.halted) "ran, halted" else "ran off the end") else |e| @errorName(e);
@@ -7127,12 +7133,12 @@ test "compat: set image, configure then decode arm" {
     defer state.deinit(gpa);
     var img = CompatImage{ .bytes = bytes };
     try img.applySet(gpa, prog, &state);
-    compatArm(gpa, &state, prog, "set 1", false);
+    compatArm(gpa, &state, prog, "set 1");
     try img.applySet(gpa, prog, &state);
     if (testing.environ.getPosix("X17_COMPAT_PARAMS")) |params| {
         var it = std.mem.tokenizeAny(u8, params, " ,");
         var a: u32 = 0xFD80;
         while (it.next()) |hw| : (a += 1) try state.y_mem.put(gpa, a, try std.fmt.parseInt(u32, hw, 16));
     }
-    compatArm(gpa, &state, prog, "set 2 decode arm", true);
+    compatArm(gpa, &state, prog, "set 2 decode arm");
 }
