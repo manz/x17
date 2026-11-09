@@ -6962,6 +6962,24 @@ test "0x00 multiply mode 0 without w4[22] writes 0 and wins over the MAC slot (f
     try testing.expectEqual(@as(u32, 0x777), state.s[4]);
 }
 
+test "st.y with a class-001 store second stores s<w[24:21]> at the old e, w[25] inert (fact 765)" {
+    const gpa = testing.allocator;
+    for ([_][2]u32{ .{ 1, 0x111 }, .{ 2, 0x222 }, .{ 3, 0x333 }, .{ 17, 0x111 }, .{ 18, 0x222 } }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = 0x111;
+        state.s[2] = 0x222;
+        state.s[3] = 0x333;
+        state.e[1] = 0x700;
+        state.v = @splat(0x999);
+        // head: e1 <- #0x1090; second: [16:15] = 11, Y:[e1] <- s<src>.
+        try emu.executeBundle(gpa, &state, &.{ 0x2002120F, 0x20038000 | k[0] << 21 });
+        try testing.expectEqual(@as(?u32, k[1]), state.getY(0x700));
+        try testing.expectEqual(@as(?u32, null), state.getY(0x1090));
+        try testing.expectEqual(@as(u32, 0x1090), state.e[1]);
+    }
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};

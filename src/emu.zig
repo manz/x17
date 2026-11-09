@@ -4088,17 +4088,19 @@ fn execStY(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         },
         else => {},
     }
-    const value: u32 = state.v[state.cur_lane & 0x3];
-    state.y_mem.put(gpa, addr, value) catch return RunError.OutOfMemory;
-    if (bundle.len >= 2 and bundle[1] != 0) {
+    const pair = bundle.len >= 2 and bundle[1] & 0xE0018000 == 0x20018000;
+    if (pair) {
+        // 765: with a class-001 store second the one store is Y:[e<w[20:17]>] <- s<w[24:21]>,
+        // e as it stood before the bundle; w[25] inert, no lane or position dependence.
         const w = bundle[1];
-        if (w & 0xE0018000 != 0x20018000) {
+        const v: u32 = state.s[(w >> 21) & 0xF] & 0xFFFF;
+        state.y_mem.put(gpa, try yAddrE(state, (w >> 17) & 0xF), v) catch return RunError.OutOfMemory;
+    } else {
+        const value: u32 = state.v[state.cur_lane & 0x3];
+        state.y_mem.put(gpa, addr, value) catch return RunError.OutOfMemory;
+        if (bundle.len >= 2 and bundle[1] != 0) {
+            const w = bundle[1];
             if (!(w >> 29 == 1 and (w >> 15) & 3 == 0)) return RunError.UnknownForm;
-        } else {
-            const src: u32 = (w >> 21) & 0x1F;
-            if (src < 16) return RunError.UnknownForm;
-            const v: u32 = if (src == 16) 0 else state.s[src - 16] & 0xFFFF;
-            state.y_mem.put(gpa, try yAddrE(state, (w >> 17) & 0xF), v) catch return RunError.OutOfMemory;
         }
     }
     state.e[1] = addr;
