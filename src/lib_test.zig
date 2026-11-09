@@ -6441,6 +6441,76 @@ test "x02's w5[10:9] gates the mode-5 read: only 01 reads X memory (fact 739)" {
     }
 }
 
+test "x02's A slot steps by agu_xr fns in the full bundle (fact 738)" {
+    const gpa = testing.allocator;
+    // 730's bundle (read + multiply + third slot) with fn w2[26:22], R<w5[25:22]> = R5.
+    for ([_]struct { fn_op: u32, r: u32 = 0, want: u32 }{
+        .{ .fn_op = 0, .want = 0x61 },
+        .{ .fn_op = 1, .want = 0x5F },
+        .{ .fn_op = 2, .r = 0xFFFE, .want = 0x5E },
+        .{ .fn_op = 2, .r = 0xFFFF, .want = 0x5F },
+        .{ .fn_op = 3, .r = 2, .want = 0x5E },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x60;
+        state.r[5] = k.r;
+        try state.x_mem.put(gpa, 0x60, 0x5000);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0x0002A000, 0x00120042 | k.fn_op << 22, 0x00000009, 0xA5122E18, 0x00004201 | 5 << 22, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(k.want, state.a[9]);
+        try testing.expectEqual(@as(u32, 0x5000), state.s[3]);
+    }
+}
+
+test "x03.tap's A step takes agu_xr fns 0-3 (fact 740)" {
+    const gpa = testing.allocator;
+    // Two taps from A5 = 0x60, X:[a] = a: the second tap's load s3 shows where A5 landed.
+    for ([_]struct { fn_op: u32, r: u32 = 0, want: u32 }{
+        .{ .fn_op = 0, .want = 0x61 },
+        .{ .fn_op = 1, .want = 0x5F },
+        .{ .fn_op = 2, .r = 0xFFFE, .want = 0x5E },
+        .{ .fn_op = 2, .r = 0xFFFF, .want = 0x5F },
+        .{ .fn_op = 3, .r = 2, .want = 0x5E },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[5] = 0x60;
+        state.r[6] = k.r;
+        for (0x5E..0x62) |a| try state.x_mem.put(gpa, @intCast(a), @intCast(a));
+        const tap = [6]u32{ 0x40000003, 0x80006801, 0x000A18E7 | k.fn_op << 22, 0x00000005, 0x00002D98, 0x00041602 | 6 << 22 };
+        _ = try emu.runFrom(gpa, &state, &(tap ++ tap ++ [3]u32{ 0x00000017, 0x31308000, 0xA0000000 }), 0, 32);
+        try testing.expectEqual(k.want, state.s[3]);
+    }
+}
+
+test "x03.rep's store pointer takes agu_xr fns 0-3 (fact 741)" {
+    const gpa = testing.allocator;
+    // own-x03rep's program with fn w2[26:22] and R<w5[25:22]> = R6.
+    for ([_]struct { fn_op: u32, r: u32 = 0, second: u32 }{
+        .{ .fn_op = 0, .second = 0x301 },
+        .{ .fn_op = 1, .second = 0x2FF },
+        .{ .fn_op = 2, .r = 0xFFFE, .second = 0x2FE },
+        .{ .fn_op = 3, .r = 2, .second = 0x2FE },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[3] = 1;
+        state.s[3] = 0x3303;
+        state.a[8] = 0x300;
+        state.r[6] = k.r;
+        const words = switch (try asm_mod.assembleFile(gpa, "x03.rep p3\nalu s0, s0, s0, #0\nalu s0, s0, s0, #0\nx17.halt\n")) {
+            .ok => |w| w,
+            .err => return error.AssembleFailed,
+        };
+        defer gpa.free(words);
+        words[2] |= k.fn_op << 22;
+        words[5] |= 6 << 22;
+        _ = try emu.runLinear(gpa, &state, words);
+        try testing.expectEqual(@as(?u32, 0x3303), state.x_mem.get(0x300));
+        try testing.expectEqual(@as(?u32, 0x3303), state.x_mem.get(k.second));
+    }
+}
+
 test "x03 modes 7 / 6 on the 48-bit acc: sat48(X - 2cd) / sat48(2cd - X) (fact 737)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
     // 701's x03 row: a s2, b s4, hi s10, lo s9.  Mode 4 (2ab), reload, then mode 7 or 6 (2cd).
@@ -6474,5 +6544,28 @@ test "x03 modes 7 / 6 on the 48-bit acc: sat48(X - 2cd) / sat48(2cd - X) (fact 7
             try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(want >> 24)) & 0xFFFFFF)), st.s[10]);
             try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(want)) & 0xFFFFFF)), st.s[9]);
         }
+    }
+}
+
+test "dld does both loads in one word, with no pointer step (fact 742)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w: u32, s2: u32, s11: u32 }{
+        .{ .w = 0x40918009, .s2 = 0x3333, .s11 = 0x1111 },
+        .{ .w = 0x6C0020C9, .s2 = 0x2222, .s11 = 0x0BCD },
+        .{ .w = 0x6C91A0C9, .s2 = 0x3333, .s11 = 0x0BCD },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[3] = 0x330;
+        state.e[6] = 0x720;
+        state.s[2] = 0x2222;
+        state.s[11] = 0x1111;
+        try state.x_mem.put(gpa, 0x330, 0x3333);
+        try state.y_mem.put(gpa, 0x720, 0x0BCD);
+        _ = try emu.runFrom(gpa, &state, &.{ k.w, 0x00000017, 0x31308000, 0xA0000000 }, 0, 8);
+        try testing.expectEqual(k.s2, state.s[2]);
+        try testing.expectEqual(k.s11, state.s[11]);
+        try testing.expectEqual(@as(u32, 0x330), state.a[3]);
+        try testing.expectEqual(@as(u32, 0x720), state.e[6]);
     }
 }

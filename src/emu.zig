@@ -389,8 +389,14 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             try execX03Mode0(gpa, state, bundle);
             // w3[31] is the counter's index bit, not a repeat (679): one pass.  Loops are
             // x03CondJump's jumps.  With w2[28] = 1 the X store post-increments its A on every
-            // pass (675, 679); the field is not separated from the jump.
-            if ((bundle[2] >> 28) & 1 == 1 and ((bundle[5] >> 18) & 3) == 3) state.a[x03AIndex(bundle)] +%= 1;
+            // pass (675, 679); the field is not separated from the jump.  The step is agu_xr
+            // fn w2[26:22] with r = R<w5[25:22]>: 0 x + 1, 1 x - 1, 2 x + r, 3 x - r (741).
+            if ((bundle[2] >> 28) & 1 == 1 and ((bundle[5] >> 18) & 3) == 3) {
+                const fn_op: u32 = (bundle[2] >> 22) & 0x1F;
+                if (fn_op > 3) return RunError.UnknownForm;
+                const ai = x03AIndex(bundle);
+                state.a[ai] = aguXrEval(fn_op, state.a[ai], state.r[(bundle[5] >> 22) & 0xF]);
+            }
             return;
         }
         // Y path (w5[21] = 1): the read enters the 24-bit lane as D << 8;
@@ -1606,12 +1612,14 @@ fn execX03Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32, e_pre:
     const x_val: u32 = state.a[w3 & 0x1F];
     const i_val: u32 = ((w5 & 1) << 15) | ((w4 >> 17) & 0x7FFF);
     // Second A dest (fact 193): A<w2[21:17]> <- fn(A<w3[4:0]>) by w2[26:22], fn 5 = x (670),
-    // fn 0 = x + 1 (672, the one-bundle tap's pointer step); other fns unmeasured. With
-    // w5[5] = 1 it is the Y read Y:[e<w3[30:27]>].
+    // fn 0 = x + 1 (672, the one-bundle tap's pointer step), fns 1-3 agu_xr's x - 1, x + r,
+    // x - r with r = R<w5[25:22]> (740, 741); other fns unmeasured. With w5[5] = 1 it is the
+    // Y read Y:[e<w3[30:27]>].
     const acp_dest: u32 = (w2 >> 17) & 0x1F;
     const acp_val: u32 = if ((w5 >> 5) & 1 == 1) (state.getY(state.e[(w3 >> 27) & 0xF]) orelse 0) & 0xFFFF else switch (fn_op) {
         5 => x_val,
         0 => (x_val +% 1) & M24,
+        1, 2, 3 => aguXrEval(fn_op, x_val, state.r[(w5 >> 22) & 0xF]),
         else => if (acp_dest != 0) return RunError.UnknownForm else 0,
     };
     // AGU table "5" = x + i (fact 164).
