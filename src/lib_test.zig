@@ -6714,15 +6714,22 @@ test "x03.acp's template read slot also loads s7 and yd <- Y:[e<y_e>] under #0 a
     }
 }
 
-test "0x00's codes 0x14 / 0x23 run the adder for n in {0, 1, 3, 6, 9}, all 16 n (fact 749)" {
+test "0x00's codes 0x14 / 0x23 pick the adder by n's condition on p4, all 16 n (facts 749, 751)" {
     const gpa = testing.allocator;
-    for (0..16) |nn| {
-        const n: u32 = @intCast(nn);
-        const adds = n == 0 or n == 1 or n == 3 or n == 6 or n == 9;
+    for (0..32) |nk| {
+        const n: u32 = @intCast(nk & 15);
+        const p4 = nk >= 16;
+        const adds = switch (n) {
+            0, 1, 3 => !p4,
+            2, 5, 7 => p4,
+            6, 9 => true,
+            else => false,
+        };
         for ([_]u32{ 0, 1 }) |m| {
             for ([_]u32{ 0x14, 0x23 }) |code| {
                 var state = emu.State{};
                 defer state.deinit(gpa);
+                state.p[4] = @intFromBool(p4);
                 state.s[1] = 0x130;
                 state.s[3] = 2;
                 try runX00Slot(&state, code, 3, m, n);

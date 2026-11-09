@@ -1202,11 +1202,13 @@ fn x00Asr(count: u32, b: i64, m: u32, n: u32) RunError!u32 {
     return alu05Shift(c, @as(u32, @truncate(@as(u64, @bitCast(v)))) & M24, .asr);
 }
 
-/// The n = w2[9:6] values that run 0x00's adder under codes 0x14 and 0x23 (749): fact 646's
-/// condition table read false; which state it reads is OPEN.
-fn x00AdderN(n: u32) bool {
+/// Whether 0x00's codes 0x14 and 0x23 run the adder (749, 751): n = w2[9:6] is fact 646's
+/// condition code read on p4: 0 / 1 / 3 when !p4, 2 / 5 / 7 when p4, 6 / 9 always, the rest never.
+fn x00AdderN(n: u32, p4: bool) bool {
     return switch (n) {
-        0, 1, 3, 6, 9 => true,
+        0, 1, 3 => !p4,
+        2, 5, 7 => p4,
+        6, 9 => true,
         else => false,
     };
 }
@@ -1228,11 +1230,11 @@ fn x00Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
         // (646's condition table read false) x + y + c, other n ~x + ~y + c.
         0x14 => blk: {
             const t = adderM(@intCast(m), a, b, 0);
-            const r: i64 = if (x00AdderN(n)) t.x + t.y + t.c else ~t.x + ~t.y + t.c;
+            const r: i64 = if (x00AdderN(n, state.p[4] != 0)) t.x + t.y + t.c else ~t.x + ~t.y + t.c;
             break :blk @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
         },
         // 729, 749: never shifts; the same n split, the other result a.
-        0x23 => if (x00AdderN(n)) adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m) else @as(u32, @truncate(@as(u64, @bitCast(a)))) & M24,
+        0x23 => if (x00AdderN(n, state.p[4] != 0)) adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m) else @as(u32, @truncate(@as(u64, @bitCast(a)))) & M24,
         0x26 => blk: {
             // 732: n = 2 ignored; other n unmeasured.
             if (m > 1 or (n != 0 and n != 2)) break :blk RunError.UnknownForm;
