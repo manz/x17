@@ -194,9 +194,12 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
   - `x19.mac`: a multiply whose s slot takes the product's high part and whose low part can go
     to an e or R (§145, §386), with no saturation through |xy| = 2^41, the measured range. A
     head ALU op, an A step and an X store share the bundle (§312, §384, §385). By w1[17]:
-    - 0 (the pmul form): high = round-half-up(xy / 2^23) at 24 bits (1.5 -> 2, -1.5 -> -1),
-      low = (2xy)[15:0], the doubled product;
-    - 1: high = floor(xy / 2^24), low = low16(xy), undoubled.
+    - 0: low = (2xy)[15:0], the doubled product; high at 24 bits by w1[15]: 1 (the pmul form)
+      rounds half up, round(xy / 2^23) (1.5 -> 2, -1.5 -> -1); 0 truncates, floor(xy / 2^23)
+      (0x7FFF^2 -> 0x7F, -1 x 0x7FFF -> -1) (§312, §386);
+    - 1: high = floor(xy / 2^24), low = low16(xy), undoubled (§145, §312);
+    - undefined (§312): w1[16] = 1 gives d + x instead, and w1[12:11] add a high-byte term that
+      depends on state. The emulator refuses both.
 - **Third-slot ops on x02 (§627, §628).** Besides the adder codes, the third slot runs code 6
   (asr b by a, no rounding, no saturation), code 7 (asrrs: rounds right, saturates left), codes
   22/31 (a logic table: xor, xnor, or, and, not a, a; code 22 then shifts left by w5[5:2]) and
