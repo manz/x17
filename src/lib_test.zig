@@ -4498,6 +4498,8 @@ test "the ISA sources quote no image provenance" {
 fn x18c3Run(head: u32, w1: u32, w2: u32, s5: u32) !emu.State {
     var state = emu.State{};
     errdefer state.deinit(testing.allocator);
+    // The 641-645 silicon rows ran with a stale p3 = 1, which the S codes read (752).
+    state.p[3] = 1;
     state.s[5] = s5;
     state.s[7] = 3;
     _ = try emu.runFrom(testing.allocator, &state, &.{ head, w1, w2, 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
@@ -4569,6 +4571,7 @@ test "x18 class 011 unary ops shift the result by n under codes 0x00-0x05" {
 fn x18c3Unary(code: u32, op: u32, n: u32, s5: u32, s7: u32) !u32 {
     var state = emu.State{};
     defer state.deinit(testing.allocator);
+    state.p[3] = 1; // the silicon rows' stale p3 (752)
     state.s[5] = s5;
     state.s[7] = s7;
     _ = try emu.runFrom(testing.allocator, &state, &.{ x18c3Head(code), 0x00001970 | (op << 15), 0x30000014 | (n << 6) | (1 << 14), 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
@@ -4769,6 +4772,7 @@ test "x18 class 011 codes 0x36-0x39 and the head's Y load (645)" {
     defer ld.deinit(testing.allocator);
     ld.e[10] = 0x700;
     try ld.y_mem.put(testing.allocator, 0x700, 0x1234);
+    ld.p[3] = 1; // own-x18b's stale p3 (752)
     ld.s[5] = 5;
     ld.s[7] = 3;
     _ = try emu.runFrom(testing.allocator, &ld, &.{ 0x21c00018, 0x00001970, 0x30000014, 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
@@ -5294,6 +5298,7 @@ test "x18 class 011: w3[3] loads #head[20:5] into R; the load mux's 000 gives 0 
     }) |c| {
         var st = emu.State{};
         defer st.deinit(testing.allocator);
+        st.p[3] = 1; // the silicon rows' stale p3 (752)
         st.s[4] = 5;
         st.s[7] = 3;
         st.s[2] = 0x99;
@@ -5984,6 +5989,7 @@ test "x18 class 011 codes 0x22 and 0x23 ignore the op field (710)" {
         const w2 = (w[2] & ~@as(u32, 0xF << 6)) | (n << 6);
         var st = emu.State{};
         defer st.deinit(testing.allocator);
+        st.p[3] = 1; // the silicon rows' stale p3 (752)
         st.s[1] = 0x123;
         st.s[2] = 0x456;
         st.s[3] = 0xABCDEF;
@@ -6775,6 +6781,31 @@ test "0x00's code 0x14 over every m: x + y + c on the adder n, ~x + ~y + c other
                 const want = if (n == 0) first else second;
                 try testing.expectEqual(@as(u32, @truncate(@as(u64, @bitCast(want)))) & 0xFFFFFF, state.s[2]);
             }
+        }
+    }
+}
+
+test "x18 class 011's S codes read 646's condition on p3 (fact 752)" {
+    const gpa = testing.allocator;
+    // own-x18b's shape, op 0, a = s5 = 5, b = s7 = 3: ALU2 a + b = 8, else 0x10 table B b - a, 0x23 b.
+    for (0..32) |nk| {
+        const n: u32 = @intCast(nk & 15);
+        const p3 = nk >= 16;
+        const alu = switch (n) {
+            0, 1, 3 => !p3,
+            2, 5, 7 => p3,
+            6, 9 => true,
+            else => false,
+        };
+        for ([_]u32{ 0x10, 0x23 }) |code| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.p[3] = @intFromBool(p3);
+            state.s[5] = 5;
+            state.s[7] = 3;
+            _ = try emu.runFrom(gpa, &state, &.{ x18c3Head(code), 0x00001970, 0x30000014 | n << 6, 0x74000149, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+            const want: u32 = if (alu) 8 else if (code == 0x10) 0xFFFFFE else 3;
+            try testing.expectEqual(want, state.s[9]);
         }
     }
 }

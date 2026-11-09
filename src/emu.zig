@@ -1202,12 +1202,13 @@ fn x00Asr(count: u32, b: i64, m: u32, n: u32) RunError!u32 {
     return alu05Shift(c, @as(u32, @truncate(@as(u64, @bitCast(v)))) & M24, .asr);
 }
 
-/// Whether 0x00's codes 0x14 and 0x23 run the adder (749, 751): n = w2[9:6] is fact 646's
-/// condition code read on p4: 0 / 1 / 3 when !p4, 2 / 5 / 7 when p4, 6 / 9 always, the rest never.
-fn x00AdderN(n: u32, p4: bool) bool {
+/// Fact 646's condition code n over one predicate p: 0 / 1 / 3 when !p, 2 / 5 / 7 when p,
+/// 6 / 9 always, the rest never.  0x00's codes 0x14 / 0x23 read it on p4 (749, 751), x18 class
+/// 011's S codes on p3 (752).
+fn cond646(n: u32, p: bool) bool {
     return switch (n) {
-        0, 1, 3 => !p4,
-        2, 5, 7 => p4,
+        0, 1, 3 => !p,
+        2, 5, 7 => p,
         6, 9 => true,
         else => false,
     };
@@ -1230,11 +1231,11 @@ fn x00Alu(state: *const State, h: u32, w2: u32, w5: u32, w6: u32) RunError!u32 {
         // (646's condition table read false) x + y + c, other n ~x + ~y + c.
         0x14 => blk: {
             const t = adderM(@intCast(m), a, b, 0);
-            const r: i64 = if (x00AdderN(n, state.p[4] != 0)) t.x + t.y + t.c else ~t.x + ~t.y + t.c;
+            const r: i64 = if (cond646(n, state.p[4] != 0)) t.x + t.y + t.c else ~t.x + ~t.y + t.c;
             break :blk @as(u32, @truncate(@as(u64, @bitCast(r)))) & M24;
         },
         // 729, 749: never shifts; the same n split, the other result a.
-        0x23 => if (x00AdderN(n, state.p[4] != 0)) adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m) else @as(u32, @truncate(@as(u64, @bitCast(a)))) & M24,
+        0x23 => if (cond646(n, state.p[4] != 0)) adderSlot(state, 0, w2 & ~@as(u32, 0xF << 6), a_idx, m) else @as(u32, @truncate(@as(u64, @bitCast(a)))) & M24,
         0x26 => blk: {
             // 732: n = 2 ignored; other n unmeasured.
             if (m > 1 or (n != 0 and n != 2)) break :blk RunError.UnknownForm;
@@ -2717,7 +2718,7 @@ fn x18C3MinMax(op: u32, x: u32, y: u32) u32 {
 /// x18 class 011 unary ops 2/3/4/6 under the 45 codes 641-643 left (644).  Null for codes this
 /// table does not cover.  #n is the immediate n; S = {2, 5, 6, 7, 9}.  The fit covers n = 0..2,
 /// so n > 2 is refused except where a code selects on S.  Op 7 runs only under 0x09-0x0F.
-fn x18C3Unary644(code: u32, op: u32, n: u32, a: u32, b: u32) RunError!?u32 {
+fn x18C3Unary644(code: u32, op: u32, n: u32, a: u32, b: u32, p3: bool) RunError!?u32 {
     const covered = switch (code) {
         0x06...0x0F, 0x12...0x15, 0x1A...0x22, 0x24...0x2F, 0x36...0x39, 0x3B...0x3F => true,
         else => false,
@@ -2729,7 +2730,7 @@ fn x18C3Unary644(code: u32, op: u32, n: u32, a: u32, b: u32) RunError!?u32 {
         else => false,
     };
     if (n > 2 and !uses_s) return RunError.UnknownForm;
-    const in_s = x18C3AluN(n);
+    const in_s = cond646(n, p3);
     const imm = n;
     const logic_imm: u32 = (switch (op) {
         2 => a | imm,
@@ -2819,25 +2820,21 @@ fn x18C3Rnd(a: u32, n: u32) RunError!u32 {
 }
 
 /// The n values (w2[9:6]) under which head codes 0x10 and 0x23 run the slot ALU (641).
-fn x18C3AluN(n: u32) bool {
-    return n == 2 or n == 5 or n == 6 or n == 7 or n == 9;
-}
-
-/// The class-011 slot value (641, correcting 361): head code head[30:25] 0x10 and 0x23 run the
-/// slot ALU only for n = w2[9:6] in {2, 5, 6, 7, 9}; any other n runs table B (0x10) or writes
-/// b (0x23).  Unary ops (w1[17:15] 2, 3, 4, 6, 7) under codes 0x00-0x02 shift the result left
+/// The class-011 slot value (641, correcting 361; 752): head code head[30:25] 0x10 and 0x23 run the
+/// slot ALU when n = w2[9:6]'s 646 condition holds on p3 (641's {2, 5, 6, 7, 9} was p3 = 1);
+/// otherwise table B (0x10) or b (0x23).  Unary ops (w1[17:15] 2, 3, 4, 6, 7) under codes 0x00-0x02 shift the result left
 /// by n, under 0x03-0x05 right, arithmetic (642, correcting 361's pre-shift of a).  Under
 /// 0x16-0x19, 0x30-0x35 and 0x3A (643) unary ops give LOGIC {2: a|b, 3: a&b, 4: ~b, 6/7: b}
 /// << n (0x16/0x17) or >> n (0x18/0x19); a << n / a (0x30-0x32), a >> n / a (0x33, 0x35),
 /// rounded a >> n / a (0x34) for ops 2/6/7 / 3/4; 0x3A a << n for ops 2/3, a >> n for 4/6/7.
 /// Any other n != 0 is refused (370 measures it only as a shift on binary ops).
-fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
+fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32, p3: bool) RunError!u32 {
     const op = (w1 >> 15) & 7;
     const n = (w2 >> 6) & 0xF;
     return switch ((h >> 25) & 0x3F) {
         // 644: 0x11 runs as 0x10.
-        0x10, 0x11 => if (x18C3AluN(n)) x18C3SlotAlu(op, a, b) else x18C3TableB(op, a, b),
-        0x23 => if (x18C3AluN(n)) x18C3SlotAlu(op, a, b) else b & M24,
+        0x10, 0x11 => if (cond646(n, p3)) x18C3SlotAlu(op, a, b) else x18C3TableB(op, a, b),
+        0x23 => if (cond646(n, p3)) x18C3SlotAlu(op, a, b) else b & M24,
         // 710: 0 for every op (measured at n = 0 and 2).
         0x22 => if (n <= 2) 0 else RunError.UnknownForm,
         else => |code| {
@@ -2861,7 +2858,7 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32) RunError!u32 {
                     0x33, 0x35 => return if (shifting) x18C3Shr(a, n) else a & M24,
                     0x34 => return if (!shifting or n == 0) a & M24 else x18C3Rnd(a, n),
                     0x3A => return if (op == 2 or op == 3) x18C3Shl(a, n) else x18C3Shr(a, n),
-                    else => if (try x18C3Unary644(code, op, n, a, b)) |v| return v,
+                    else => if (try x18C3Unary644(code, op, n, a, b, p3)) |v| return v,
                 }
             }
             return if (n != 0) RunError.UnknownForm else x18C3SlotAlu(op, a, b);
@@ -2882,7 +2879,7 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (w3 & 1 == 0) return RunError.UnknownForm;
     const a: u32 = state.s[(w2 >> 2) & 0xF];
     const b: u32 = state.s[(w1 >> 4) & 0xF];
-    const v = try x18C3Value(h, w1, w2, a, b);
+    const v = try x18C3Value(h, w1, w2, a, b, state.p[3] != 0);
     const dest_s: u32 = (w1 >> 8) & 0xF;
     // The head's load slot (own-x18b and siblings, 645 note): s<head[24:21]> <- Y:[e<w3[28:25]>].
     // Only words below 0x8000 were loaded (sign unmeasured), and a dest shared with the slot's

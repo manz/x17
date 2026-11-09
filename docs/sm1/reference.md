@@ -544,6 +544,7 @@ Emulator:
 > x03 modes 6 / 7 (737): the 701 48-bit acc runs 2ab - X / X - 2ab, X = {s<{w2[0], w1[31:29]}> : s<w5[12:9]>}, saturating; 605's 16-bit-view rows agree on [15:0].  Back-to-back mode 4 then 6/7 unmeasured (14-instruction reload).  own-x03cmul
 > dld (742): both halves in one word, X:[A<[19:15]>] -> s<[25:22]> and Y:[e<[8:5]>] -> s<[29:26]>, no pointer step.  own-dld2
 > x18 class 011 p write (743): cond head[28:25] 0 true, 11 v <= 0, 13 v == 0 (179's negative never met v = 0); w3[21] inert on own-shaped words (704's dependence OPEN); cond 0 beside an overflowing shift OPEN.
+> x18 class 011 S codes (752): n = w2[9:6] is 646's condition read on p3 (0/1/3 when !p3, 2/5/7 when p3, 6/9 always, the rest never); 641's {2, 5, 6, 7, 9} was a stale p3 = 1.  0x10 / 0x11 fall to table B, 0x23 to b, 0x12-0x15 to their second results (0x12 / 0x13 INFERRED).
 > x02 R<w3[22:19]> (547): w5[27:26] 00 imm / Y side by w5[31:30]; 01 (w5[11] ? AGU10 : AGU10B)[w1[10:7]](e<w3[30:27]>, R<w5[25:22]>); w5[27] (265's carry) fresh-state only, refused on x02 and x03.  own-x02ra
 > x02 (188): w3[31] inert; w3[30] only as e<w3[30:27]>'s top bit.  Back-to-back 0x02s chain with no gap (666; 188's 3-nop window was a sticky wedge from earlier runs).  own-x02w3b31
 > x02 (189): head[31:27] inert (the immediate's sign fill).  own-x02hdhi
