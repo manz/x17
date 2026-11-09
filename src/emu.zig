@@ -2347,11 +2347,11 @@ fn execX18Mpy(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // The lo output's X term (713), modes 5 (P + X) and 6 (P - X): X = s<w3[13:10]>, field 0
     // the xd latch << 8 (as 709's s0).  Fractional with w3[21] = 0 sends the field to hi and
     // lo is P alone; integer mode adds it whatever w3[21].  Mode 7 gives X - P (714's data:
-    // s6 - 0x2460 = 0xE206), measured fractional only; integer mode 7, and integer mode with
-    // field 0, are refused.
+    // s6 - 0x2460 = 0xE206), measured fractional only, so integer mode 7 is refused.  Field 0
+    // takes the incoming xd, not the bundle's own read, in both forms (717).
     const lo_m: u32 = if (lo_dest == 0 or (mode != 5 and mode != 6 and mode != 7)) lo else blk: {
         if (!integer and !w21) break :blk lo;
-        if ((mode == 7 and integer) or (integer and x_reg == 0)) return RunError.UnknownForm;
+        if (mode == 7 and integer) return RunError.UnknownForm;
         if (x_reg == 0 and state.xd > 0xFFFF) return RunError.UnknownForm;
         const xl: u32 = if (x_reg != 0) state.s[x_reg] else state.xd << 8;
         break :blk (switch (mode) {

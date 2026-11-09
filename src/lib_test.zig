@@ -5939,3 +5939,20 @@ test "x18 class 110 hi X index 0 under w3[21] = 1 is the incoming xd << 8 (716)"
         try testing.expectEqual(c[1], st.s[7]);
     };
 }
+
+test "x18 class 110 lo field 0 adds the incoming xd << 8, both forms (717)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const base3: u32 = 0xC0541839 & ~@as(u32, (1 << 24) | (7 << 18) | (0xF << 10));
+    for ([_][3]u32{ .{ 0, 0x12, 0x3660 }, .{ 0, 0xF0, 0x11460 }, .{ 1, 0x12, 0x2430 }, .{ 1, 0xF0, 0x0230 } }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[5] = 0x123;
+        st.s[1] = 0x10;
+        st.xd = c[1];
+        try st.x_mem.put(testing.allocator, 0, 0x34); // the bundle's own read: must not reach lo
+        const w3 = base3 | (1 << 21) | (c[0] << 24) | (5 << 18);
+        // hi dest cleared: integer hi under w3[21] = 1 needs its own X index, not under test here.
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ 0x1E200018, 0x80005AA0, 0x0C500E2B & ~@as(u32, 0xF << 9), w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c[2], st.s[12] & (if (c[0] == 1) @as(u32, 0xFFFF) else 0xFFFFFF));
+    }
+}
