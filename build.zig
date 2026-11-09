@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
 
     // The self-hosted x86_64 backend miscompiles the emulator (CI segfaults through a null
     // State pointer in Linux debug tests); LLVM everywhere keeps CI and local builds alike.
-    const use_llvm = true;
+    const use_llvm = b.option(bool, "llvm", "Use the LLVM backend") orelse true;
     const exe = b.addExecutable(.{
         .name = "x17",
         .root_module = exe_mod,
