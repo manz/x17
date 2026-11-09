@@ -386,7 +386,11 @@ Offsets are from the sm1 block's MMIO base.
   - slot k's samples at Y:0x80 + 0x800k, up to 2048 16-bit units;
   - slot k's entry: Y:2k+5 = 1 (owned), Y:2k+6 = length in units;
   - then Y:0xFD94 bit 0 = 1, and the stop with bit 2.
-  - The host releases a slot by writing 0 to its owned word.
+  - A slot is reused only once its owned word is 0; the host releases it by writing 0 there.
+    With both slots owned, the program writes Y:0xFD95 = 0x21 and stops in the bit-12 feed
+    wait (+0xA98 = 0x04801202), the descriptor still queued (+0x114 = 4) (§797).
+  - A slot's length is that frame's samples times its own channel count: a mono frame stays
+    mono, and an MPEG-2 frame is half an MPEG-1 one (§797).
 - **Status, +0xA98:**
   - bit 2: completion, set by the program (§13). It raises VIC line 18; acknowledge with +0xC48 <- 4.
   - bit 26: running (§16).
