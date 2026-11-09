@@ -2664,7 +2664,7 @@ test "the Y read forms that set yd (fact 571)" {
     }
 }
 
-test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 578)" {
+test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 772)" {
     const gpa = testing.allocator;
     for ([_]struct { ctl: u32, w1: u32, w2: u32 = 0, w4: u32 = 0, off: ?i32 }{
         .{ .ctl = 3, .w1 = 0xFFD80000, .w2 = 1, .off = -10 }, // the measured q - 10
@@ -2672,9 +2672,8 @@ test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 578)" {
         .{ .ctl = 1, .w1 = 0x0C << 18, .off = 12 },
         .{ .ctl = 0xE, .w1 = (1 << 26) | (4 << 18), .off = 260 }, // +256 per w1[26]
         .{ .ctl = 0x17, .w1 = 0x3FFF << 18, .w2 = 1, .off = -1 },
-        .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 1 << 28, .off = null }, // hidden state: OPEN
-        .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 0xA << 28, .off = null },
-        .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 2 << 28, .off = null }, // state-dependent
+        .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 1 << 28, .off = null }, // 772: p1 = 0, not taken
+        .{ .ctl = 1, .w1 = 0x0C << 18, .w4 = 1 << 28, .off = null }, // condition under control 1: unmeasured
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -2682,6 +2681,9 @@ test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 578)" {
         if (c.off) |o| {
             try r;
             try testing.expectEqual(@as(?i32, o), state.pending_jmp_offset);
+        } else if (c.ctl == 3) {
+            try r;
+            try testing.expectEqual(@as(?i32, null), state.pending_jmp_offset);
         } else try testing.expectError(error.UnknownForm, r);
     }
 }
@@ -7020,6 +7022,29 @@ test "ealu10 op 4 copies a into e; w[10:7] one-hot writes #sx16(head[26:11]) (fa
         for ([_]u32{ 1, 2, 4, 8 }) |r|
             try testing.expectEqual(if (k.dest == r) @as(u32, 0xFFADE1) else 0x77, state.s[r]);
     }
+}
+
+test "0x00 jump control 3 is taken iff p<w4[31:28]>, code 0 always (fact 772)" {
+    const gpa = testing.allocator;
+    // control 3 at q0, offset +32, two nop slots; the fall-through ENDs (q9) before q32's e1 write.
+    var prog: [40]u32 = @splat(0x40000005);
+    @memcpy(prog[0..7], &[_]u32{ 0, 32 << 18, 0, 3, 0, 0, 0 });
+    @memcpy(prog[9..16], &[_]u32{ 0, 0, 0, 6, 0, 0, 0 });
+    prog[32] = 0x40000006 | 1 << 26 | 0x77 << 5;
+    for (0..16) |c| for ([_]u8{ 0, 1 }) |pv| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |k| state.p[k] = 1 - pv;
+        if (c != 0) state.p[c] = pv;
+        prog[4] = @as(u32, @intCast(c)) << 28;
+        _ = try emu.runFrom(gpa, &state, &prog, 0, 16);
+        const taken = c == 0 or pv == 1;
+        try testing.expectEqual(@as(u32, if (taken) 0x77 else 0), state.e[1]);
+    };
+    // Other jump controls with a nonzero condition stay unmeasured.
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0, 16 << 18, 0, 1, 0xD0000000, 0, 0 }));
 }
 
 test "unset_reads counts X / Y reads of never-written addresses" {

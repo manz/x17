@@ -1411,12 +1411,13 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     const target: u32 = (w1 >> 18) & 0xFF;
     switch (ctl) {
         // q + sx15({w2[0], w1[31:18]}), two delay slots, no link (575, retracting 572-574).
-        // Condition w4[31:28] (578, retracting 576/577): 0 is taken in every state seen; the
-        // others read hidden state earlier runs change, not p1..p15, so they are refused.
+        // 772 (retracting 578's hidden state): condition c = w4[31:28] tests p<c> (p0 reads 1),
+        // measured under control 3 only; other controls keep c = 0.
         1, 3, 0xE, 0x11, 0x13, 0x16, 0x17 => {
-            if (bundle[4] >> 28 != 0) return RunError.UnknownForm;
+            const c: u32 = bundle[4] >> 28;
+            if (c != 0 and ctl != 3) return RunError.UnknownForm;
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
-            state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
+            if (state.p[c] != 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
         4 => state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc)),
         // 759: 0x00 END: two delay slots run, then the normal halt; target fields inert, no link.
