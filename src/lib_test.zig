@@ -6613,6 +6613,28 @@ test "the A-step operand forms set fn w2[26:22] and R<w5[25:22]> over their base
     }
 }
 
+test "x18 class-101 branch: w1[18] is only the offset's bit 0 (fact 744)" {
+    const gpa = testing.allocator;
+    const add = try asm_mod.assembleOne("alu s1, s1, s2, #0");
+    // Branch on p3 at q = 0, then eight 1-word adds (two of them delay slots), then the halt.
+    for ([_]struct { w1: u32, p3: u8, want: u32 }{
+        .{ .w1 = 0x00200000, .p3 = 1, .want = 6 }, // +8
+        .{ .w1 = 0x00240000, .p3 = 1, .want = 5 }, // +9: one add fewer
+        .{ .w1 = 0x00240000, .p3 = 0, .want = 8 }, // not taken
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[3] = k.p3;
+        state.s[2] = 1;
+        var prog: [15]u32 = undefined;
+        @memcpy(prog[0..4], &[4]u32{ 0x00000018, k.w1, 0x80000000, 0xA0000001 });
+        for (4..12) |i| prog[i] = add.slice()[0];
+        @memcpy(prog[12..15], &[3]u32{ 0x00000017, 0x31308000, 0xA0000000 });
+        _ = try emu.runFrom(gpa, &state, &prog, 0, 32);
+        try testing.expectEqual(k.want, state.s[1]);
+    }
+}
+
 test "x03.acp's template read slot also loads s7 and yd <- Y:[e<y_e>] under #0 and #1 (748)" {
     const gpa = testing.allocator;
     for ([_][]const u8{ "x03.acp A9, A5, e3, #0", "x03.acp A9, A5, e3, #1" }, [_]u32{ 0x100, 0x0BCD }) |src, a9| {
