@@ -22,6 +22,58 @@ pub const Options = struct {
     y_writes: []const host_mod.Param = &.{},
     max_bundles_init: usize = 1 << 20,
     max_bundles_packet: usize = 1 << 26,
+    /// Skip refused bundles as nops and count them here instead of trapping.
+    trap_list: ?*TrapList = null,
+};
+
+/// Refused bundles by form shape: head low5, length and each syllable's class bits [31:29].
+/// After a skip the state is a guess, so later entries are hints, not facts.
+pub const TrapList = struct {
+    pub const Entry = struct {
+        hits: u64 = 0,
+        first_pc: usize,
+        syllables: [8]u32 = @splat(0),
+        n: usize = 0,
+    };
+    gpa: std.mem.Allocator,
+    map: std.AutoArrayHashMapUnmanaged(u32, Entry) = .empty,
+    oom: bool = false,
+
+    pub fn deinit(self: *TrapList) void {
+        self.map.deinit(self.gpa);
+    }
+
+    pub fn key(bundle: []const u32) u32 {
+        var k: u32 = (bundle[0] & 0x1F) | @as(u32, @intCast(@min(bundle.len, 15))) << 5;
+        for (bundle[1..@min(bundle.len, 8)], 0..) |w, i| k |= (w >> 29) << @intCast(9 + 3 * i);
+        return k;
+    }
+
+    fn hook(ctx: *anyopaque, pc: usize, bundle: []const u32) void {
+        const self: *TrapList = @ptrCast(@alignCast(ctx));
+        const gop = self.map.getOrPut(self.gpa, key(bundle)) catch {
+            self.oom = true;
+            return;
+        };
+        if (!gop.found_existing) {
+            gop.value_ptr.* = .{ .first_pc = pc };
+            const n = @min(bundle.len, 8);
+            @memcpy(gop.value_ptr.syllables[0..n], bundle[0..n]);
+            gop.value_ptr.n = n;
+        }
+        gop.value_ptr.hits += 1;
+    }
+
+    /// Entries, most hits first (caller frees).
+    pub fn ranked(self: *const TrapList, gpa: std.mem.Allocator) ![]Entry {
+        const out = try gpa.dupe(Entry, self.map.values());
+        std.mem.sort(Entry, out, {}, struct {
+            fn more(_: void, a: Entry, b: Entry) bool {
+                return a.hits > b.hits or (a.hits == b.hits and a.first_pc < b.first_pc);
+            }
+        }.more);
+        return out;
+    }
 };
 
 /// Where and why a run stopped short.
@@ -98,6 +150,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
         .max_bundles = opts.max_bundles_packet,
     });
     defer h.deinit();
+    if (opts.trap_list) |tl| h.state.on_unknown = .{ .ctx = tl, .f = TrapList.hook };
 
     var res: Result = .{ .pcm = &.{}, .packets = 0, .bundles = 0, .waits = 0, .trap = null };
 
@@ -225,4 +278,32 @@ test "play traps an unmodelled form with its pass, pc and syllables" {
     try testing.expectEqual(decode_entry + 1, t.pc);
     try testing.expectEqual(@as(usize, 4), t.n_syllables);
     try testing.expectEqual(@as(u32, 0x00000019), t.syllables[0]);
+}
+
+test "play --trap-list skips refused bundles and counts them by shape" {
+    const gpa = testing.allocator;
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        x19.ld s3, #4, e8, #2
+        \\        ldi s3, #1
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    for (img.sections) |*sec| if (sec.kind == .p and sec.pass == image.decoder_pass) {
+        @constCast(sec.words)[4] |= 1 << 20; // the x19.ld sits at q256; its w1 at q257 = row 65 lane 0
+    };
+    var tl: TrapList = .{ .gpa = gpa };
+    defer tl.deinit();
+    var r = try play(gpa, &img, &.{ "a", "b", "c" }, .{ .trap_list = &tl });
+    defer r.deinit(gpa);
+    try testing.expectEqual(@as(?Trap, null), r.trap);
+    try testing.expectEqual(@as(usize, 3), r.packets);
+    const ranked = try tl.ranked(gpa);
+    defer gpa.free(ranked);
+    try testing.expectEqual(@as(usize, 1), ranked.len);
+    try testing.expectEqual(@as(u64, 3), ranked[0].hits);
+    try testing.expectEqual(decode_entry, ranked[0].first_pc);
+    try testing.expectEqual(@as(u32, 0x00000019), ranked[0].syllables[0]);
 }

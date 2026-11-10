@@ -292,6 +292,7 @@ const play_params = clap.parseParamsComptime(
     \\-r, --rate <usize>       sampling rate for the parameter block, default 44100
     \\-y, --y <str>...         ADDR=VALUE Y write after loading, before the first packet (hex ok)
     \\    --max-bundles <usize> bundle budget per packet, default 2^26
+    \\    --trap-list          skip refused bundles as nops; rank them by hits (hints only)
     \\<str>                    image path (.x17i)
     \\
 );
@@ -308,7 +309,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
     defer parsed.deinit();
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] <image.x17i>\n");
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] <image.x17i>\n");
         return;
     }
     const img_path = parsed.positionals[0] orelse {
@@ -351,14 +352,27 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     };
     defer gpa.free(pkts);
 
+    var tl: play_mod.TrapList = .{ .gpa = gpa };
+    defer tl.deinit();
     var res = try play_mod.play(gpa, &img, pkts, .{
         .rate_hz = @intCast(parsed.args.rate orelse 44100),
         .y_writes = writes.items,
         .max_bundles_packet = parsed.args.@"max-bundles" orelse 1 << 26,
+        .trap_list = if (parsed.args.@"trap-list" != 0) &tl else null,
     });
     defer res.deinit(gpa);
     try writeFile(gpa, out_path, std.mem.sliceAsBytes(res.pcm));
     try out.print("{d}/{d} packets, {d} bundles, {d} samples out, {d} stream waits\n", .{ res.packets, pkts.len, res.bundles, res.pcm.len, res.waits });
+    if (parsed.args.@"trap-list" != 0) {
+        const ranked = try tl.ranked(gpa);
+        defer gpa.free(ranked);
+        try out.print("{d} refused forms skipped{s}:\n", .{ ranked.len, if (tl.oom) " (list incomplete: out of memory)" else "" });
+        for (ranked) |e| {
+            try out.print("  {d:>10} hits  first q {d} (0x{x}):", .{ e.hits, e.first_pc, e.first_pc });
+            for (e.syllables[0..e.n]) |w| try out.print(" {x:0>8}", .{w});
+            try out.writeAll("\n");
+        }
+    }
     if (res.trap) |t| {
         if (t.packet) |i| try out.print("trap: {s} in packet {d}", .{ @errorName(t.err), i }) else try out.print("trap: {s} in init pass {d}", .{ @errorName(t.err), t.pass });
         try out.print(" at q {d} (0x{x}):", .{ t.pc, t.pc });
