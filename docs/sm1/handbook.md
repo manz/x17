@@ -271,6 +271,8 @@ unknown.
   other rows with a nonzero field are unmeasured. 12 sets p when b is even (§824, row 010).
 - **R zero test:** 0x0F with a class-001 second also sets p<w1[28:25]> when that index is
   nonzero: 1 iff R<h[28:25]> and R<w1[12:9]> are both 0, not their sum (§827).
+- **x00 e slot:** the 7-word 0x00 also writes its immediate head[26:11] to e<w1[6:3]> (§830,
+  §831); unmeasured on 0x01.
 - **Pair R load:** 0x10 with a class-011 second and S[19:16] = 6 loads R6 <- Y:[e<S[28:25]>]
   beside its e immediate (§828); the field naming R6 is open, and S[19:16] = 5 writes R6
   another value.

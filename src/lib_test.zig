@@ -2741,6 +2741,18 @@ test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 772)" {
     }
 }
 
+test "x00 writes its immediate to e<w1[6:3]> (fact 830, 831)" {
+    const gpa = testing.allocator;
+    for ([_]u32{ 4, 5 }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        // ctl 3 on p1 = 0: the jump falls through, as in the measured bundle.
+        try emu.executeBundle(gpa, &state, &.{ 0xFD94 << 11, k << 3, 0, 3, 1 << 28, 0, 0 });
+        try testing.expectEqual(@as(u32, 0xFD94), state.e[k]);
+        try testing.expectEqual(@as(u32, 0), state.e[9 - k]);
+    }
+}
+
 test "no A index is masked to 4 bits (A has 32 registers)" {
     const src = @embedFile("emu.zig");
     var i: usize = 0;
