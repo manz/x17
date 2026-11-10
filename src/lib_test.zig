@@ -7523,6 +7523,16 @@ test "x16 b16 under any S1 class with S1[18] and S2 0xE004 (fact 778)" {
     try testing.expectEqual(@as(u32, 0x000777), state.s[12]);
 }
 
+test "x16 b16's xa load also writes A17 (fact 840)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    // The x16.b16 base under S1 class 001 (head[31], S1[3] set), head[20:5] = 0x11C3.
+    try emu.executeBundle(gpa, &state, &.{ 0x80000016 | (0x11C3 << 5), 0x20041008, 0xE0067100 });
+    try testing.expectEqual(@as(u32, 0x11C3), state.a[17]);
+    try testing.expectEqual(@as(?u32, 0x11C3), state.xa);
+}
+
 test "x16 b16 placement 10 zero-extends the Y word (fact 800)" {
     const gpa = testing.allocator;
     // 778's word with S1[13:12] = 10: s14 <- Y:[e4] zero-extended.

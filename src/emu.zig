@@ -4758,7 +4758,7 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
 /// S2 & 0xE0050000 = 0xE0040000.  Y load s<head[24:21]> <- Y:[e<S2[24:21]>] placed by
 /// S1[13:12] (00: 0, 01: sign-extended, 10: zero-extended (800), 11: << 8); s<S1[11:8]> <- s<S2[28:25]> (a move,
 /// 778); X store X:[xa] <- sx24 s<S1[31:28]> with S1[18], S2[14:13] = 11, S2[11] = 0, using
-/// xa as it was before the bundle; then xa <- head[20:5] when head[31] and S1[3].  The move
+/// xa as it was before the bundle; then xa and A17 <- head[20:5] when head[31] and S1[3] (840).  The move
 /// and the store read before the bundle's writes.
 fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
@@ -4779,7 +4779,11 @@ fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             state.x_mem.put(gpa, addr, state.s[(s1 >> 28) & 0xF] & M24) catch return RunError.OutOfMemory;
         }
     }
-    if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) state.xa = (h >> 5) & 0xFFFF;
+    if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) {
+        state.xa = (h >> 5) & 0xFFFF;
+        // 840: A17 takes the same word (whether xa is A17 itself is unmeasured).
+        state.a[17] = (h >> 5) & 0xFFFF;
+    }
     if (mv_dest != 0) state.s[mv_dest] = mv_val;
     const hd: u32 = (h >> 21) & 0xF;
     if (hd != 0) state.s[hd] = hv;
