@@ -33,6 +33,10 @@ pub const Options = struct {
     stop_after: ?u64 = null,
     /// When the run stops short (a stop or a trap), the state goes here as JSON.
     dump: ?*std.Io.Writer = null,
+    /// p1..p15 before the first init pass, bit k = p<k> (bit 0 ignored: p0 reads 1).  Power-on
+    /// p is unknown; silicon reads p1 = 0, p2..p15 = 1 after an init pass (803), so a caller
+    /// matching that passes 0xFFFC.
+    p_entry: u16 = 0,
 };
 
 /// The state as one JSON object: where the run stopped, the register files, and every X and Y
@@ -322,6 +326,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     if (opts.trap_list) |tl| h.state.on_unknown = .{ .ctx = tl, .f = TrapList.hook };
     if (opts.tracer) |t| t.attach(&h.state);
     h.state.break_after = opts.stop_after;
+    for (1..16) |k| h.state.p[k] = @intCast((opts.p_entry >> @intCast(k)) & 1);
 
     var res: Result = .{ .pcm = &.{}, .packets = 0, .bundles = 0, .waits = 0, .trap = null };
     defer if (opts.dump) |w| if (res.trap) |t| writeDump(gpa, w, &h.state, t) catch {};
@@ -536,4 +541,20 @@ test "play --stop-at stops before the first decoder bundle at q and dumps the st
     try testing.expect(std.mem.startsWith(u8, text, "{\"stop\":\"Breakpoint\",\"pass\":255,\"packet\":0,\"q\":261,"));
     try testing.expect(std.mem.indexOf(u8, text, "\"s\":[0,0,0,4660,") != null);
     try testing.expect(std.mem.indexOf(u8, text, "\"128\":") == null);
+}
+
+test "play --p-entry sets p1..p15 before the init passes" {
+    const gpa = testing.allocator;
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    var r = try play(gpa, &img, &.{"a"}, .{ .p_entry = 0xFFFC, .stop_at = decode_entry, .dump = &out.writer });
+    defer r.deinit(gpa);
+    try testing.expect(std.mem.indexOf(u8, out.written(), "\"p\":[1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1]") != null);
 }
