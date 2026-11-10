@@ -3635,12 +3635,12 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (w1_class == 0 and w2_class == 4 and w3_class == 0) {
         return execX19RAgua(gpa, state, bundle);
     }
-    // x19mac: w1 class 000/001 plain, 010/101 with the head ALU (fact 312, 384-386).
+    // x19mac: w1 class 000/001 plain, 010/011/101 with the head ALU (fact 312, 384-386, 807).
     // w2 class 100 runs it as 001 (521, 7 of 7); with w3 class 101 it is OPEN and falls
     // through to the refusal below.  The two rows that wedged silicon (w2 = 0x80C80000) are
     // refused already: one by the open X store (w2[23:22] = 11), one by its w1 class 111.
     // 551: w2 classes 000 and 101 run it too.
-    if ((w2_class == 0 or w2_class == 1 or w2_class == 4 or w2_class == 5) and w3_class == 6 and (w1_class == 0 or w1_class == 1 or w1_class == 2 or w1_class == 5)) {
+    if ((w2_class == 0 or w2_class == 1 or w2_class == 4 or w2_class == 5) and w3_class == 6 and (w1_class <= 3 or w1_class == 5)) {
         return execX19Mac(gpa, state, bundle);
     }
     if (w1_class == 0 and w2_class == 0 and w3_class == 1) {
@@ -4076,7 +4076,8 @@ fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const y: i64 = if (ys == 0) 0 else sx24(state.s[ys]);
     const prod: i64 = x * y;
     const wide = (w1 >> 17) & 1 == 1;
-    const p: u32 = if (op == 4) @as(u32, @truncate(@as(u64, @bitCast(if (wide) prod else 2 * prod)))) & 0xFFFF else 0;
+    // The low part lands sign-extended from 16 bits (807).
+    const p: u32 = if (op == 4) sx16To24(@as(u32, @truncate(@as(u64, @bitCast(if (wide) prod else 2 * prod)))) & 0xFFFF) else 0;
 
     const hi_s: u32 = (w2 >> 9) & 0xF;
     var hi: u32 = 0;
@@ -4090,7 +4091,8 @@ fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const a_val: u32 = aguXrEval((w3 >> 20) & 0x1F, state.a[(w3 >> 15) & 0x1F], state.r[(w3 >> 11) & 0xF]);
 
     const cls: u32 = w1 >> 29;
-    if (cls == 2 or cls == 5) try execAlu(gpa, state, bundle[0]);
+    // Classes 010, 011 and 101 run the head ALU (384, 807).
+    if (cls == 2 or cls == 3 or cls == 5) try execAlu(gpa, state, bundle[0]);
 
     state.e[(w1 >> 3) & 0xF] = if ((w2 >> 24) & 1 == 1) p else 0;
     const dest_r: u32 = (w3 >> 7) & 0xF;
