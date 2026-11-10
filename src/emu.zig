@@ -4076,8 +4076,7 @@ fn execX19Mac(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const y: i64 = if (ys == 0) 0 else sx24(state.s[ys]);
     const prod: i64 = x * y;
     const wide = (w1 >> 17) & 1 == 1;
-    // The low part lands sign-extended from 16 bits (807).
-    const p: u32 = if (op == 4) sx16To24(@as(u32, @truncate(@as(u64, @bitCast(if (wide) prod else 2 * prod)))) & 0xFFFF) else 0;
+    const p: u32 = if (op == 4) @as(u32, @truncate(@as(u64, @bitCast(if (wide) prod else 2 * prod)))) & 0xFFFF else 0;
 
     const hi_s: u32 = (w2 >> 9) & 0xF;
     var hi: u32 = 0;
@@ -6358,7 +6357,13 @@ fn execRop(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         else => return RunError.UnknownForm,
     };
 
-    if (dest_s != 0) state.s[dest_s] = v;
+    // An e or R passed through to s arrives sign-extended from 16 bits (810); whether the
+    // other functions see signed operands is unmeasured.
+    const pass = (head >> 21) & 1 == 0 and switch (fn_op) {
+        0, 1, 10, 11, 12 => true,
+        else => false,
+    };
+    if (dest_s != 0) state.s[dest_s] = if (pass) sx16To24(v) else v;
     if (dest_r != 0) state.r[dest_r] = v;
 }
 

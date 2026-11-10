@@ -7210,7 +7210,29 @@ test "x19mac's X store: X:[A<{w1[2:0], h[31:30]}>] <- s<{w2[0], w1[31:29]}> befo
     try testing.expectEqual(@as(u32, 0), state.s[13]);
 }
 
-test "x19mac: class 011 runs the head ALU and stores s<{w2[0], 011}>; the low part sign-extends (807)" {
+test "rop passes e and R to s sign-extended from 16 bits; e keeps 16 (810)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[10] = 0xA914;
+    state.e[11] = 0x1234;
+    state.r[2] = 0xA914;
+    for ([_]struct { src: []const u8, want: u32 }{
+        .{ .src = "rop s5, R0, e10, R0, #0", .want = 0xFFA914 },
+        .{ .src = "rop s5, R0, e0, R2, #1", .want = 0xFFA914 },
+        .{ .src = "rop s5, R0, e11, R0, #0", .want = 0x1234 },
+    }) |k| {
+        const b = try asm_mod.assembleOne(k.src);
+        try emu.executeBundle(gpa, &state, b.slice());
+        try testing.expectEqual(k.want, state.s[5]);
+    }
+    // x19.e mux 2 copies e as stored: 16 bits.
+    const xe = try asm_mod.assembleOne("x19.e e15, #0x1, s6, e10, #2");
+    try emu.executeBundle(gpa, &state, xe.slice());
+    try testing.expectEqual(@as(u32, 0xA914), state.s[6]);
+}
+
+test "x19mac: class 011 runs the head ALU and stores s<{w2[0], 011}> (807)" {
     const gpa = testing.allocator;
     for ([_]struct { w1: u32, x: u32, alu: bool }{
         .{ .w1 = 0x2002A050, .x = 0x999, .alu = false },
@@ -7230,8 +7252,8 @@ test "x19mac: class 011 runs the head ALU and stores s<{w2[0], 011}>; the low pa
         // Head ALU s13 <- s3 op 14 / s_mod 10 s4; wide op 4 x = s12, y = s11, e10 <- p, R2 <- p,
         // X:[A1] <- s<{w2[0], w1[31:29]}>.
         try emu.executeBundle(gpa, &state, &.{ 0x505699D9, k.w1, 0x21C0E197, 0xC0000100 });
-        try testing.expectEqual(@as(u32, 0xFFA914), state.e[10]);
-        try testing.expectEqual(@as(u32, 0xFFA914), state.r[2]);
+        try testing.expectEqual(@as(u32, 0xA914), state.e[10]);
+        try testing.expectEqual(@as(u32, 0xA914), state.r[2]);
         try testing.expectEqual(k.x, state.x_mem.get(0x700).?);
         try testing.expectEqual(@as(u32, if (k.alu) 0x333 else 0xDD), state.s[13]);
     }
