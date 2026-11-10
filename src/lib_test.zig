@@ -2274,6 +2274,25 @@ test "alu.m 0x2B m 1 is unsigned min; 0x28 m 5 is max(#, b) (870, 871)" {
     }
 }
 
+test "x17 rsub op 0 writes #head[20:5] to A<{S1[2:0], head[31]}> (872)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x83629517, s1: u32 = 0x000000A7, s2: u32 = 0x20000008, a: u32 = 15, v: u32 = 0x14A8 }{
+        .{},
+        .{ .h = 0x03629517, .a = 14 }, // head[31]
+        .{ .s1 = 0x000000A6, .a = 13 }, // S1[0]
+        .{ .s1 = 0x000000A3, .a = 7 }, // S1[2]
+        .{ .h = 0x83629537, .v = 0x14A9 }, // head[5]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, c.s1, c.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.v, state.a[c.a]);
+    }
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x83629517, 0x000000AF, 0x20000008, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16)); // S1[3]
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

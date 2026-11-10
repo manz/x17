@@ -5240,7 +5240,20 @@ fn execX17Rsub(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const op: u32 = (s1 >> 12) & 0x7;
     const a_src: u32 = (s2 >> 25) & 0xF;
 
-    // Only op = 5 is modelled today (b - a).  Other ops await a measurement.
+    // 872: op 0 with S1[3] = 0 writes A<{S1[2:0], head[31]}> <- #head[20:5], and (flipped on)
+    // s<S1[22:19]> <- 0 and R<S2[8:5]> <- #head[20:5].  Its p and Y side slots are OPEN.
+    if (op == 0) {
+        const h = bundle[0];
+        if ((s1 >> 3) & 1 == 1 or s2 >> 31 == 1) return RunError.UnknownForm;
+        const imm: u32 = (h >> 5) & 0xFFFF;
+        const dest_a: u32 = ((s1 & 7) << 1) | (h >> 31);
+        if (dest_a != 0) state.a[dest_a] = imm;
+        const r_dest: u32 = (s2 >> 5) & 0xF;
+        if (r_dest != 0) state.r[r_dest] = imm;
+        if (dest_s != 0) state.s[dest_s] = 0;
+        return;
+    }
+    // op 5 is b - a.  Other ops await a measurement.
     if (op != 5) return RunError.UnknownForm;
 
     const a_val: u32 = if (a_src == 0) 0 else state.s[a_src];
