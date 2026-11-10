@@ -5969,6 +5969,19 @@ fn execPtst(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     const b_s: u32 = (cond & 3) * 4;
     const b_raw: u32 = state.s[b_s] & M24;
     const b: i32 = if (b_raw & 0x800000 != 0) @as(i32, @bitCast(b_raw | 0xFF000000)) else @as(i32, @bitCast(b_raw));
+    // h[18:15] picks the relation between the row's two operands, 0 keeping the row's own
+    // (823): row 010 compares (b, 0), row 101 (a, b).  Measured on those two rows only.
+    const rel: u32 = (head >> 15) & 0xF;
+    if (rel != 0) {
+        const xy: [2]i32 = switch (cond >> 2) {
+            2 => .{ b, 0 },
+            5 => .{ signed, b },
+            else => return RunError.UnknownForm,
+        };
+        const r = try ptstRel(rel, xy[0], xy[1]);
+        if (p_dest != 0) state.p[p_dest] = @intFromBool(r);
+        return;
+    }
     const t: bool = switch (@as(u3, @intCast(cond >> 2))) {
         0 => signed <= -b,
         1 => signed >= b,
@@ -5981,6 +5994,22 @@ fn execPtst(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     };
     const v: u8 = @intFromBool(t);
     if (p_dest != 0) state.p[p_dest] = v;
+}
+
+/// ptst's h[18:15] relation x ? y (823): 1..11 cycle <=, >=, <, >, !=, == (6..11 repeat
+/// 0..5); 13 and 14 read >=; 15 is always true.  12 is not a relation (a bit test, OPEN): refused.
+fn ptstRel(rel: u32, x: i32, y: i32) RunError!bool {
+    if (rel == 15) return true;
+    if (rel == 13 or rel == 14) return x >= y;
+    if (rel == 12) return RunError.UnknownForm;
+    return switch (rel % 6) {
+        0 => x <= y,
+        1 => x >= y,
+        2 => x < y,
+        3 => x > y,
+        4 => x != y,
+        else => x == y,
+    };
 }
 
 fn execPlog(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

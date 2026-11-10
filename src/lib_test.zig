@@ -7655,3 +7655,44 @@ test "ptst writes p13 through the class-011 dest bit (fact 219)" {
     _ = try emu.runLinear(gpa, &st, prog);
     try testing.expectEqual(@as(u8, 1), st.p[13]);
 }
+
+fn ptstP13(word: u32, s2: u32, s12: u32) !u8 {
+    var st = emu.State{};
+    defer st.deinit(testing.allocator);
+    st.s[2] = s2;
+    st.s[12] = s12;
+    const prog = [_]u32{ word, 0x00000017, 0x31308000, 0xA0000000 };
+    _ = try emu.runLinear(testing.allocator, &st, &prog);
+    return st.p[13];
+}
+
+test "ptst h[18:15] picks row 010's relation of s12 against 0 (823)" {
+    // s12 = -3, 0, 5, 0x008000; silicon p13 per field value.
+    const vals = [_]u32{ 0xFFFFFD, 0, 5, 0x008000 };
+    const rows = [_]struct { f: u32, p: [4]u8 }{
+        .{ .f = 0, .p = .{ 1, 1, 0, 0 } },  .{ .f = 1, .p = .{ 0, 1, 1, 1 } },
+        .{ .f = 2, .p = .{ 1, 0, 0, 0 } },  .{ .f = 3, .p = .{ 0, 0, 1, 1 } },
+        .{ .f = 4, .p = .{ 1, 0, 1, 1 } },  .{ .f = 5, .p = .{ 0, 1, 0, 0 } },
+        .{ .f = 9, .p = .{ 0, 0, 1, 1 } },  .{ .f = 13, .p = .{ 0, 1, 1, 1 } },
+        .{ .f = 15, .p = .{ 1, 1, 1, 1 } },
+    };
+    for (rows) |r| for (vals, 0..) |v, i| {
+        try testing.expectEqual(r.p[i], try ptstP13(0x7560016D | r.f << 15, 0, v));
+    };
+}
+
+test "ptst h[18:15] picks row 101's relation of a against b (823)" {
+    // a = s2 = 5, b = s12 = -3, 0, 5, 0x008000.
+    const vals = [_]u32{ 0xFFFFFD, 0, 5, 0x008000 };
+    const rows = [_]struct { f: u32, p: [4]u8 }{
+        .{ .f = 0, .p = .{ 0, 0, 1, 1 } }, .{ .f = 1, .p = .{ 1, 1, 1, 0 } },
+        .{ .f = 2, .p = .{ 0, 0, 0, 1 } }, .{ .f = 4, .p = .{ 1, 1, 0, 1 } },
+    };
+    for (rows) |r| for (vals, 0..) |v, i| {
+        try testing.expectEqual(r.p[i], try ptstP13(0x76E0116D | r.f << 15, 5, v));
+    };
+}
+
+test "ptst h[18:15] = 12 is refused until its bit test is mapped" {
+    try testing.expectError(error.UnknownForm, ptstP13(0x7560016D | 12 << 15, 0, 0));
+}
