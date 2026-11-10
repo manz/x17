@@ -295,6 +295,7 @@ const play_params = clap.parseParamsComptime(
     \\    --trap-list          skip refused bundles as nops; rank them by hits (hints only)
     \\    --trace <usize>      print the first N bundles run: changes, X / Y reads and writes
     \\    --stop-at <usize>    stop before the first decoder bundle at this q
+    \\    --stop-skip <usize>  with --stop-at: run through this many arrivals first
     \\    --stop-after <usize> stop once this many bundles have run (init passes included)
     \\    --dump <str>         on a stop or trap, write the state (registers, X, Y) as JSON
     \\    --p-entry <usize>    p1..p15 at the start, bit k = p<k> (default 0; 0xFFFC = 803's state)
@@ -314,7 +315,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
     defer parsed.deinit();
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] [--stop-at Q | --stop-after N] [--dump FILE] [--p-entry BITS] <image.x17i>\n");
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] <image.x17i>\n");
         return;
     }
     const img_path = parsed.positionals[0] orelse {
@@ -370,6 +371,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
         .trap_list = if (parsed.args.@"trap-list" != 0) &tl else null,
         .tracer = if (parsed.args.trace != null) &tracer else null,
         .stop_at = parsed.args.@"stop-at",
+        .stop_skip = parsed.args.@"stop-skip" orelse 0,
         .stop_after = parsed.args.@"stop-after",
         .dump = if (parsed.args.dump != null) &dump.writer else null,
         .p_entry = @truncate(parsed.args.@"p-entry" orelse 0),

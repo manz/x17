@@ -60,8 +60,8 @@ stripped aarch64-linux binary, smoke-tests it and attaches it to the release.
   `--trap-list` skips them as nops instead and ranks them by hits.
   `--trace N` prints the first N bundles run, each with the registers and
   predicates it changed and its X / Y reads and writes.
-  `--stop-at Q` (first decoder arrival at q) or `--stop-after N` (bundles)
-  stops the run before that bundle; `--dump FILE` writes the state there, or
+  `--stop-at Q` (first decoder arrival at q; `--stop-skip K` runs through K
+  arrivals first) or `--stop-after N` (bundles) stops the run before that bundle; `--dump FILE` writes the state there, or
   at any trap, as JSON: registers, predicates and every X / Y word written.
   `--p-entry BITS` sets p1..p15 before the first init pass (bit k = p<k>).
 - `x17 disasm`: decodes syllables back to source.
