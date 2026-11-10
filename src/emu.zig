@@ -688,10 +688,13 @@ const X02Common = struct {
     r_val: u32 = 0,
     /// The R slot's Y side sets yd (571): a fresh read with w5[12], else yd itself.
     yd: ?u32 = null,
+    e_dest: u32 = 0,
+    e_val: u32 = 0,
 
     fn apply(c: X02Common, gpa: std.mem.Allocator, state: *State) RunError!void {
         if (c.x_on) state.x_mem.put(gpa, c.x_addr, c.x_val) catch return RunError.OutOfMemory;
         if (c.r_dest != 0) state.r[c.r_dest] = c.r_val;
+        if (c.e_dest != 0) state.e[c.e_dest] = c.e_val;
         if (c.yd) |v| state.yd = v;
     }
 };
@@ -700,7 +703,7 @@ const X02Common = struct {
 /// s<{w2[0], w1[31:29]}> at X:[A<w4[21:17]>]; R<w3[22:19]> <- by w5[27:26]: 00 w5[31:30] = 11
 /// #head[26:11], 00 the Y side, 10 the third slot's value (594), 01 refused; 01 (w5[11] ? AGU10 : AGU10B)[w1[10:7]](x =
 /// e<w3[30:27]>, y = R<w5[25:22]>); w5[27] = 1 OPEN (265's "R <- 1" holds only in fresh state).
-/// Both read before the bundle writes.
+/// The Y side with w5[17] also writes e<w1[6:3]> (863).  All read before the bundle writes.
 fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
     const h = bundle[0];
     const w1 = bundle[1];
@@ -724,6 +727,13 @@ fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
                 0 => blk: {
                     const v = x02YSide(state, bundle) & 0xFFFF;
                     c.yd = v;
+                    // 863: with w5[17] the Y side also lands raw in e<w1[6:3]>; w4[2] adds 0x100
+                    // to that copy (unmodelled: refused).
+                    if ((w5 >> 17) & 1 == 1 and (w1 >> 3) & 0xF != 0) {
+                        if ((w4 >> 2) & 1 == 1) return RunError.UnknownForm;
+                        c.e_dest = (w1 >> 3) & 0xF;
+                        c.e_val = v;
+                    }
                     break :blk v;
                 },
                 else => return RunError.UnknownForm,
@@ -1877,7 +1887,7 @@ fn x02RFromX3(state: *const State, bundle: []const u32) RunError!u32 {
 /// memory, X:[A<w4[21:17]>] when w5[14], else the Y side; 001 / 010 by the w5[29:28] override:
 /// 00 the mode's own source (001 #head[26:11], 010 e<w3[30:27]>), 10 x01's T[w1[10:7]] (a =
 /// e<w3[30:27]>, y = R<w5[25:22]>, b = e<w3[26:23]>; fns 0-2 seen), 01 A<w3[4:0]> + 1 (010 only;
-/// 001 OPEN), 11 the Y side.
+/// 001 OPEN), 11 the Y side (a fresh read sign-extended, 863).
 fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     const w3 = bundle[3];
@@ -1901,7 +1911,8 @@ fn execX02Xrd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             else => return RunError.UnknownForm,
         },
         1 => if (mode == 2) (state.a[w3 & 0x1F] +% 1) & M24 else return RunError.UnknownForm,
-        else => x02YSide(state, bundle),
+        // 863: a fresh Y read (w5[12]) lands sign-extended (mode 001); 734's stale yd does not.
+        else => if ((w5 >> 12) & 1 == 1) sx16To24(x02YSide(state, bundle)) else x02YSide(state, bundle),
     };
     // Read into s0, the word reaches no other slot of the bundle: s0 stays 0 (fact 652).
     const dest_s: u32 = (w4 >> 3) & 0xF;

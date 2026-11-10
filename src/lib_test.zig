@@ -2135,6 +2135,27 @@ test "x19k writes p<w2[30:27]> <- (R<w3[14:11]> != 0) under w3[23:20] = 10 (862)
     }
 }
 
+test "x02's Y side also writes the raw word to e<w1[6:3]> with w5[17] (863)" {
+    const gpa = testing.allocator;
+    const b = [_]u32{ 0x000001C2, 0x80000040, 0x00014001, 0x40080000, 0x00240818, 0x30021628 };
+    for ([_]struct { w1: u32 = b[1], w5: u32 = b[5], y: u32 = 0x1234, e: u32 = 8, ev: ?u32 = 0x1234, s3: u32 = 0x1234 }{
+        .{},
+        .{ .y = 0x8001, .ev = 0x8001, .s3 = 0xFF8001 },
+        .{ .w1 = 0x80000048, .e = 9 }, // w1[3]
+        .{ .w5 = 0x30001628, .ev = null }, // w5[17] cleared
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[8] = 0x100;
+        state.e[9] = 0x100;
+        try state.y_mem.put(gpa, 0x100, c.y);
+        _ = try emu.runFrom(gpa, &state, &.{ b[0], c.w1, b[2], b[3], b[4], c.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.ev orelse 0x100, state.e[c.e]);
+        try testing.expectEqual(c.y, state.r[1]);
+        try testing.expectEqual(c.s3, state.s[3]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
