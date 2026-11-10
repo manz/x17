@@ -6392,8 +6392,11 @@ fn execLde(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     _ = gpa;
     const k: u32 = (head >> 26) & 0xF;
     const imm: u32 = (head >> 5) & 0xFFFF;
-    // k = 0 maps to an A-register store (still OPEN).  Don't guess.
-    if (k == 0) return;
+    // k = 0 loads A<[25:21]> instead (fact 51, 829); with k != 0, [25:21] is ignored (59).
+    if (k == 0) {
+        state.a[(head >> 21) & 0x1F] = imm;
+        return;
+    }
     state.e[k] = imm;
 }
 

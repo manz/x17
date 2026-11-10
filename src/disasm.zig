@@ -57,6 +57,9 @@ pub fn disasmBundle(out: []u8, bundle: []const u32) DisasmError!usize {
             return writeFormLine(out, sf.name, isa.operandsFor(sf.name), bundle[0..1]);
         return DisasmError.UnknownForm;
     };
+    // lde with e index 0 is the A load (fact 829).
+    if (std.mem.eql(u8, f.name, "lde") and (bundle[0] >> 26) & 0xF == 0)
+        return writeFormLine(out, "lda", isa.operandsFor("lda"), bundle[0..1]);
     const ops = isa.operandsFor(f.name);
     return writeFormLine(out, f.name, ops, bundle);
 }
@@ -263,6 +266,15 @@ test "disasm one-word sub-forms" {
     const s = try roundTrip("lde.hi e2, #0x300");
     defer testing.allocator.free(s);
     try testing.expectEqualStrings("lde.hi e2, #0x300", s);
+}
+
+test "disasm lda round-trips the lde A form (829)" {
+    const s = try roundTrip("lda A13, #0x14A0");
+    defer testing.allocator.free(s);
+    try testing.expectEqualStrings("lda A13, #0x14a0", s);
+    const t = try roundTrip("lda A30, #0x1");
+    defer testing.allocator.free(t);
+    try testing.expectEqualStrings("lda A30, #0x1", t);
 }
 
 test "disasm lde.arm prints e8..e15" {
