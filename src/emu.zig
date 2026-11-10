@@ -3778,7 +3778,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 }
 
 /// x19k (fact 235-240, 534): every slot reads before any writes, and all fire together.
-///   s<head[24:21]> <- mux w1[14:12]: 0 and 7 zero, 6 #head[20:5], 1/2 AGU10[w1[27:24]](x, y);
+///   s<head[24:21]> <- mux w1[14:12]: 0 and 7 zero, 6 #head[20:5], 1/2 (w2[25] ? AGU10 :
+///     AGU10B)[w1[27:24]](x, y), AGU10B's fn 2 reading e<w2[7:4]> (874);
 ///     with w1[17:15] = 5 / 7 instead s<w1[11:8]> <- a - b / |b| (16-bit), a = s<w1[7:4]>,
 ///     b = s<w3[6:3]>, and no head write.
 ///   R<w3[10:7]> <- (w2[25] ? AGU10 : AGU10B)[w1[27:24]](x, y).
@@ -3808,7 +3809,7 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const s_val: u32 = switch (mux) {
         0, 7 => 0,
         6 => (head >> 5) & 0xFFFF,
-        1, 2 => if (kalu) x19KAlu(state, w1, w3) else try agu10Eval(fn_op, x, y),
+        1, 2 => if (kalu) x19KAlu(state, w1, w3) else try x19KAgu(state, fn_op, x, y, w2),
         else => return RunError.UnknownForm,
     };
     const r_val: u32 = if ((w2 >> 25) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y);
@@ -3840,6 +3841,14 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_e: u32 = (w1 >> 20) & 0xF;
     if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
     if (p_on) state.p[pd] = p_val;
+}
+
+/// x19k's s-slot AGU (871, 874): AGU10 with w2[25] = 1 (own-x19kmux2), else AGU10B, as the R
+/// slot; under AGU10B fn 2 reads e<w2[7:4]> (874: fns 0, 1, 3, 6 matched AGU10B with x = y = 0).
+fn x19KAgu(state: *const State, fn_op: u32, x: u32, y: u32, w2: u32) RunError!u32 {
+    if ((w2 >> 25) & 1 == 1) return agu10Eval(fn_op, x, y);
+    if (fn_op == 2) return state.e[(w2 >> 4) & 0xF];
+    return agu10bEval(fn_op, x, y);
 }
 
 /// x19k's w1[17:15] ALU (own-x19kalu m = 5: a - b; own-x19kabs m = 7: |b| over 16 bits).

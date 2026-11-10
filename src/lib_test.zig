@@ -2293,6 +2293,26 @@ test "x17 rsub op 0 writes #head[20:5] to A<{S1[2:0], head[31]}> (872)" {
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x83629517, 0x000000AF, 0x20000008, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16)); // S1[3]
 }
 
+test "x19k's s-slot AGU follows w2[25]; AGU10B fn 2 reads e<w2[7:4]> (871, 874)" {
+    const gpa = testing.allocator;
+    const b = [_]u32{ 0x00C5D7F9, 0x92142000, 0x61D60030, 0x01B02801 };
+    for ([_]struct { w1: u32 = b[1], w2: u32 = b[2], s6: u32 }{
+        .{ .s6 = 0x103 },
+        .{ .w2 = 0x61D60050, .s6 = 0x555 }, // w2[7:4] = 5
+        .{ .w2 = 0x61D60000, .s6 = 0 }, // w2[7:4] = 0
+        .{ .w1 = 0x96142000, .s6 = 0 }, // fn 6: x + y with x = e0, y = R5
+        .{ .w1 = 0x91142000, .s6 = 0 }, // fn 1: y
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[3] = 0x103;
+        state.e[5] = 0x555;
+        state.r[6] = 0x23;
+        _ = try emu.runFrom(gpa, &state, &.{ b[0], c.w1, c.w2, b[3], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.s6, state.s[6]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
