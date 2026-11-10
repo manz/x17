@@ -184,6 +184,22 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
   saturate or shift everything out (§366, §515). `asrrs` rounds (§66).
 - **Adder code 4:** a right shift with rounding (§211, §549).
 - **|b|** exists (§238). **norm(b)** returns the redundant sign bits at 24-bit width (§502).
+- **Other multiplies, one bundle each.** Operands are 24-bit signed unless noted.
+  - `x16.mul`: s <- (a b) >> 23, truncated (§118). `x16.mul2`: (a b [+ 2^22]) >> 23 [>> 1]
+    by its round and half bits, and writes 0 when head[28] = 0 (§121); S2[3:2] = 11 adds an X
+    store in the same bundle (§209). `x16.agumul` runs the multiply beside an AGU slot (§212).
+  - `mul13`: s <- round(a b / 2^23) (§128, §697), plus a head ALU slot and, with
+    S[16:15] = 11, the `x13.st` X store, all reading before any write (§535): a Q23 product, an
+    ALU op and a store for the cost of one bundle.
+  - `x19.mac`: a multiply whose s slot takes the product's high part and whose low part can go
+    to an e or R (§145, §386), with no saturation through |xy| = 2^41, the measured range. A
+    head ALU op, an A step and an X store share the bundle (§312, §384, §385). By w1[17]:
+    - 0: low = (2xy)[15:0], the doubled product; high at 24 bits by w1[15]: 1 (the pmul form)
+      rounds half up, round(xy / 2^23) (1.5 -> 2, -1.5 -> -1); 0 truncates, floor(xy / 2^23)
+      (0x7FFF^2 -> 0x7F, -1 x 0x7FFF -> -1) (§312, §386);
+    - 1: high = floor(xy / 2^24), low = low16(xy), undoubled (§145, §312);
+    - undefined (§312): w1[16] = 1 gives d + x instead, and w1[12:11] add a high-byte term that
+      depends on state. The emulator refuses both.
 - **Third-slot ops on x02 (§627, §628).** Besides the adder codes, the third slot runs code 6
   (asr b by a, no rounding, no saturation), code 7 (asrrs: rounds right, saturates left), codes
   22/31 (a logic table: xor, xnor, or, and, not a, a; code 22 then shifts left by w5[5:2]) and
@@ -281,6 +297,9 @@ Measured idioms, cheapest first:
   hangs (§673): the emulator refuses it.
 - **Free pointer steps.** Stores (x17.styi, §658) and x17ld loads (§429) post-increment an e; x03
   counts an e down (§349); x02 steps an A (§660). Each replaces an x18.eagu or aset bundle.
+- **Free wraps.** agu_xr's wrap-once modulo (§8, §566-§568) wraps a ring or window pointer
+  inside the step it already takes, instead of an x17.mve or x18.eagu bundle per wrap. Each step
+  must move by less than M. Measured on x02's A slot and R slot and x16alu's R slot.
 - **Packed bundles that are measured** (§155, §183, §185, §347-§350, §513, §174, §203):
   - x02: X read, multiply, second product, third-slot ALU, A step, and an optional X store;
   - x03: X read, multiply, accumulate, A copy, e counter, and a Y store;
@@ -334,7 +353,9 @@ Measured idioms, cheapest first:
   ALU result. As a destination, s0 drops writes: `x03.tap0 sL, #n, s0, s0, s0` is a pure X load
   and step.
 - **Selects without branches.** x19alu's write can be conditional on p1 (§646); the x01 slot's
-  m = 7 gives b < 0 ? b : i (§502).
+  m = 7 gives b < 0 ? b : i (§502). `psel` is a 24-bit select, s <- p ? a op b : b, with op from
+  the x16 ALU table (add measured) and p's sense set by S[21]; its head write,
+  s<head[24:21]> <- #head[20:5] or 0, runs in the same bundle (§497, §531, §607, §608).
 - **Free R load.** x18 class 011 with w3[3] = 1 writes #head[20:5] to R<w3[10:7]> beside its
   ALU slot (§688); an immediate of 0 clears it.
 - **Latches at entry.** One X read latch (xd) serves x03 and x18; the latest read sets it,
@@ -370,7 +391,12 @@ Offsets are from the sm1 block's MMIO base.
   - slot k's samples at Y:0x80 + 0x800k, up to 2048 16-bit units;
   - slot k's entry: Y:2k+5 = 1 (owned), Y:2k+6 = length in units;
   - then Y:0xFD94 bit 0 = 1, and the stop with bit 2.
-  - The host releases a slot by writing 0 to its owned word.
+  - A slot is reused only once its owned word is 0; the host releases it by writing 0 there.
+    With both slots owned, the program writes Y:0xFD95 = 0x21 and stops in the bit-12 feed
+    wait (+0xA98 = 0x04801202), the descriptor still queued (+0x114 = 4) (§797). Whether
+    releasing a slot and arming then resumes that program is unmeasured.
+  - A slot's length is that frame's samples times its own channel count: a mono frame stays
+    mono, and an MPEG-2 frame is half an MPEG-1 one (§797).
 - **Status, +0xA98:**
   - bit 2: completion, set by the program (§13). It raises VIC line 18; acknowledge with +0xC48 <- 4.
   - bit 26: running (§16).

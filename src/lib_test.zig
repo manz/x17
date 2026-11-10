@@ -7210,6 +7210,26 @@ test "x19mac's X store: X:[A<{w1[2:0], h[31:30]}>] <- s<{w2[0], w1[31:29]}> befo
     try testing.expectEqual(@as(u32, 0), state.s[13]);
 }
 
+test "x19mac with w1[17] = 0: w1[15] rounds or truncates the high part; w1[16] is refused (312)" {
+    const gpa = testing.allocator;
+    for ([_]struct { x: u32, y: u32, w15: u32, want: u32 }{
+        .{ .x = 0x7FFF, .y = 0x7FFF, .w15 = 1, .want = 0x80 },
+        .{ .x = 0x7FFF, .y = 0x7FFF, .w15 = 0, .want = 0x7F },
+        .{ .x = 0xFFFFFF, .y = 0x7FFF, .w15 = 0, .want = 0xFFFFFF },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[3] = c.x;
+        state.s[4] = c.y;
+        const w1: u32 = 4 << 11 | c.w15 << 15;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000019, w1, 1 << 29 | 5 << 9 | 3 << 5 | 4 << 1, 6 << 29 });
+        try testing.expectEqual(c.want, state.s[5]);
+    }
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x00000019, 4 << 11 | 1 << 16, 1 << 29 | 5 << 9 | 3 << 5 | 4 << 1, 6 << 29 }));
+}
+
 test "unset_reads counts X / Y reads of never-written addresses" {
     const gpa = testing.allocator;
     var state = emu.State{};
