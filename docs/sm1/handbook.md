@@ -63,7 +63,7 @@ configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2) a
 | Bank | Count | Width | Notes |
 |---|---|---|---|
 | s | 16 | 24 | data; s0 reads 0 and drops writes (§438), but x17's `mv` reads the real s0 (§70) |
-| e | 16 | 16 | Y addresses, wrap at 16 bits (§59, §88) |
+| e | 16 | 16 | Y addresses, wrap at 16 bits (§59, §88); `rop` passes e and R to s sign-extended (§808) |
 | R | 16 | 16 | modifiers; R0 is hardwired 0 (§88) |
 | A | 32 | 16+ | X addresses; A0 reads 0 (§122); tst sees A as 16-bit signed (§375); wider bits unknown |
 | p | 16 | 1 | predicates; p0 is hardwired true (§86) and writes to it are undefined (after §608) |
@@ -200,9 +200,8 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
     - 1: high = floor(xy / 2^24), low = low16(xy), undoubled (§145, §312);
     - undefined (§312): w1[16] = 1 gives d + x instead, and w1[12:11] add a high-byte term that
       depends on state. The emulator refuses both.
-    The low part lands in e or R sign-extended from 16 bits (§807, read back through rop). The
-    head ALU runs for w1 classes 010, 011 and 101; w1[31:29] is also the X store source's low
-    bits, s<{w2[0], w1[31:29]}> (§384, §807).
+    The head ALU runs for w1 classes 010, 011 and 101; w1[31:29] is also the X store source's
+    low bits, s<{w2[0], w1[31:29]}> (§384, §807).
 - **Third-slot ops on x02 (§627, §628).** Besides the adder codes, the third slot runs code 6
   (asr b by a, no rounding, no saturation), code 7 (asrrs: rounds right, saturates left), codes
   22/31 (a logic table: xor, xnor, or, and, not a, a; code 22 then shifts left by w5[5:2]) and
