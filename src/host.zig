@@ -62,6 +62,10 @@ pub const Map = struct {
     param: u32 = 0xFD80,
 };
 
+/// The parameter block's words before configure: ASCII "--" (fact 828).
+pub const param_fill: u32 = 0x2D2D;
+pub const param_words = 8;
+
 pub const Region = struct { lo: u32, hi: u32 };
 
 pub const Param = struct { addr: u32, value: u32 };
@@ -114,7 +118,9 @@ pub const Host = struct {
 
     pub fn init(gpa: std.mem.Allocator, cfg: Config) Error!Host {
         var h: Host = .{ .gpa = gpa, .cfg = cfg };
-        // Configure step 3: FF00 |= 1, mode 0 FF00 |= 6, FF06 = rate index.
+        // The firmware leaves the parameter block as "----" fill (0x2D2D per word, fact 828)
+        // and configures over it: FF00 |= 1, mode 0 FF00 |= 6, FF06 = rate index.
+        for (0..param_words) |k| try h.putY(cfg.map.param + @as(u32, @intCast(k)), param_fill);
         try h.orY(cfg.map.param, 7);
         try h.putY(cfg.map.param + 3, rateIndex(cfg.rate_hz));
         return h;
@@ -263,8 +269,10 @@ test "rate index: listed rates, and unlisted ones fall back to 44100's" {
 test "init writes the parameter block" {
     var h = try Host.init(testing.allocator, .{ .rate_hz = 48000 });
     defer h.deinit();
-    try testing.expectEqual(@as(u32, 7), h.getY(0xFD80));
+    try testing.expectEqual(@as(u32, 0x2D2F), h.getY(0xFD80));
+    try testing.expectEqual(@as(u32, 0x2D2D), h.getY(0xFD82));
     try testing.expectEqual(@as(u32, 3), h.getY(0xFD83));
+    try testing.expectEqual(@as(u32, 0x2D2D), h.getY(0xFD87));
 }
 
 test "packets join one input stream; a read past them waits for the next (783, 784)" {
