@@ -2008,6 +2008,9 @@ fn execX15Pt(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const dest_s: u32 = (head >> 21) & 0xF;
     const lut: u32 = (s >> 8) & 0x7;
     const p_idx: u32 = (s >> 3) & 0xF;
+    // 860: e<2*S[2:0] + head[31]> <- #head[20:5], the 845 / 851 form.
+    const dest_e: u32 = ((s & 7) << 1) | (head >> 31);
+    if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
     if (dest_s == 0) return;
     const p_val: u8 = if (p_idx == 0) 0 else state.p[p_idx];
     const v: u32 = switch (lut) {

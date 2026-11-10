@@ -582,6 +582,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # 844, 845: e<2*S[2:0] + head[31]> <- #head[20:5] beside the load (measured into e5 and e8).
 # x16 b16 (855): e<S1[23:20]> <- #head[20:5] (S2[20] = S2[17] = 1; either clear writes 0) and A<2*S1[3:0] + head[31]> <- #head[20:5] (840's A17 is this route).
 # x19k (859): e<w1[23:20]> <- #head[20:5] after the slots read e; p<w2[30:27]> <- 0 under an OPEN condition (not reproduced standalone), not modelled.
+# x15 pt (860): e<2*S[2:0] + head[31]> <- #head[20:5] beside the s <- p slot; S[23:20] inert here.
 # S[6:3] names an s write with an OPEN source (542 revises 123's clears; own-yld10k), refused; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the measured bundle is OPEN.  own-yld10
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12

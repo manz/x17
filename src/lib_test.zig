@@ -2056,6 +2056,27 @@ test "x19k writes #head[20:5] to e<w1[23:20]> after its slots read e (859)" {
     }
 }
 
+test "x15 pt writes #head[20:5] to e<2*S[2:0] + head[31]> (860)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x1D821195, s: u32 = 0x21898069, e: u32, v: u32 = 0x108C }{
+        .{ .e = 2 },
+        .{ .s = 0x2189806B, .e = 6 }, // S[1]
+        .{ .s = 0x2189806D, .e = 10 }, // S[2]
+        .{ .h = 0x9D821195, .e = 3 }, // head[31]
+        .{ .h = 0x1D8211B5, .e = 2, .v = 0x108D }, // head[5]
+        .{ .h = 0x1D921195, .e = 2, .v = 0x908C }, // head[20]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[c.e] = 9;
+        state.s[12] = 7;
+        state.p[13] = 1;
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, c.s, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.v, state.e[c.e]);
+        try testing.expectEqual(@as(u32, 0), state.s[12]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
