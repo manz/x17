@@ -3753,8 +3753,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 ///     the source is never s0.
 ///   Y:[e<w3[28:25]>] <- s<w2[3:0]> when w2[26] = w2[16] = 1 (677); with w1[18] = 0 the engine
 ///     wedges after the bundle, so that form is refused.
-///   e<w1[23:20]> <- #head[20:5] (859).  p<w2[30:27]> <- 0 under a condition that is OPEN
-///     (859: not reproduced standalone): not modelled.
+///   e<w1[23:20]> <- #head[20:5] (859).  p<w2[30:27]> <- (y != 0) with w3[23:20] = 10 (862);
+///     other w3[23:20] values are OPEN and leave p alone.
 /// x = e<w3[28:25]>, y = R<w3[14:11]>.  Muxes 3-5 are OPEN.
 fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const head = bundle[0];
@@ -3780,6 +3780,11 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         else => return RunError.UnknownForm,
     };
     const r_val: u32 = if ((w2 >> 25) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y);
+    // 862: with w3[23:20] = 10, p<w2[30:27]> <- (y != 0), y read before the R write.  Other
+    // w3[23:20] values change the outcome (859) and are not split: p left alone there.
+    const pd: u32 = (w2 >> 27) & 0xF;
+    const p_on = (w3 >> 20) & 0xF == 10 and pd != 0;
+    const p_val: u8 = @intFromBool(y != 0);
     if (kalu and (mux == 1 or mux == 2)) state.s[(w1 >> 8) & 0xF] = s_val else state.s[(head >> 21) & 0xF] = s_val;
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_r != 0) state.r[dest_r] = r_val;
@@ -3788,6 +3793,7 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // 859: e<w1[23:20]> <- #head[20:5], as b16's (855), written after the slots read e.
     const dest_e: u32 = (w1 >> 20) & 0xF;
     if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
+    if (p_on) state.p[pd] = p_val;
 }
 
 /// x19k's w1[17:15] ALU (own-x19kalu m = 5: a - b; own-x19kabs m = 7: |b| over 16 bits).

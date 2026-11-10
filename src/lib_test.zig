@@ -2114,6 +2114,27 @@ test "aset0b's A write is off while [19] = 1 (862)" {
     }
 }
 
+test "x19k writes p<w2[30:27]> <- (R<w3[14:11]> != 0) under w3[23:20] = 10 (862)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w3: u32 = 0x13A00801, r1: u32, r3: u32 = 0, p6: u8, p6_in: u8 = 1 }{
+        .{ .r1 = 0, .p6 = 0 },
+        .{ .r1 = 9, .p6 = 1 },
+        .{ .r1 = 0xFFFF, .p6 = 1 },
+        .{ .r1 = 9, .p6 = 1, .p6_in = 0 }, // a write, not a conditional clear
+        .{ .w3 = 0x13A01801, .r1 = 0, .r3 = 5, .p6 = 1 }, // w3[12]: R3
+        .{ .w3 = 0x13A01801, .r1 = 9, .r3 = 0, .p6 = 0 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[9] = 1;
+        state.r[1] = c.r1;
+        state.r[3] = c.r3;
+        state.p[6] = c.p6_in;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x01821179, 0x90941000, 0x33E20000, c.w3, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.p6, state.p[6]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
