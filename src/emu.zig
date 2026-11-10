@@ -3764,8 +3764,7 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 ///     the source is never s0.
 ///   Y:[e<w3[28:25]>] <- s<w2[3:0]> when w2[26] = w2[16] = 1 (677); with w1[18] = 0 the engine
 ///     wedges after the bundle, so that form is refused.
-///   e<w1[23:20]> <- #head[20:5] (859).  p<w2[30:27]> <- cond w3[23:20] of y (862, 864, 865;
-///     conds 2-4 OPEN).
+///   e<w1[23:20]> <- #head[20:5] (859).  p<w2[30:27]> <- cond w3[23:20] of y (862, 864-867).
 /// x = e<w3[28:25]>, y = R<w3[14:11]>.  Muxes 3-5 are OPEN.
 fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const head = bundle[0];
@@ -3791,14 +3790,16 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         else => return RunError.UnknownForm,
     };
     const r_val: u32 = if ((w2 >> 25) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y);
-    // 862, 864, 865: p<w2[30:27]> <- cond w3[23:20] of y (16-bit signed), read before the R
-    // write.  Conds 2, 3 and 4 are no compare against 0 (865) and are OPEN: p left alone.
+    // 862, 864, 865, 867: p<w2[30:27]> <- cond w3[23:20] of y (16-bit signed), read before the
+    // R write; conds 2, 3 and 4 test y + 1, y - 1 and -y > 0 with 16-bit wrap.
     const pd: u32 = (w2 >> 27) & 0xF;
     const ys = sx16(y);
-    const p_cond: ?bool = switch ((w3 >> 20) & 0xF) {
+    const p_cond: bool = switch ((w3 >> 20) & 0xF) {
         0 => true,
         1, 5 => false,
-        2, 3, 4 => null,
+        2 => sx16((y +% 1) & 0xFFFF) > 0, // 867: wrapping 16-bit tests
+        3 => sx16((y -% 1) & 0xFFFF) > 0,
+        4 => sx16((0 -% y) & 0xFFFF) > 0,
         6 => ys > 0,
         7, 13 => ys >= 0,
         8 => ys <= 0,
@@ -3806,8 +3807,8 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         10, 14 => ys != 0,
         else => ys == 0, // 11, 15
     };
-    const p_on = pd != 0 and p_cond != null;
-    const p_val: u8 = @intFromBool(p_cond orelse false);
+    const p_on = pd != 0;
+    const p_val: u8 = @intFromBool(p_cond);
     if (kalu and (mux == 1 or mux == 2)) state.s[(w1 >> 8) & 0xF] = s_val else state.s[(head >> 21) & 0xF] = s_val;
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_r != 0) state.r[dest_r] = r_val;

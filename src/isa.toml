@@ -581,7 +581,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # yld10 (0x10 with S class 111; fact 123 pass 149): s<head[24:21]> <- by S[23:22], S[17:16]: 01/10 Y:[e<S[28:25]>] (e0 reads 0), 00/10 0, 11/10 0x700?, S[17:16] != 10 yd;
 # 844, 845: e<2*S[2:0] + head[31]> <- #head[20:5] beside the load (measured into e5 and e8).
 # x16 b16 (855): e<S1[23:20]> <- #head[20:5] (S2[20] = S2[17] = 1; either clear writes 0) and A<2*S1[3:0] + head[31]> <- #head[20:5] (840's A17 is this route).
-# x19k (859, 862): e<w1[23:20]> <- #head[20:5] after the slots read e; p<w2[30:27]> <- cond w3[23:20] of R<w3[14:11]> (864, 865 over 0, 1, 9, 0x7FFF, 0x8000, 0xFFFF: 0 1; 1/5 0; 6 >0; 7/13 >=0; 8 <=0; 9/12 <0; 10/14 !=0; 11/15 ==0; 2/3/4 fit no compare against 0, OPEN, p left alone).
+# x19k (859, 862): e<w1[23:20]> <- #head[20:5] after the slots read e; p<w2[30:27]> <- cond w3[23:20] of R<w3[14:11]> (864, 865 over 0, 1, 9, 0x7FFF, 0x8000, 0xFFFF: 0 1; 1/5 0; 6 >0; 7/13 >=0; 8 <=0; 9/12 <0; 10/14 !=0; 11/15 ==0; 867 over 13 values: 2 (R+1) > 0, 3 (R-1) > 0, 4 -R > 0, 16-bit wrap).
 # x15 pt (860): e<2*S[2:0] + head[31]> <- #head[20:5] beside the s <- p slot; S[23:20] inert here.
 # aset0b (861): e<[12:9]> <- the raw Y word and s<[29:26]> sign-extended, as dld (854).
 # aset0b A write (862): only while [19] = 0 (324 called [19] inert); [14:13] also changes the word read (address mode, OPEN).
