@@ -92,6 +92,8 @@ pub const State = struct {
     /// When set, a bundle refused as UnknownForm is reported here and skipped as a nop instead
     /// of ending the run (`x17 play --trap-list`).  The state after a skip is a guess.
     on_unknown: ?UnknownHook = null,
+    /// Bundles run since the latest st.wr bundle completed (fact 804 keys x19.ld on it).
+    since_st_wr: u32 = std.math.maxInt(u32),
     /// When set, called before and after each bundle runs (`x17 play --trace`).
     on_bundle: ?BundleHook = null,
     /// When set, X / Y reads are logged here (`x17 play --trace`).
@@ -167,6 +169,11 @@ pub const UnsetReads = struct {
     /// x18 class-011 p writes left alone because their compare is OPEN (776).
     open_p: u64 = 0,
 };
+
+/// st paired with its wr second ([31:29] = 001, [16:15] = 11).
+fn isStWr(slice: []const u32) bool {
+    return slice.len == 2 and slice[0] & 0x1F == 0x0F and slice[0] >> 29 == 1 and slice[1] & 0xE0018000 == 0x20018000;
+}
 
 pub const BundlePhase = enum { before, after };
 pub const BundleHook = struct { ctx: *anyopaque, f: *const fn (ctx: *anyopaque, phase: BundlePhase, pc: usize, bundle: []const u32) void };
@@ -4215,6 +4222,9 @@ fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // w1 outside its operand fields: w1[3] set, the rest clear.  w1[20] and w1[5] write an A
     // (from the last X access's index) and grow the e step on later loads (793): refused.
     if (w1 & ~@as(u32, 0x0787) != 0x8) return RunError.UnknownForm;
+    // An st.wr with 0..2 bundles between it and the load stalls it on silicon (804); 3..6 are
+    // unmeasured, 7 completes.
+    if (state.since_st_wr < 7) return RunError.UnknownForm;
 
     // 1) Load from Y memory using the pre-state element register, sign-extended (705).
     const src_e_val: u32 = if (y_src_e == 0) 0 else state.e[y_src_e];
@@ -5731,6 +5741,7 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             return bundles_run + 1;
         }
         updateE0(state, slice);
+        state.since_st_wr = if (isStWr(slice)) 0 else state.since_st_wr +| 1;
         if (shadow == null) {
             if (isHaltBundle(slice)) {
                 if (since_armer) |g| if (!g.completes()) return RunError.HaltDeadline;
