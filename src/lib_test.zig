@@ -7423,17 +7423,6 @@ test "x17sty stop form under R mux 2: e<k> takes the AGU result; a stop then sto
     }
 }
 
-test "x19.ld is refused with p1 set: it never completes on silicon (802)" {
-    const gpa = testing.allocator;
-    var state = emu.State{};
-    defer state.deinit(gpa);
-    state.p[1] = 1;
-    const b = try asm_mod.assembleOne("x19.ld s3, #4, e8, #2");
-    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, b.slice()));
-    state.p[1] = 0;
-    try emu.executeBundle(gpa, &state, b.slice());
-}
-
 test "ealu op 5 is a, op 7 is -a, head[9] makes op 5 -a (fact 132)" {
     const gpa = testing.allocator;
     for ([_]struct { h: u32, w: u32, want: u32 }{

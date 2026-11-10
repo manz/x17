@@ -272,8 +272,6 @@ unknown.
 - **Calls and returns:** undefined (§230, §310).
 - **Wedges:** runaway words (§16, §44), low5 0x1A-0x1F after the stop (§72), a missed halt
   deadline, and the per-form wedge bits in the reference (for example xld10 S1[18] = 0, §559).
-  `x19.ld` never completes while p1 = 1 (§802; the keying field is open): clear p1 before it,
-  since nothing guarantees p1's value at entry.
 
 ## 10. Writing fast code
 
