@@ -6411,8 +6411,8 @@ fn execLd0e(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
 
 /// 0x0B with head[31:30] = 10 (fact 258, 259, 324): v = Y:[e<[8:5]>]; s<[29:26]> ([29] = bit 3,
 /// so classes 100 and 101 are one op), R<[25:22]> <- v, A<[18:15]> <- v when [14:13] = 01, else
-/// yd.  [20] = 0 wedges (258); [19], [10:9] inert.  How the 16-bit value widens into a 24-bit A
-/// is unmeasured: refused when its bit 15 is set.
+/// yd; e<[12:9]> <- v raw, s sign-extended (861).  [20] = 0 wedges (258); [19] inert.  How the
+/// 16-bit value widens into a 24-bit A is unmeasured: refused when its bit 15 is set.
 fn execAset0b(state: *State, head: u32) RunError!void {
     if ((head >> 20) & 1 == 0) return RunError.UnknownForm;
     const v: u32 = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
@@ -6421,9 +6421,12 @@ fn execAset0b(state: *State, head: u32) RunError!void {
     const dest_a: u32 = (head >> 15) & 0xF;
     const a_val: u32 = if ((head >> 13) & 3 == 1) v else state.yd & 0xFFFF;
     if (dest_a != 0 and a_val & 0x8000 != 0) return RunError.UnknownForm;
-    if (dest_s != 0) state.s[dest_s] = v;
+    // 861: s takes the word sign-extended, and e<[12:9]> the raw word (dld's pair, 854).
+    if (dest_s != 0) state.s[dest_s] = sx16To24(v);
     if (dest_r != 0) state.r[dest_r] = v;
     if (dest_a != 0) state.a[dest_a] = a_val;
+    const dest_e: u32 = (head >> 9) & 0xF;
+    if (dest_e != 0) state.e[dest_e] = v;
 }
 
 /// 0x0C with [31] = 1 (fact 282, 378; measured 2026-11-06): one form.

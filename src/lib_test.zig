@@ -2077,6 +2077,24 @@ test "x15 pt writes #head[20:5] to e<2*S[2:0] + head[31]> (860)" {
     }
 }
 
+test "aset0b also writes the raw word to e<[12:9]> and sign-extends s (861)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w: u32 = 0x9C1A288B, y: u32 = 0x1234, s: u32 = 7, sv: u32 = 0x1234, e: u32 = 4 }{
+        .{},
+        .{ .w = 0x9C18288B, .y = 0x8001, .sv = 0xFF8001 }, // A dest 0: x17 refuses a bit-15 A copy
+        .{ .w = 0x9C1A2A8B, .e = 5 }, // [9]
+        .{ .w = 0x981A288B, .s = 6 }, // [26]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[4] = 0x100;
+        try state.y_mem.put(gpa, 0x100, c.y);
+        _ = try emu.runFrom(gpa, &state, &.{ c.w, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.sv, state.s[c.s]);
+        try testing.expectEqual(c.y, state.e[c.e]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
