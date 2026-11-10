@@ -100,6 +100,8 @@ pub const State = struct {
     read_log: ?*ReadLog = null,
     /// runFrom returns Breakpoint before running the bundle at this pc (`x17 play --stop-at`).
     break_at: ?usize = null,
+    /// Arrivals at break_at to run through before stopping (`--stop-skip`).
+    break_skip: u64 = 0,
     /// runFrom returns Breakpoint once this many bundles have run in total (`--stop-after`).
     break_after: ?u64 = null,
     /// Bundles run by every runFrom on this state.
@@ -5695,6 +5697,15 @@ pub fn arm(gpa: std.mem.Allocator, state: *State, syllables: []const u32, kind: 
 
 /// runLinear from syllable `start`, with a bundle budget of `max_bundles`
 /// (a codec program runs far past runLinear's 256).
+/// True when runFrom must stop before the bundle at pc `i`; uses up one skipped arrival.
+fn atBreak(state: *State, i: usize) bool {
+    if (state.break_after) |n| if (state.bundles_total >= n) return true;
+    if (state.break_at != i) return false;
+    if (state.break_skip == 0) return true;
+    state.break_skip -= 1;
+    return false;
+}
+
 pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, start: usize, max_bundles: usize) RunError!usize {
     var i: usize = start;
     var bundles_run: usize = 0;
@@ -5721,7 +5732,7 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         const slice = syllables[i .. i + len];
         const pc_at_bundle = i;
         state.pc = i;
-        if (state.break_at == i or (state.break_after != null and state.bundles_total >= state.break_after.?)) return RunError.Breakpoint;
+        if (atBreak(state, i)) return RunError.Breakpoint;
         state.bundles_total += 1;
         if (state.profile) |p| p[i] += 1;
         if (state.on_bundle) |hk| hk.f(hk.ctx, .before, i, slice);

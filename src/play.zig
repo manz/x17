@@ -29,6 +29,8 @@ pub const Options = struct {
     tracer: ?*Tracer = null,
     /// Stop before the first decoder bundle at this q (`error.Breakpoint`).
     stop_at: ?usize = null,
+    /// Arrivals at stop_at to run through first: K stops on the (K+1)-th.
+    stop_skip: u64 = 0,
     /// Stop once this many bundles have run, init passes included.
     stop_after: ?u64 = null,
     /// When the run stops short (a stop or a trap), the state goes here as JSON.
@@ -354,6 +356,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
 
     try loadData(gpa, &h.state, prog, img, image.decoder_pass);
     h.state.break_at = opts.stop_at;
+    h.state.break_skip = opts.stop_skip;
     for (opts.y_writes) |w| try h.state.y_mem.put(gpa, w.addr, w.value & 0xFFFF);
 
     for (pkts, 0..) |pkt, i| {
@@ -541,6 +544,23 @@ test "play --stop-at stops before the first decoder bundle at q and dumps the st
     try testing.expect(std.mem.startsWith(u8, text, "{\"stop\":\"Breakpoint\",\"pass\":255,\"packet\":0,\"q\":261,"));
     try testing.expect(std.mem.indexOf(u8, text, "\"s\":[0,0,0,4660,") != null);
     try testing.expect(std.mem.indexOf(u8, text, "\"128\":") == null);
+}
+
+test "play --stop-skip stops on a later arrival at the q" {
+    const gpa = testing.allocator;
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        ldi s1, #1
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    var r = try play(gpa, &img, &.{ "a", "b", "c" }, .{ .stop_at = decode_entry, .stop_skip = 2 });
+    defer r.deinit(gpa);
+    const t = r.trap orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(anyerror, error.Breakpoint), t.err);
+    try testing.expectEqual(@as(?usize, 2), t.packet);
 }
 
 test "play --p-entry sets p1..p15 before the init passes" {
