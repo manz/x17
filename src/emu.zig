@@ -3533,6 +3533,10 @@ fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const addr: u32 = state.e[src_e];
     const v = (state.getY(addr) orelse 0) & 0xFFFF;
     if (dest_s != 0) state.s[dest_s] = v;
+    // 844, 845: e<2*S[2:0] + head[31]> <- #head[20:5] beside the load (137's index rule;
+    // 0x11F: e8 <- 0xFD83).  Measured landing in e5 and e8.
+    const dest_e: u32 = ((s1 & 7) << 1) | (head >> 31);
+    if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
     state.yd = v; // 571
 }
 

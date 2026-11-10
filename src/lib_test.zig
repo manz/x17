@@ -2834,6 +2834,20 @@ test "x00 without the full 842 selector leaves the doubling off" {
     }
 }
 
+test "yld10 also writes e<2*S[2:0] + head[31]> <- #head[20:5] (fact 844, 845)" {
+    const gpa = testing.allocator;
+    // own-yld10-imm-e5 / -e8: 0x1234 lands in exactly e5 / e8.
+    for ([_]struct { h: u32, s: u32, e: usize }{
+        .{ .h = 0x80A24690, .s = 0xE6420082, .e = 5 },
+        .{ .h = 0x00A24690, .s = 0xE6420084, .e = 8 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try emu.executeBundle(gpa, &state, &.{ c.h, c.s });
+        for (1..16) |k| try testing.expectEqual(@as(u32, if (k == c.e) 0x1234 else 0), state.e[k]);
+    }
+}
+
 test "no A index is masked to 4 bits (A has 32 registers)" {
     const src = @embedFile("emu.zig");
     var i: usize = 0;
