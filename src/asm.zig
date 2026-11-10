@@ -536,12 +536,14 @@ fn matchOperand(op: isa.Operand, tok: Token, d: *Diagnostic) ?u32 {
             if (tok.kind != .a_reg) {
                 d.* = .{ .code = .e0010_expected_r_reg, .span = tokSpan(tok) };
                 setExpected(d, "A register", tok);
-                d.setHint("address registers are written A0..A15 (capital A)");
+                d.setHint("address registers are written A0..A31 (capital A)");
                 return null;
             }
-            if (tok.value > 15) {
+            // The A file has 32 registers; a 4-bit field reaches A0..A15 only.
+            const a_max: u32 = if (op.width() >= 5) 31 else 15;
+            if (tok.value > a_max) {
                 d.* = .{ .code = .e0014_reg_index_out_of_range, .span = tokSpan(tok) };
-                d.setMsg("A register index must be 0..15");
+                d.setMsg(if (a_max == 31) "A register index must be 0..31" else "this form's A field reaches A0..A15 only");
                 return null;
             }
             return tok.value;

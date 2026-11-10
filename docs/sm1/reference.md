@@ -2259,6 +2259,18 @@ Loads a 16-bit immediate into one of e8 to e15; it also arms the program halt co
 | dest_e | e8 | head | [28:26] |
 | imm16 | imm | head | [20:5] |
 
+### `lda`
+
+Loads a 16-bit immediate into an address register A1 to A30; it is lde with a zero e index.
+
+- Syllables: 1
+- Base: `40000006`
+
+| operand | kind | syllable | bits |
+|---|---|---|---|
+| dest_A | a_reg | head | [25:21] |
+| imm16 | imm | head | [20:5] |
+
 ### `rop.c4`
 
 Register operation: destination s and R get function fn of an e register x and R register y (class-100 encoding).

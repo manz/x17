@@ -1556,6 +1556,9 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (y_on) state.y_mem.put(gpa, y_addr, y_val) catch return RunError.OutOfMemory;
     if (x_on) state.x_mem.put(gpa, x_addr, x_val) catch return RunError.OutOfMemory;
     if (r_dest != 0) state.r[r_dest] = r_val;
+    // 0x00's e slot (830, 831): e<w1[6:3]> <- the immediate; unmeasured on 0x01.
+    const e_dest: u32 = (w1 >> 3) & 0xF;
+    if (!x01 and e_dest != 0) state.e[e_dest] = imm;
     if (yd_new) |v| state.yd = v;
     if (s_dest != 0) state.s[s_dest] = s_val;
     if (alu_dest != 0) state.s[alu_dest] = alu_val;
@@ -6392,8 +6395,11 @@ fn execLde(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     _ = gpa;
     const k: u32 = (head >> 26) & 0xF;
     const imm: u32 = (head >> 5) & 0xFFFF;
-    // k = 0 maps to an A-register store (still OPEN).  Don't guess.
-    if (k == 0) return;
+    // k = 0 loads A<[25:21]> instead (fact 51, 829); with k != 0, [25:21] is ignored (59).
+    if (k == 0) {
+        state.a[(head >> 21) & 0x1F] = imm;
+        return;
+    }
     state.e[k] = imm;
 }
 

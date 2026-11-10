@@ -62,7 +62,7 @@ mask = "0xC000001F"
 value = "0x40000006"
 lde = true
 evidence = "MEASURED"
-ref = "fact 51, 59 pass 85: [29:26] = k; k = 0 loads A[[25:21]] (the X store's file); k = 2, 3, 5..15 load Y entry e<k> <- [20:5] ([25:21] ignored); k = 1 loads e1, the st's a1 (61 pass 87; 59 missed it because e1 is rewritten between runs); k = 4 loads e4 too (62 pass 88: the dual load's read of e4 reverts it to 0x108E, which hid it).  own-entry"
+ref = "fact 51, 59 pass 85, 829: [29:26] = k; k = 0 loads A[[25:21]] (the X store's file); k = 2, 3, 5..15 load Y entry e<k> <- [20:5] ([25:21] ignored); k = 1 loads e1, the st's a1 (61 pass 87; 59 missed it because e1 is rewritten between runs); k = 4 loads e4 too (62 pass 88: the dual load's read of e4 reverts it to 0x108E, which hid it).  own-entry"
 
 [[form]]
 name = "ld0e"
