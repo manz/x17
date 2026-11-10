@@ -587,6 +587,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # aset0b A write (862): only while [19] = 0 (324 called [19] inert); [14:13] also changes the word read (address mode, OPEN).
 # x02 (863): the R slot's Y side (w5[27:26] = 00, w5[31:30] = 00) with w5[17] also writes the raw word to e<w1[6:3]>; w4[2] adds 0x100 to that copy (refused).
 # x02 (866, 868): under w4 mode 001 the w2 slot also runs: s<w2[12:9]> <- X:[A<w4[21:17]>] with w5[19], else 0 (no product: four operand pairs gave 0); w5[15] = 1 reads a Y word there (OPEN).
+# ystm (868): store on with h[26] = h[27] = 0: e<h[12:9]> <- op h[20:17] of i = {S[11:0], h[31:28]} (1000/1010 i, 1011 -i, 0010 0, 1110 x + 1; others OPEN); h[27] = 1 and the R / A / e side slots OPEN there.
 # S[6:3] names an s write with an OPEN source (542 revises 123's clears; own-yld10k), refused; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the measured bundle is OPEN.  own-yld10
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12

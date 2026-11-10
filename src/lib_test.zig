@@ -2203,6 +2203,28 @@ test "x02 mode 001 runs the w2 slot: s<w2[12:9]> <- X:[A<w4[21:17]>] (866)" {
     }
 }
 
+test "ystm with the store on and h[26:27] = 0 writes op(imm) to e<h[12:9]> (868)" {
+    const gpa = testing.allocator;
+    const sw: u32 = 0x4017B000;
+    for ([_]struct { h: u32 = 0x60150230, sw: u32 = sw, e: u32 = 1, v: u32 }{
+        .{ .v = 6 },
+        .{ .h = 0x70150230, .v = 7 }, // h[28]
+        .{ .sw = sw | 0x800, .v = 0x8006 }, // S[11]
+        .{ .h = 0x60150630, .e = 3, .v = 6 }, // h[10]
+        .{ .h = 0x60110230, .v = 6 }, // op 1000
+        .{ .h = 0x60170230, .v = 0xFFFA }, // op 1011: -imm
+        .{ .h = 0x60050230, .v = 0 }, // op 0010
+        .{ .h = 0x601D0230, .v = 0x101 }, // op 1110: e1 + 1
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0x100;
+        state.s[11] = 0x55;
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, c.sw, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.v, state.e[c.e]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
