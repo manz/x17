@@ -68,10 +68,6 @@ pub fn build(b: *std.Build) void {
     });
     image_mod.addImport("asm", asm_mod);
 
-    exe_mod.addImport("clap", clap_mod);
-    exe_mod.addImport("image", image_mod);
-    exe_mod.addImport("emu", emu_mod);
-
     const host_mod = b.addModule("host", .{
         .root_source_file = b.path("src/host.zig"),
         .target = target,
@@ -79,6 +75,11 @@ pub fn build(b: *std.Build) void {
     });
     host_mod.addImport("emu", emu_mod);
     host_mod.addImport("asm", asm_mod);
+
+    exe_mod.addImport("clap", clap_mod);
+    exe_mod.addImport("image", image_mod);
+    exe_mod.addImport("emu", emu_mod);
+    exe_mod.addImport("host", host_mod);
 
     // Zig runs only the tests of a binary's root module.  Each public module is a root of its
     // own; the CLI root (main.zig) gathers dispatch, disasm, doc, fmt and the test-only suites.
@@ -94,7 +95,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
-    for ([_][]const u8{ "clap", "isa", "asm", "emu", "image" }, [_]*std.Build.Module{ clap_mod, isa_mod, asm_mod, emu_mod, image_mod }) |name, m|
+    for ([_][]const u8{ "clap", "isa", "asm", "emu", "image", "host" }, [_]*std.Build.Module{ clap_mod, isa_mod, asm_mod, emu_mod, image_mod, host_mod }) |name, m|
         cli_mod.addImport(name, m);
     for ([_][]const u8{ "docs/sm1/handbook.md", "README.md", "ARCHITECTURE.md", "ASSEMBLY.md", "PROBES.md", "docs/sm1/reference.md" }) |doc|
         cli_mod.addAnonymousImport(std.fs.path.basename(doc), .{ .root_source_file = b.path(doc) });
