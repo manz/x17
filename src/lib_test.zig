@@ -2181,6 +2181,25 @@ test "x19k's p write: w3[23:20] conds on R<w3[14:11]> (864, 865, 867)" {
     }
 }
 
+test "x02 mode 001 runs the w2 slot: s<w2[12:9]> <- X:[A<w4[21:17]>] (866)" {
+    const gpa = testing.allocator;
+    const b = [_]u32{ 0x00000002, 0x00000000, 0x00001E00, 0x00400000, 0x00240860, 0xC0080200 };
+    for ([_]struct { w2: u32 = b[2], w5: u32 = b[5], s: u32 = 15, v: u32 = 0xABCDEF }{
+        .{},
+        .{ .w2 = 0x00001C00, .s = 14 }, // w2[9]
+        .{ .w2 = 0x00000E00, .s = 7 }, // w2[12]
+        .{ .w5 = 0xC0000200, .v = 0 }, // w5[19] cleared: the product s0 * s0
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[18] = 0x11C4;
+        state.s[c.s] = 0x77;
+        try state.x_mem.put(gpa, 0x11C4, 0xABCDEF);
+        _ = try emu.runFrom(gpa, &state, &.{ b[0], b[1], c.w2, b[3], b[4], c.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.v, state.s[c.s]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
