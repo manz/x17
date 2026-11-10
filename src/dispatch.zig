@@ -294,6 +294,9 @@ const play_params = clap.parseParamsComptime(
     \\    --max-bundles <usize> bundle budget per packet, default 2^26
     \\    --trap-list          skip refused bundles as nops; rank them by hits (hints only)
     \\    --trace <usize>      print the first N bundles run: changes, X / Y reads and writes
+    \\    --stop-at <usize>    stop before the first decoder bundle at this q
+    \\    --stop-after <usize> stop once this many bundles have run (init passes included)
+    \\    --dump <str>         on a stop or trap, write the state (registers, X, Y) as JSON
     \\<str>                    image path (.x17i)
     \\
 );
@@ -310,7 +313,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
     defer parsed.deinit();
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] <image.x17i>\n");
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] [--stop-at Q | --stop-after N] [--dump FILE] <image.x17i>\n");
         return;
     }
     const img_path = parsed.positionals[0] orelse {
@@ -357,12 +360,17 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     defer tl.deinit();
     var tracer: play_mod.Tracer = .{ .gpa = gpa, .out = out, .left = parsed.args.trace orelse 0 };
     defer tracer.deinit();
+    var dump: std.Io.Writer.Allocating = .init(gpa);
+    defer dump.deinit();
     var res = try play_mod.play(gpa, &img, pkts, .{
         .rate_hz = @intCast(parsed.args.rate orelse 44100),
         .y_writes = writes.items,
         .max_bundles_packet = parsed.args.@"max-bundles" orelse 1 << 26,
         .trap_list = if (parsed.args.@"trap-list" != 0) &tl else null,
         .tracer = if (parsed.args.trace != null) &tracer else null,
+        .stop_at = parsed.args.@"stop-at",
+        .stop_after = parsed.args.@"stop-after",
+        .dump = if (parsed.args.dump != null) &dump.writer else null,
     });
     defer res.deinit(gpa);
     try writeFile(gpa, out_path, std.mem.sliceAsBytes(res.pcm));
@@ -377,6 +385,12 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
             try out.writeAll("\n");
         }
     }
+    if (parsed.args.dump) |path| if (res.trap != null) try writeFile(gpa, path, dump.written());
+    if (res.trap) |t| if (t.err == error.Breakpoint) {
+        if (t.packet) |i| try out.print("stopped in packet {d}", .{i}) else try out.print("stopped in init pass {d}", .{t.pass});
+        try out.print(" before q {d} (0x{x})\n", .{ t.pc, t.pc });
+        return;
+    };
     if (res.trap) |t| {
         if (t.packet) |i| try out.print("trap: {s} in packet {d}", .{ @errorName(t.err), i }) else try out.print("trap: {s} in init pass {d}", .{ @errorName(t.err), t.pass });
         try out.print(" at q {d} (0x{x}):", .{ t.pc, t.pc });

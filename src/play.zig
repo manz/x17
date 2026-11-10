@@ -27,7 +27,46 @@ pub const Options = struct {
     trap_list: ?*TrapList = null,
     /// Print the first bundles run, with what each changed and read.
     tracer: ?*Tracer = null,
+    /// Stop before the first decoder bundle at this q (`error.Breakpoint`).
+    stop_at: ?usize = null,
+    /// Stop once this many bundles have run, init passes included.
+    stop_after: ?u64 = null,
+    /// When the run stops short (a stop or a trap), the state goes here as JSON.
+    dump: ?*std.Io.Writer = null,
 };
+
+/// The state as one JSON object: where the run stopped, the register files, and every X and Y
+/// word written so far, by address.
+pub fn writeDump(gpa: std.mem.Allocator, w: *std.Io.Writer, st: *const emu.State, t: Trap) !void {
+    try w.print("{{\"stop\":\"{s}\",\"pass\":{d},\"packet\":", .{ @errorName(t.err), t.pass });
+    if (t.packet) |i| try w.print("{d}", .{i}) else try w.writeAll("null");
+    try w.print(",\"q\":{d},\"bundles\":{d}", .{ t.pc, st.bundles_total });
+    try jsonArray(w, "s", &st.s);
+    try jsonArray(w, "e", &st.e);
+    try jsonArray(w, "R", &st.r);
+    try jsonArray(w, "A", &st.a);
+    try jsonArray(w, "p", &st.p);
+    try jsonMem(gpa, w, "x", &st.x_mem);
+    try jsonMem(gpa, w, "y", &st.y_mem);
+    try w.writeAll("}\n");
+}
+
+fn jsonArray(w: *std.Io.Writer, name: []const u8, vals: anytype) !void {
+    try w.print(",\"{s}\":[", .{name});
+    for (vals, 0..) |v, k| try w.print("{s}{d}", .{ if (k == 0) "" else ",", v });
+    try w.writeAll("]");
+}
+
+fn jsonMem(gpa: std.mem.Allocator, w: *std.Io.Writer, name: []const u8, mem: *const std.AutoHashMapUnmanaged(u32, u32)) !void {
+    var addrs: std.ArrayList(u32) = .empty;
+    defer addrs.deinit(gpa);
+    var it = mem.keyIterator();
+    while (it.next()) |k| try addrs.append(gpa, k.*);
+    std.mem.sort(u32, addrs.items, {}, std.sort.asc(u32));
+    try w.print(",\"{s}\":{{", .{name});
+    for (addrs.items, 0..) |a, k| try w.print("{s}\"{d}\":{d}", .{ if (k == 0) "" else ",", a, mem.get(a).? });
+    try w.writeAll("}");
+}
 
 /// One line per bundle run for the first `left` bundles: where it ran, its syllables and
 /// disasm, then the registers and predicates it changed and its X / Y reads and writes.
@@ -282,8 +321,10 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     defer h.deinit();
     if (opts.trap_list) |tl| h.state.on_unknown = .{ .ctx = tl, .f = TrapList.hook };
     if (opts.tracer) |t| t.attach(&h.state);
+    h.state.break_after = opts.stop_after;
 
     var res: Result = .{ .pcm = &.{}, .packets = 0, .bundles = 0, .waits = 0, .trap = null };
+    defer if (opts.dump) |w| if (res.trap) |t| writeDump(gpa, w, &h.state, t) catch {};
 
     // Init passes in load order: the sections come pass by pass.
     var last: ?u8 = null;
@@ -307,6 +348,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     }
 
     try loadData(gpa, &h.state, prog, img, image.decoder_pass);
+    h.state.break_at = opts.stop_at;
     for (opts.y_writes) |w| try h.state.y_mem.put(gpa, w.addr, w.value & 0xFFFF);
 
     for (pkts, 0..) |pkt, i| {
@@ -467,4 +509,31 @@ test "play --trace prints the first N bundles with their changes, reads and writ
     try testing.expect(std.mem.indexOf(u8, text, "s3 0x0->0x1234 e8 0x40->0x41 rY[0x40]=0x1234\n") != null);
     try testing.expect(std.mem.indexOf(u8, text, "wY[0x80]=0x1234\n") != null);
     try testing.expect(std.mem.indexOf(u8, text, "q 0x109") == null);
+}
+
+test "play --stop-at stops before the first decoder bundle at q and dumps the state" {
+    const gpa = testing.allocator;
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        lde e8, #0x40
+        \\        x19.ld s3, #4, e8, #2
+        \\        lde e6, #0x80
+        \\        x17.sty e6, #3, #0
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    // q 0x105 is the lde e6 after the 4-syllable x19.ld: the store after it has not run.
+    var r = try play(gpa, &img, &.{"a"}, .{ .y_writes = &.{.{ .addr = 0x40, .value = 0x1234 }}, .stop_at = decode_entry + 5, .dump = &out.writer });
+    defer r.deinit(gpa);
+    const t = r.trap orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(anyerror, error.Breakpoint), t.err);
+    try testing.expectEqual(decode_entry + 5, t.pc);
+    const text = out.written();
+    try testing.expect(std.mem.startsWith(u8, text, "{\"stop\":\"Breakpoint\",\"pass\":255,\"packet\":0,\"q\":261,"));
+    try testing.expect(std.mem.indexOf(u8, text, "\"s\":[0,0,0,4660,") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "\"128\":") == null);
 }

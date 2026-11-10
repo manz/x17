@@ -60,6 +60,9 @@ stripped aarch64-linux binary, smoke-tests it and attaches it to the release.
   `--trap-list` skips them as nops instead and ranks them by hits.
   `--trace N` prints the first N bundles run, each with the registers and
   predicates it changed and its X / Y reads and writes.
+  `--stop-at Q` (first decoder arrival at q) or `--stop-after N` (bundles)
+  stops the run before that bundle; `--dump FILE` writes the state there, or
+  at any trap, as JSON: registers, predicates and every X / Y word written.
 - `x17 disasm`: decodes syllables back to source.
 - `x17 fmt`: canonical layout for .sm sources; `--check` in CI.
 - `src/host.zig`: the host around a codec program, one packet per run:
