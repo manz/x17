@@ -7210,6 +7210,33 @@ test "x19mac's X store: X:[A<{w1[2:0], h[31:30]}>] <- s<{w2[0], w1[31:29]}> befo
     try testing.expectEqual(@as(u32, 0), state.s[13]);
 }
 
+test "x19mac: class 011 runs the head ALU and stores s<{w2[0], 011}>; the low part sign-extends (807)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, x: u32, alu: bool }{
+        .{ .w1 = 0x2002A050, .x = 0x999, .alu = false },
+        .{ .w1 = 0x4002A050, .x = 0xAAA, .alu = true },
+        .{ .w1 = 0x6002A050, .x = 0xFFFA99, .alu = true },
+    }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[12] = 0x1234;
+        state.s[11] = 0xFFFA99; // -0x567
+        state.s[9] = 0x999;
+        state.s[10] = 0xAAA;
+        state.s[3] = 0x111;
+        state.s[4] = 0x222;
+        state.s[13] = 0xDD;
+        state.a[1] = 0x700;
+        // Head ALU s13 <- s3 op 14 / s_mod 10 s4; wide op 4 x = s12, y = s11, e10 <- p, R2 <- p,
+        // X:[A1] <- s<{w2[0], w1[31:29]}>.
+        try emu.executeBundle(gpa, &state, &.{ 0x505699D9, k.w1, 0x21C0E197, 0xC0000100 });
+        try testing.expectEqual(@as(u32, 0xFFA914), state.e[10]);
+        try testing.expectEqual(@as(u32, 0xFFA914), state.r[2]);
+        try testing.expectEqual(k.x, state.x_mem.get(0x700).?);
+        try testing.expectEqual(@as(u32, if (k.alu) 0x333 else 0xDD), state.s[13]);
+    }
+}
+
 test "x19mac with w1[17] = 0: w1[15] rounds or truncates the high part; w1[16] is refused (312)" {
     const gpa = testing.allocator;
     for ([_]struct { x: u32, y: u32, w15: u32, want: u32 }{
