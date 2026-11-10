@@ -95,7 +95,7 @@ pub const OperandKind = enum {
     e, // element reg, 4 bits
     e8, // element reg e8..e15 in a 3-bit field (field = k - 8)
     r_reg, // R-file reg, 4 bits (R0 pinned to 0)
-    a_reg, // Address reg A0..A15, 4 or 5 bits
+    a_reg, // Address reg: A0..A15 in a 4-bit field, A0..A31 in a 5-bit one
     a4, // A index k written `#k`: k >> 2 in the field, k & 3 in head[31:30] (fact 651)
     eh, // element reg k: k >> 1 in the field, k & 1 in head[31] (facts 429, 658)
     p, // predicate, form-specific width

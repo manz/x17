@@ -676,6 +676,9 @@ lde.hi     1   0xC0000006
 # it also arms the halt deadline (fact 479; was read as a 1-word stop, 18/32).
 lde.arm    1   0xA0000006
 
+# lda: lde with [29:26] = 0 loads A<[25:21]> <- #[20:5] instead of an e (fact 51, 829).
+lda        1   0x40000006
+
 # rop.c4: rop at class 100, [21] inert (fact 285 / own-x07rop4).
 rop.c4     1   0x80200007
 

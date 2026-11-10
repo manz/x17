@@ -1005,6 +1005,10 @@ lde.hi	imm16	imm	5	20	head
 lde.arm	dest_e	e8	26	28	head
 lde.arm	imm16	imm	5	20	head
 
+# lda <dest_A>, #<imm>   (lde with [29:26] = 0)
+lda	dest_A	A	21	25	head
+lda	imm16	imm	5	20	head
+
 # rop.c4 <dest_s>, <dest_R>, <x_e>, <y_R>, #<fn>   (rop at class 100)
 rop.c4	dest_s	s	26	29	head
 rop.c4	dest_R	R	22	25	head

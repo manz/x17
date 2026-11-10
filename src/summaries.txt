@@ -158,6 +158,7 @@ x18.yb100	Loads the low byte of Y memory at an e register address, shifted left 
 x18.rcl001	Writes R from an AGU function (AGU10B, or AGU3 when selected) of an e register and R register, plus a Y-memory store.
 lde.hi	Loads a 16-bit immediate into an e register, the lde variant with bit 31 set.
 lde.arm	Loads a 16-bit immediate into one of e8 to e15; it also arms the program halt countdown.
+lda	Loads a 16-bit immediate into an address register A1 to A30; it is lde with a zero e index.
 rop.c4	Register operation: destination s and R get function fn of an e register x and R register y (class-100 encoding).
 aset0b	Loads destination s from Y memory at the address in an e register; it also writes A2 with the value.
 ragu0c	Writes R from the address-generation function fn over an A register and R0.
