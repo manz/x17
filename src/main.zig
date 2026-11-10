@@ -34,12 +34,13 @@ pub fn main(init: std.process.Init) !void {
 }
 
 test {
-    // The CLI's files (dispatch, disasm, doc, fmt) and the test-only suites run in this binary
+    // The CLI's files (dispatch, disasm, doc, fmt, play) and the test-only suites run in this binary
     // (see build.zig).
     _ = dispatch;
     _ = @import("disasm.zig");
     _ = @import("doc.zig");
     _ = @import("fmt.zig");
+    _ = @import("play.zig");
     _ = @import("lib_test.zig");
     _ = @import("silicon_gates.zig");
 }

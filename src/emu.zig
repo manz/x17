@@ -89,6 +89,9 @@ pub const State = struct {
     stop_now: bool = false,
     /// Set when a run ended at such a stop: the host sees a wedge, not a halt.
     silent_stop: bool = false,
+    /// When set, a bundle refused as UnknownForm is reported here and skipped as a nop instead
+    /// of ending the run (`x17 play --trap-list`).  The state after a skip is a guess.
+    on_unknown: ?UnknownHook = null,
     /// Whether e0, the address entry, is known (fact 466, 468): see updateE0.
     e0_known: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
@@ -5615,6 +5618,12 @@ pub fn runLinear(gpa: std.mem.Allocator, state: *State, syllables: []const u32) 
 
 /// The host's two arms (770): pass-1 (+0x984) enters q0; decode (+0x98C) enters at the engine-
 /// order syllable the host wrote to +0x988.
+/// Called with the pc and syllables of a refused bundle that is then skipped.
+pub const UnknownHook = struct {
+    ctx: *anyopaque,
+    f: *const fn (ctx: *anyopaque, pc: usize, bundle: []const u32) void,
+};
+
 pub const Arm = union(enum) { pass1, decode: usize };
 
 /// Run a host arm.  After a 0x08 / 0x0D the next arm is abnormal (block 1 never stores; what runs
@@ -5666,7 +5675,11 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             defer before.deinit(gpa);
             try executeBundle(gpa, state, slice);
             if (!sameY(&before, &state.y_mem)) return RunError.UnknownForm;
-        } else try executeBundle(gpa, state, slice);
+        } else executeBundle(gpa, state, slice) catch |e| {
+            const hook = state.on_unknown orelse return e;
+            if (e != RunError.UnknownForm) return e;
+            hook.f(hook.ctx, i, slice);
+        };
         if (state.stream_starved) {
             // 784: the read waits for the next packet and nothing in its bundle ran; the
             // caller queues bytes and resumes with runFrom at state.pc.  Inside a jump's delay

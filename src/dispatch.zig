@@ -11,6 +11,8 @@ const image_mod = @import("image");
 const disasm = @import("disasm.zig");
 const fmt_mod = @import("fmt.zig");
 const doc = @import("doc.zig");
+const play_mod = @import("play.zig");
+const host_mod = @import("host");
 
 const Writer = std.Io.Writer;
 const Handler = *const fn (gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) anyerror!void;
@@ -30,6 +32,7 @@ pub const top = [_]Verb{
     .{ .name = "asm", .help = "assemble a .sm file; prints hex syllables", .run = &cmdAsm },
     .{ .name = "image", .help = "assemble passes + host data into an x17 image (+ debug sidecar)", .run = &cmdImage },
     .{ .name = "run", .help = "assemble + execute a .sm file; prints s/Y state", .run = &cmdRun },
+    .{ .name = "play", .help = "run an x17 image over a packet file through the host model; writes PCM", .run = &cmdPlay },
     .{ .name = "fmt", .help = "format .sm files in place (--check: report only)", .run = &cmdFmt },
     .{ .name = "disasm", .help = "decode syllables (hex arg or .bin file) to .sm", .run = &cmdDisasm },
     .{ .name = "forms", .help = "list known forms", .run = &cmdForms },
@@ -122,6 +125,10 @@ fn parseVerb(
 // ---------------------------------------------------------------------------
 
 fn readSource(gpa: std.mem.Allocator, path: []const u8) ![]u8 {
+    return readFileMax(gpa, path, 1 * 1024 * 1024);
+}
+
+fn readFileMax(gpa: std.mem.Allocator, path: []const u8, max: usize) ![]u8 {
     const path_z = try gpa.allocSentinel(u8, path.len, 0);
     defer gpa.free(path_z);
     @memcpy(path_z[0..path.len], path);
@@ -136,7 +143,7 @@ fn readSource(gpa: std.mem.Allocator, path: []const u8) ![]u8 {
         if (n < 0) return error.ReadFailed;
         if (n == 0) break;
         try list.appendSlice(gpa, buf[0..@intCast(n)]);
-        if (list.items.len > 1 * 1024 * 1024) return error.FileTooLarge;
+        if (list.items.len > max) return error.FileTooLarge;
     }
     return try list.toOwnedSlice(gpa);
 }
@@ -271,6 +278,109 @@ fn cmdImage(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !voi
     }
     for (prog.passes, 0..) |*pass, i| {
         try out.print("pass {d} {s}: rows 0x{x}..0x{x}, {d} syllables, {d} data blocks\n", .{ i, @tagName(pass.kind), pass.base_row, pass.endRow(), pass.syllables.len, pass.data.len });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Verb: play
+// ---------------------------------------------------------------------------
+
+const play_params = clap.parseParamsComptime(
+    \\-h, --help               show help for `x17 play`
+    \\-p, --packets <str>      packet file: u32 LE length + bytes, repeated (required)
+    \\-o, --out <str>          PCM out: s16 LE as the host drained it (required)
+    \\-r, --rate <usize>       sampling rate for the parameter block, default 44100
+    \\-y, --y <str>...         ADDR=VALUE Y write after loading, before the first packet (hex ok)
+    \\    --max-bundles <usize> bundle budget per packet, default 2^26
+    \\    --trap-list          skip refused bundles as nops; rank them by hits (hints only)
+    \\<str>                    image path (.x17i)
+    \\
+);
+
+fn parseYWrite(s: []const u8) ?host_mod.Param {
+    const eq = std.mem.indexOfScalar(u8, s, '=') orelse return null;
+    const a = std.fmt.parseInt(u32, s[0..eq], 0) catch return null;
+    const v = std.fmt.parseInt(i32, s[eq + 1 ..], 0) catch return null;
+    return .{ .addr = a, .value = @bitCast(v) };
+}
+
+fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void {
+    var iter: SliceIter = .{};
+    var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
+    defer parsed.deinit();
+    if (parsed.args.help != 0) {
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] <image.x17i>\n");
+        return;
+    }
+    const img_path = parsed.positionals[0] orelse {
+        try out.writeAll("play: missing <image.x17i>\n");
+        return error.MissingFile;
+    };
+    const pkt_path = parsed.args.packets orelse {
+        try out.writeAll("play: missing -p <packets>\n");
+        return error.MissingFile;
+    };
+    const out_path = parsed.args.out orelse {
+        try out.writeAll("play: missing -o <out.pcm>\n");
+        return error.MissingFile;
+    };
+    var writes: std.ArrayList(host_mod.Param) = .empty;
+    defer writes.deinit(gpa);
+    for (parsed.args.y) |s| try writes.append(gpa, parseYWrite(s) orelse {
+        try out.print("play: bad -y '{s}', want ADDR=VALUE\n", .{s});
+        return error.InvalidArgument;
+    });
+
+    const img_bytes = readFileMax(gpa, img_path, 64 * 1024 * 1024) catch |e| {
+        try out.print("play: cannot read '{s}': {s}\n", .{ img_path, @errorName(e) });
+        return e;
+    };
+    defer gpa.free(img_bytes);
+    var img = image_mod.parse(gpa, img_bytes) catch |e| {
+        try out.print("play: '{s}' is not an x17 image: {s}\n", .{ img_path, @errorName(e) });
+        return e;
+    };
+    defer img.deinit(gpa);
+    const pkt_bytes = readFileMax(gpa, pkt_path, 1024 * 1024 * 1024) catch |e| {
+        try out.print("play: cannot read '{s}': {s}\n", .{ pkt_path, @errorName(e) });
+        return e;
+    };
+    defer gpa.free(pkt_bytes);
+    const pkts = play_mod.packets(gpa, pkt_bytes) catch |e| {
+        try out.print("play: '{s}': {s}\n", .{ pkt_path, @errorName(e) });
+        return e;
+    };
+    defer gpa.free(pkts);
+
+    var tl: play_mod.TrapList = .{ .gpa = gpa };
+    defer tl.deinit();
+    var res = try play_mod.play(gpa, &img, pkts, .{
+        .rate_hz = @intCast(parsed.args.rate orelse 44100),
+        .y_writes = writes.items,
+        .max_bundles_packet = parsed.args.@"max-bundles" orelse 1 << 26,
+        .trap_list = if (parsed.args.@"trap-list" != 0) &tl else null,
+    });
+    defer res.deinit(gpa);
+    try writeFile(gpa, out_path, std.mem.sliceAsBytes(res.pcm));
+    try out.print("{d}/{d} packets, {d} bundles, {d} samples out, {d} stream waits\n", .{ res.packets, pkts.len, res.bundles, res.pcm.len, res.waits });
+    if (parsed.args.@"trap-list" != 0) {
+        const ranked = try tl.ranked(gpa);
+        defer gpa.free(ranked);
+        try out.print("{d} refused forms skipped{s}:\n", .{ ranked.len, if (tl.oom) " (list incomplete: out of memory)" else "" });
+        for (ranked) |e| {
+            try out.print("  {d:>10} hits  first q {d} (0x{x}):", .{ e.hits, e.first_pc, e.first_pc });
+            for (e.syllables[0..e.n]) |w| try out.print(" {x:0>8}", .{w});
+            try out.writeAll("\n");
+        }
+    }
+    if (res.trap) |t| {
+        if (t.packet) |i| try out.print("trap: {s} in packet {d}", .{ @errorName(t.err), i }) else try out.print("trap: {s} in init pass {d}", .{ @errorName(t.err), t.pass });
+        try out.print(" at q {d} (0x{x}):", .{ t.pc, t.pc });
+        for (t.syllables[0..t.n_syllables]) |w| try out.print(" {x:0>8}", .{w});
+        var buf: [256]u8 = undefined;
+        const n = disasm.disasmBundle(&buf, t.syllables[0..t.n_syllables]) catch 0;
+        try out.print("\n  {s}\n", .{if (n == 0) "?" else buf[0..n]});
+        return error.Trapped;
     }
 }
 
