@@ -58,6 +58,8 @@ stripped aarch64-linux binary, smoke-tests it and attaches it to the release.
   writes the drained s16 PCM. Packets are a u32 LE length plus bytes, repeated.
   An unmodelled form stops the run with its packet, pc and syllables;
   `--trap-list` skips them as nops instead and ranks them by hits.
+  `--trace N` prints the first N bundles run, each with the registers and
+  predicates it changed and its X / Y reads and writes.
 - `x17 disasm`: decodes syllables back to source.
 - `x17 fmt`: canonical layout for .sm sources; `--check` in CI.
 - `src/host.zig`: the host around a codec program, one packet per run:
