@@ -64,6 +64,9 @@ stripped aarch64-linux binary, smoke-tests it and attaches it to the release.
   arrivals first) or `--stop-after N` (bundles) stops the run before that bundle; `--dump FILE` writes the state there, or
   at any trap, as JSON: registers, predicates and every X / Y word written.
   `--p-entry BITS` sets p1..p15 before the first init pass (bit k = p<k>).
+- `x17 patch --halt-at Q -o OUT.x17i IN.x17i`: copies an image with
+  `x17.halt` and two nops over decoder q..q+4, for silicon halts that match a
+  `play --stop-at Q` dump. Q should start a bundle.
 - `x17 disasm`: decodes syllables back to source.
 - `x17 fmt`: canonical layout for .sm sources; `--check` in CI.
 - `src/host.zig`: the host around a codec program, one packet per run:
