@@ -1920,6 +1920,7 @@ test "x19alu mode 8 writes op(#head[26:11]) to e<2*w1[2:0] + head[31]> and clear
         state.e[5] = 0x555;
         state.e[13] = 0xDDD;
         state.p[14] = 9;
+        try state.y_mem.put(gpa, 0, 1); // e8 = 0 reads an odd word: p14 <- 0 (858)
         const r = emu.runFrom(gpa, &state, &.{ c.h, c.w1, c.w2, 0x90000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         if (c.want) |v| {
             _ = try r;
@@ -2012,8 +2013,29 @@ test "x19alu mode 0xA: op 31 is a | b, written whatever p1, and p<w2[17:14]> cle
         state.s[12] = 0x77;
         state.p[1] = c.p1;
         state.p[10] = 1;
+        try state.y_mem.put(gpa, 0, 1); // e9 = 0 reads an odd word: p10 <- 0 (858)
         _ = try emu.runFrom(gpa, &state, &.{ c.h, c.w1, c.w2, 0x92000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c.s12, state.s[12]);
+        try testing.expectEqual(c.p10, state.p[10]);
+    }
+}
+
+test "x19alu's p write is !(Y:[e<w3[28:25]>] & 1) (858)" {
+    const gpa = testing.allocator;
+    for ([_]struct { e9: u32 = 0, e5: u32 = 0, w3: u32 = 0x92000000, p10: u8 }{
+        .{ .e9 = 0x2C00, .p10 = 0 },
+        .{ .e9 = 0x2C01, .p10 = 1 },
+        .{ .e5 = 0x2C00, .w3 = 0x8A000000, .p10 = 0 },
+        .{ .e5 = 0x2C01, .w3 = 0x8A000000, .p10 = 1 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[9] = c.e9;
+        state.e[5] = c.e5;
+        state.p[10] = 7;
+        try state.y_mem.put(gpa, 0x2C00, 1);
+        try state.y_mem.put(gpa, 0x2C01, 2);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x000003F9, 0x0C0C5000, 0x003A9000, c.w3, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c.p10, state.p[10]);
     }
 }

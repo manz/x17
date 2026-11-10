@@ -3952,13 +3952,12 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // 646: the ALU write is conditional on p1 through w1[23:20]: 0, 1, 3 write while p1 = 0;
     // 2, 5, 7 while p1 = 1; 6 and 9 always.  4, 8 and 10-15 did not write in the one context
     // measured, so they are refused until a program needs them.
-    // 857: in mode 0xA (w3[23:20] = 0) conds 0 and 6 write whatever p1 holds, and
-    // p<w2[17:14]> <- 0 unless w2[0] = 1, as 851's slot; other conds there are unmeasured.
+    // 857: in mode 0xA (w3[23:20] = 0) conds 0 and 6 write whatever p1 holds, beside 858's
+    // Y bit test into p<w2[17:14]>; other conds there are unmeasured.
     if (mode == 0xA and (bundle[3] >> 20) & 0xF == 0) {
         const cond: u32 = (w1 >> 20) & 0xF;
         if (dest_s != 0 and cond != 0 and cond != 6) return RunError.UnknownForm;
-        const pd: u32 = (w2 >> 14) & 0xF;
-        if (pd != 0 and w2 & 1 == 0) state.p[pd] = 0;
+        (try x19AluYBit(state, bundle)).write(state);
         if (r) |x| if (dest_s != 0) {
             state.s[dest_s] = @truncate(@as(u64, @bitCast(x)) & M24);
         };
@@ -3983,12 +3982,11 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
 /// x19alu's e slot (fact 851), mode 8 with w1[2:0] != 0: e<2*w1[2:0] + head[31]> <-
 /// op w1[10:7] of #head[26:11] (852, measured with imm 5): 1000 / 1010 the immediate, 1011
-/// its negation, 001x 1, 010x 0xFFFF, the rest 0.  Beside it p<w2[17:14]> <- 0 whatever the
-/// value or op (852) unless w2[0] = 1 (p0 reads 1, 682: left alone).
+/// its negation, 001x 1, 010x 0xFFFF, the rest 0.  Beside it 858's Y bit test into
+/// p<w2[17:14]>, blind to the value and op (852).
 fn x19AluE(state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const w1 = bundle[1];
-    const w2 = bundle[2];
     const imm: u32 = (h >> 11) & 0xFFFF;
     const val: u32 = switch ((w1 >> 7) & 0xF) {
         0b1000, 0b1010 => imm,
@@ -3998,9 +3996,29 @@ fn x19AluE(state: *State, bundle: []const u32) RunError!void {
         else => 0,
     };
     const dest_e: u32 = ((w1 & 7) << 1) | (h >> 31);
+    const ybit = try x19AluYBit(state, bundle);
     if (dest_e != 0) state.e[dest_e] = val;
+    ybit.write(state);
+}
+
+/// x19alu's p write (858; 851 and 857 saw it clear with e = 0, Y:0 odd on the unit):
+/// p<w2[17:14]> <- !(Y:[e<w3[28:25]>] & 1), as ytst / xst (852); w2[0] = 1 skips it.  e
+/// with bit 15 set is unmeasured (852): refused.  Read before the bundle's writes.
+const PWrite = struct {
+    pd: u32,
+    v: u8,
+    fn write(self: PWrite, state: *State) void {
+        if (self.pd != 0) state.p[self.pd] = self.v;
+    }
+};
+
+fn x19AluYBit(state: *State, bundle: []const u32) RunError!PWrite {
+    const w2 = bundle[2];
     const pd: u32 = (w2 >> 14) & 0xF;
-    if (pd != 0 and w2 & 1 == 0) state.p[pd] = 0;
+    if (pd == 0 or w2 & 1 == 1) return .{ .pd = 0, .v = 0 };
+    const addr: u32 = state.e[(bundle[3] >> 25) & 0xF];
+    if (addr & 0x8000 != 0) return RunError.UnknownForm;
+    return .{ .pd = pd, .v = @intFromBool((state.getY(addr) orelse 0) & 1 == 0) };
 }
 
 /// x19alu's two X writes (fact 533), both from X = X:[A<w2[26:22]>]: s<w2[7:4]> <- X and
