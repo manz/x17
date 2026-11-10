@@ -2156,17 +2156,17 @@ test "x02's Y side also writes the raw word to e<w1[6:3]> with w5[17] (863)" {
     }
 }
 
-test "x19k's p write: all 16 w3[23:20] conds on R<w3[14:11]> (864)" {
+test "x19k's p write: w3[23:20] conds on R<w3[14:11]> (864, 865)" {
     const gpa = testing.allocator;
-    // p6 for R1 = 0 / 9 / 0xFFFF, per cond
-    const want = [16][3]u8{
-        .{ 1, 1, 1 }, .{ 0, 0, 0 }, .{ 1, 1, 0 }, .{ 0, 1, 0 },
-        .{ 0, 0, 1 }, .{ 0, 0, 0 }, .{ 0, 1, 0 }, .{ 1, 1, 0 },
-        .{ 1, 0, 1 }, .{ 0, 0, 1 }, .{ 0, 1, 1 }, .{ 1, 0, 0 },
-        .{ 0, 0, 1 }, .{ 1, 1, 0 }, .{ 0, 1, 1 }, .{ 1, 0, 0 },
+    // p6 for R1 = 0, 1, 9, 0x7FFF, 0x8000, 0xFFFF per cond; null rows (2-4) leave p alone.
+    const want = [16]?[6]u8{
+        .{ 1, 1, 1, 1, 1, 1 }, .{ 0, 0, 0, 0, 0, 0 }, null,                  null,
+        null,                  .{ 0, 0, 0, 0, 0, 0 }, .{ 0, 1, 1, 1, 0, 0 }, .{ 1, 1, 1, 1, 0, 0 },
+        .{ 1, 0, 0, 0, 1, 1 }, .{ 0, 0, 0, 0, 1, 1 }, .{ 0, 1, 1, 1, 1, 1 }, .{ 1, 0, 0, 0, 0, 0 },
+        .{ 0, 0, 0, 0, 1, 1 }, .{ 1, 1, 1, 1, 0, 0 }, .{ 0, 1, 1, 1, 1, 1 }, .{ 1, 0, 0, 0, 0, 0 },
     };
     for (want, 0..) |row, cond| {
-        for ([_]u32{ 0, 9, 0xFFFF }, row) |r1, p6| {
+        for ([_]u32{ 0, 1, 9, 0x7FFF, 0x8000, 0xFFFF }, 0..) |r1, k| {
             for ([_]u8{ 0, 1 }) |p_in| {
                 var state = emu.State{};
                 defer state.deinit(gpa);
@@ -2175,7 +2175,7 @@ test "x19k's p write: all 16 w3[23:20] conds on R<w3[14:11]> (864)" {
                 state.p[6] = p_in;
                 const w3: u32 = (0x13A00801 & ~@as(u32, 0xF << 20)) | (@as(u32, @intCast(cond)) << 20);
                 _ = try emu.runFrom(gpa, &state, &.{ 0x01821179, 0x90941000, 0x33E20000, w3, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
-                try testing.expectEqual(p6, state.p[6]);
+                try testing.expectEqual(if (row) |r| r[k] else p_in, state.p[6]);
             }
         }
     }
