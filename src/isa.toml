@@ -507,6 +507,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # disasm.decode, executed by emu.Engine.step - the head's meaning depends on the second's class):
 #   second 001.. [20:19]=11   head = ldi2 s<[24:21]> <- [20:5]; second = Y:[e<[28:25]>] <- s<[24:21]>   own-slot-st
 #   second 010.. [18:16]=111  Y:[e<head[8:5]>] <- s<[15:12]>; R<[28:25]> (0 = none) <- yd, the last Y read
+#   second 011.. [7]=0        e<[4:3]> <- head[20:5]; [19:16] = 6 also R6 <- Y:[e<[28:25]>] (828; the R field is open, head[23:22] inert), 5 writes R6 another value (refused)
 #   second 100.. [14]=1       s<head[18:15]> <- 0? and R<[24:21]> <- 0? (source OPEN: not yd)
 #   a second of 0 or a nop wedges
 

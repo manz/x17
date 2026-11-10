@@ -2325,6 +2325,25 @@ test "0x0F with a class-001 second sets p<w1[28:25]> when R<head[28:25]> and R<w
     }
 }
 
+test "0x10's class-011 pair loads R6 from Y:[e<S[28:25]>] with S[19:16] = 6" {
+    // fact 828: head[23:22] does not move the R; the e pointer does not step.
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[3] = 0x2C01;
+    try state.y_mem.put(gpa, 0x2C01, 0x5678);
+    _ = try emu.runFrom(gpa, &state, &.{ 0x01400010, 0x66060000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x5678), state.r[6]);
+    try testing.expectEqual(@as(u32, 0x2C01), state.e[3]);
+}
+
+test "0x10's class-011 pair refuses S[19:16] = 5, whose R value is unmapped" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x01400010, 0x66050000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
+
 test "x12agu runs the AGU for every head[31:29]" {
     // fact 562: e6 = 0x760; cbe012d2 23780001 (and with w1[28] set, 33780001) give e9,
     // s3 (2*1 + h[31]) and R11 all 0x760 (AGU10 fn 0, x = e6).  fn 7 (measured on another row):

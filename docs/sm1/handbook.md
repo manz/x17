@@ -271,6 +271,9 @@ unknown.
   other rows with a nonzero field are unmeasured. 12 sets p when b is even (§824, row 010).
 - **R zero test:** 0x0F with a class-001 second also sets p<w1[28:25]> when that index is
   nonzero: 1 iff R<h[28:25]> and R<w1[12:9]> are both 0, not their sum (§827).
+- **Pair R load:** 0x10 with a class-011 second and S[19:16] = 6 loads R6 <- Y:[e<S[28:25]>]
+  beside its e immediate (§828); the field naming R6 is open, and S[19:16] = 5 writes R6
+  another value.
 - **Bit tests:** ptst op 0x1E sets p from (a & b) != 0, measured against s10 and s12 only
   (§632, §633).
 - **Loops:** x03's conditional jump to itself, counted by its e counter through p3 (§675,
