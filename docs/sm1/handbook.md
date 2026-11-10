@@ -265,6 +265,10 @@ unknown.
   (§617).
 - **Predicate dest:** ptst writes p0..p15; h[29] is the dest's bit 3, so p8..p15 are the
   class-011 words (§219). Measured on silicon with p13 following s12 == 0 and s12 > 0.
+- **Relation field:** ptst h[18:15] picks the relation between the row's two operands
+  (§823): 0 keeps the row's own, 1..5 are >=, <, >, !=, == (with 0 as <=; 6..11 repeat
+  0..5), 13 and 14 are >=, 15 is always true. Row 010 compares (b, 0), row 101 (a, b);
+  other rows with a nonzero field are unmeasured. 12 is a bit test, still OPEN.
 - **Bit tests:** ptst op 0x1E sets p from (a & b) != 0, measured against s10 and s12 only
   (§632, §633).
 - **Loops:** x03's conditional jump to itself, counted by its e counter through p3 (§675,
