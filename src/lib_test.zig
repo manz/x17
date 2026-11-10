@@ -5538,6 +5538,26 @@ test "x18 class 011: w3[3] loads #head[20:5] into R; the load mux's 000 gives 0 
     try testing.expectEqual(@as(u32, 0x1234), st.r[1]);
 }
 
+test "x18 class 011: mux 000 loads !cond; w3[3] sends #head[20:5] to A too (849, 850)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // code 0x0E, load slot s12, imm 0x14A1, A<2*6 + 1> = A13; p<w2[17:14]> = p12
+    const h: u32 = 0x9D829438;
+    for ([_]struct { n: u32, w3: u32, p12: u32, s12: u32, a13: u32 }{
+        .{ .n = 2, .w3 = 0x60000009, .p12 = 0, .s12 = 1, .a13 = 0x14A1 },
+        .{ .n = 0, .w3 = 0x60000009, .p12 = 1, .s12 = 0, .a13 = 0x14A1 },
+        .{ .n = 2, .w3 = 0x60000001, .p12 = 0, .s12 = 1, .a13 = 0x22 }, // w3[3] clear: A gets v = s1 + s0
+    }) |c| {
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = 0x22;
+        st.p[12] = 7;
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ h, 0x00000006, 0x30004 | (c.n << 6), c.w3 } ++ halt), 0, 8);
+        try testing.expectEqual(c.p12, st.p[12]);
+        try testing.expectEqual(c.s12, st.s[12]);
+        try testing.expectEqual(c.a13, st.a[13]);
+    }
+}
+
 test "x18 class 010 Q23 multiply: w3[0] = 1 rounds, 0 truncates (684)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
     const q = try asm_mod.assembleOne("x18.q23 s3, s1, s2, #4");

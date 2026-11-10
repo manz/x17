@@ -3076,10 +3076,13 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // The source mux w1[14:12] (683, 369): 000 delivers 0, 001/010/101 the Y read, 110 the
     // immediate head[20:5]; 011, 100, 111 are OPEN, and so is e1 under 010/101.
     const ld_dest: u32 = (h >> 21) & 0xF;
+    const cond = try x18C3Cond(h, w1, w2, v, if (state.unset_reads) |u| &u.open_p else null);
     var ld_val: u32 = 0;
     if (ld_dest != 0) {
         switch ((w1 >> 12) & 7) {
-            0 => ld_val = 0,
+            // 850: mux 000 delivers the complement of the slot's p condition (683's 0 had it
+            // true); where the condition is unmeasured, 683's 0.
+            0 => ld_val = if (cond) |bit| @intFromBool(!bit) else 0,
             1, 2, 5 => |m| {
                 if (m != 1 and (w3 >> 25) & 0xF == 1) return RunError.UnknownForm;
                 ld_val = state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0;
@@ -3090,8 +3093,10 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         }
         if (ld_dest == dest_s or ld_dest == (w2 >> 2) & 0xF or ld_dest == (w1 >> 4) & 0xF) return RunError.UnknownForm;
     }
-    // w3[3] = 1 writes #head[20:5] to the R dest instead of the result (688, revising 683).
-    const r_val: u32 = if ((w3 >> 3) & 1 == 1) (h >> 5) & 0xFFFF else v & 0xFFFF;
+    // w3[3] = 1 writes #head[20:5] to the R dest instead of the result (688, revising 683),
+    // and to the A dest (849).
+    const w3_imm = (w3 >> 3) & 1 == 1;
+    const r_val: u32 = if (w3_imm) (h >> 5) & 0xFFFF else v & 0xFFFF;
     const dest_r: u32 = (w3 >> 7) & 0xF;
     // The result also lands in A<2 * w1[3:0] + head[31]> (fact 345): measured with the and
     // (A2 <- s12 & s11). A31 is not a plain register (649): refused.
@@ -3100,8 +3105,8 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (dest_s != 0) state.s[dest_s] = v;
     if (ld_dest != 0) state.s[ld_dest] = ld_val;
     if (dest_r != 0) state.r[dest_r] = r_val;
-    if (dest_a != 0) state.a[dest_a] = v;
-    if (try x18C3Cond(h, w1, w2, v, if (state.unset_reads) |u| &u.open_p else null)) |bit| {
+    if (dest_a != 0) state.a[dest_a] = if (w3_imm) (h >> 5) & 0xFFFF else v;
+    if (cond) |bit| {
         const pd: u32 = (w2 >> 14) & 0xF;
         // p0 reads 1 (682): cond 0's true into p0 changes nothing; other p0 writes are unmeasured.
         if (pd != 0) state.p[pd] = @intFromBool(bit) else if ((h >> 25) & 0xF != 0) return RunError.UnknownForm;

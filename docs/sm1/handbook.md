@@ -389,7 +389,8 @@ Measured idioms, cheapest first:
   the x16 ALU table (add measured) and p's sense set by S[21]; its head write,
   s<head[24:21]> <- #head[20:5] or 0, runs in the same bundle (§497, §531, §607, §608).
 - **Free R load.** x18 class 011 with w3[3] = 1 writes #head[20:5] to R<w3[10:7]> beside its
-  ALU slot (§688); an immediate of 0 clears it.
+  ALU slot (§688), and to the A dest (§849); an immediate of 0 clears it. Load mux 000 puts
+  the complement of the slot's p condition in s<head[24:21]> (§850).
 - **Latches at entry.** One X read latch (xd) serves x03 and x18; the latest read sets it,
   stores do not, and it carries from the previous run (§690). yd starts each run at a value
   the program did not set. Read before relying on either.
