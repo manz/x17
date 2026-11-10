@@ -2243,6 +2243,29 @@ test "st.x 0x0F writes #head[20:5] to A<head[28:25]> while head[29] = 0 (869)" {
     }
 }
 
+test "alu.m 0x2B m 1 is unsigned min; 0x28 m 5 clamps negatives to 0 (870)" {
+    const gpa = testing.allocator;
+    for ([_][3]u32{
+        .{ 0x10, 1, 1 },     .{ 0x10, 0, 0 },     .{ 1, 0x10, 1 },
+        .{ 0xFFFFFF, 1, 1 }, .{ 0xFFFFF0, 1, 1 }, .{ 0xFFFFF0, 0xFFFFF8, 0xFFFFF0 },
+        .{ 5, 0xFF8000, 5 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[6] = c[0];
+        state.s[8] = c[1];
+        _ = try emu.runFrom(gpa, &state, &.{ 0x60853565, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c[2], state.s[10]);
+    }
+    for ([_][2]u32{ .{ 0xFFFFF1, 0 }, .{ 0xFF8000, 0 }, .{ 0x10, 0x10 }, .{ 1, 1 }, .{ 0x7000, 0x7000 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[10] = c[0];
+        _ = try emu.runFrom(gpa, &state, &.{ 0x6A850505, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c[1], state.s[10]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

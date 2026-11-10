@@ -5585,11 +5585,15 @@ pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
     if (code == 0x28 or code == 0x29) {
         const b_zero = (h >> 26) & 0xF == 0;
         return switch (m) {
-            5, 6 => if (b_zero) s_mod else b24,
+            // 870: code 0x28 m 5 clamps a negative b to 0 (a = s0 in the rows; its role OPEN).
+            5 => if (b_zero) s_mod else if (code == 0x28 and b24 & 0x800000 != 0) 0 else b24,
+            6 => if (b_zero) s_mod else b24,
             1, 4 => if (b_zero) 0 else s_mod,
             else => s_mod,
         };
     }
+    // 870: code 0x2B with m = 1, # = 0 is the unsigned 24-bit min of a and b.
+    if (code == 0x2B and m == 1 and s_mod == 0) return @min(a24, b24);
     // clr with modifiers: 0x22 writes 0 for every m and # (775); the other clr codes are OPEN.
     if (op == .clr) return if (code == 0x22) 0 else null;
     // mova/asr/asrrs/lsr with s == 0: modifier m is ignored.
