@@ -3583,10 +3583,11 @@ fn execEalu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
         else => return RunError.UnknownForm,
     };
     if (dest_e != 0) state.e[dest_e] = v;
-    // 767: w[10:7] one-hot picks s1 / s2 / s4 / s8 <- #sx16(head[26:11]); two or more bits write
-    // nothing (487's 1001).
+    // 767, 875: s<w[10:7]> <- #sx16(head[26:11]), an index (875: 9 writes s9; 767's one-hot rows
+    // and 487's 1001 only read s1 / s2 / s4 / s8).  w[24:22] = 001 as measured; flipping any of
+    // them stopped it (875).
     const side: u32 = (s1 >> 7) & 0xF;
-    if (@popCount(side) == 1) state.s[side] = sx16To24((bundle[0] >> 11) & 0xFFFF);
+    if (side != 0 and (s1 >> 22) & 7 == 1) state.s[side] = sx16To24((bundle[0] >> 11) & 0xFFFF);
 }
 
 fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

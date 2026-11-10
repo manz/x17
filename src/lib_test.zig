@@ -2332,6 +2332,23 @@ test "x00 writes the immediate to A<w3[23:20]> (873)" {
     }
 }
 
+test "ealu's s<w[10:7]> is an index: 0x24B writes s9 <- 0xFFFFFF (875)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s1: u32, d: u32, v: ?u32 = 0xFFFFFF }{
+        .{ .s1 = 0xC0404487, .d = 9 },
+        .{ .s1 = 0xC0404407, .d = 8 }, // w[7]
+        .{ .s1 = 0xC0404587, .d = 11 }, // w[8]
+        .{ .s1 = 0xC0004487, .d = 9, .v = null }, // w[22] cleared stops it
+        .{ .s1 = 0xC0C04487, .d = 9, .v = null }, // w[23] set stops it
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[c.d] = 0x77;
+        try emu.executeBundle(gpa, &state, &.{ 0xFFFFF810, c.s1 });
+        try testing.expectEqual(c.v orelse 0x77, state.s[c.d]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
@@ -7686,14 +7703,14 @@ test "st.y with a class-001 store second stores s<w[24:21]> at the old e, w[25] 
     }
 }
 
-test "ealu10 op 4 copies a into e; w[10:7] one-hot writes #sx16(head[26:11]) (facts 766, 767)" {
+test "ealu10 op 4 copies a into e; s<w[10:7]> <- #sx16(head[26:11]) (facts 766, 767, 875)" {
     const gpa = testing.allocator;
     for ([_]struct { mask: u32, dest: ?u32 }{
         .{ .mask = 1, .dest = 1 },
         .{ .mask = 2, .dest = 2 },
         .{ .mask = 4, .dest = 4 },
         .{ .mask = 8, .dest = 8 },
-        .{ .mask = 9, .dest = null }, // two bits: no write (487)
+        .{ .mask = 9, .dest = null }, // s9: none of s1 / s2 / s4 / s8 (487); an index (875)
     }) |k| {
         var state = emu.State{};
         defer state.deinit(gpa);
