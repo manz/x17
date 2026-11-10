@@ -7210,7 +7210,7 @@ test "x19mac's X store: X:[A<{w1[2:0], h[31:30]}>] <- s<{w2[0], w1[31:29]}> befo
     try testing.expectEqual(@as(u32, 0), state.s[13]);
 }
 
-test "rop passes e and R to s sign-extended from 16 bits; e keeps 16 (808)" {
+test "rop passes e and R to s sign-extended from 16 bits; e keeps 16 (810)" {
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);

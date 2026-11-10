@@ -6357,7 +6357,7 @@ fn execRop(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
         else => return RunError.UnknownForm,
     };
 
-    // An e or R passed through to s arrives sign-extended from 16 bits (808); whether the
+    // An e or R passed through to s arrives sign-extended from 16 bits (810); whether the
     // other functions see signed operands is unmeasured.
     const pass = (head >> 21) & 1 == 0 and switch (fn_op) {
         0, 1, 10, 11, 12 => true,

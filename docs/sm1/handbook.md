@@ -63,7 +63,7 @@ configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2) a
 | Bank | Count | Width | Notes |
 |---|---|---|---|
 | s | 16 | 24 | data; s0 reads 0 and drops writes (§438), but x17's `mv` reads the real s0 (§70) |
-| e | 16 | 16 | Y addresses, wrap at 16 bits (§59, §88); `rop` passes e and R to s sign-extended (§808) |
+| e | 16 | 16 | Y addresses, wrap at 16 bits (§59, §88); `rop` passes e and R to s sign-extended (§810) |
 | R | 16 | 16 | modifiers; R0 is hardwired 0 (§88) |
 | A | 32 | 16+ | X addresses; A0 reads 0 (§122); tst sees A as 16-bit signed (§375); wider bits unknown |
 | p | 16 | 1 | predicates; p0 is hardwired true (§86) and writes to it are undefined (after §608) |
