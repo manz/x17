@@ -293,6 +293,7 @@ const play_params = clap.parseParamsComptime(
     \\-y, --y <str>...         ADDR=VALUE Y write after loading, before the first packet (hex ok)
     \\    --max-bundles <usize> bundle budget per packet, default 2^26
     \\    --trap-list          skip refused bundles as nops; rank them by hits (hints only)
+    \\    --trace <usize>      print the first N bundles run: changes, X / Y reads and writes
     \\<str>                    image path (.x17i)
     \\
 );
@@ -309,7 +310,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
     defer parsed.deinit();
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] <image.x17i>\n");
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] <image.x17i>\n");
         return;
     }
     const img_path = parsed.positionals[0] orelse {
@@ -354,11 +355,14 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
 
     var tl: play_mod.TrapList = .{ .gpa = gpa };
     defer tl.deinit();
+    var tracer: play_mod.Tracer = .{ .gpa = gpa, .out = out, .left = parsed.args.trace orelse 0 };
+    defer tracer.deinit();
     var res = try play_mod.play(gpa, &img, pkts, .{
         .rate_hz = @intCast(parsed.args.rate orelse 44100),
         .y_writes = writes.items,
         .max_bundles_packet = parsed.args.@"max-bundles" orelse 1 << 26,
         .trap_list = if (parsed.args.@"trap-list" != 0) &tl else null,
+        .tracer = if (parsed.args.trace != null) &tracer else null,
     });
     defer res.deinit(gpa);
     try writeFile(gpa, out_path, std.mem.sliceAsBytes(res.pcm));

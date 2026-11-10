@@ -92,6 +92,10 @@ pub const State = struct {
     /// When set, a bundle refused as UnknownForm is reported here and skipped as a nop instead
     /// of ending the run (`x17 play --trap-list`).  The state after a skip is a guess.
     on_unknown: ?UnknownHook = null,
+    /// When set, called before and after each bundle runs (`x17 play --trace`).
+    on_bundle: ?BundleHook = null,
+    /// When set, X / Y reads are logged here (`x17 play --trace`).
+    read_log: ?*ReadLog = null,
     /// Whether e0, the address entry, is known (fact 466, 468): see updateE0.
     e0_known: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
@@ -127,6 +131,7 @@ pub const State = struct {
     /// Y words are 16 bits (700): a store keeps s[15:0], so only those bits read back.
     pub fn getY(self: *const State, addr: u32) ?u32 {
         const v = self.y_mem.get(addr);
+        if (self.read_log) |l| l.add(.y, addr, v);
         if (v == null) if (self.unset_reads) |u| {
             u.y += 1;
             if (u.first_y == null) u.first_y = addr;
@@ -136,6 +141,7 @@ pub const State = struct {
 
     pub fn getX(self: *const State, addr: u32) ?u32 {
         const v = self.x_mem.get(addr);
+        if (self.read_log) |l| l.add(.x, addr, v);
         if (v == null) if (self.unset_reads) |u| {
             u.x += 1;
             if (u.first_x == null) u.first_x = addr;
@@ -160,6 +166,26 @@ pub const UnsetReads = struct {
     first_y: ?u32 = null,
     /// x18 class-011 p writes left alone because their compare is OPEN (776).
     open_p: u64 = 0,
+};
+
+pub const BundlePhase = enum { before, after };
+pub const BundleHook = struct { ctx: *anyopaque, f: *const fn (ctx: *anyopaque, phase: BundlePhase, pc: usize, bundle: []const u32) void };
+
+/// The X / Y reads of one bundle, in order; past `items.len` only counted.
+pub const ReadLog = struct {
+    pub const Bank = enum { x, y };
+    pub const Read = struct { bank: Bank, addr: u32, value: ?u32 };
+    items: [32]Read = undefined,
+    n: usize = 0,
+
+    pub fn add(self: *ReadLog, bank: Bank, addr: u32, value: ?u32) void {
+        if (self.n < self.items.len) self.items[self.n] = .{ .bank = bank, .addr = addr, .value = value };
+        self.n += 1;
+    }
+
+    pub fn reads(self: *const ReadLog) []const Read {
+        return self.items[0..@min(self.n, self.items.len)];
+    }
 };
 
 pub const RunError = error{
@@ -5670,6 +5696,7 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         const pc_at_bundle = i;
         state.pc = i;
         if (state.profile) |p| p[i] += 1;
+        if (state.on_bundle) |hk| hk.f(hk.ctx, .before, i, slice);
         if (wedge_shadow) {
             var before = state.y_mem.clone(gpa) catch return RunError.OutOfMemory;
             defer before.deinit(gpa);
@@ -5680,6 +5707,7 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             if (e != RunError.UnknownForm) return e;
             hook.f(hook.ctx, i, slice);
         };
+        if (state.on_bundle) |hk| hk.f(hk.ctx, .after, i, slice);
         if (state.stream_starved) {
             // 784: the read waits for the next packet and nothing in its bundle ran; the
             // caller queues bytes and resumes with runFrom at state.pc.  Inside a jump's delay
