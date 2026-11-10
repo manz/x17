@@ -2225,6 +2225,24 @@ test "ystm with the store on and h[26:27] = 0 writes op(imm) to e<h[12:9]> (868)
     }
 }
 
+test "st.x 0x0F writes #head[20:5] to A<head[28:25]> while head[29] = 0 (869)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0xD60294EF, a: u32 = 11, v: u32 = 0x14A7 }{
+        .{},
+        .{ .h = 0xD40294EF, .a = 10 }, // head[25]
+        .{ .h = 0xF60294EF, .v = 0x100 }, // head[29] stops it
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[10] = 0x100;
+        state.a[11] = 0x100;
+        state.s[10] = 0x42;
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, 0xB4500002, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.v, state.a[c.a]);
+        try testing.expectEqual(@as(?u32, 0x42), state.x_mem.get(0x100)); // the store used the old A
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

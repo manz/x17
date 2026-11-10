@@ -6360,7 +6360,8 @@ fn rimmWrite(state: *State, bundle: []const u32) void {
 
 /// low5 0x0F, S class 101 with S[22] and S[20] (fact 127):
 /// X:[A<4*S[2:0] + head[31:30]>] <- sx24 s<S[28:25]>; and e<S[6:3]> <- #head[20:5] under any
-/// head[31:30] (437, measured with S[22:20] = 111 only); and rimm's writes (525).
+/// head[31:30] (437, measured with S[22:20] = 111 only); and rimm's writes (525); and with
+/// head[29] = 0, A<head[28:25]> <- #head[20:5] (869).
 fn execStx0f(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     try checkRimm(bundle);
     const sw = bundle[1];
@@ -6373,6 +6374,9 @@ fn execStx0f(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const e_dest: u32 = (sw >> 3) & 0xF;
     if (e_dest != 0) state.e[e_dest] = (bundle[0] >> 5) & 0xFFFF;
     rimmWrite(state, bundle);
+    // 869: with head[29] = 0, A<head[28:25]> <- #head[20:5], after the store read its A.
+    const dest_a: u32 = (bundle[0] >> 25) & 0xF;
+    if ((bundle[0] >> 29) & 1 == 0 and dest_a != 0) state.a[dest_a] = (bundle[0] >> 5) & 0xFFFF;
 }
 
 /// low5 0x08, [31:29] = 010, op[10:5] = 0x30 + k (fact 61, 101):
