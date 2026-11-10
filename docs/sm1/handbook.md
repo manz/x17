@@ -273,6 +273,14 @@ unknown.
   nonzero: 1 iff R<h[28:25]> and R<w1[12:9]> are both 0, not their sum (§827).
 - **x00 e slot:** the 7-word 0x00 also writes its immediate head[26:11] to e<w1[6:3]> (§830,
   §831); unmeasured on 0x01.
+- **0x10 head ALU:** under S classes 100 (x10alu) and 000 (bcc) the head is also an ALU word
+  into s<h[18:15]> (§846); bcc's copy is measured on the fall-through only.
+- **yld10 e write:** yld10 also writes e<2*S[2:0] + head[31]> <- #head[20:5] beside its Y load
+  (§844, §845).
+- **x00 double:** an x00 with w2[17:14] = 1, w4[4:1] = 2 and w5[3] makes the x18 class-000
+  step + store and ystm bundles execute twice until the run halts; rop and x17.styi run once,
+  other forms are unmeasured; the next run starts single (§841, §842).
+- **b16 A17:** x16 b16 loading xa from head[20:5] (head[31], S1[3]) writes A17 too (§840).
 - **Pair R load:** 0x10 with a class-011 second and S[19:16] = 6 loads R6 <- Y:[e<S[28:25]>]
   beside its e immediate (§828); the field naming R6 is open, and S[19:16] = 5 writes R6
   another value.

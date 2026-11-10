@@ -391,6 +391,21 @@ test "x18 class-110 p write refuses an unmeasured cell" {
     try testing.expectError(error.UnknownForm, runX18(.{ 0x1C000018, 0x00008000, 0x00002022, 0xC4114001 }, 0, 0));
 }
 
+test "x18 class-110 p write lands only while p<w2[31:28]> is set (837)" {
+    const gpa = testing.allocator;
+    // x18.pnot p1, p5 with the condition field w2[31:28] = 6.
+    for ([_]struct { p6: u8, p1: u8 }{ .{ .p6 = 1, .p1 = 0 }, .{ .p6 = 0, .p1 = 1 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[1] = 1;
+        state.p[5] = 1;
+        state.p[6] = c.p6;
+        const prog = [_]u32{ 0x1C000018, 0x00000000, 0x60002022, 0xC4114001, 0x00000017, 0x31308000, 0xA0000000 };
+        _ = try emu.runFrom(gpa, &state, &prog, 0, 16);
+        try testing.expectEqual(c.p1, state.p[1]);
+    }
+}
+
 test "x18.pmov copies p5 = 0 too" {
     var st = try runX18(.{ 0x1C000018, 0x00000000, 0x00002022, 0xC2114001 }, 1, 0);
     defer st.deinit(testing.allocator);
@@ -2337,6 +2352,17 @@ test "0x10's class-011 pair loads R6 from Y:[e<S[28:25]>] with S[19:16] = 6" {
     try testing.expectEqual(@as(u32, 0x2C01), state.e[3]);
 }
 
+test "0x10's class-011 pair writes e<S[6:3]> (fact 835)" {
+    const gpa = testing.allocator;
+    for ([_]u32{ 5, 13 }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x0020E1B0, 0x60448000 | (k << 3), 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u32, 0x70D), state.e[k]);
+        try testing.expectEqual(@as(u32, 0), state.e[if (k == 5) 13 else 5]);
+    }
+}
+
 test "0x10's class-011 pair refuses S[19:16] = 5, whose R value is unmapped" {
     const gpa = testing.allocator;
     var state = emu.State{};
@@ -2751,6 +2777,96 @@ test "x00 writes its immediate to e<w1[6:3]> (fact 830, 831)" {
         try testing.expectEqual(@as(u32, 0xFD94), state.e[k]);
         try testing.expectEqual(@as(u32, 0), state.e[9 - k]);
     }
+}
+
+test "x00's 842 selector doubles ystm until the halt; rop runs once; the next run is single" {
+    const gpa = testing.allocator;
+    const sel = [_]u32{ 0, 0, 1 << 14, 0, 2 << 1, 1 << 3, 0 };
+    const ystm = [_]u32{ 0x24142450, 0x42172000 };
+    const inc_r1 = 0x405C2007; // rop s0, R1, e0, R1, #14: R1 <- R1 + 1
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // Under the selector: one ystm written, two run; one rop written, one runs.
+    var a = emu.State{};
+    defer a.deinit(gpa);
+    a.e[2] = 3;
+    a.r[2] = 5;
+    const prog_a = sel ++ ystm ++ halt;
+    _ = try emu.runFrom(gpa, &a, &prog_a, 0, 32);
+    // Reference: the same ystm written twice, no selector.
+    var b = emu.State{};
+    defer b.deinit(gpa);
+    b.e[2] = 3;
+    b.r[2] = 5;
+    const prog_b = ystm ++ ystm ++ halt;
+    _ = try emu.runFrom(gpa, &b, &prog_b, 0, 32);
+    try testing.expectEqual(b.e[2], a.e[2]);
+    try testing.expectEqual(b.r[1], a.r[1]);
+    // rop under the selector runs once.
+    var c = emu.State{};
+    defer c.deinit(gpa);
+    c.r[1] = 5;
+    const prog_c = sel ++ [_]u32{inc_r1} ++ halt;
+    _ = try emu.runFrom(gpa, &c, &prog_c, 0, 32);
+    try testing.expectEqual(@as(u32, 6), c.r[1]);
+    // The flag ended with the halt: a new run of the ystm is single.
+    var d = emu.State{};
+    defer d.deinit(gpa);
+    d.e[2] = 3;
+    d.r[2] = 5;
+    _ = try emu.runFrom(gpa, &d, &prog_a, 0, 32);
+    _ = try emu.runFrom(gpa, &d, &prog_a, 7, 32);
+    var e = emu.State{};
+    defer e.deinit(gpa);
+    e.e[2] = 3;
+    e.r[2] = 5;
+    const prog_e = ystm ++ ystm ++ ystm ++ halt;
+    _ = try emu.runFrom(gpa, &e, &prog_e, 0, 32);
+    try testing.expectEqual(e.e[2], d.e[2]);
+}
+
+test "x00 without the full 842 selector leaves the doubling off" {
+    const gpa = testing.allocator;
+    for ([_][3]u32{ .{ 1 << 14, 2 << 1, 1 << 3 }, .{ 3 << 14, 2 << 1, 1 << 3 }, .{ 1 << 14, 3 << 1, 1 << 3 }, .{ 1 << 14, 2 << 1, 0 } }, 0..) |f, k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try emu.executeBundle(gpa, &state, &.{ 0, 0, f[0], 0, f[1], f[2], 0 });
+        try testing.expectEqual(k == 0, state.x00_double);
+    }
+}
+
+test "yld10 also writes e<2*S[2:0] + head[31]> <- #head[20:5] (fact 844, 845)" {
+    const gpa = testing.allocator;
+    // own-yld10-imm-e5 / -e8: 0x1234 lands in exactly e5 / e8.
+    for ([_]struct { h: u32, s: u32, e: usize }{
+        .{ .h = 0x80A24690, .s = 0xE6420082, .e = 5 },
+        .{ .h = 0x00A24690, .s = 0xE6420084, .e = 8 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try emu.executeBundle(gpa, &state, &.{ c.h, c.s });
+        for (1..16) |k| try testing.expectEqual(@as(u32, if (k == c.e) 0x1234 else 0), state.e[k]);
+    }
+}
+
+test "0x10 heads under S classes 100 and 000 run their ALU word into s<h[18:15]> (fact 846)" {
+    const gpa = testing.allocator;
+    // Class 100 (x10alu): s15 <- s12 << 2 (code 2, m 2, #2); S[24:21] = 0, no R write.
+    for ([_][2]u32{ .{ 1, 4 }, .{ 3, 0xC }, .{ 5, 0x14 }, .{ 0x100, 0x400 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[12] = c[0];
+        state.s[15] = 7;
+        try emu.executeBundle(gpa, &state, &.{ 0xF1178050, 0x80000000 });
+        try testing.expectEqual(c[1], state.s[15]);
+    }
+    // Class 000 (bcc on p13 = 0): falls through and s14 <- s15 (code 0x1F).
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[14] = 0xEEE;
+    state.s[15] = 0xFFF;
+    try emu.executeBundle(gpa, &state, &.{ 0x00077BF0, (13 << 15) | 1 });
+    try testing.expectEqual(@as(u32, 0xFFF), state.s[14]);
+    try testing.expectEqual(@as(?i32, null), state.pending_jmp_offset);
 }
 
 test "no A index is masked to 4 bits (A has 32 registers)" {
@@ -7495,6 +7611,16 @@ test "x16 b16 under any S1 class with S1[18] and S2 0xE004 (fact 778)" {
     try testing.expectEqual(@as(u32, 0xFFB454), state.s[14]);
     try testing.expectEqual(@as(?u32, 0x123456), state.x_mem.get(0x40));
     try testing.expectEqual(@as(u32, 0x000777), state.s[12]);
+}
+
+test "x16 b16's xa load also writes A17 (fact 840)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    // The x16.b16 base under S1 class 001 (head[31], S1[3] set), head[20:5] = 0x11C3.
+    try emu.executeBundle(gpa, &state, &.{ 0x80000016 | (0x11C3 << 5), 0x20041008, 0xE0067100 });
+    try testing.expectEqual(@as(u32, 0x11C3), state.a[17]);
+    try testing.expectEqual(@as(?u32, 0x11C3), state.xa);
 }
 
 test "x16 b16 placement 10 zero-extends the Y word (fact 800)" {

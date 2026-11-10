@@ -65,6 +65,9 @@ pub const State = struct {
     /// syllables relative to the jmp bundle's own syllable position; null
     /// when no jump requested this bundle.  runLinear consumes it.
     pending_jmp_offset: ?i32 = null,
+    /// 842: set by an x00 with w2[17:14] = 1, w4[4:1] = 2 and w5[3]; until the run halts the
+    /// x18 class-000 and ystm bundles execute twice.
+    x00_double: bool = false,
     /// The running bundle's syllable index, for absolute jumps.
     pc: usize = 0,
     /// The value the last X read left (fact 241).
@@ -1556,6 +1559,8 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (y_on) state.y_mem.put(gpa, y_addr, y_val) catch return RunError.OutOfMemory;
     if (x_on) state.x_mem.put(gpa, x_addr, x_val) catch return RunError.OutOfMemory;
     if (r_dest != 0) state.r[r_dest] = r_val;
+    // 842: this selector makes the rest of the run execute each bundle twice.
+    if (!x01 and (w2 >> 14) & 0xF == 1 and (w4 >> 1) & 0xF == 2 and (w5 >> 3) & 1 == 1) state.x00_double = true;
     // 0x00's e slot (830, 831): e<w1[6:3]> <- the immediate; unmeasured on 0x01.
     const e_dest: u32 = (w1 >> 3) & 0xF;
     if (!x01 and e_dest != 0) state.e[e_dest] = imm;
@@ -1731,6 +1736,8 @@ fn execX10Alu(state: *State, bundle: []const u32) RunError!void {
     }
     const v = (try aluWord(h, sx24(state.s[(h >> 11) & 0xF]), sx24(state.s[(h >> 26) & 0xF]))) orelse return RunError.UnknownForm;
     if (dest != 0) state.r[dest] = v & 0xFFFF;
+    // 846: the head word's own s dest takes it too (0x12F: s15 <- s12 << 2).
+    if ((h >> 15) & 0xF != 0) state.s[(h >> 15) & 0xF] = v;
 }
 
 /// Code 0x3F under m2 (fact 269): #[22:21] = 00 is b, 01 is b << a, 1x
@@ -1951,6 +1958,15 @@ fn execBcc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         @as(i32, @intCast(off9));
     if (((s1 >> 14) & 1) != 0) return RunError.UnknownForm;
     const pred_idx: u32 = (s1 >> 15) & 0xF;
+    // 846: the head is an ALU word into s<h[18:15]> (0x131 falls through copying s15 into
+    // s14); whether it also runs when the branch is taken is unmeasured.
+    const h = bundle[0];
+    const hd: u32 = (h >> 15) & 0xF;
+    if (hd != 0) {
+        const a: u32 = state.s[(h >> 11) & 0xF];
+        const b: u32 = state.s[(h >> 26) & 0xF];
+        state.s[hd] = (try aluWord(h, sx24(a), sx24(b))) orelse return RunError.UnknownForm;
+    }
     // p0 is always true (fact 111 / own-bcc-fwd).
     if (pred_idx == 0 or state.p[pred_idx] != 0) state.pending_jmp_offset = off_signed * 4;
 }
@@ -2535,6 +2551,10 @@ fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 fn x18PWrite(state: *State, bundle: []const u32) RunError!void {
     const dest: u32 = (bundle[2] >> 13) & 0xF;
     if (dest == 0) return;
+    // 837: without the branch (w3[8] = 0) the write only lands while p<w2[31:28]> is set
+    // (p0 reads 1: always).  With the branch that field is its predicate, and the write
+    // lands with it clear (measured on p7 = 0).
+    if ((bundle[3] >> 8) & 1 == 0 and state.p[bundle[2] >> 28] == 0) return;
     const w3 = bundle[3];
     const code: u32 = (bundle[0] >> 25) & 0xF;
     const op: u32 = (bundle[1] >> 15) & 7;
@@ -3524,10 +3544,14 @@ fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const addr: u32 = state.e[src_e];
     const v = (state.getY(addr) orelse 0) & 0xFFFF;
     if (dest_s != 0) state.s[dest_s] = v;
+    // 844, 845: e<2*S[2:0] + head[31]> <- #head[20:5] beside the load (137's index rule;
+    // 0x11F: e8 <- 0xFD83).  Measured landing in e5 and e8.
+    const dest_e: u32 = ((s1 & 7) << 1) | (head >> 31);
+    if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
     state.yd = v; // 571
 }
 
-/// 0x10 with a class-011 second, S[7] = 0: e<S[4:3]> <- #head[20:5].  Fact 828: S[19:16] = 6
+/// 0x10 with a class-011 second, S[7] = 0: e<S[6:3]> <- #head[20:5] (835).  Fact 828: S[19:16] = 6
 /// also loads R6 <- Y:[e<S[28:25]>] (head[23:22] does not move the R; which field names it is
 /// open); 5 writes R6 another value (0 seen) and is refused.  Other codes keep the e write
 /// alone (own-pair's 4 is measured on e only; their R effects are unmapped).
@@ -3542,8 +3566,8 @@ fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
         else => {},
     }
     const imm: u32 = (head >> 5) & 0xFFFF;
-    const e_idx: u32 = (s1 >> 3) & 0x3;
-    state.e[e_idx] = imm;
+    // e<S[6:3]> (fact 835: S[6:3] = 5 and 13 land in e5 and e13).
+    state.e[(s1 >> 3) & 0xF] = imm;
 }
 
 /// IMM10_SECONDS of class 001 (fact 74 pass 100); the class-011 ones decode elsewhere.
@@ -4754,7 +4778,7 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
 /// S2 & 0xE0050000 = 0xE0040000.  Y load s<head[24:21]> <- Y:[e<S2[24:21]>] placed by
 /// S1[13:12] (00: 0, 01: sign-extended, 10: zero-extended (800), 11: << 8); s<S1[11:8]> <- s<S2[28:25]> (a move,
 /// 778); X store X:[xa] <- sx24 s<S1[31:28]> with S1[18], S2[14:13] = 11, S2[11] = 0, using
-/// xa as it was before the bundle; then xa <- head[20:5] when head[31] and S1[3].  The move
+/// xa as it was before the bundle; then xa and A17 <- head[20:5] when head[31] and S1[3] (840).  The move
 /// and the store read before the bundle's writes.
 fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
@@ -4775,7 +4799,11 @@ fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             state.x_mem.put(gpa, addr, state.s[(s1 >> 28) & 0xF] & M24) catch return RunError.OutOfMemory;
         }
     }
-    if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) state.xa = (h >> 5) & 0xFFFF;
+    if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) {
+        state.xa = (h >> 5) & 0xFFFF;
+        // 840: A17 takes the same word (whether xa is A17 itself is unmeasured).
+        state.a[17] = (h >> 5) & 0xFFFF;
+    }
     if (mv_dest != 0) state.s[mv_dest] = mv_val;
     const hd: u32 = (h >> 21) & 0xF;
     if (hd != 0) state.s[hd] = hv;
@@ -5727,6 +5755,10 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
     // The gap since the latest halt-deadline armer (fact 98, 477, 484), null when none ran.
     var since_armer: ?DeadlineGap = null;
     const lane0: usize = state.cur_lane;
+    // 842: the doubling ends with the run's halt; the next run starts without it.
+    defer if (state.halted or state.silent_stop) {
+        state.x00_double = false;
+    };
     state.halted = false;
     state.silent_stop = false;
     state.stop_now = false;
@@ -5753,11 +5785,17 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             defer before.deinit(gpa);
             try executeBundle(gpa, state, slice);
             if (!sameY(&before, &state.y_mem)) return RunError.UnknownForm;
-        } else executeBundle(gpa, state, slice) catch |e| {
-            const hook = state.on_unknown orelse return e;
-            if (e != RunError.UnknownForm) return e;
-            hook.f(hook.ctx, i, slice);
-        };
+        } else {
+            // 842: under the x00 selector the x18 class-000 step + store and ystm run twice; a
+            // store-out tail (rop, x17.styi) ran once.  Other forms: unmeasured, run once.
+            const reps: u8 = if (state.x00_double and doublesUnder842(slice)) 2 else 1;
+            for (0..reps) |_| executeBundle(gpa, state, slice) catch |e| {
+                const hook = state.on_unknown orelse return e;
+                if (e != RunError.UnknownForm) return e;
+                hook.f(hook.ctx, i, slice);
+                break;
+            };
+        }
         if (state.on_bundle) |hk| hk.f(hk.ctx, .after, i, slice);
         if (state.stream_starved) {
             // 784: the read waits for the next packet and nothing in its bundle ran; the
@@ -5882,6 +5920,13 @@ fn updateE0(state: *State, b: []const u32) void {
     }
     if (low5 == 0x19 and b.len == 4 and b[1] >> 29 == 0 and b[2] >> 29 == 4 and b[3] >> 29 == 4) return;
     state.e0_known = false;
+}
+
+/// The forms 842 measured running twice under the x00 selector: x18 class 000 and ystm.
+fn doublesUnder842(b: []const u32) bool {
+    const low5 = b[0] & 0x1F;
+    if (low5 == 0x18 and b.len == 4 and b[3] >> 29 == 0) return true;
+    return low5 == 0x10 and b.len == 2 and b[1] >> 29 == 0b010;
 }
 
 /// e<k> as a Y address: e0 only while it is known.

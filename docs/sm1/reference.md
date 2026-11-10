@@ -1433,7 +1433,7 @@ Loads an element register e with a 16-bit immediate.
 | operand | kind | syllable | bits |
 |---|---|---|---|
 | imm16 | imm | head | [20:5] |
-| e_half | imm | s1 | [4:3] |
+| e_dest | e | s1 | [6:3] |
 
 ### `ldi2`
 
