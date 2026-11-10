@@ -2848,6 +2848,27 @@ test "yld10 also writes e<2*S[2:0] + head[31]> <- #head[20:5] (fact 844, 845)" {
     }
 }
 
+test "0x10 heads under S classes 100 and 000 run their ALU word into s<h[18:15]> (fact 846)" {
+    const gpa = testing.allocator;
+    // Class 100 (x10alu): s15 <- s12 << 2 (code 2, m 2, #2); S[24:21] = 0, no R write.
+    for ([_][2]u32{ .{ 1, 4 }, .{ 3, 0xC }, .{ 5, 0x14 }, .{ 0x100, 0x400 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[12] = c[0];
+        state.s[15] = 7;
+        try emu.executeBundle(gpa, &state, &.{ 0xF1178050, 0x80000000 });
+        try testing.expectEqual(c[1], state.s[15]);
+    }
+    // Class 000 (bcc on p13 = 0): falls through and s14 <- s15 (code 0x1F).
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[14] = 0xEEE;
+    state.s[15] = 0xFFF;
+    try emu.executeBundle(gpa, &state, &.{ 0x00077BF0, (13 << 15) | 1 });
+    try testing.expectEqual(@as(u32, 0xFFF), state.s[14]);
+    try testing.expectEqual(@as(?i32, null), state.pending_jmp_offset);
+}
+
 test "no A index is masked to 4 bits (A has 32 registers)" {
     const src = @embedFile("emu.zig");
     var i: usize = 0;

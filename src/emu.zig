@@ -1736,6 +1736,8 @@ fn execX10Alu(state: *State, bundle: []const u32) RunError!void {
     }
     const v = (try aluWord(h, sx24(state.s[(h >> 11) & 0xF]), sx24(state.s[(h >> 26) & 0xF]))) orelse return RunError.UnknownForm;
     if (dest != 0) state.r[dest] = v & 0xFFFF;
+    // 846: the head word's own s dest takes it too (0x12F: s15 <- s12 << 2).
+    if ((h >> 15) & 0xF != 0) state.s[(h >> 15) & 0xF] = v;
 }
 
 /// Code 0x3F under m2 (fact 269): #[22:21] = 00 is b, 01 is b << a, 1x
@@ -1956,6 +1958,15 @@ fn execBcc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         @as(i32, @intCast(off9));
     if (((s1 >> 14) & 1) != 0) return RunError.UnknownForm;
     const pred_idx: u32 = (s1 >> 15) & 0xF;
+    // 846: the head is an ALU word into s<h[18:15]> (0x131 falls through copying s15 into
+    // s14); whether it also runs when the branch is taken is unmeasured.
+    const h = bundle[0];
+    const hd: u32 = (h >> 15) & 0xF;
+    if (hd != 0) {
+        const a: u32 = state.s[(h >> 11) & 0xF];
+        const b: u32 = state.s[(h >> 26) & 0xF];
+        state.s[hd] = (try aluWord(h, sx24(a), sx24(b))) orelse return RunError.UnknownForm;
+    }
     // p0 is always true (fact 111 / own-bcc-fwd).
     if (pred_idx == 0 or state.p[pred_idx] != 0) state.pending_jmp_offset = off_signed * 4;
 }
