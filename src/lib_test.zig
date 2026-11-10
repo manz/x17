@@ -2095,6 +2095,25 @@ test "aset0b also writes the raw word to e<[12:9]> and sign-extends s (861)" {
     }
 }
 
+test "aset0b's A write is off while [19] = 1 (862)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w: u32, a4: u32, a6: u32 = 0x555 }{
+        .{ .w = 0x9C1A288B, .a4 = 0x777 },
+        .{ .w = 0x9C12288B, .a4 = 0x1234 }, // [19] = 0
+        .{ .w = 0x9C13288B, .a4 = 0x777, .a6 = 0x1234 }, // [19] = 0, [16] set: A6
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[4] = 0x100;
+        state.a[4] = 0x777;
+        state.a[6] = 0x555;
+        try state.y_mem.put(gpa, 0x100, 0x1234);
+        _ = try emu.runFrom(gpa, &state, &.{ c.w, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.a4, state.a[4]);
+        try testing.expectEqual(c.a6, state.a[6]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
