@@ -2779,6 +2779,61 @@ test "x00 writes its immediate to e<w1[6:3]> (fact 830, 831)" {
     }
 }
 
+test "x00's 842 selector doubles ystm until the halt; rop runs once; the next run is single" {
+    const gpa = testing.allocator;
+    const sel = [_]u32{ 0, 0, 1 << 14, 0, 2 << 1, 1 << 3, 0 };
+    const ystm = [_]u32{ 0x24142450, 0x42172000 };
+    const inc_r1 = 0x405C2007; // rop s0, R1, e0, R1, #14: R1 <- R1 + 1
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    // Under the selector: one ystm written, two run; one rop written, one runs.
+    var a = emu.State{};
+    defer a.deinit(gpa);
+    a.e[2] = 3;
+    a.r[2] = 5;
+    const prog_a = sel ++ ystm ++ halt;
+    _ = try emu.runFrom(gpa, &a, &prog_a, 0, 32);
+    // Reference: the same ystm written twice, no selector.
+    var b = emu.State{};
+    defer b.deinit(gpa);
+    b.e[2] = 3;
+    b.r[2] = 5;
+    const prog_b = ystm ++ ystm ++ halt;
+    _ = try emu.runFrom(gpa, &b, &prog_b, 0, 32);
+    try testing.expectEqual(b.e[2], a.e[2]);
+    try testing.expectEqual(b.r[1], a.r[1]);
+    // rop under the selector runs once.
+    var c = emu.State{};
+    defer c.deinit(gpa);
+    c.r[1] = 5;
+    const prog_c = sel ++ [_]u32{inc_r1} ++ halt;
+    _ = try emu.runFrom(gpa, &c, &prog_c, 0, 32);
+    try testing.expectEqual(@as(u32, 6), c.r[1]);
+    // The flag ended with the halt: a new run of the ystm is single.
+    var d = emu.State{};
+    defer d.deinit(gpa);
+    d.e[2] = 3;
+    d.r[2] = 5;
+    _ = try emu.runFrom(gpa, &d, &prog_a, 0, 32);
+    _ = try emu.runFrom(gpa, &d, &prog_a, 7, 32);
+    var e = emu.State{};
+    defer e.deinit(gpa);
+    e.e[2] = 3;
+    e.r[2] = 5;
+    const prog_e = ystm ++ ystm ++ ystm ++ halt;
+    _ = try emu.runFrom(gpa, &e, &prog_e, 0, 32);
+    try testing.expectEqual(e.e[2], d.e[2]);
+}
+
+test "x00 without the full 842 selector leaves the doubling off" {
+    const gpa = testing.allocator;
+    for ([_][3]u32{ .{ 1 << 14, 2 << 1, 1 << 3 }, .{ 3 << 14, 2 << 1, 1 << 3 }, .{ 1 << 14, 3 << 1, 1 << 3 }, .{ 1 << 14, 2 << 1, 0 } }, 0..) |f, k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try emu.executeBundle(gpa, &state, &.{ 0, 0, f[0], 0, f[1], f[2], 0 });
+        try testing.expectEqual(k == 0, state.x00_double);
+    }
+}
+
 test "no A index is masked to 4 bits (A has 32 registers)" {
     const src = @embedFile("emu.zig");
     var i: usize = 0;

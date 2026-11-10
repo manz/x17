@@ -65,6 +65,9 @@ pub const State = struct {
     /// syllables relative to the jmp bundle's own syllable position; null
     /// when no jump requested this bundle.  runLinear consumes it.
     pending_jmp_offset: ?i32 = null,
+    /// 842: set by an x00 with w2[17:14] = 1, w4[4:1] = 2 and w5[3]; until the run halts the
+    /// x18 class-000 and ystm bundles execute twice.
+    x00_double: bool = false,
     /// The running bundle's syllable index, for absolute jumps.
     pc: usize = 0,
     /// The value the last X read left (fact 241).
@@ -1556,6 +1559,8 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (y_on) state.y_mem.put(gpa, y_addr, y_val) catch return RunError.OutOfMemory;
     if (x_on) state.x_mem.put(gpa, x_addr, x_val) catch return RunError.OutOfMemory;
     if (r_dest != 0) state.r[r_dest] = r_val;
+    // 842: this selector makes the rest of the run execute each bundle twice.
+    if (!x01 and (w2 >> 14) & 0xF == 1 and (w4 >> 1) & 0xF == 2 and (w5 >> 3) & 1 == 1) state.x00_double = true;
     // 0x00's e slot (830, 831): e<w1[6:3]> <- the immediate; unmeasured on 0x01.
     const e_dest: u32 = (w1 >> 3) & 0xF;
     if (!x01 and e_dest != 0) state.e[e_dest] = imm;
@@ -5735,6 +5740,10 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
     // The gap since the latest halt-deadline armer (fact 98, 477, 484), null when none ran.
     var since_armer: ?DeadlineGap = null;
     const lane0: usize = state.cur_lane;
+    // 842: the doubling ends with the run's halt; the next run starts without it.
+    defer if (state.halted or state.silent_stop) {
+        state.x00_double = false;
+    };
     state.halted = false;
     state.silent_stop = false;
     state.stop_now = false;
@@ -5761,11 +5770,17 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
             defer before.deinit(gpa);
             try executeBundle(gpa, state, slice);
             if (!sameY(&before, &state.y_mem)) return RunError.UnknownForm;
-        } else executeBundle(gpa, state, slice) catch |e| {
-            const hook = state.on_unknown orelse return e;
-            if (e != RunError.UnknownForm) return e;
-            hook.f(hook.ctx, i, slice);
-        };
+        } else {
+            // 842: under the x00 selector the x18 class-000 step + store and ystm run twice; a
+            // store-out tail (rop, x17.styi) ran once.  Other forms: unmeasured, run once.
+            const reps: u8 = if (state.x00_double and doublesUnder842(slice)) 2 else 1;
+            for (0..reps) |_| executeBundle(gpa, state, slice) catch |e| {
+                const hook = state.on_unknown orelse return e;
+                if (e != RunError.UnknownForm) return e;
+                hook.f(hook.ctx, i, slice);
+                break;
+            };
+        }
         if (state.on_bundle) |hk| hk.f(hk.ctx, .after, i, slice);
         if (state.stream_starved) {
             // 784: the read waits for the next packet and nothing in its bundle ran; the
@@ -5890,6 +5905,13 @@ fn updateE0(state: *State, b: []const u32) void {
     }
     if (low5 == 0x19 and b.len == 4 and b[1] >> 29 == 0 and b[2] >> 29 == 4 and b[3] >> 29 == 4) return;
     state.e0_known = false;
+}
+
+/// The forms 842 measured running twice under the x00 selector: x18 class 000 and ystm.
+fn doublesUnder842(b: []const u32) bool {
+    const low5 = b[0] & 0x1F;
+    if (low5 == 0x18 and b.len == 4 and b[3] >> 29 == 0) return true;
+    return low5 == 0x10 and b.len == 2 and b[1] >> 29 == 0b010;
 }
 
 /// e<k> as a Y address: e0 only while it is known.
