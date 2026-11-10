@@ -2313,6 +2313,25 @@ test "x19k's s-slot AGU follows w2[25]; AGU10B fn 2 reads e<w2[7:4]> (871, 874)"
     }
 }
 
+test "x00 writes the immediate to A<w3[23:20]> (873)" {
+    const gpa = testing.allocator;
+    const b = [_]u32{ 0x00A55000, 0x01D00080, 0x00540000, 0x00B00000, 0xA8600000, 0x0700000A, 0x000E8004 };
+    for ([_]struct { w3: u32 = b[3], w4: u32 = b[4], w5: u32 = b[5], a: u32 = 11, v: u32 = 0x14AA }{
+        .{},
+        .{ .w3 = 0x00A00000, .a = 10 }, // w3[20]
+        .{ .w3 = 0x01B00000, .v = 0x14AD }, // w3[24] stops it
+        .{ .w4 = 0xA8400000, .v = 0x14AD }, // w4[21]
+        .{ .w5 = 0x0500000A, .v = 0x14AD }, // w5[25]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[10] = 0x14AD;
+        state.a[11] = 0x14AD;
+        _ = try emu.runFrom(gpa, &state, &.{ b[0], b[1], b[2], c.w3, c.w4, c.w5, b[6], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.v, state.a[c.a]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

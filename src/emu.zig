@@ -1585,6 +1585,10 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (alu_dest != 0) state.s[alu_dest] = alu_val;
     if (mac_dest != 0) state.s[mac_dest] = mac_val;
     if (mpy_dest != 0) state.s[mpy_dest] = mpy_val;
+    // 873: A<w3[23:20]> <- the immediate with w3[24] = 0, w4[21] = 1 and w5[26:25] = 11 (each
+    // flip stopped it); unmeasured on 0x01.  The bundle's X load through the new A11 is OPEN.
+    const dest_a: u32 = (w3 >> 20) & 0xF;
+    if (!x01 and dest_a != 0 and (w3 >> 24) & 1 == 0 and (w4 >> 21) & 1 == 1 and (w5 >> 25) & 3 == 3) state.a[dest_a] = imm;
 }
 
 const AGU14_F = [16]?u8{ 0, 1, 2, null, 4, 5, 6, 7, 9, 9, 1, 1, 1, 6, 1, 1 };
