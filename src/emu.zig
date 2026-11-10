@@ -4189,6 +4189,8 @@ fn execX19Ld(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // w1 outside its operand fields: w1[3] set, the rest clear.  w1[20] and w1[5] write an A
     // (from the last X access's index) and grow the e step on later loads (793): refused.
     if (w1 & ~@as(u32, 0x0787) != 0x8) return RunError.UnknownForm;
+    // With p1 = 1 the load never completes on silicon (802; which field keys it is OPEN).
+    if (state.p[1] != 0) return RunError.UnknownForm;
 
     // 1) Load from Y memory using the pre-state element register, sign-extended (705).
     const src_e_val: u32 = if (y_src_e == 0) 0 else state.e[y_src_e];
@@ -4376,10 +4378,10 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (stop_form and s1 & 7 == 3) return RunError.UnknownForm;
     const stops = stop_form and (s1 & 7 != 1 or state.p[1] != 0);
     // e<2*S1[2:0] + h[31]> <- AGU10[S1[10:7]](x = e<k>), written after the store (fact 658,
-    // 429), measured with R mux 0 (fns x and x+1). Under mux 7 the e write lands elsewhere:
-    // refused.
+    // 429), measured with R mux 0 (fns x and x+1).  Under mux 2 it takes the R slot's AGU
+    // result instead (801, measured on the stop form); elsewhere under a nonzero mux: refused.
     const ec_dest: u32 = ((s1 & 7) << 1) | (h >> 31);
-    if (ec_dest != 0 and r_mode != 0 and !stops) return RunError.UnknownForm;
+    if (ec_dest != 0 and r_mode != 0 and !stops and !(r_mode == 2 and stop_form)) return RunError.UnknownForm;
     const k: u32 = (s1 >> 15) & 0xF;
     const e_post: u32 = if (ec_dest == 0) 0 else try agu10ImmEval((s1 >> 7) & 0xF, state.e[k], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF);
     const v: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
@@ -4388,8 +4390,14 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         const dest: u32 = (s1 >> 11) & 0xF;
         if (dest != 0) state.r[dest] = r;
     }
-    // Under a non-zero mux the e write lands elsewhere; after a stop nothing reads it.
+    // Under mux 7 the e write lands elsewhere; after a stop nothing reads it.
     if (ec_dest != 0 and r_mode == 0) state.e[ec_dest] = e_post;
+    if (ec_dest != 0 and r_mode == 2 and stop_form) {
+        state.e[ec_dest] = r_val.?;
+        // A stop whose side write moves its own store's e stores again at the new address
+        // (801, measured with k = 1 under p1).
+        if (stops and ec_dest == k) state.y_mem.put(gpa, state.e[k], v) catch return RunError.OutOfMemory;
+    }
     if (stops) state.stop_now = true;
 }
 
@@ -4687,7 +4695,7 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
 
 /// x16 b16 (fact 90, 778): S1 class 001 / S2 class 111, or any S1 class with S1[18] = 1 and
 /// S2 & 0xE0050000 = 0xE0040000.  Y load s<head[24:21]> <- Y:[e<S2[24:21]>] placed by
-/// S1[13:12] (00: 0, 01: sign-extended, 11: << 8); s<S1[11:8]> <- s<S2[28:25]> (a move,
+/// S1[13:12] (00: 0, 01: sign-extended, 10: zero-extended (800), 11: << 8); s<S1[11:8]> <- s<S2[28:25]> (a move,
 /// 778); X store X:[xa] <- sx24 s<S1[31:28]> with S1[18], S2[14:13] = 11, S2[11] = 0, using
 /// xa as it was before the bundle; then xa <- head[20:5] when head[31] and S1[3].  The move
 /// and the store read before the bundle's writes.
@@ -4699,8 +4707,9 @@ fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const hv: u32 = switch ((s1 >> 12) & 3) {
         0 => 0,
         1 => sx16To24(yv),
+        2 => yv, // zero-extended (800)
         3 => (yv << 8) & M24,
-        else => return RunError.UnknownForm,
+        else => unreachable,
     };
     const mv_dest: u32 = (s1 >> 8) & 0xF;
     const mv_val: u32 = state.s[(s2 >> 25) & 0xF] & M24;
