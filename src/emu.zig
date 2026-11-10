@@ -646,8 +646,12 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
     if (w4_mode == 1) {
         try execX02Xrd(gpa, state, bundle);
-        // 866: the w2 slot runs here too (its X read with w5[19], else the product).
-        try execX02Mpy(gpa, state, bundle);
+        // 866: the w2 slot's X read runs here too, s<w2[12:9]> <- X:[A<w4[21:17]>] with w5[19];
+        // without it the slot writes 0, not the product (868's probe).
+        const dest_s: u32 = (bundle[2] >> 9) & 0xF;
+        if ((bundle[5] >> 19) & 1 == 1) {
+            try execX02Mpy(gpa, state, bundle);
+        } else if (dest_s != 0) state.s[dest_s] = 0;
         return true;
     }
     if (w4_mode == 5) {

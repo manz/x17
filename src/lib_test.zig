@@ -2188,12 +2188,15 @@ test "x02 mode 001 runs the w2 slot: s<w2[12:9]> <- X:[A<w4[21:17]>] (866)" {
         .{},
         .{ .w2 = 0x00001C00, .s = 14 }, // w2[9]
         .{ .w2 = 0x00000E00, .s = 7 }, // w2[12]
-        .{ .w5 = 0xC0000200, .v = 0 }, // w5[19] cleared: the product s0 * s0
+        .{ .w5 = 0xC0000200, .v = 0 }, // w5[19] cleared: 0
+        .{ .w2 = 0x00001EA6, .w5 = 0xC0000200, .v = 0 }, // w2[4:1] = 3, w2[8:5] = 5: still 0, no product
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
         state.a[18] = 0x11C4;
         state.s[c.s] = 0x77;
+        state.s[3] = 0x100;
+        state.s[5] = 0x10;
         try state.x_mem.put(gpa, 0x11C4, 0xABCDEF);
         _ = try emu.runFrom(gpa, &state, &.{ b[0], b[1], c.w2, b[3], b[4], c.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c.v, state.s[c.s]);
