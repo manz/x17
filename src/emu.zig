@@ -5973,12 +5973,14 @@ fn execPtst(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     // (823): row 010 compares (b, 0), row 101 (a, b).  Measured on those two rows only.
     const rel: u32 = (head >> 15) & 0xF;
     if (rel != 0) {
+        // 12 tests b's bit 0 (824), measured on row 010 only.
+        if (rel == 12 and cond >> 2 != 2) return RunError.UnknownForm;
         const xy: [2]i32 = switch (cond >> 2) {
             2 => .{ b, 0 },
             5 => .{ signed, b },
             else => return RunError.UnknownForm,
         };
-        const r = try ptstRel(rel, xy[0], xy[1]);
+        const r = ptstRel(rel, xy[0], xy[1]);
         if (p_dest != 0) state.p[p_dest] = @intFromBool(r);
         return;
     }
@@ -5997,11 +5999,11 @@ fn execPtst(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 }
 
 /// ptst's h[18:15] relation x ? y (823): 1..11 cycle <=, >=, <, >, !=, == (6..11 repeat
-/// 0..5); 13 and 14 read >=; 15 is always true.  12 is not a relation (a bit test, OPEN): refused.
-fn ptstRel(rel: u32, x: i32, y: i32) RunError!bool {
+/// 0..5); 13 and 14 read >=; 15 is always true; 12 is x even (824).
+fn ptstRel(rel: u32, x: i32, y: i32) bool {
     if (rel == 15) return true;
     if (rel == 13 or rel == 14) return x >= y;
-    if (rel == 12) return RunError.UnknownForm;
+    if (rel == 12) return x & 1 == 0;
     return switch (rel % 6) {
         0 => x <= y,
         1 => x >= y,

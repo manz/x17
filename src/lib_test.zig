@@ -7693,6 +7693,10 @@ test "ptst h[18:15] picks row 101's relation of a against b (823)" {
     };
 }
 
-test "ptst h[18:15] = 12 is refused until its bit test is mapped" {
-    try testing.expectError(error.UnknownForm, ptstP13(0x7560016D | 12 << 15, 0, 0));
+test "ptst h[18:15] = 12 sets p when s12 is even (824)" {
+    const vals = [_]u32{ 0xFFFFFD, 0, 5, 0x008000, 1, 2, 4, 8, 6, 0x10, 0xFFFFFE, 0x100 };
+    const want = [_]u8{ 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1 };
+    for (vals, want) |v, w| try testing.expectEqual(w, try ptstP13(0x7560016D | 12 << 15, 0, v));
+    // Row 101 with 12 is unmeasured.
+    try testing.expectError(error.UnknownForm, ptstP13(0x76E0116D | 12 << 15, 5, 0));
 }
