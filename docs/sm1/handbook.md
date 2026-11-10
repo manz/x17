@@ -384,6 +384,8 @@ Measured idioms, cheapest first:
   last X word read, shifted), not 0. To zero memory, store a register cleared by `ldi #0` or an
   ALU result. As a destination, s0 drops writes: `x03.tap0 sL, #n, s0, s0, s0` is a pure X load
   and step.
+- **Free e load.** x19alu mode 8 with w1[2:0] != 0 writes #head[26:11] (or its negation, 0
+  or 1 by w1[10:7]) to e<2*w1[2:0] + head[31]> and clears p<w2[17:14]> unless w2[0] = 1 (§851).
 - **Selects without branches.** x19alu's write can be conditional on p1 (§646); the x01 slot's
   m = 7 gives b < 0 ? b : i (§502). `psel` is a 24-bit select, s <- p ? a op b : b, with op from
   the x16 ALU table (add measured) and p's sense set by S[21]; its head write,

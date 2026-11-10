@@ -1896,6 +1896,35 @@ test "x19alu's two X writes beside its ALU" {
     }
 }
 
+test "x19alu mode 8 writes op(#head[26:11]) to e<2*w1[2:0] + head[31]> and clears p (851)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, w1: u32, w2: u32 = 0x0003B000, e: u32, want: ?u32, p14: u32 = 0 }{
+        .{ .h = 0xD8002819, .w1 = 0x00004502, .e = 5, .want = 5 },
+        .{ .h = 0xD8002019, .w1 = 0x00004502, .e = 5, .want = 4 }, // head[11] cleared
+        .{ .h = 0xDC002819, .w1 = 0x00004502, .e = 5, .want = 0x8005 }, // head[26] set
+        .{ .h = 0x58002819, .w1 = 0x00004502, .e = 4, .want = 5 }, // head[31] = 0
+        .{ .h = 0xD8002819, .w1 = 0x00004506, .e = 13, .want = 5 },
+        .{ .h = 0xD8002819, .w1 = 0x00004582, .e = 5, .want = 0xFFFB }, // w1[7]
+        .{ .h = 0xD8002819, .w1 = 0x00004702, .e = 5, .want = 0 }, // w1[9]
+        .{ .h = 0xD8002819, .w1 = 0x00004102, .e = 5, .want = 1 }, // w1[10] cleared
+        .{ .h = 0xD8002819, .w1 = 0x00004402, .e = 5, .want = null }, // w1[8] cleared: OPEN
+        .{ .h = 0xD8002819, .w1 = 0x00004502, .w2 = 0x0003B001, .e = 5, .want = 5, .p14 = 9 }, // w2[0] stops the p write
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[4] = 0x444;
+        state.e[5] = 0x555;
+        state.e[13] = 0xDDD;
+        state.p[14] = 9;
+        const r = emu.runFrom(gpa, &state, &.{ c.h, c.w1, c.w2, 0x90000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        if (c.want) |v| {
+            _ = try r;
+            try testing.expectEqual(v, state.e[c.e]);
+            try testing.expectEqual(c.p14, state.p[14]);
+        } else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

@@ -3926,6 +3926,7 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         // w1[2:0] != 0 beside 8/9/0xA is OPEN for the ALU result; with no ALU destination the
         // X writes still land (533, own-x19alx's second bundle).
         if (w1 & 7 != 0 and dest_s != 0) return RunError.UnknownForm;
+        if (w1 & 7 != 0 and mode == 8) try x19AluE(state, bundle);
         break :blk switch (mode) {
             8 => x19ModeOp(code, a_val, b_val, false),
             0xA => x19ModeOp(code, a_val, 0, true),
@@ -3953,6 +3954,28 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // touches no predicate.  Other w3[23:20] values leave p alone here (OPEN).
     const pk = (w2 >> 14) & 0xF;
     if ((bundle[3] >> 20) & 0xF == 0xE and pk != 15) state.p[pk] = 1;
+}
+
+/// x19alu's e slot (fact 851), mode 8 with w1[2:0] != 0: e<2*w1[2:0] + head[31]> <-
+/// op w1[10:7] of #head[26:11]: 1010 the immediate, 1011 its negation, 1110 0, 0010 1; other
+/// ops are OPEN.  Beside it p<w2[17:14]> <- 0 (a false condition, as 850) unless w2[0] = 1;
+/// what the condition reads is OPEN (p0 reads 1, 682: left alone).
+fn x19AluE(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    const w2 = bundle[2];
+    const imm: u32 = (h >> 11) & 0xFFFF;
+    const val: u32 = switch ((w1 >> 7) & 0xF) {
+        0b1010 => imm,
+        0b1011 => (0x10000 - imm) & 0xFFFF,
+        0b1110 => 0,
+        0b0010 => 1,
+        else => return RunError.UnknownForm,
+    };
+    const dest_e: u32 = ((w1 & 7) << 1) | (h >> 31);
+    if (dest_e != 0) state.e[dest_e] = val;
+    const pd: u32 = (w2 >> 14) & 0xF;
+    if (pd != 0 and w2 & 1 == 0) state.p[pd] = 0;
 }
 
 /// x19alu's two X writes (fact 533), both from X = X:[A<w2[26:22]>]: s<w2[7:4]> <- X and
