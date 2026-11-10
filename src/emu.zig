@@ -3475,17 +3475,29 @@ fn execYtst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     if (p_dest != 0) state.p[p_dest] = v;
 }
 
+/// xst (fact 106): S[3] = S[8] = 1 stores X:[A<4*S[2:0] + head[31:30]>] <- s<S[7:4]> (24
+/// bits); s<head[24:21]> <- by S[28:27]: 01 yd, 10 #head[20:5], 11 0 (00 OPEN).  852: like
+/// ytst, p<S[14:11]> <- !(Y:[e<S[24:21]>] & 1), measured below Y 0x8000 (above OPEN).
 fn execXst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len < 2) return RunError.UnknownForm;
     const head = bundle[0];
     const s1 = bundle[1];
-    const a_half: u32 = (head >> 30) & 0x3;
-    const a_low: u32 = s1 & 0x7;
-    const src_s: u32 = (s1 >> 4) & 0xF;
-    const a_idx: u32 = (4 * a_low + a_half) & 0x1F;
-    const addr: u32 = state.a[a_idx];
-    const value: u32 = state.s[src_s] & M24;
-    try state.x_mem.put(gpa, addr, value);
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const s_val: u32 = switch ((s1 >> 27) & 3) {
+        0 => if (dest_s != 0) return RunError.UnknownForm else 0,
+        1 => state.yd,
+        2 => (head >> 5) & 0xFFFF,
+        else => 0,
+    };
+    const addr_e: u32 = state.e[(s1 >> 21) & 0xF];
+    const p_dest: u32 = (s1 >> 11) & 0xF;
+    if (p_dest != 0 and addr_e & 0x8000 != 0) return RunError.UnknownForm;
+    if ((s1 >> 8) & 1 == 1 and (s1 >> 3) & 1 == 1) {
+        const a_idx: u32 = (4 * (s1 & 7) + (head >> 30)) & 0x1F;
+        try state.x_mem.put(gpa, state.a[a_idx], state.s[(s1 >> 4) & 0xF] & M24);
+    }
+    if (dest_s != 0) state.s[dest_s] = s_val;
+    if (p_dest != 0) state.p[p_dest] = @intFromBool((state.getY(addr_e) orelse 0) & 1 == 0);
 }
 
 fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

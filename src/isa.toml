@@ -198,7 +198,7 @@ name = "xst"
 mask = "0x0000001F"
 value = "0x00000014"
 evidence = "MEASURED"
-ref = "fact 106 pass 132: with a class-001 second S, S[25] = 1 (0 wedges): when S[3] = S[8] = 1, X:[A<4*S[2:0] + head[31:30]>] <- s<S[7:4]> sign-extended to 24 bits, the 0F store's A index (51), no post-modify; s<head[24:21]> <- by S[28:27]: 00 0x2800?, 01 yd, 10 head imm [20:5], 11 0; S[24:9] inert.  own-xst"
+ref = "fact 106 pass 132: with a class-001 second S, S[25] = 1 (0 wedges): when S[3] = S[8] = 1, X:[A<4*S[2:0] + head[31:30]>] <- s<S[7:4]> sign-extended to 24 bits, the 0F store's A index (51), no post-modify; s<head[24:21]> <- by S[28:27]: 00 0x2800?, 01 yd, 10 head imm [20:5], 11 0; S[24:9] inert to X and s, but p<S[14:11]> <- !(Y:[e<S[24:21]>] & 1) like ytst (852, e below 0x8000).  own-xst"
 
 [[form]]
 name = "ypair"

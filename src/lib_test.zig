@@ -1929,6 +1929,29 @@ test "x19alu mode 8 writes op(#head[26:11]) to e<2*w1[2:0] + head[31]> and clear
     }
 }
 
+test "xst writes the head imm by S[28:27] and p<S[14:11]> <- !(Y:[e<S[24:21]>] & 1) (106, 852)" {
+    const gpa = testing.allocator;
+    for ([_]struct { y: u32, p6: u32 }{
+        .{ .y = 0x1234, .p6 = 1 }, .{ .y = 0x1235, .p6 = 0 }, .{ .y = 2, .p6 = 1 },
+        .{ .y = 3, .p6 = 0 },      .{ .y = 0x8001, .p6 = 0 }, .{ .y = 0xFFFE, .p6 = 1 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[5] = 0x2C00;
+        state.s[12] = 2;
+        state.p[6] = 7;
+        try state.y_mem.put(gpa, 0x2C00, c.y);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x01800034, 0x32A13000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u32, 1), state.s[12]);
+        try testing.expectEqual(c.p6, state.p[6]);
+        try testing.expectEqual(@as(u32, 0), state.x_mem.count()); // S[3] = S[8] = 0: no store
+    }
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[5] = 0x8005; // e bit 15: OPEN
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x01800034, 0x32A13000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
