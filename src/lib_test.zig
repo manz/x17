@@ -1952,6 +1952,28 @@ test "xst writes the head imm by S[28:27] and p<S[14:11]> <- !(Y:[e<S[24:21]>] &
     try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x01800034, 0x32A13000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
 
+test "dld's Y half also writes the raw word to e<[12:9]> (854)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w: u32, y: u32 = 0x4321, s13: u32, e: u32, want: u32 }{
+        .{ .w = 0x74002669, .s13 = 0x4321, .e = 3, .want = 0x4321 },
+        .{ .w = 0x74002A69, .s13 = 0x4321, .e = 5, .want = 0x4321 }, // [12:9] = 5
+        .{ .w = 0x74002629, .s13 = 0x1111, .e = 3, .want = 0x1111 }, // [8:5] = 1
+        .{ .w = 0x74002669, .y = 0x8001, .s13 = 0xFF8001, .e = 3, .want = 0x8001 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0x2C10;
+        state.e[3] = 0x2C00;
+        state.e[5] = 0x2C20;
+        try state.y_mem.put(gpa, 0x2C10, 0x1111);
+        try state.y_mem.put(gpa, 0x2C00, c.y);
+        try state.y_mem.put(gpa, 0x2C20, 0x5555);
+        _ = try emu.runFrom(gpa, &state, &.{ c.w, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.s13, state.s[13]);
+        try testing.expectEqual(c.want, state.e[c.e]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

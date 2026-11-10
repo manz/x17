@@ -6137,7 +6137,8 @@ fn execPlog(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 }
 
 /// dld, low5 0x09 with [31] = 0 (fact 524): s<[25:22]> <- X:[A<[19:15]>] when [20] = 1;
-/// s<[29:26]> <- sx16 Y:[e<[8:5]>] when [13] = 1 (as ldy, 54).  Refused: [30] = 0 (wedges, 54,
+/// s<[29:26]> <- sx16 Y:[e<[8:5]>] when [13] = 1 (as ldy, 54), and e<[12:9]> <- the raw word
+/// (854).  Refused: [30] = 0 (wedges, 54,
 /// 116), [20] = 0 beside an X destination (another word, OPEN), [13] = 0 beside a Y one (the
 /// stale latch) and one s for both halves.
 fn execDld(state: *State, head: u32) RunError!void {
@@ -6151,12 +6152,17 @@ fn execDld(state: *State, head: u32) RunError!void {
         xv = (state.readX(state.a[(head >> 15) & 0x1F]) orelse 0) & M24;
     }
     var yv: u32 = 0;
+    var yraw: u32 = 0;
     if (yd != 0) {
         if ((head >> 13) & 1 == 0) return RunError.UnknownForm;
-        yv = sx16To24((state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF);
+        yraw = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
+        yv = sx16To24(yraw);
     }
     state.s[xd] = xv;
     state.s[yd] = yv;
+    // 854: the Y word also lands raw in e<[12:9]> (524's "inert" field).
+    const ed: u32 = (head >> 9) & 0xF;
+    if (yd != 0 and ed != 0) state.e[ed] = yraw;
 }
 
 fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
