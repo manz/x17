@@ -32,6 +32,7 @@ pub const top = [_]Verb{
     .{ .name = "asm", .help = "assemble a .sm file; prints hex syllables", .run = &cmdAsm },
     .{ .name = "image", .help = "assemble passes + host data into an x17 image (+ debug sidecar)", .run = &cmdImage },
     .{ .name = "run", .help = "assemble + execute a .sm file; prints s/Y state", .run = &cmdRun },
+    .{ .name = "patch", .help = "copy an x17 image with a halt + 2 nops at a decoder q", .run = &cmdPatch },
     .{ .name = "play", .help = "run an x17 image over a packet file through the host model; writes PCM", .run = &cmdPlay },
     .{ .name = "fmt", .help = "format .sm files in place (--check: report only)", .run = &cmdFmt },
     .{ .name = "disasm", .help = "decode syllables (hex arg or .bin file) to .sm", .run = &cmdDisasm },
@@ -279,6 +280,51 @@ fn cmdImage(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !voi
     for (prog.passes, 0..) |*pass, i| {
         try out.print("pass {d} {s}: rows 0x{x}..0x{x}, {d} syllables, {d} data blocks\n", .{ i, @tagName(pass.kind), pass.base_row, pass.endRow(), pass.syllables.len, pass.data.len });
     }
+}
+
+// ---------------------------------------------------------------------------
+// Verb: patch
+// ---------------------------------------------------------------------------
+
+const patch_params = clap.parseParamsComptime(
+    \\-h, --help               show help for `x17 patch`
+    \\    --halt-at <usize>    decoder q to overwrite with x17.halt + 2 nops (required)
+    \\-o, --out <str>          patched image path (required)
+    \\<str>                    source image (.x17i)
+    \\
+);
+
+fn cmdPatch(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void {
+    var iter: SliceIter = .{};
+    var parsed = try parseVerb(&patch_params, gpa, args, "patch", out, &iter);
+    defer parsed.deinit();
+    if (parsed.args.help != 0) {
+        try out.writeAll("usage: x17 patch --halt-at Q -o <out.x17i> <in.x17i>\n");
+        return;
+    }
+    const in_path = parsed.positionals[0] orelse return missing(out, "patch: missing <in.x17i>\n");
+    const out_path = parsed.args.out orelse return missing(out, "patch: missing -o <out.x17i>\n");
+    const q = parsed.args.@"halt-at" orelse return missing(out, "patch: missing --halt-at Q\n");
+    const bytes = try readFileMax(gpa, in_path, 64 * 1024 * 1024);
+    defer gpa.free(bytes);
+    var img = try image_mod.parse(gpa, bytes);
+    defer img.deinit(gpa);
+    var old: [image_mod.halt_patch.len]u32 = undefined;
+    image_mod.patchDecoder(&img, @intCast(q), &image_mod.halt_patch, &old) catch |e| {
+        try out.print("patch: q 0x{x}..0x{x} is not all in the decoder pass\n", .{ q, q + old.len - 1 });
+        return e;
+    };
+    const new = try image_mod.serialize(gpa, &img);
+    defer gpa.free(new);
+    try writeFile(gpa, out_path, new);
+    try out.print("halt at q 0x{x}; replaced", .{q});
+    for (old) |w| try out.print(" {x:0>8}", .{w});
+    try out.writeAll("\n");
+}
+
+fn missing(out: *Writer, msg: []const u8) !void {
+    try out.writeAll(msg);
+    return error.MissingFile;
 }
 
 // ---------------------------------------------------------------------------

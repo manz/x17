@@ -174,6 +174,41 @@ pub fn placeRows(prog: []u32, s: Section) void {
     };
 }
 
+/// Serialise a parsed image back to bytes (the inverse of `parse`).
+pub fn serialize(gpa: std.mem.Allocator, img: *const Image) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.appendSlice(gpa, magic);
+    try putInt(gpa, &out, u16, version);
+    try putInt(gpa, &out, u16, @intCast(img.sections.len));
+    for (img.sections) |s| try putSection(gpa, &out, s);
+    return out.toOwnedSlice(gpa);
+}
+
+/// x17.halt plus the two nops its stop shadow runs.
+pub const halt_patch = [_]u32{ 0x00000017, 0x31308000, 0xA0000000, 0x40000005, 0x40000005 };
+
+pub const PatchError = error{QOutsidePass};
+
+/// Overwrite the decoder pass's syllables at q, q+1, ... with `patch`; returns the old ones.
+pub fn patchDecoder(img: *Image, q: u32, patch: []const u32, old: []u32) PatchError!void {
+    var hit: usize = 0;
+    for (img.sections) |s| {
+        if (s.kind != .p or s.pass != decoder_pass) continue;
+        const base = @intFromPtr(s.words.ptr) - @intFromPtr(img.words.ptr);
+        for (patch, 0..) |w, k| {
+            const qk = q + @as(u32, @intCast(k));
+            const row = layout.rowOf(qk);
+            if (row < s.addr or row >= s.addr + s.count) continue;
+            const at = base / 4 + (row - s.addr) * layout.lanes + layout.laneOf(qk);
+            old[k] = img.words[at];
+            img.words[at] = w;
+            hit += 1;
+        }
+    }
+    if (hit != patch.len) return error.QOutsidePass;
+}
+
 // ---------------------------------------------------------------------------
 // Debug sidecar
 // ---------------------------------------------------------------------------
@@ -291,6 +326,26 @@ test "image: placeRows puts the decoder back at q256" {
     var p: [0x4000]u32 = @splat(0);
     placeRows(&p, img.sections[2]);
     try testing.expectEqualSlices(u32, &.{ 0x00000017, 0x31308000, 0xA0000000 }, p[256..259]);
+}
+
+test "image: patchDecoder puts a halt at q and serialize round-trips" {
+    var prog = try testProgram(two_pass);
+    defer prog.deinit();
+    const bytes = try write(testing.allocator, &prog);
+    defer testing.allocator.free(bytes);
+    var img = try parse(testing.allocator, bytes);
+    defer img.deinit(testing.allocator);
+    var old: [halt_patch.len]u32 = undefined;
+    try patchDecoder(&img, 257, &halt_patch, &old);
+    try testing.expectEqual(@as(u32, 0x31308000), old[0]);
+    const again = try serialize(testing.allocator, &img);
+    defer testing.allocator.free(again);
+    var img2 = try parse(testing.allocator, again);
+    defer img2.deinit(testing.allocator);
+    var p: [0x4000]u32 = @splat(0);
+    placeRows(&p, img2.sections[2]);
+    try testing.expectEqualSlices(u32, &halt_patch, p[257..262]);
+    try testing.expectError(error.QOutsidePass, patchDecoder(&img, 0x3FFF, &halt_patch, &old));
 }
 
 test "image: parse refuses a bad magic, version and a cut file" {
