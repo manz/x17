@@ -2344,6 +2344,18 @@ test "0x10's class-011 pair refuses S[19:16] = 5, whose R value is unmapped" {
     try testing.expectError(emu.RunError.UnknownForm, emu.runFrom(gpa, &state, &.{ 0x01400010, 0x66050000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16));
 }
 
+test "lde with e index 0 loads A<[25:21]> (829)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    // [29:26] = 0, [25:21] = 13, imm 0x14A0; then an e-form with [25:21] = 13 leaves A13.
+    const lda13: u32 = 0x40000006 | (13 << 21) | (0x14A0 << 5);
+    const lde3: u32 = 0x40000006 | (3 << 26) | (13 << 21) | (0x0777 << 5);
+    _ = try emu.runFrom(gpa, &state, &.{ lda13, lde3, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x14A0), state.a[13]);
+    try testing.expectEqual(@as(u32, 0x0777), state.e[3]);
+}
+
 test "x12agu runs the AGU for every head[31:29]" {
     // fact 562: e6 = 0x760; cbe012d2 23780001 (and with w1[28] set, 33780001) give e9,
     // s3 (2*1 + h[31]) and R11 all 0x760 (AGU10 fn 0, x = e6).  fn 7 (measured on another row):
