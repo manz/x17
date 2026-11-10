@@ -5585,8 +5585,8 @@ pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
     if (code == 0x28 or code == 0x29) {
         const b_zero = (h >> 26) & 0xF == 0;
         return switch (m) {
-            // 870: code 0x28 m 5 clamps a negative b to 0 (a = s0 in the rows; its role OPEN).
-            5 => if (b_zero) s_mod else if (code == 0x28 and b24 & 0x800000 != 0) 0 else b24,
+            // 870, 871: code 0x28 m 5 is the signed max of # and b (# = 0: a clamp at 0).
+            5 => if (b_zero) s_mod else if (code == 0x28) @intCast(@max(@as(i32, s_mod), sx24(b24)) & M24) else b24,
             6 => if (b_zero) s_mod else b24,
             1, 4 => if (b_zero) 0 else s_mod,
             else => s_mod,

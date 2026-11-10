@@ -2243,7 +2243,7 @@ test "st.x 0x0F writes #head[20:5] to A<head[28:25]> while head[29] = 0 (869)" {
     }
 }
 
-test "alu.m 0x2B m 1 is unsigned min; 0x28 m 5 clamps negatives to 0 (870)" {
+test "alu.m 0x2B m 1 is unsigned min; 0x28 m 5 is max(#, b) (870, 871)" {
     const gpa = testing.allocator;
     for ([_][3]u32{
         .{ 0x10, 1, 1 },     .{ 0x10, 0, 0 },     .{ 1, 0x10, 1 },
@@ -2263,6 +2263,14 @@ test "alu.m 0x2B m 1 is unsigned min; 0x28 m 5 clamps negatives to 0 (870)" {
         state.s[10] = c[0];
         _ = try emu.runFrom(gpa, &state, &.{ 0x6A850505, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c[1], state.s[10]);
+    }
+    // 871: the other operand is #[22:19]: max(#, s10) with s10 = 0xFFFFF1
+    for ([_]u32{ 1, 2, 4, 8 }, 19..) |want, bit| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[10] = 0xFFFFF1;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x6A850505 | (@as(u32, 1) << @intCast(bit)), 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(want, state.s[10]);
     }
 }
 

@@ -589,7 +589,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x02 (866, 868): under w4 mode 001 the w2 slot also runs: s<w2[12:9]> <- X:[A<w4[21:17]>] with w5[19], else 0 (no product: four operand pairs gave 0); w5[15] = 1 reads a Y word there (OPEN).
 # ystm (868): store on with h[26] = h[27] = 0: e<h[12:9]> <- op h[20:17] of i = {S[11:0], h[31:28]} (1000/1010 i, 1011 -i, 0010 0, 1110 x + 1; others OPEN); h[27] = 1 and the R / A / e side slots OPEN there.
 # st.x 0x0F (869): head[29] = 0 also writes A<head[28:25]> <- #head[20:5]; head[29] = 1 stops it.
-# alu.m (870): code 0x2B with m = 1, # = 0 is the unsigned 24-bit min of a and b; code 0x28 with m = 5 clamps a negative b to 0 (779's move for b >= 0; a = s0 in the rows, its role OPEN).
+# alu.m (870): code 0x2B with m = 1, # = 0 is the unsigned 24-bit min of a and b; code 0x28 with m = 5 is the signed max of #[22:19] and b (871; 779's move where b >= #).
 # S[6:3] names an s write with an OPEN source (542 revises 123's clears; own-yld10k), refused; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the measured bundle is OPEN.  own-yld10
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12
