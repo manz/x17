@@ -272,6 +272,8 @@ unknown.
 - **Calls and returns:** undefined (§230, §310).
 - **Wedges:** runaway words (§16, §44), low5 0x1A-0x1F after the stop (§72), a missed halt
   deadline, and the per-form wedge bits in the reference (for example xld10 S1[18] = 0, §559).
+  `x19.ld` never completes with 0, 1 or 2 bundles between it and an `st.wr` (§804); 7 between
+  is measured clean, 3 to 6 are not, so keep 7 or more. `x17.sty` before it is harmless.
 
 ## 10. Writing fast code
 

@@ -7438,6 +7438,31 @@ test "ealu op 5 is a, op 7 is -a, head[9] makes op 5 -a (fact 132)" {
     }
 }
 
+test "x19.ld stalls with 0..2 bundles after an st.wr; 7 after completes (fact 804)" {
+    const gpa = testing.allocator;
+    const st_wr = [_]u32{ 0x2000000F, 0x22AD8000 }; // st.wr #0, e6, s5
+    const ld = [_]u32{ 0x00000019, 0x0000010C, 0x00000C00, 0xF0000403 }; // x19.ld s3, #4, e8, #2
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    for ([_]struct { gap: usize, ok: bool }{
+        .{ .gap = 0, .ok = false },
+        .{ .gap = 1, .ok = false },
+        .{ .gap = 2, .ok = false },
+        .{ .gap = 6, .ok = false }, // 3..6 unmeasured: refused
+        .{ .gap = 7, .ok = true },
+    }) |k| {
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(gpa);
+        try words.appendSlice(gpa, &st_wr);
+        try words.appendNTimes(gpa, 0x40000005, k.gap);
+        try words.appendSlice(gpa, &ld);
+        try words.appendSlice(gpa, &halt);
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        const r = emu.runFrom(gpa, &state, words.items, 0, 64);
+        if (k.ok) _ = try r else try testing.expectError(error.UnknownForm, r);
+    }
+}
+
 test "image: init pass then decode arm from one x17 image" {
     const gpa = testing.allocator;
     var prog = switch (try asm_mod.assembleProgram(gpa,
