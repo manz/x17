@@ -7646,3 +7646,12 @@ test "x02.asrc and x02.esrc also write A1 (157, 795)" {
         try testing.expectEqual(@as(u32, 0x40), st.a[9]);
     }
 }
+
+test "ptst writes p13 through the class-011 dest bit (fact 219)" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa, "ldi s12, #0\nptst p13, s0, #11, #0x0B\nx17.halt\n");
+    defer gpa.free(prog);
+    var st = emu.State{};
+    _ = try emu.runLinear(gpa, &st, prog);
+    try testing.expectEqual(@as(u8, 1), st.p[13]);
+}

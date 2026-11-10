@@ -263,6 +263,8 @@ unknown.
   earlier runs change, not p1..p15 (§578).
 - **Unconditional relative jump:** jr2 runs a head ALU word and jumps to q + 2·sx14(w1[18:5])
   (§617).
+- **Predicate dest:** ptst writes p0..p15; h[29] is the dest's bit 3, so p8..p15 are the
+  class-011 words (§219). Measured on silicon with p13 following s12 == 0 and s12 > 0.
 - **Bit tests:** ptst op 0x1E sets p from (a & b) != 0, measured against s10 and s12 only
   (§632, §633).
 - **Loops:** x03's conditional jump to itself, counted by its e counter through p3 (§675,

@@ -89,11 +89,17 @@ Applies a function to an address entry e and a modifier register R, writing the 
 | y_R | r_reg | head | [16:13] |
 | fn | imm | head | [20:17] |
 
+### `loop`
+
+Loop-bounding word that limits a fill; its bits 8:7 and 24:23 select V2 or V13 data registers (3 means none).
+
+- Encoding: `word & 0xFFFFFFF0 == 0x60448000`
+
 ### `ptst`
 
 Compares two source registers (signed 24-bit) with a selected relation such as <=, >= or == and writes the result to a predicate.
 
-- Encoding: `word & 0xE000001F == 0x4000000D`
+- Encoding: `word & 0xC000001F == 0x4000000D`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -315,12 +321,6 @@ Four-syllable VLIW bundle whose sub-form is chosen by the class bits of the seco
 Three-syllable bundle; its third syllable selects halt, continue, or an ALU op writing a source register from two source registers and a count.
 
 - Encoding: `word & 0x0000001F == 0x00000017`
-
-### `loop`
-
-Loop-bounding word that limits a fill; its bits 8:7 and 24:23 select V2 or V13 data registers (3 means none).
-
-- Encoding: `word & 0xFFFFFFF0 == 0x60448000`
 
 ### `ldy`
 

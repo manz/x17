@@ -653,6 +653,11 @@ test "classify picks x17 for a syllable with low5 = 0x17" {
     try testing.expectEqualStrings("x17", f.?.name);
 }
 
+test "classify decodes ptst into p8..p15 and keeps loop ahead of it (fact 219)" {
+    try testing.expectEqualStrings("ptst", classify(0x7560016D).?.name);
+    try testing.expectEqualStrings("loop", classify(0x6044800D).?.name);
+}
+
 test "classify picks st.y for its mask/value" {
     // st.y mask 0xE000001F value 0x2000000F -> bits [31:29] = 001, low5 = 0x0F.
     const word: u32 = 0x2000000F;
