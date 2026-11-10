@@ -3941,7 +3941,8 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         if (w1 & 7 != 0 and mode == 8) try x19AluE(state, bundle);
         break :blk switch (mode) {
             8 => x19ModeOp(code, a_val, b_val, false),
-            0xA => x19ModeOp(code, a_val, 0, true),
+            // 857: op 31 here is a | b (b = s<w1[19:16]>), not a.
+            0xA => if (code == 31) a_val | b_val else x19ModeOp(code, a_val, 0, true),
             9 => null,
             else => return RunError.UnknownForm,
         };
@@ -3951,6 +3952,18 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // 646: the ALU write is conditional on p1 through w1[23:20]: 0, 1, 3 write while p1 = 0;
     // 2, 5, 7 while p1 = 1; 6 and 9 always.  4, 8 and 10-15 did not write in the one context
     // measured, so they are refused until a program needs them.
+    // 857: in mode 0xA (w3[23:20] = 0) conds 0 and 6 write whatever p1 holds, and
+    // p<w2[17:14]> <- 0 unless w2[0] = 1, as 851's slot; other conds there are unmeasured.
+    if (mode == 0xA and (bundle[3] >> 20) & 0xF == 0) {
+        const cond: u32 = (w1 >> 20) & 0xF;
+        if (dest_s != 0 and cond != 0 and cond != 6) return RunError.UnknownForm;
+        const pd: u32 = (w2 >> 14) & 0xF;
+        if (pd != 0 and w2 & 1 == 0) state.p[pd] = 0;
+        if (r) |x| if (dest_s != 0) {
+            state.s[dest_s] = @truncate(@as(u64, @bitCast(x)) & M24);
+        };
+        return;
+    }
     if (r != null and dest_s != 0) {
         const p1 = state.p[1] == 1;
         const writes = switch ((w1 >> 20) & 0xF) {

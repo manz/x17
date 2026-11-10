@@ -357,6 +357,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x19 (0,4,3) mux-5 X read (651, revising 154): the index is A<{w1[2:0], head[31:30]}> = 4 * w1[2:0] + head[31:30], not w3[19:15] (154's own program used A11, where both readings agree).  The same bundle writes A<head[29:25]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, i) (654): fn 5 copies x, fn 0 gives x + 1; head[29:25] = 0 writes none.  The emulator runs only head[29:25] = 0, the assembler's template.  A0 and A31 refused (649).  The assembler writes `x19.xrd s, #k` across both fields.
 # x19alu predicate write (647): with w3[23:20] = 0xE the bundle sets p<w2[17:14]> <- 1 whether the result is zero or not; 15 touches none (the assembler emits 15).  Other w3[23:20] values: OPEN, p left alone.
 # x19alu e slot (851): mode 8 with w1[2:0] != 0: e<2*w1[2:0] + head[31]> <- op w1[10:7] of #head[26:11] (852: 1000/1010 imm, 1011 -imm, 001x 1, 010x 0xFFFF, rest 0); p<w2[17:14]> <- 0 beside it whatever the value, unless w2[0] = 1.
+# x19alu mode 0xA (857, w3[23:20] = 0): op 31 = a | s<w1[19:16]>; conds 0 and 6 write whatever p1 (others refused); p<w2[17:14]> <- 0 unless w2[0] = 1.
 # x19alu covers (0,4,4) too (153): w2[31] does not move the s write.  own-x19alu44
 # 154: H3 is not a register: mux 101 reads X:[x] (x19a43: A<w3[19:15]>); X:0 = 0x038A00 at harness start.  own-x19xrd
 # x02 (fact 155): 6 words; w4 slot s<w4[6:3]> <- mux w4[13:11] (101 X:[A<w4[21:17]>], 100 its 16:1, 111 0).  own-x02xrd

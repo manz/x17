@@ -1997,6 +1997,27 @@ test "x16 b16 writes #head[20:5] to e<S1[23:20]> and A<2*S1[3:0] + head[31]> (85
     }
 }
 
+test "x19alu mode 0xA: op 31 is a | b, written whatever p1, and p<w2[17:14]> cleared (857)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x000003F9, w1: u32 = 0x0C0C5000, w2: u32 = 0x003A9000, p1: u8 = 0, s12: u32, p10: u8 = 0 }{
+        .{ .s12 = 0x177 },
+        .{ .p1 = 1, .s12 = 0x177 },
+        .{ .h = 0x00000019, .s12 = 0x123 }, // op 0: a + 0
+        .{ .w1 = 0x0C6C5000, .p1 = 1, .s12 = 0x177 }, // cond 6
+        .{ .w2 = 0x003A9001, .s12 = 0x177, .p10 = 1 }, // w2[0] stops the p write
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[14] = 0x123;
+        state.s[12] = 0x77;
+        state.p[1] = c.p1;
+        state.p[10] = 1;
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, c.w1, c.w2, 0x92000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.s12, state.s[12]);
+        try testing.expectEqual(c.p10, state.p[10]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
