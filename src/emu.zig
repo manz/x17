@@ -3076,10 +3076,13 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // The source mux w1[14:12] (683, 369): 000 delivers 0, 001/010/101 the Y read, 110 the
     // immediate head[20:5]; 011, 100, 111 are OPEN, and so is e1 under 010/101.
     const ld_dest: u32 = (h >> 21) & 0xF;
+    const cond = try x18C3Cond(h, w1, w2, v, if (state.unset_reads) |u| &u.open_p else null);
     var ld_val: u32 = 0;
     if (ld_dest != 0) {
         switch ((w1 >> 12) & 7) {
-            0 => ld_val = 0,
+            // 850: mux 000 delivers the complement of the slot's p condition (683's 0 had it
+            // true); where the condition is unmeasured, 683's 0.
+            0 => ld_val = if (cond) |bit| @intFromBool(!bit) else 0,
             1, 2, 5 => |m| {
                 if (m != 1 and (w3 >> 25) & 0xF == 1) return RunError.UnknownForm;
                 ld_val = state.getY(state.e[(w3 >> 25) & 0xF]) orelse 0;
@@ -3090,8 +3093,10 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
         }
         if (ld_dest == dest_s or ld_dest == (w2 >> 2) & 0xF or ld_dest == (w1 >> 4) & 0xF) return RunError.UnknownForm;
     }
-    // w3[3] = 1 writes #head[20:5] to the R dest instead of the result (688, revising 683).
-    const r_val: u32 = if ((w3 >> 3) & 1 == 1) (h >> 5) & 0xFFFF else v & 0xFFFF;
+    // w3[3] = 1 writes #head[20:5] to the R dest instead of the result (688, revising 683),
+    // and to the A dest (849).
+    const w3_imm = (w3 >> 3) & 1 == 1;
+    const r_val: u32 = if (w3_imm) (h >> 5) & 0xFFFF else v & 0xFFFF;
     const dest_r: u32 = (w3 >> 7) & 0xF;
     // The result also lands in A<2 * w1[3:0] + head[31]> (fact 345): measured with the and
     // (A2 <- s12 & s11). A31 is not a plain register (649): refused.
@@ -3100,8 +3105,8 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (dest_s != 0) state.s[dest_s] = v;
     if (ld_dest != 0) state.s[ld_dest] = ld_val;
     if (dest_r != 0) state.r[dest_r] = r_val;
-    if (dest_a != 0) state.a[dest_a] = v;
-    if (try x18C3Cond(h, w1, w2, v, if (state.unset_reads) |u| &u.open_p else null)) |bit| {
+    if (dest_a != 0) state.a[dest_a] = if (w3_imm) (h >> 5) & 0xFFFF else v;
+    if (cond) |bit| {
         const pd: u32 = (w2 >> 14) & 0xF;
         // p0 reads 1 (682): cond 0's true into p0 changes nothing; other p0 writes are unmeasured.
         if (pd != 0) state.p[pd] = @intFromBool(bit) else if ((h >> 25) & 0xF != 0) return RunError.UnknownForm;
@@ -3470,17 +3475,29 @@ fn execYtst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     if (p_dest != 0) state.p[p_dest] = v;
 }
 
+/// xst (fact 106): S[3] = S[8] = 1 stores X:[A<4*S[2:0] + head[31:30]>] <- s<S[7:4]> (24
+/// bits); s<head[24:21]> <- by S[28:27]: 01 yd, 10 #head[20:5], 11 0 (00 OPEN).  852: like
+/// ytst, p<S[14:11]> <- !(Y:[e<S[24:21]>] & 1), measured below Y 0x8000 (above OPEN).
 fn execXst(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     if (bundle.len < 2) return RunError.UnknownForm;
     const head = bundle[0];
     const s1 = bundle[1];
-    const a_half: u32 = (head >> 30) & 0x3;
-    const a_low: u32 = s1 & 0x7;
-    const src_s: u32 = (s1 >> 4) & 0xF;
-    const a_idx: u32 = (4 * a_low + a_half) & 0x1F;
-    const addr: u32 = state.a[a_idx];
-    const value: u32 = state.s[src_s] & M24;
-    try state.x_mem.put(gpa, addr, value);
+    const dest_s: u32 = (head >> 21) & 0xF;
+    const s_val: u32 = switch ((s1 >> 27) & 3) {
+        0 => if (dest_s != 0) return RunError.UnknownForm else 0,
+        1 => state.yd,
+        2 => (head >> 5) & 0xFFFF,
+        else => 0,
+    };
+    const addr_e: u32 = state.e[(s1 >> 21) & 0xF];
+    const p_dest: u32 = (s1 >> 11) & 0xF;
+    if (p_dest != 0 and addr_e & 0x8000 != 0) return RunError.UnknownForm;
+    if ((s1 >> 8) & 1 == 1 and (s1 >> 3) & 1 == 1) {
+        const a_idx: u32 = (4 * (s1 & 7) + (head >> 30)) & 0x1F;
+        try state.x_mem.put(gpa, state.a[a_idx], state.s[(s1 >> 4) & 0xF] & M24);
+    }
+    if (dest_s != 0) state.s[dest_s] = s_val;
+    if (p_dest != 0) state.p[p_dest] = @intFromBool((state.getY(addr_e) orelse 0) & 1 == 0);
 }
 
 fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -3921,9 +3938,11 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         // w1[2:0] != 0 beside 8/9/0xA is OPEN for the ALU result; with no ALU destination the
         // X writes still land (533, own-x19alx's second bundle).
         if (w1 & 7 != 0 and dest_s != 0) return RunError.UnknownForm;
+        if (w1 & 7 != 0 and mode == 8) try x19AluE(state, bundle);
         break :blk switch (mode) {
             8 => x19ModeOp(code, a_val, b_val, false),
-            0xA => x19ModeOp(code, a_val, 0, true),
+            // 857: op 31 here is a | b (b = s<w1[19:16]>), not a.
+            0xA => if (code == 31) a_val | b_val else x19ModeOp(code, a_val, 0, true),
             9 => null,
             else => return RunError.UnknownForm,
         };
@@ -3933,6 +3952,17 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // 646: the ALU write is conditional on p1 through w1[23:20]: 0, 1, 3 write while p1 = 0;
     // 2, 5, 7 while p1 = 1; 6 and 9 always.  4, 8 and 10-15 did not write in the one context
     // measured, so they are refused until a program needs them.
+    // 857: in mode 0xA (w3[23:20] = 0) conds 0 and 6 write whatever p1 holds, beside 858's
+    // Y bit test into p<w2[17:14]>; other conds there are unmeasured.
+    if (mode == 0xA and (bundle[3] >> 20) & 0xF == 0) {
+        const cond: u32 = (w1 >> 20) & 0xF;
+        if (dest_s != 0 and cond != 0 and cond != 6) return RunError.UnknownForm;
+        (try x19AluYBit(state, bundle)).write(state);
+        if (r) |x| if (dest_s != 0) {
+            state.s[dest_s] = @truncate(@as(u64, @bitCast(x)) & M24);
+        };
+        return;
+    }
     if (r != null and dest_s != 0) {
         const p1 = state.p[1] == 1;
         const writes = switch ((w1 >> 20) & 0xF) {
@@ -3948,6 +3978,47 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // touches no predicate.  Other w3[23:20] values leave p alone here (OPEN).
     const pk = (w2 >> 14) & 0xF;
     if ((bundle[3] >> 20) & 0xF == 0xE and pk != 15) state.p[pk] = 1;
+}
+
+/// x19alu's e slot (fact 851), mode 8 with w1[2:0] != 0: e<2*w1[2:0] + head[31]> <-
+/// op w1[10:7] of #head[26:11] (852, measured with imm 5): 1000 / 1010 the immediate, 1011
+/// its negation, 001x 1, 010x 0xFFFF, the rest 0.  Beside it 858's Y bit test into
+/// p<w2[17:14]>, blind to the value and op (852).
+fn x19AluE(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const w1 = bundle[1];
+    const imm: u32 = (h >> 11) & 0xFFFF;
+    const val: u32 = switch ((w1 >> 7) & 0xF) {
+        0b1000, 0b1010 => imm,
+        0b1011 => (0x10000 - imm) & 0xFFFF,
+        0b0010, 0b0011 => 1,
+        0b0100, 0b0101 => 0xFFFF,
+        else => 0,
+    };
+    const dest_e: u32 = ((w1 & 7) << 1) | (h >> 31);
+    const ybit = try x19AluYBit(state, bundle);
+    if (dest_e != 0) state.e[dest_e] = val;
+    ybit.write(state);
+}
+
+/// x19alu's p write (858; 851 and 857 saw it clear with e = 0, Y:0 odd on the unit):
+/// p<w2[17:14]> <- !(Y:[e<w3[28:25]>] & 1), as ytst / xst (852); w2[0] = 1 skips it.  e
+/// with bit 15 set is unmeasured (852): refused.  Read before the bundle's writes.
+const PWrite = struct {
+    pd: u32,
+    v: u8,
+    fn write(self: PWrite, state: *State) void {
+        if (self.pd != 0) state.p[self.pd] = self.v;
+    }
+};
+
+fn x19AluYBit(state: *State, bundle: []const u32) RunError!PWrite {
+    const w2 = bundle[2];
+    const pd: u32 = (w2 >> 14) & 0xF;
+    if (pd == 0 or w2 & 1 == 1) return .{ .pd = 0, .v = 0 };
+    const addr: u32 = state.e[(bundle[3] >> 25) & 0xF];
+    if (addr & 0x8000 != 0) return RunError.UnknownForm;
+    return .{ .pd = pd, .v = @intFromBool((state.getY(addr) orelse 0) & 1 == 0) };
 }
 
 /// x19alu's two X writes (fact 533), both from X = X:[A<w2[26:22]>]: s<w2[7:4]> <- X and
@@ -4778,8 +4849,9 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
 /// S2 & 0xE0050000 = 0xE0040000.  Y load s<head[24:21]> <- Y:[e<S2[24:21]>] placed by
 /// S1[13:12] (00: 0, 01: sign-extended, 10: zero-extended (800), 11: << 8); s<S1[11:8]> <- s<S2[28:25]> (a move,
 /// 778); X store X:[xa] <- sx24 s<S1[31:28]> with S1[18], S2[14:13] = 11, S2[11] = 0, using
-/// xa as it was before the bundle; then xa and A17 <- head[20:5] when head[31] and S1[3] (840).  The move
-/// and the store read before the bundle's writes.
+/// xa as it was before the bundle; then xa <- head[20:5] when head[31] and S1[3], and
+/// A<2*S1[3:0] + head[31]> and e<S1[23:20]> <- head[20:5] (840, 855).  The move and the store
+/// read before the bundle's writes.
 fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const s1 = bundle[1];
@@ -4799,11 +4871,19 @@ fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             state.x_mem.put(gpa, addr, state.s[(s1 >> 28) & 0xF] & M24) catch return RunError.OutOfMemory;
         }
     }
-    if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) {
-        state.xa = (h >> 5) & 0xFFFF;
-        // 840: A17 takes the same word (whether xa is A17 itself is unmeasured).
-        state.a[17] = (h >> 5) & 0xFFFF;
-    }
+    const imm: u32 = (h >> 5) & 0xFFFF;
+    // 855: A<2*S1[3:0] + head[31]> <- head[20:5] (840's A17 is S1[3] with head[31]); A31 is
+    // not a plain register (649).
+    const dest_a: u32 = ((s1 & 0xF) << 1) | (h >> 31);
+    if (dest_a == 31) return RunError.UnknownForm;
+    // 855: e<S1[23:20]> <- head[20:5] with S2[20] = S2[17] = 1, 0 with either clear; both
+    // clear is unmeasured.
+    const dest_e: u32 = (s1 >> 20) & 0xF;
+    const e_ops: u32 = ((s2 >> 19) & 2) | ((s2 >> 17) & 1);
+    if (dest_e != 0 and e_ops == 0) return RunError.UnknownForm;
+    if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) state.xa = imm; // whether xa is A17 is unmeasured
+    if (dest_a != 0) state.a[dest_a] = imm;
+    if (dest_e != 0) state.e[dest_e] = if (e_ops == 3) imm else 0;
     if (mv_dest != 0) state.s[mv_dest] = mv_val;
     const hd: u32 = (h >> 21) & 0xF;
     if (hd != 0) state.s[hd] = hv;
@@ -6097,7 +6177,8 @@ fn execPlog(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 }
 
 /// dld, low5 0x09 with [31] = 0 (fact 524): s<[25:22]> <- X:[A<[19:15]>] when [20] = 1;
-/// s<[29:26]> <- sx16 Y:[e<[8:5]>] when [13] = 1 (as ldy, 54).  Refused: [30] = 0 (wedges, 54,
+/// s<[29:26]> <- sx16 Y:[e<[8:5]>] when [13] = 1 (as ldy, 54), and e<[12:9]> <- the raw word
+/// (854).  Refused: [30] = 0 (wedges, 54,
 /// 116), [20] = 0 beside an X destination (another word, OPEN), [13] = 0 beside a Y one (the
 /// stale latch) and one s for both halves.
 fn execDld(state: *State, head: u32) RunError!void {
@@ -6111,12 +6192,17 @@ fn execDld(state: *State, head: u32) RunError!void {
         xv = (state.readX(state.a[(head >> 15) & 0x1F]) orelse 0) & M24;
     }
     var yv: u32 = 0;
+    var yraw: u32 = 0;
     if (yd != 0) {
         if ((head >> 13) & 1 == 0) return RunError.UnknownForm;
-        yv = sx16To24((state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF);
+        yraw = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
+        yv = sx16To24(yraw);
     }
     state.s[xd] = xv;
     state.s[yd] = yv;
+    // 854: the Y word also lands raw in e<[12:9]> (524's "inert" field).
+    const ed: u32 = (head >> 9) & 0xF;
+    if (yd != 0 and ed != 0) state.e[ed] = yraw;
 }
 
 fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
