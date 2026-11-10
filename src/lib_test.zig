@@ -1896,7 +1896,7 @@ test "x19alu's two X writes beside its ALU" {
     }
 }
 
-test "x19alu mode 8 writes op(#head[26:11]) to e<2*w1[2:0] + head[31]> and clears p (851)" {
+test "x19alu mode 8 writes op(#head[26:11]) to e<2*w1[2:0] + head[31]> and clears p (851, 852)" {
     const gpa = testing.allocator;
     for ([_]struct { h: u32, w1: u32, w2: u32 = 0x0003B000, e: u32, want: ?u32, p14: u32 = 0 }{
         .{ .h = 0xD8002819, .w1 = 0x00004502, .e = 5, .want = 5 },
@@ -1907,7 +1907,11 @@ test "x19alu mode 8 writes op(#head[26:11]) to e<2*w1[2:0] + head[31]> and clear
         .{ .h = 0xD8002819, .w1 = 0x00004582, .e = 5, .want = 0xFFFB }, // w1[7]
         .{ .h = 0xD8002819, .w1 = 0x00004702, .e = 5, .want = 0 }, // w1[9]
         .{ .h = 0xD8002819, .w1 = 0x00004102, .e = 5, .want = 1 }, // w1[10] cleared
-        .{ .h = 0xD8002819, .w1 = 0x00004402, .e = 5, .want = null }, // w1[8] cleared: OPEN
+        .{ .h = 0xD8002819, .w1 = 0x00004402, .e = 5, .want = 5 }, // w1[8] cleared: op 1000 (852)
+        .{ .h = 0xD8002819, .w1 = 0x00004002, .e = 5, .want = 0 }, // op 0000
+        .{ .h = 0xD8002819, .w1 = 0x00004282, .e = 5, .want = 0xFFFF }, // op 0101
+        .{ .h = 0xD8002819, .w1 = 0x00004182, .e = 5, .want = 1 }, // op 0011
+        .{ .h = 0xD8002819, .w1 = 0x00004602, .e = 5, .want = 0 }, // op 1100
         .{ .h = 0xD8002819, .w1 = 0x00004502, .w2 = 0x0003B001, .e = 5, .want = 5, .p14 = 9 }, // w2[0] stops the p write
     }) |c| {
         var state = emu.State{};

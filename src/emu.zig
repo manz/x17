@@ -3957,20 +3957,20 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 }
 
 /// x19alu's e slot (fact 851), mode 8 with w1[2:0] != 0: e<2*w1[2:0] + head[31]> <-
-/// op w1[10:7] of #head[26:11]: 1010 the immediate, 1011 its negation, 1110 0, 0010 1; other
-/// ops are OPEN.  Beside it p<w2[17:14]> <- 0 (a false condition, as 850) unless w2[0] = 1;
-/// what the condition reads is OPEN (p0 reads 1, 682: left alone).
+/// op w1[10:7] of #head[26:11] (852, measured with imm 5): 1000 / 1010 the immediate, 1011
+/// its negation, 001x 1, 010x 0xFFFF, the rest 0.  Beside it p<w2[17:14]> <- 0 whatever the
+/// value or op (852) unless w2[0] = 1 (p0 reads 1, 682: left alone).
 fn x19AluE(state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const w1 = bundle[1];
     const w2 = bundle[2];
     const imm: u32 = (h >> 11) & 0xFFFF;
     const val: u32 = switch ((w1 >> 7) & 0xF) {
-        0b1010 => imm,
+        0b1000, 0b1010 => imm,
         0b1011 => (0x10000 - imm) & 0xFFFF,
-        0b1110 => 0,
-        0b0010 => 1,
-        else => return RunError.UnknownForm,
+        0b0010, 0b0011 => 1,
+        0b0100, 0b0101 => 0xFFFF,
+        else => 0,
     };
     const dest_e: u32 = ((w1 & 7) << 1) | (h >> 31);
     if (dest_e != 0) state.e[dest_e] = val;
