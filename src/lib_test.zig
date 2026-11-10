@@ -2304,6 +2304,27 @@ test "0x0F's e write at index 0 is an s <- e move instead" {
     }
 }
 
+test "0x0F with a class-001 second sets p<w1[28:25]> when R<head[28:25]> and R<w1[12:9]> are 0" {
+    // fact 827: a zero test on both registers, not parity (2 and 0x100 give 0); other p untouched.
+    const gpa = testing.allocator;
+    for ([_]struct { ra: u32, rb: u32, p: u8 }{
+        .{ .ra = 0, .rb = 0, .p = 1 },     .{ .ra = 1, .rb = 0, .p = 0 },
+        .{ .ra = 0, .rb = 1, .p = 0 },     .{ .ra = 2, .rb = 0, .p = 0 },
+        .{ .ra = 0, .rb = 0x100, .p = 0 }, .{ .ra = 0xFFFF, .rb = 0, .p = 0 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[5] = c.ra;
+        state.r[7] = c.rb;
+        state.p[12] = 1 - c.p;
+        state.p[13] = 1;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x4A02110F, 0x38000E00, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.p, state.p[12]);
+        try testing.expectEqual(@as(u8, 1), state.p[13]);
+        try testing.expectEqual(@as(u32, 0x1088), state.e[2]);
+    }
+}
+
 test "x12agu runs the AGU for every head[31:29]" {
     // fact 562: e6 = 0x760; cbe012d2 23780001 (and with w1[28] set, 33780001) give e9,
     // s3 (2*1 + h[31]) and R11 all 0x760 (AGU10 fn 0, x = e6).  fn 7 (measured on another row):
