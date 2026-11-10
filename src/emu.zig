@@ -98,6 +98,12 @@ pub const State = struct {
     on_bundle: ?BundleHook = null,
     /// When set, X / Y reads are logged here (`x17 play --trace`).
     read_log: ?*ReadLog = null,
+    /// runFrom returns Breakpoint before running the bundle at this pc (`x17 play --stop-at`).
+    break_at: ?usize = null,
+    /// runFrom returns Breakpoint once this many bundles have run in total (`--stop-after`).
+    break_after: ?u64 = null,
+    /// Bundles run by every runFrom on this state.
+    bundles_total: u64 = 0,
     /// Whether e0, the address entry, is known (fact 466, 468): see updateE0.
     e0_known: bool = false,
     /// The 0x16 X store address latch, one bundle behind (fact 90).
@@ -205,6 +211,8 @@ pub const RunError = error{
     HaltDeadline,
     /// The arm after a 0x08 / 0x0D: abnormal, what runs OPEN (315, 768, 769).
     Parked,
+    /// State.break_at or State.break_after reached; the bundle at state.pc has not run.
+    Breakpoint,
 };
 
 /// Execute one bundle (1..7 syllables) against `state`.  Dispatches by
@@ -5714,6 +5722,8 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         const slice = syllables[i .. i + len];
         const pc_at_bundle = i;
         state.pc = i;
+        if (state.break_at == i or (state.break_after != null and state.bundles_total >= state.break_after.?)) return RunError.Breakpoint;
+        state.bundles_total += 1;
         if (state.profile) |p| p[i] += 1;
         if (state.on_bundle) |hk| hk.f(hk.ctx, .before, i, slice);
         if (wedge_shadow) {
