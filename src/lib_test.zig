@@ -391,6 +391,21 @@ test "x18 class-110 p write refuses an unmeasured cell" {
     try testing.expectError(error.UnknownForm, runX18(.{ 0x1C000018, 0x00008000, 0x00002022, 0xC4114001 }, 0, 0));
 }
 
+test "x18 class-110 p write lands only while p<w2[31:28]> is set (837)" {
+    const gpa = testing.allocator;
+    // x18.pnot p1, p5 with the condition field w2[31:28] = 6.
+    for ([_]struct { p6: u8, p1: u8 }{ .{ .p6 = 1, .p1 = 0 }, .{ .p6 = 0, .p1 = 1 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[1] = 1;
+        state.p[5] = 1;
+        state.p[6] = c.p6;
+        const prog = [_]u32{ 0x1C000018, 0x00000000, 0x60002022, 0xC4114001, 0x00000017, 0x31308000, 0xA0000000 };
+        _ = try emu.runFrom(gpa, &state, &prog, 0, 16);
+        try testing.expectEqual(c.p1, state.p[1]);
+    }
+}
+
 test "x18.pmov copies p5 = 0 too" {
     var st = try runX18(.{ 0x1C000018, 0x00000000, 0x00002022, 0xC2114001 }, 1, 0);
     defer st.deinit(testing.allocator);

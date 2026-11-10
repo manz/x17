@@ -2535,6 +2535,10 @@ fn execX13Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 fn x18PWrite(state: *State, bundle: []const u32) RunError!void {
     const dest: u32 = (bundle[2] >> 13) & 0xF;
     if (dest == 0) return;
+    // 837: without the branch (w3[8] = 0) the write only lands while p<w2[31:28]> is set
+    // (p0 reads 1: always).  With the branch that field is its predicate, and the write
+    // lands with it clear (measured on p7 = 0).
+    if ((bundle[3] >> 8) & 1 == 0 and state.p[bundle[2] >> 28] == 0) return;
     const w3 = bundle[3];
     const code: u32 = (bundle[0] >> 25) & 0xF;
     const op: u32 = (bundle[1] >> 15) & 7;
