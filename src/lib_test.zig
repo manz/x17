@@ -2040,6 +2040,22 @@ test "x19alu's p write is !(Y:[e<w3[28:25]>] & 1) (858)" {
     }
 }
 
+test "x19k writes #head[20:5] to e<w1[23:20]> after its slots read e (859)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, e: u32 }{
+        .{ .w1 = 0x90941000, .e = 9 },
+        .{ .w1 = 0x90841000, .e = 8 }, // w1[20] cleared
+        .{ .w1 = 0x90141000, .e = 1 }, // w1[23] cleared
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[9] = 1;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x01821179, c.w1, 0x33E20000, 0x13A00801, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u32, 0x108B), state.e[c.e]);
+        try testing.expectEqual(@as(u32, 1), state.s[12]); // AGU fn 0 read e9 before the write
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

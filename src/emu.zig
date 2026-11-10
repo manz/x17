@@ -3750,6 +3750,8 @@ fn execX19(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 ///     the source is never s0.
 ///   Y:[e<w3[28:25]>] <- s<w2[3:0]> when w2[26] = w2[16] = 1 (677); with w1[18] = 0 the engine
 ///     wedges after the bundle, so that form is refused.
+///   e<w1[23:20]> <- #head[20:5] (859).  p<w2[30:27]> <- 0 under a condition that is OPEN
+///     (859: not reproduced standalone): not modelled.
 /// x = e<w3[28:25]>, y = R<w3[14:11]>.  Muxes 3-5 are OPEN.
 fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const head = bundle[0];
@@ -3780,6 +3782,9 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     if (dest_r != 0) state.r[dest_r] = r_val;
     if ((w2 >> 22) & 3 == 3) state.x_mem.put(gpa, state.a[(w2 >> 17) & 0x1F], store_val) catch return RunError.OutOfMemory;
     if (y_store) state.y_mem.put(gpa, x, y_val) catch return RunError.OutOfMemory;
+    // 859: e<w1[23:20]> <- #head[20:5], as b16's (855), written after the slots read e.
+    const dest_e: u32 = (w1 >> 20) & 0xF;
+    if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
 }
 
 /// x19k's w1[17:15] ALU (own-x19kalu m = 5: a - b; own-x19kabs m = 7: |b| over 16 bits).
