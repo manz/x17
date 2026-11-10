@@ -237,7 +237,8 @@ addressing for buffers of length M, provided each step moves by less than M. x02
 write wraps the sum, then adds A unwrapped (§626). No bit-reversed mode has been measured.
 
 **Byte loads.** x19agu's and x16agu's s mux 3 load Y[7:0] << 8 (§637, §638); x19agu only with
-its w2[26] gate.
+its w2[26] gate. x16 b16's Y load places the word by S1[13:12]: 00 gives 0, 01 sign-extends,
+10 zero-extends (§800), 11 shifts it left 8.
 
 **Immediates into A.** ldi2 and ytst heads also load their immediate into an A register (§634,
 §635); A0 is never written there (*inferred*).
@@ -266,6 +267,8 @@ unknown.
   §679, §680; §263's "repeat" was this jump). DO-style hardware loops were disproved (§71, §449).
 - **Conditional stop:** an x17sty with S1[28:27] = 00 and S1[5] = 0 is a stop form keyed by
   S1[2:0]: 1 stops after the store when p1 is set, 3 runs away, others always stop (§648, §667). The store templates set S1[27] so no plain store is an exit.
+  Under R mux 2 (S2[3:1] = 2) its e side write takes the R slot's AGU result, the value R
+  gets; when that e is the store's own address, a stop stores a second time there (§801).
 - **Calls and returns:** undefined (§230, §310).
 - **Wedges:** runaway words (§16, §44), low5 0x1A-0x1F after the stop (§72), a missed halt
   deadline, and the per-form wedge bits in the reference (for example xld10 S1[18] = 0, §559).

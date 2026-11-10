@@ -7384,6 +7384,45 @@ test "x16 b16 under any S1 class with S1[18] and S2 0xE004 (fact 778)" {
     try testing.expectEqual(@as(u32, 0x000777), state.s[12]);
 }
 
+test "x16 b16 placement 10 zero-extends the Y word (fact 800)" {
+    const gpa = testing.allocator;
+    // 778's word with S1[13:12] = 10: s14 <- Y:[e4] zero-extended.
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[4] = 0x300;
+    state.xa = 0x40;
+    try state.y_mem.put(gpa, 0x300, 0xB454);
+    try emu.executeBundle(gpa, &state, &.{ 0x01C00016, 0xE0042C00, 0xE6846000 });
+    try testing.expectEqual(@as(u32, 0x00B454), state.s[14]);
+}
+
+test "x17sty stop form under R mux 2: e<k> takes the AGU result; a stop then stores again (801)" {
+    const gpa = testing.allocator;
+    // 667's bundle with k = S1[2:0] = 1: e<2> is both the store's address and the side write.
+    const word = [_]u32{ 0x28200017, 0x60012d51, 0x61fcb804 };
+    for ([_]u8{ 0, 1 }) |p1| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[2] = 0x420;
+        state.r[5] = 0x123;
+        state.s[3] = 0x4567;
+        state.p[1] = p1;
+        const n = try emu.runFrom(gpa, &state, &(word ++ [_]u32{ 0x00000017, 0x31308000, 0xA0000000 }), 0, 16);
+        try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x420));
+        try testing.expectEqual(@as(u32, 0x523), state.r[5]);
+        try testing.expectEqual(@as(u32, 0x523), state.e[2]);
+        if (p1 == 0) {
+            try testing.expectEqual(@as(usize, 2), n);
+            try testing.expect(state.halted);
+            try testing.expectEqual(@as(?u32, null), state.y_mem.get(0x523));
+        } else {
+            try testing.expectEqual(@as(usize, 1), n);
+            try testing.expect(state.silent_stop);
+            try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x523));
+        }
+    }
+}
+
 test "ealu op 5 is a, op 7 is -a, head[9] makes op 5 -a (fact 132)" {
     const gpa = testing.allocator;
     for ([_]struct { h: u32, w: u32, want: u32 }{
