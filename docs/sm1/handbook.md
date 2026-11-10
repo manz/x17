@@ -338,6 +338,10 @@ Measured idioms, cheapest first:
   Keep x19.ld's w1[20] and w1[5] clear: set, they write the tap's A pointer and grow the e
   step on each later load, so the pair reads past its data (§790, §791, §793). Pure x03.tap
   chains, one or two X pointers, are exact on silicon (§791, §792).
+  The sum is the named {sHi:sLo} pair, nothing hidden: taps that rotate through several pairs
+  keep each one an exact, independent running sum, and a pair no tap names is untouched
+  (§798). So one loaded operand in sB can feed several sums, one tap each: four sums sharing
+  x[k] cost 1.25 bundles a product with an x02 load into sB every four taps (§798).
   Both pairs are exact over 32 taps (§705; the x03 pair with the clear word, §794); prefer the x03 pair (signed Y, no x18 chain). The rounded forms (w1[15] = 1, `x18.mac`) are still measured at
   16-bit operands only.
 - **No computed jumps.** Every measured jump takes an immediate target: x00/x01 control
