@@ -1974,6 +1974,29 @@ test "dld's Y half also writes the raw word to e<[12:9]> (854)" {
     }
 }
 
+test "x16 b16 writes #head[20:5] to e<S1[23:20]> and A<2*S1[3:0] + head[31]> (855)" {
+    const gpa = testing.allocator;
+    const h: u32 = 0x01C21036; // s14 <- Y:[e4], imm 0x1081
+    for ([_]struct { h: u32 = h, s1: u32 = 0xE0951C00, s2: u32 = 0xF8967100, e: u32 = 9, ev: u32 = 0x1081, a: u32 = 0 }{
+        .{},
+        .{ .s1 = 0xE0851C00, .e = 8 }, // S1[20] cleared
+        .{ .s1 = 0xE0151C00, .e = 1 }, // S1[23] cleared
+        .{ .s2 = 0xF8947100, .ev = 0 }, // S2[17] cleared
+        .{ .s2 = 0xF8867100, .ev = 0 }, // S2[20] cleared
+        .{ .h = h | 0x80000000, .a = 1 },
+        .{ .s1 = 0xE0951C02, .a = 4 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[4] = 0xFD94;
+        try state.y_mem.put(gpa, 0xFD94, 0x920D);
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, c.s1, c.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.ev, state.e[c.e]);
+        try testing.expectEqual(@as(u32, 0xFF920D), state.s[14]);
+        if (c.a != 0) try testing.expectEqual(@as(u32, 0x1081), state.a[c.a]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

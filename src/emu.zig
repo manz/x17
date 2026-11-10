@@ -4818,8 +4818,9 @@ fn x16Agu100Alu(state: *State, h: u32, s1: u32, s2: u32) RunError!u32 {
 /// S2 & 0xE0050000 = 0xE0040000.  Y load s<head[24:21]> <- Y:[e<S2[24:21]>] placed by
 /// S1[13:12] (00: 0, 01: sign-extended, 10: zero-extended (800), 11: << 8); s<S1[11:8]> <- s<S2[28:25]> (a move,
 /// 778); X store X:[xa] <- sx24 s<S1[31:28]> with S1[18], S2[14:13] = 11, S2[11] = 0, using
-/// xa as it was before the bundle; then xa and A17 <- head[20:5] when head[31] and S1[3] (840).  The move
-/// and the store read before the bundle's writes.
+/// xa as it was before the bundle; then xa <- head[20:5] when head[31] and S1[3], and
+/// A<2*S1[3:0] + head[31]> and e<S1[23:20]> <- head[20:5] (840, 855).  The move and the store
+/// read before the bundle's writes.
 fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const s1 = bundle[1];
@@ -4839,11 +4840,19 @@ fn execX16B16(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             state.x_mem.put(gpa, addr, state.s[(s1 >> 28) & 0xF] & M24) catch return RunError.OutOfMemory;
         }
     }
-    if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) {
-        state.xa = (h >> 5) & 0xFFFF;
-        // 840: A17 takes the same word (whether xa is A17 itself is unmeasured).
-        state.a[17] = (h >> 5) & 0xFFFF;
-    }
+    const imm: u32 = (h >> 5) & 0xFFFF;
+    // 855: A<2*S1[3:0] + head[31]> <- head[20:5] (840's A17 is S1[3] with head[31]); A31 is
+    // not a plain register (649).
+    const dest_a: u32 = ((s1 & 0xF) << 1) | (h >> 31);
+    if (dest_a == 31) return RunError.UnknownForm;
+    // 855: e<S1[23:20]> <- head[20:5] with S2[20] = S2[17] = 1, 0 with either clear; both
+    // clear is unmeasured.
+    const dest_e: u32 = (s1 >> 20) & 0xF;
+    const e_ops: u32 = ((s2 >> 19) & 2) | ((s2 >> 17) & 1);
+    if (dest_e != 0 and e_ops == 0) return RunError.UnknownForm;
+    if (h >> 31 == 1 and (s1 >> 3) & 1 == 1) state.xa = imm; // whether xa is A17 is unmeasured
+    if (dest_a != 0) state.a[dest_a] = imm;
+    if (dest_e != 0) state.e[dest_e] = if (e_ops == 3) imm else 0;
     if (mv_dest != 0) state.s[mv_dest] = mv_val;
     const hd: u32 = (h >> 21) & 0xF;
     if (hd != 0) state.s[hd] = hv;
