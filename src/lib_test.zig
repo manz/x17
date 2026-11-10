@@ -2337,6 +2337,17 @@ test "0x10's class-011 pair loads R6 from Y:[e<S[28:25]>] with S[19:16] = 6" {
     try testing.expectEqual(@as(u32, 0x2C01), state.e[3]);
 }
 
+test "0x10's class-011 pair writes e<S[6:3]> (fact 835)" {
+    const gpa = testing.allocator;
+    for ([_]u32{ 5, 13 }) |k| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x0020E1B0, 0x60448000 | (k << 3), 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(@as(u32, 0x70D), state.e[k]);
+        try testing.expectEqual(@as(u32, 0), state.e[if (k == 5) 13 else 5]);
+    }
+}
+
 test "0x10's class-011 pair refuses S[19:16] = 5, whose R value is unmapped" {
     const gpa = testing.allocator;
     var state = emu.State{};

@@ -3527,7 +3527,7 @@ fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     state.yd = v; // 571
 }
 
-/// 0x10 with a class-011 second, S[7] = 0: e<S[4:3]> <- #head[20:5].  Fact 828: S[19:16] = 6
+/// 0x10 with a class-011 second, S[7] = 0: e<S[6:3]> <- #head[20:5] (835).  Fact 828: S[19:16] = 6
 /// also loads R6 <- Y:[e<S[28:25]>] (head[23:22] does not move the R; which field names it is
 /// open); 5 writes R6 another value (0 seen) and is refused.  Other codes keep the e write
 /// alone (own-pair's 4 is measured on e only; their R effects are unmapped).
@@ -3542,8 +3542,8 @@ fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
         else => {},
     }
     const imm: u32 = (head >> 5) & 0xFFFF;
-    const e_idx: u32 = (s1 >> 3) & 0x3;
-    state.e[e_idx] = imm;
+    // e<S[6:3]> (fact 835: S[6:3] = 5 and 13 land in e5 and e13).
+    state.e[(s1 >> 3) & 0xF] = imm;
 }
 
 /// IMM10_SECONDS of class 001 (fact 74 pass 100); the class-011 ones decode elsewhere.

@@ -5208,7 +5208,7 @@ const GATES = [_]Gate{
         // own-pair: e3 <- 0x70D via low5 0x10 S class 011.
         // Expected bytes: 0x0020E1B0 0x60448018.
         .src =
-        \\pair #0x70D, #3
+        \\pair #0x70D, e3
         \\x17.halt
         ,
         .post = &.{.{ .e_reg = .{ .index = 3, .value = 0x70D } }},
