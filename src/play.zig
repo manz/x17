@@ -43,6 +43,28 @@ pub const Options = struct {
     /// arms nothing (it queues its bytes and, 947, resumes that run if it parked on the
     /// stream), and feed N >= 2 arms one run.  Off: one run per packet.
     configure_arm: bool = false,
+    /// Count the decoder's bundles by q and by packet (init passes are not counted).
+    profile: ?*Profile = null,
+};
+
+/// Where a play run spent its decoder bundles: per q (`counts`, indexed like the program) and
+/// per packet run, the configure run (945) apart.
+pub const Profile = struct {
+    gpa: std.mem.Allocator,
+    counts: []u64 = &.{},
+    per_packet: std.ArrayList(u64) = .empty,
+    configure: u64 = 0,
+
+    pub fn deinit(self: *Profile) void {
+        self.gpa.free(self.counts);
+        self.per_packet.deinit(self.gpa);
+    }
+
+    fn attach(self: *Profile, state: *emu.State, len: usize) !void {
+        self.counts = try self.gpa.alloc(u64, len);
+        @memset(self.counts, 0);
+        state.profile = self.counts;
+    }
 };
 
 /// The state as one JSON object: where the run stopped, the register files, and every X and Y
@@ -359,6 +381,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     }
 
     try loadData(gpa, &h.state, prog, img, image.decoder_pass);
+    if (opts.profile) |pf| try pf.attach(&h.state, prog.len);
     h.state.break_at = opts.stop_at;
     h.state.break_skip = opts.stop_skip;
     for (opts.y_writes) |w| try h.state.y_mem.put(gpa, w.addr, w.value & 0xFFFF);
@@ -371,12 +394,14 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
         };
         res.bundles += r.bundles;
         if (r.waiting) res.waits += 1;
+        if (opts.profile) |pf| pf.configure = r.bundles;
     }
     for (pkts, 0..) |pkt, i| {
         if (opts.tracer) |t| t.packet = i;
         if (opts.configure_arm and i == 0 and h.resume_at == null) {
             try h.queue(pkt);
             res.packets += 1;
+            if (opts.profile) |pf| try pf.per_packet.append(gpa, 0);
             continue;
         }
         const r = h.feed(prog, pkt) catch |e| {
@@ -386,9 +411,198 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
         res.packets += 1;
         res.bundles += r.bundles;
         if (r.waiting) res.waits += 1;
+        if (opts.profile) |pf| try pf.per_packet.append(gpa, r.bundles);
     }
     res.pcm = try h.pcm.toOwnedSlice(gpa);
     return res;
+}
+
+// ---------------------------------------------------------------------------
+// Profile report
+// ---------------------------------------------------------------------------
+
+const Region = struct { name: []const u8, q: u32, end: u32, count: u64 = 0 };
+
+/// P memory use over every pass of `img`: distinct rows times the lanes, against the whole
+/// program memory (4 lanes x 4096 rows).
+pub fn syllablesUsed(img: *const image.Image) struct { used: u32, top_row: u32 } {
+    var seen: [asm_mod.layout.p_rows]bool = @splat(false);
+    var top: u32 = 0;
+    for (img.sections) |sec| if (sec.kind == .p) {
+        for (sec.addr..sec.addr + sec.count) |r| if (r < seen.len) {
+            seen[r] = true;
+        };
+        top = @max(top, sec.addr + sec.count);
+    };
+    var n: u32 = 0;
+    for (seen) |b| n += @intFromBool(b);
+    return .{ .used = n * asm_mod.layout.lanes, .top_row = top };
+}
+
+fn pct(part: u64, whole: u64) f64 {
+    return 100.0 * @as(f64, @floatFromInt(part)) / @as(f64, @floatFromInt(@max(whole, 1)));
+}
+
+/// The decoder pass's labels from a sidecar, sorted by q; each runs to the next one kept.
+fn regions(gpa: std.mem.Allocator, sidecar: std.json.Value, top_level: bool) ![]Region {
+    var list: std.ArrayList(Region) = .empty;
+    errdefer list.deinit(gpa);
+    const passes = sidecar.object.get("passes") orelse return list.toOwnedSlice(gpa);
+    for (passes.array.items) |pass| {
+        const id = pass.object.get("pass") orelse continue;
+        if (id != .integer or id.integer != image.decoder_pass) continue;
+        const labels = pass.object.get("labels") orelse continue;
+        var it = labels.object.iterator();
+        while (it.next()) |e| {
+            if (top_level and std.mem.startsWith(u8, e.key_ptr.*, "__")) continue;
+            if (e.value_ptr.* != .integer) continue;
+            try list.append(gpa, .{ .name = e.key_ptr.*, .q = @intCast(e.value_ptr.integer), .end = 0 });
+        }
+    }
+    const Ctx = struct {
+        fn lt(_: void, a: Region, b: Region) bool {
+            return a.q < b.q;
+        }
+    };
+    std.mem.sort(Region, list.items, {}, Ctx.lt);
+    for (list.items, 0..) |*r, k| r.end = if (k + 1 < list.items.len) list.items[k + 1].q else std.math.maxInt(u32);
+    return list.toOwnedSlice(gpa);
+}
+
+fn writeRegions(gpa: std.mem.Allocator, w: *std.Io.Writer, title: []const u8, rs: []Region, counts: []const u64, total: u64, n_top: usize) !void {
+    if (rs.len == 0) return;
+    for (counts, 0..) |c, q| if (c != 0) {
+        // the last region starting at or before q
+        var lo: usize = 0;
+        var hi: usize = rs.len;
+        while (lo < hi) {
+            const mid = (lo + hi) / 2;
+            if (rs[mid].q <= q) lo = mid + 1 else hi = mid;
+        }
+        if (lo > 0) rs[lo - 1].count += c;
+    };
+    const Ctx = struct {
+        fn more(_: void, a: Region, b: Region) bool {
+            return a.count > b.count;
+        }
+    };
+    const sorted = try gpa.dupe(Region, rs);
+    defer gpa.free(sorted);
+    std.mem.sort(Region, sorted, {}, Ctx.more);
+    try w.print("{s}:\n", .{title});
+    for (sorted[0..@min(n_top, sorted.len)]) |r| {
+        if (r.count == 0) break;
+        const end = @min(r.end, @as(u32, @intCast(counts.len)));
+        try w.print("  {d:>13} {d:>5.1}%  q {d}..{d}  {s}\n", .{ r.count, pct(r.count, total), r.q, end - 1, r.name });
+    }
+}
+
+const Site = struct { text: []const u8 = "", file: []const u8 = "", line: i64 = 0, macro: []const u8 = "" };
+
+fn siteMap(gpa: std.mem.Allocator, sidecar: ?std.json.Value) !std.AutoHashMapUnmanaged(u32, Site) {
+    var m: std.AutoHashMapUnmanaged(u32, Site) = .empty;
+    const sc = sidecar orelse return m;
+    const passes = sc.object.get("passes") orelse return m;
+    for (passes.array.items) |pass| {
+        const id = pass.object.get("pass") orelse continue;
+        if (id != .integer or id.integer != image.decoder_pass) continue;
+        const bundles = pass.object.get("bundles") orelse continue;
+        for (bundles.array.items) |b| {
+            const q = b.object.get("q") orelse continue;
+            var site: Site = .{};
+            if (b.object.get("text")) |t| if (t == .string) {
+                site.text = t.string;
+            };
+            if (b.object.get("file")) |t| if (t == .string) {
+                site.file = t.string;
+            };
+            if (b.object.get("line")) |t| if (t == .integer) {
+                site.line = t.integer;
+            };
+            if (b.object.get("macro")) |mc| if (mc == .object) if (mc.object.get("name")) |nm| if (nm == .string) {
+                site.macro = nm.string;
+            };
+            try m.put(gpa, @intCast(q.integer), site);
+        }
+    }
+    return m;
+}
+
+/// The hot list of a profiled run: totals, the worst packets, P memory use, bundles per
+/// function (top-level labels) and per block (every label, loop heads included), then the
+/// hottest bundles.  Labels and source lines come from the sidecar when given.
+pub fn writeProfile(gpa: std.mem.Allocator, w: *std.Io.Writer, pf: *const Profile, img: *const image.Image, sidecar: ?std.json.Value, n_top: usize) !void {
+    const prog = try gpa.alloc(u32, asm_mod.layout.lanes * asm_mod.layout.p_rows);
+    defer gpa.free(prog);
+    @memset(prog, 0);
+    for (img.sections) |sec| if (sec.kind == .p and sec.pass == image.decoder_pass) image.placeRows(prog, sec);
+    var total: u64 = 0;
+    for (pf.counts) |c| total += c;
+    const pk = pf.per_packet.items;
+    var worst: usize = 0;
+    var ran: u64 = 0;
+    for (pk, 0..) |b, i| {
+        if (b > pk[worst]) worst = i;
+        if (b != 0) ran += 1;
+    }
+    try w.print("profile: {d} decoder bundles", .{total});
+    if (pf.configure != 0) try w.print(" ({d} in the configure run)", .{pf.configure});
+    try w.writeAll("\n");
+    if (pk.len != 0) {
+        try w.print("packets: {d} run, mean {d} bundles, worst packet {d} with {d}\n", .{ ran, (total - pf.configure) / @max(ran, 1), worst, pk[worst] });
+        const idx = try gpa.alloc(usize, pk.len);
+        defer gpa.free(idx);
+        for (idx, 0..) |*x, i| x.* = i;
+        const Ctx = struct {
+            p: []const u64,
+            fn more(c: @This(), a: usize, b: usize) bool {
+                return c.p[a] > c.p[b];
+            }
+        };
+        std.mem.sort(usize, idx, Ctx{ .p = pk }, Ctx.more);
+        try w.writeAll("  heaviest:");
+        for (idx[0..@min(5, idx.len)]) |i| try w.print(" {d} ({d})", .{ i, pk[i] });
+        try w.writeAll("\n");
+    }
+    const use = syllablesUsed(img);
+    const cap = asm_mod.layout.lanes * asm_mod.layout.p_rows;
+    try w.print("P memory: {d} of {d} syllables ({d:.1}%), rows up to 0x{x}\n", .{ use.used, cap, pct(use.used, cap), use.top_row });
+
+    if (sidecar) |sc| {
+        const funcs = try regions(gpa, sc, true);
+        defer gpa.free(funcs);
+        try writeRegions(gpa, w, "by function", funcs, pf.counts, total, n_top);
+        const blocks = try regions(gpa, sc, false);
+        defer gpa.free(blocks);
+        try writeRegions(gpa, w, "by block", blocks, pf.counts, total, n_top);
+    }
+
+    var sites = try siteMap(gpa, sidecar);
+    defer sites.deinit(gpa);
+    var idx: std.ArrayList(usize) = .empty;
+    defer idx.deinit(gpa);
+    for (pf.counts, 0..) |c, q| if (c != 0) try idx.append(gpa, q);
+    const Ctx = struct {
+        p: []const u64,
+        fn more(c: @This(), a: usize, b: usize) bool {
+            return c.p[a] > c.p[b];
+        }
+    };
+    std.mem.sort(usize, idx.items, Ctx{ .p = pf.counts }, Ctx.more);
+    try w.writeAll("by bundle:\n");
+    for (idx.items[0..@min(n_top, idx.items.len)]) |q| {
+        try w.print("  {d:>13} {d:>5.1}%  q {d:<5} ", .{ pf.counts[q], pct(pf.counts[q], total), q });
+        if (sites.get(@intCast(q))) |st| {
+            try w.print("{s}:{d}  {s}", .{ std.fs.path.basename(st.file), st.line, st.text });
+            if (st.macro.len != 0) try w.print("  [{s}]", .{st.macro});
+        } else {
+            var buf: [256]u8 = undefined;
+            const len = @min(emu.bundleLen(prog[q]) orelse 1, prog.len - q);
+            const n = disasm.disasmBundle(&buf, prog[q..][0..len]) catch 0;
+            try w.writeAll(if (n == 0) "?" else buf[0..n]);
+        }
+        try w.writeAll("\n");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -507,6 +721,50 @@ test "play --trap-list skips refused bundles and counts them by shape" {
     try testing.expectEqual(@as(u64, 3), ranked[0].hits);
     try testing.expectEqual(decode_entry, ranked[0].first_pc);
     try testing.expectEqual(@as(u32, 0x00000019), ranked[0].syllables[0]);
+}
+
+test "play --profile counts decoder bundles by q, packet, function and block" {
+    const gpa = testing.allocator;
+    var asm_prog = switch (try asm_mod.assembleProgram(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\main:   ldi s3, #3
+        \\__loop: ldi s4, #1
+        \\        lde e6, #0x80
+        \\        x17.halt
+    , .{})) {
+        .ok => |p| p,
+        .err => return error.TestUnexpectedResult,
+    };
+    defer asm_prog.deinit();
+    const bytes = try image.write(gpa, &asm_prog);
+    defer gpa.free(bytes);
+    var img = try image.parse(gpa, bytes);
+    defer img.deinit(gpa);
+    const side = try image.debugJson(gpa, &asm_prog);
+    defer gpa.free(side);
+    var sc = try std.json.parseFromSlice(std.json.Value, gpa, side, .{});
+    defer sc.deinit();
+
+    var pf: Profile = .{ .gpa = gpa };
+    defer pf.deinit();
+    var r = try play(gpa, &img, &.{ "a", "b" }, .{ .profile = &pf });
+    defer r.deinit(gpa);
+    try testing.expectEqual(@as(usize, 2), pf.per_packet.items.len);
+    var total: u64 = 0;
+    for (pf.counts) |c| total += c;
+    try testing.expect(total > 0 and total < r.bundles); // the init pass is not counted
+    try testing.expectEqual(total, pf.per_packet.items[0] + pf.per_packet.items[1]);
+
+    var aw: std.Io.Writer.Allocating = .init(gpa);
+    defer aw.deinit();
+    try writeProfile(gpa, &aw.writer, &pf, &img, sc.value, 4);
+    const txt = aw.written();
+    try testing.expect(std.mem.indexOf(u8, txt, "by function:") != null);
+    try testing.expect(std.mem.indexOf(u8, txt, "main") != null);
+    try testing.expect(std.mem.indexOf(u8, txt, "__loop") != null);
+    try testing.expect(std.mem.indexOf(u8, txt, "P memory:") != null);
 }
 
 test "play --trace prints the first N bundles with their changes, reads and writes" {
