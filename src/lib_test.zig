@@ -2912,6 +2912,24 @@ test "x18 class 011 code 0x0E ANDs its p with p<w2[31:28]> (921)" {
     }
 }
 
+test "x15pt writes p<S[28:25]> <- p<S[6:3]> AND p<S[14:11]> (921, 911)" {
+    const gpa = testing.allocator;
+    for ([_][3]u8{ .{ 1, 1, 1 }, .{ 1, 0, 0 }, .{ 0, 1, 0 }, .{ 0, 0, 0 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[6] = c[0];
+        state.p[7] = c[1];
+        state.p[8] = 1 - c[2];
+        try emu.executeBundle(gpa, &state, &.{ 0x1C05D835, 0x300039B2 }); // 0x427
+        try testing.expectEqual(c[2], state.p[8]);
+    }
+    // 911: 0x1F82 (lut 101, sources p0) sets p2.
+    var st2 = emu.State{};
+    defer st2.deinit(gpa);
+    try emu.executeBundle(gpa, &st2, &.{ 0x9C029EF5, 0x24258500 });
+    try testing.expectEqual(@as(u8, 1), st2.p[2]);
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

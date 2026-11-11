@@ -2181,8 +2181,17 @@ fn execX15Pt(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const y_val: u32 = state.s[(s >> 21) & 0xF] & 0xFFFF;
     // 860: e<2*S[2:0] + head[31]> <- #head[20:5], the 845 / 851 form.
     const dest_e: u32 = ((s & 7) << 1) | (head >> 31);
+    // 921: p<S[28:25]> <- p<S[6:3]> AND p<S[14:11]> under lut 001 with S[7] = 1 (0x427).  911:
+    // lut 101 with S[7] = 0 and both sources p0 writes 1 (0x1F82 sets p2).  Other ops refused.
+    const dest_p: u32 = (s >> 25) & 0xF;
+    const p_b: u32 = (s >> 11) & 0xF;
+    const and_op = lut == 1 and (s >> 7) & 1 == 1;
+    const one_op = lut == 5 and (s >> 7) & 1 == 0 and p_idx == 0 and p_b == 0;
+    if (dest_p != 0 and !and_op and !one_op) return RunError.UnknownForm;
+    const p_and: u8 = if (one_op) 1 else state.p[p_idx] & state.p[p_b];
     if (y_on) state.y_mem.put(gpa, y_addr, y_val) catch return RunError.OutOfMemory;
     if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
+    if (dest_p != 0) state.p[dest_p] = p_and;
     if (dest_s == 0) return;
     const p_val: u8 = if (p_idx == 0) 0 else state.p[p_idx];
     const v: u32 = switch (lut) {
