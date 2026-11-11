@@ -2603,6 +2603,19 @@ test "class 0A reads z into R<[25:22]> and s<[29:26]> (889)" {
     try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{0x0216010A})); // [30] = 0 wedges
 }
 
+test "ystm fn 10 puts y + i in e while R takes the Y word (890)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.r[1] = 9;
+    state.r[2] = 9;
+    try state.y_mem.put(gpa, 0, 0x920D);
+    _ = try emu.runFrom(gpa, &state, &.{ 0x10142670, 0x4616014D, 0x60146410, 0x4014012A, 0x20142450, 0x4416013C, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x920D), state.r[3]); // 0x1F70: Y:[e3 = 0]
+    try testing.expectEqual(@as(u32, 0x14DA), state.e[3]); // R1 + 0x14D1
+    try testing.expectEqual(@as(u32, 0x13CB), state.e[2]); // 0x1F72 gave R3 + 0x12A6, 0x1F74 R2 + 0x13C2
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

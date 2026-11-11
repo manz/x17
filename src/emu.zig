@@ -1704,11 +1704,14 @@ fn execYstm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
             else => |f| try agu10Eval(f, x, y),
         };
     };
+    // 890: with h[26] = 0 and the store off, e<h[12:9]> takes AGU10 fn h[20:17] (fn 10: y + i,
+    // the one measured) while R<S[28:25]> takes the Y word; other fns keep the Y word (OPEN).
+    const e_val: u32 = if ((h >> 26) & 1 == 0 and !store_on and (h >> 17) & 0xF == 10) (y +% i) & 0xFFFF else v;
     // the fresh read only runs with the store off, so the order cannot show
     if (store_on) {
         state.y_mem.put(gpa, x, state.s[(sw >> 12) & 0xF] & 0xFFFF) catch return RunError.OutOfMemory;
     }
-    if ((h >> 9) & 0xF != 0) state.e[(h >> 9) & 0xF] = v;
+    if ((h >> 9) & 0xF != 0) state.e[(h >> 9) & 0xF] = e_val;
     if ((sw >> 25) & 0xF != 0) state.r[(sw >> 25) & 0xF] = v;
 }
 
