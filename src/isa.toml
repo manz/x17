@@ -401,6 +401,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x18 class 110 X store (599): w2[23:22] = 11 stores s<{w2[0], w1[31:29]}> (24 bits, old value) at X:[A<w2[21:17]>]; measured beside the p/multiply slots only (branch and w1 mode 5 refused), and refused when the bundle also writes that s.
 # x18 class 010 R slot (194): R<w3[10:7]> <- AGU3[w3[24:20]](x = A<w3[19:15]>, y = R<w3[14:11]>).  w2[27:24] != 0 can offset it (598: 1, 6, F; no rule): refused.  own-x18rag
 # x18 class 101 (195): the same R slot; X slot s<head[24:21]> <- w1[14:12] (001 R value, 011/101 yd).  own-x18rag101, own-x18rmux
+# x18 class 101 A write (955): A<2*w1[3:0] + head[31]> <- the R slot's sum beside R<w3[10:7]>; rag101's template (w1[3:0] = 2, head[31] = 1) writes A5.  Index 0 unmeasured.  own-x18c101a
 # x18 class 100 (196): R<{w3[2:0], w2[31]}> <- (w2[20] ? AGU10 : AGU10B)[w1[10:7]](x = e<w3[28:25]>, y = R<w2[26:23]>).  own-x18rcl100
 # x18 class 100 (197): s<w3[16:13]> <- 0x02's multiply of s<w3[20:17]>, s<w3[24:21]> (mode w1[13:11], w1[15]/[16]/[17]); s<w2[15:12]> low half; Y store only with w2[22:21] = 11.  own-x18mpy100
 # x18 class 100 (198): s<w1[27:24]> <- s<w2[19:16]> shifted by w1[23:20], head[27] 1 right (rounded) / 0 left; w3[9] negates; head[26] OPEN.  own-x18shr100, own-x18shl100

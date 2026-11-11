@@ -750,7 +750,7 @@ fn imMul(a: i64, b: i64) i64 {
 
 test "x02.ainc's template leaves s2 (954) and x18.rag's steps e7" {
     // Side writes of two templates (subforms.txt): ainc's w2 multiply points at s0 (954);
-    // x18.rag101 has none.
+    // x18.rag101's A5 write is 955's test.
     const gpa = testing.allocator;
     const prog = try assemble(gpa,
         \\ldi s1, #0x4000
@@ -769,6 +769,25 @@ test "x02.ainc's template leaves s2 (954) and x18.rag's steps e7" {
     _ = try emu.runFrom(gpa, &state, prog, 0, 64);
     try testing.expectEqual(@as(u32, 0x6000), state.s[2]);
     try testing.expectEqual(@as(u32, 0x2401), state.e[7]);
+}
+
+test "x18 class 101 also writes its R slot sum to A<2*w1[3:0] + head[31]> (955)" {
+    // The AAC TNS loop's rag101 (80000018 00001002 60000000 A0262980): R3 and A5 <- A12 + R5.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\x18.rag101 s0, R3, A12, R5, #2
+        \\x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    try testing.expectEqualSlices(u32, &.{ 0x80000018, 0x00001002, 0x60000000, 0xA0262980 }, prog[0..4]);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.r[3] = 0x1234;
+    state.r[5] = 5;
+    state.a[12] = 0x100;
+    _ = try emu.runFrom(gpa, &state, prog, 0, 16);
+    try testing.expectEqual([2]u32{ 0x105, 0x105 }, [2]u32{ state.r[3], state.a[5] });
 }
 
 test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[29:27]" {
