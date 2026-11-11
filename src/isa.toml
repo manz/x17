@@ -632,6 +632,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x18 class 011 code 0x0E (921): 776's n table ANDed with p<w2[31:28]> (p0 reads 1); 0x42B copies p8 into p3.
 # x15pt p (921): p<S[28:25]> <- p<S[6:3]> AND p<S[14:11]> with lut S[10:8] = 001 and S[7] = 1 (0x427); lut 101, S[7] = 0, sources p0 writes 1 (911, 0x1F82 sets p2); other ops refused.
 # ystm p (925): the fn 10 fresh-read form (890) with S[18] = 1 clears p1..p3 (0x1F6E), as 907's head entry; other forms OPEN.
+# ystm p (949): the same form with h[28] = 0 (c014c890 4c1602a6, 0x5CC) leaves p3 = 1; x17 clears only with h[28] = 1, the rule is OPEN (data dependent, 907).
 # x15pt Y store (894): S[16:15] = 11: Y:[e<S[20:17]>] <- s<S[24:21]> low 16.
 # x17.agu2 s mux (894): S2[9:6] = 6: s<S2[13:10]> <- Y:[e<S2[24:21]>] zx; 2 the AGU result; 4 / 14 OPEN.
 # x16agu mux 000 (895): e<{S1[2:0], head[31]}> <- AGU10 fn S1[10:7] (10 y+i, 11 y-i, 8 i, 14 y, 2 0) of y = R<head[30:27]>, i = head[26:11].

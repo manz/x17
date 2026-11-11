@@ -1809,8 +1809,9 @@ fn execYstm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     // the one measured) while R<S[28:25]> takes the Y word; other fns keep the Y word (OPEN).
     const fn10_read = (h >> 26) & 1 == 0 and !store_on and (h >> 17) & 0xF == 10;
     const e_val: u32 = if (fn10_read) (y +% i) & 0xFFFF else v;
-    // 925: on that fn 10 fresh-read form S[18] clears p1..p3 (other forms OPEN).
-    if (fn10_read and (sw >> 16) & 3 == 2) @memset(state.p[1..4], 0);
+    // 925: on that fn 10 fresh-read form S[18] clears p1..p3 with h[28] = 1 (0x1F6E); 949: the
+    // h[28] = 0 word at 0x5CC leaves p3 set.  The clear is data dependent (907), rule OPEN.
+    if (fn10_read and (sw >> 16) & 3 == 2 and (h >> 28) & 1 == 1) @memset(state.p[1..4], 0);
     // the fresh read only runs with the store off, so the order cannot show
     if (store_on) {
         state.y_mem.put(gpa, x, state.s[(sw >> 12) & 0xF] & 0xFFFF) catch return RunError.OutOfMemory;
