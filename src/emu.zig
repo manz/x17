@@ -2462,15 +2462,18 @@ fn x16AluOp(sw: u32, a: u32, b: u32) RunError!u32 {
 /// x16, S1 class 000 / S2 class 111, head code 0x0E, mux S1[14:12] = 110 (fact 879):
 /// s<head[24:21]> <- #head[20:5]; v = X16_ALU[S1[15]][S1[18:16]](a = s<S2[28:25]>, b =
 /// s<S1[7:4]>) over 16 bits, read before the s write; e<S1[23:20]> <- v (0 with S2[20] = 0)
-/// and A<2*S1[2:0] + head[31]> <- v with S1[3] = 0.  S1[11:8]'s Y slot and S2[17] are OPEN.
+/// and A<2*S1[2:0] + head[31]> <- v with S1[3] = 0; s<S1[11:8]> <- v too (fact 880).
+/// S2[17] and an S1[11:8] equal to head[24:21] are OPEN.
 fn execX16Esa(state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const s1 = bundle[1];
     const s2 = bundle[2];
-    if ((s1 >> 8) & 0xF != 0 or (s2 >> 17) & 1 == 1) return RunError.UnknownForm;
-    const v: u32 = (try x16AluOp(s1, state.s[(s2 >> 25) & 0xF] & M24, state.s[(s1 >> 4) & 0xF] & M24)) & 0xFFFF;
     const dest_s: u32 = (h >> 21) & 0xF;
+    const dest_v: u32 = (s1 >> 8) & 0xF;
+    if ((s2 >> 17) & 1 == 1 or (dest_v != 0 and dest_v == dest_s)) return RunError.UnknownForm;
+    const v: u32 = (try x16AluOp(s1, state.s[(s2 >> 25) & 0xF] & M24, state.s[(s1 >> 4) & 0xF] & M24)) & 0xFFFF;
     if (dest_s != 0) state.s[dest_s] = (h >> 5) & 0xFFFF;
+    if (dest_v != 0) state.s[dest_v] = v;
     const dest_e: u32 = (s1 >> 20) & 0xF;
     if (dest_e != 0) state.e[dest_e] = if ((s2 >> 20) & 1 == 1) v else 0;
     const dest_a: u32 = ((s1 & 7) << 1) | (h >> 31);
