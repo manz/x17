@@ -2284,8 +2284,12 @@ fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     // 893: a relative jump to q + sx15(S2[23:9]) after two delay bundles while S1[14:13] = 0
     // (either bit set blocks it; no p condition).  A zero offset is OPEN (it re-ran the
     // store in one frame): no jump.
+    // 905: taken only when S1[8:5] = 0 or p<S1[8:5]> = 1.  S1[14] wedges: refused.
     const off: u32 = (s2 >> 9) & 0x7FFF;
-    if ((s1 >> 13) & 3 == 0 and off != 0) state.pending_jmp_offset = @as(i32, @bitCast(off << 17)) >> 17;
+    if ((s1 >> 14) & 1 == 1) return RunError.UnknownForm;
+    const p_sel: u32 = (s1 >> 5) & 0xF;
+    const p_ok = p_sel == 0 or state.p[p_sel] != 0;
+    if ((s1 >> 13) & 1 == 0 and p_ok and off != 0) state.pending_jmp_offset = @as(i32, @bitCast(off << 17)) >> 17;
     // S2[3:2] = 11: X:[A<S2[8:4]>] <- s<S1[25:22]> (fact 209).
     if ((s2 >> 2) & 3 == 3) {
         try state.x_mem.put(gpa, state.a[(s2 >> 4) & 0x1F], state.s[(s1 >> 22) & 0xF] & M24);
