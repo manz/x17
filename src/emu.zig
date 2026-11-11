@@ -3210,6 +3210,13 @@ fn x18C3MinMax(op: u32, x: u32, y: u32) u32 {
     return (if ((op == 6) != lo) x else y) & M24;
 }
 
+/// Code 0x26's "min" (op 2) gives a when a < 0 and "max" (op 6) gives a when a > 0, otherwise b
+/// (951: b never moves the choice).  The comparand, 0 or a register that held 0, is OPEN.
+fn x18C3SignSel(op: u32, a: u32, b: u32) u32 {
+    const sa = sx24(a);
+    return (if (if (op == 6) sa > 0 else sa < 0) a else b) & M24;
+}
+
 /// x18 class 011 unary ops 2/3/4/6 under the 45 codes 641-643 left (644).  Null for codes this
 /// table does not cover.  #n is the immediate n; S = {2, 5, 6, 7, 9}.  The fit covers n = 0..2,
 /// so n > 2 is refused except where a code selects on S.  Op 7 runs only under 0x09-0x0F.
@@ -3264,7 +3271,9 @@ fn x18C3Unary644(code: u32, op: u32, n: u32, a: u32, b: u32, p3: bool) RunError!
         0x21 => if (op == 4) RunError.UnknownForm else 0,
         0x24 => if (in_s) try x18C3SlotAlu(op, a, b) else b & M24,
         0x25 => if (in_s) a & M24 else logic_b,
-        0x26, 0x2A => x18C3MinMax(op, a, b),
+        // 951: code 0x26 ops 2 / 6 select on a's sign, not a compare with b.
+        0x26 => if (op == 2 or op == 6) x18C3SignSel(op, a, b) else x18C3MinMax(op, a, b),
+        0x2A => x18C3MinMax(op, a, b),
         0x27, 0x2B => if (op == 6) a & M24 else b & M24,
         0x28 => x18C3MinMax(op, a, imm),
         0x29 => pick_imm,

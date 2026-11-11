@@ -7236,6 +7236,28 @@ test "x18 class 011 or, max, min, abs and x03's X store at 24 bits (708)" {
     }
 }
 
+test "x18 min and max select on a's sign, not on b (951)" {
+    const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
+    const Case = struct { src: []const u8, a: u32, b: u32, want: u32 };
+    const cases = [_]Case{
+        .{ .src = "x18.min s3, s1, s2", .a = 0, .b = 0x7FFF, .want = 0x7FFF },
+        .{ .src = "x18.min s3, s1, s2", .a = 0, .b = 1, .want = 1 },
+        .{ .src = "x18.min s3, s1, s2", .a = 0xFFFFFF, .b = 0xFFFF9C, .want = 0xFFFFFF },
+        .{ .src = "x18.max s3, s1, s2", .a = 1, .b = 0x7FFFFF, .want = 1 },
+        .{ .src = "x18.max s3, s1, s2", .a = 0, .b = 0xFFFFFF, .want = 0xFFFFFF },
+        .{ .src = "x18.max s3, s1, s2", .a = 0, .b = 0xFF8000, .want = 0xFF8000 },
+    };
+    for (cases) |c| {
+        const m = try asm_mod.assembleOne(c.src);
+        var st = emu.State{};
+        defer st.deinit(testing.allocator);
+        st.s[1] = c.a;
+        st.s[2] = c.b;
+        _ = try emu.runFrom(testing.allocator, &st, &([_]u32{ m.slice()[0], m.slice()[1], m.slice()[2], m.slice()[3] } ++ halt), 0, 8);
+        try testing.expectEqual(c.want, st.s[3]);
+    }
+}
+
 test "x03's X store writes all 24 bits (708)" {
     const halt = [_]u32{ 0x00000017, 0x31308000, 0xA0000000 };
     const m = try asm_mod.assembleOne("x03.xst #3, #1, #2, #0, #3");
