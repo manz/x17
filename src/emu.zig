@@ -3754,6 +3754,9 @@ fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     if (ld_dest != 0 and (s1 >> 20) & 3 == 2 and (s1 >> 18) & 1 == 1) {
         const a_idx: u32 = (4 * (s1 & 7) + (head >> 30)) & 0x1F;
         state.s[ld_dest] = (state.readX(state.a[a_idx]) orelse 0) & M24;
+        // 900: head[25] = 1 steps that A down by one after the load (0x1FA2: A1 0x1496 ->
+        // 0x1495); head[25] = 0 leaves it.
+        if ((head >> 25) & 1 == 1) state.a[a_idx] = (state.a[a_idx] -% 1) & 0xFFFF;
     }
     const imm: u32 = (head >> 5) & 0xFFFF;
     // e<S[6:3]> (fact 835: S[6:3] = 5 and 13 land in e5 and e13).
@@ -6475,16 +6478,18 @@ fn execDld(state: *State, head: u32) RunError!void {
     }
     var yv: u32 = 0;
     var yraw: u32 = 0;
-    if (yd != 0) {
-        if ((head >> 13) & 1 == 0) return RunError.UnknownForm;
+    const ed: u32 = (head >> 9) & 0xF;
+    // 900: with [13] = 1 the Y half reads even with s0 as its s destination, for e<[12:9]>.
+    const y_on = (head >> 13) & 1 == 1 and (yd != 0 or ed != 0);
+    if (yd != 0 and !y_on) return RunError.UnknownForm;
+    if (y_on) {
         yraw = (state.getY(try yAddrE(state, (head >> 5) & 0xF)) orelse 0) & 0xFFFF;
         yv = sx16To24(yraw);
     }
     state.s[xd] = xv;
     state.s[yd] = yv;
     // 854: the Y word also lands raw in e<[12:9]> (524's "inert" field).
-    const ed: u32 = (head >> 9) & 0xF;
-    if (yd != 0 and ed != 0) state.e[ed] = yraw;
+    if (y_on and ed != 0) state.e[ed] = yraw;
 }
 
 fn execLdy(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {

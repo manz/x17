@@ -618,6 +618,8 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x17mve p (896): p<h[14:11]> <- cond h[25:22] of R<S2[4:1]>; side slots A<h[18:15]>, e<S1[15:12]>, s<S1[20,22,23]>, R<S2[8:5]> OPEN.
 # ystm A (897): A<h[25:21]> <- the e<h[12:9]> value (store-off paths).
 # st second (899): class 001 / 011 words pair with st; [16:15] = 11 stores Y:[e<w[20:17]>] <- s<w[24:21]>, 00 writes e1 only.
+# pair X load (900): head[25] = 1 steps A<4*S[2:0]+h[31:30]> down by 1 after the load.
+# dld (900): [13] = 1 reads Y for e<[12:9]> even with s<[29:26]> = s0.
 # S[6:3] names an s write with an OPEN source (542 revises 123's clears; own-yld10k), refused; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the measured bundle is OPEN.  own-yld10
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12

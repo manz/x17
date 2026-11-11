@@ -2764,6 +2764,29 @@ test "st takes a class-011 second as its wr; [16:15] = 00 writes e1 alone (899)"
     }
 }
 
+test "pair's X load steps its A with head[25]; dld's e takes Y beside s0 (900)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.a[1] = 0x1496;
+    state.s[2] = 5;
+    try state.x_mem.put(gpa, 0x1495, 0x2136FA);
+    try state.y_mem.put(gpa, 0x2EB1, 0x66A1);
+    try emu.executeBundle(gpa, &state, &.{ 0x420292B0, 0x60248100 }); // 0x1FA2
+    try testing.expectEqual(@as(u32, 0), state.s[2]); // X:[0x1496]
+    try testing.expectEqual(@as(u32, 0x1495), state.a[1]);
+    try testing.expectEqual(@as(u32, 0x1495), state.e[0]);
+    state.e[1] = 0x2EB1;
+    try emu.executeBundle(gpa, &state, &.{0x4050A629}); // 0x1FA5
+    try testing.expectEqual(@as(u32, 0x2136FA), state.s[1]);
+    try testing.expectEqual(@as(u32, 0x66A1), state.e[3]);
+    var flat = emu.State{};
+    defer flat.deinit(gpa);
+    flat.a[1] = 0x1496;
+    try emu.executeBundle(gpa, &flat, &.{ 0x400292B0, 0x60248100 }); // head[25] clear
+    try testing.expectEqual(@as(u32, 0x1496), flat.a[1]);
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
