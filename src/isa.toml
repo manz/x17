@@ -627,7 +627,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x00 ctl 5 p (938): the return with w4[5], w5[4], w5[31] set clears p<w2[17:14]> (0x1FBB clears p1); the three bits' roles OPEN.
 # x04 jump (940): w2[31:27] = 00010 (own-x04xst's 00011 runs on) jumps q + sx15({w2[0], w1[31:18]}) after two delays (0x506 → 0x566); no condition bit found; the slots' e1 writes OPEN.
 # x16agu p (942): the mux-000 e slot with head[6] = 1, head[9] = 0, S1[23] = 1 sets p<S2[10:7]> (0x596 sets p3); enable vs value OPEN.
-# x10 jump (948): S class 100 with S[15:14] = 00 jumps q + 4 * S[12:0] (S[13] inert) after two delays (0x5F2 → 0x64E); the ALU slot runs too (own-x10alu0 is the same words, its halt in the delay slot); p dependence and a zero field OPEN.
+# x10 jump (948): S class 100 with head[31:30] = 00, S[30:28] = 000, S[15:14] = 00 jumps q + 4 * S[12:0] (S[13] inert) after two delays (0x5F2 → 0x64E); the ALU slot runs too (own-x10alu0 is the same words, its halt in the delay slot); p dependence and a zero field OPEN.
 # x17sty stop select (916): in the stop shape S2[22:18] = 00000 stops, 11111 stores and runs on (0x381; retracts 781/801's stop on S2 61fcb804, 801's p1 row refused); other values refused.
 # x16 jump stub (917): S1/S2 class 000, head[26:25] != 11: q + sx15(S2[23:9]) after two delays iff S1[8:5] = 0 or p<S1[8:5]>; s dests refused.
 # x18 class 011 code 0x0E (921): 776's n table ANDed with p<w2[31:28]> (p0 reads 1); 0x42B copies p8 into p3.
