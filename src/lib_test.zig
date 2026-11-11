@@ -2378,6 +2378,24 @@ test "alu.m 0x20 with modifiers writes 0 (877)" {
     }
 }
 
+test "x17 rsub op 0 writes p<S1[7:4]> <- cond<head[24:21]>(R<S2[4:1]>) (878)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x83629517, s1: u32 = 0x000000A7, s2: u32 = 0x20000008, r4: u32 = 1, pd: u32 = 10, v: u8 }{
+        .{ .v = 0 }, // cond 11 (== 0) on R4 = 1
+        .{ .r4 = 0, .v = 1 },
+        .{ .h = 0x83429517, .v = 1 }, // head[21]: cond 10 (!= 0)
+        .{ .s1 = 0x000000B7, .pd = 11, .v = 0 }, // S1[4]
+        .{ .s2 = 0x2000000A, .v = 1 }, // R5 = 0
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[4] = c.r4;
+        state.p[c.pd] = 7;
+        _ = try emu.runFrom(gpa, &state, &.{ c.h, c.s1, c.s2, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.v, state.p[c.pd]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

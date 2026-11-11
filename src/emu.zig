@@ -3828,22 +3828,8 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // 862, 864, 865, 867: p<w2[30:27]> <- cond w3[23:20] of y (16-bit signed), read before the
     // R write; conds 2, 3 and 4 test y + 1, y - 1 and -y > 0 with 16-bit wrap.
     const pd: u32 = (w2 >> 27) & 0xF;
-    const ys = sx16(y);
-    const p_cond: bool = switch ((w3 >> 20) & 0xF) {
-        0 => true,
-        1, 5 => false,
-        2 => sx16((y +% 1) & 0xFFFF) > 0, // 867: wrapping 16-bit tests
-        3 => sx16((y -% 1) & 0xFFFF) > 0,
-        4 => sx16((0 -% y) & 0xFFFF) > 0,
-        6 => ys > 0,
-        7, 13 => ys >= 0,
-        8 => ys <= 0,
-        9, 12 => ys < 0,
-        10, 14 => ys != 0,
-        else => ys == 0, // 11, 15
-    };
     const p_on = pd != 0;
-    const p_val: u8 = @intFromBool(p_cond);
+    const p_val: u8 = @intFromBool(rCond((w3 >> 20) & 0xF, y));
     if (kalu and (mux == 1 or mux == 2)) state.s[(w1 >> 8) & 0xF] = s_val else state.s[(head >> 21) & 0xF] = s_val;
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_r != 0) state.r[dest_r] = r_val;
@@ -3853,6 +3839,25 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const dest_e: u32 = (w1 >> 20) & 0xF;
     if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
     if (p_on) state.p[pd] = p_val;
+}
+
+/// The R condition table (862, 864, 865, 867; x17 rsub too, 878): 16-bit signed tests of y,
+/// conds 2 / 3 / 4 on y + 1, y - 1 and -y with 16-bit wrap.
+fn rCond(cond: u32, y: u32) bool {
+    const ys = sx16(y);
+    return switch (cond & 0xF) {
+        0 => true,
+        1, 5 => false,
+        2 => sx16((y +% 1) & 0xFFFF) > 0,
+        3 => sx16((y -% 1) & 0xFFFF) > 0,
+        4 => sx16((0 -% y) & 0xFFFF) > 0,
+        6 => ys > 0,
+        7, 13 => ys >= 0,
+        8 => ys <= 0,
+        9, 12 => ys < 0,
+        10, 14 => ys != 0,
+        else => ys == 0, // 11, 15
+    };
 }
 
 /// x19k's s-slot AGU (871, 874): AGU10 with w2[25] = 1 (own-x19kmux2), else AGU10B, as the R
@@ -5262,13 +5267,19 @@ fn execX17Rsub(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const a_src: u32 = (s2 >> 25) & 0xF;
 
     // 872: op 0 with S1[3] = 0 writes A<{S1[2:0], head[31]}> <- #head[20:5], and (flipped on)
-    // s<S1[22:19]> <- 0 and R<S2[8:5]> <- #head[20:5].  Its p and Y side slots are OPEN.
+    // s<S1[22:19]> <- 0 and R<S2[8:5]> <- #head[20:5].  Its Y side slot is OPEN.
     if (op == 0) {
         const h = bundle[0];
         if ((s1 >> 3) & 1 == 1 or s2 >> 31 == 1) return RunError.UnknownForm;
         const imm: u32 = (h >> 5) & 0xFFFF;
+        // 878: p<S1[7:4]> <- rCond(head[24:21], R<S2[4:1]>), R read before the R write;
+        // measured with head[25] = 1 (0 not split: refused).
+        const pd: u32 = (s1 >> 4) & 0xF;
+        if (pd != 0 and (h >> 25) & 1 == 0) return RunError.UnknownForm;
+        const p_val: u8 = @intFromBool(rCond((h >> 21) & 0xF, state.r[(s2 >> 1) & 0xF]));
         const dest_a: u32 = ((s1 & 7) << 1) | (h >> 31);
         if (dest_a != 0) state.a[dest_a] = imm;
+        if (pd != 0) state.p[pd] = p_val;
         const r_dest: u32 = (s2 >> 5) & 0xF;
         if (r_dest != 0) state.r[r_dest] = imm;
         if (dest_s != 0) state.s[dest_s] = 0;
