@@ -2607,13 +2607,52 @@ test "ystm fn 10 puts y + i in e while R takes the Y word (890)" {
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
-    state.r[1] = 9;
-    state.r[2] = 9;
+    state.r[1] = 9; // 891: the frame's R1; R2 = 0
     try state.y_mem.put(gpa, 0, 0x920D);
     _ = try emu.runFrom(gpa, &state, &.{ 0x10142670, 0x4616014D, 0x60146410, 0x4014012A, 0x20142450, 0x4416013C, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0x920D), state.r[3]); // 0x1F70: Y:[e3 = 0]
     try testing.expectEqual(@as(u32, 0x14DA), state.e[3]); // R1 + 0x14D1
-    try testing.expectEqual(@as(u32, 0x13CB), state.e[2]); // 0x1F72 gave R3 + 0x12A6, 0x1F74 R2 + 0x13C2
+    try testing.expectEqual(@as(u32, 0x13CB), state.e[2]); // 0x1F72 gave R3 + 0x12A6, 0x1F74 R1 + 0x13C2
+}
+
+test "x19 imm loads R<w1[16:13]> from Y:[e<w3[28:25]>] (891)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32 = 0x00044400, w2: u32 = 0x00000008, w3: u32 = 0x27B00000, r: u32 = 2, v: ?u32 = 0xE166 }{
+        .{},
+        .{ .w1 = 0x00046400, .r = 3 }, // w1[13]
+        .{ .w1 = 0x00054400, .r = 10 }, // w1[16]
+        .{ .w3 = 0x25B00000, .v = 0x4D12 }, // w3[25]: e2
+        .{ .w2 = 0x00000000, .v = null }, // w2[3] kills it
+        .{ .w2 = 0x00004008, .v = null }, // w2[14]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[2] = 0x13CB;
+        state.e[3] = 0x14DA;
+        try state.y_mem.put(gpa, 0x14DA, 0xE166);
+        try state.y_mem.put(gpa, 0x13CB, 0x4D12);
+        try emu.executeBundle(gpa, &state, &.{ 0x04000019, c.w1, c.w2, c.w3 });
+        try testing.expectEqual(c.v orelse 0, state.r[c.r]);
+    }
+}
+
+test "x14 class 010 with a class-000 second: A <- imm, s <- sx16 fn of e (891)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x42229314, s1: u32 = 0x0A200738, a: u32 = 1, s: u32 = 0xFFFDFF }{
+        .{},
+        .{ .h = 0x46229314, .a = 3 }, // h[26]: A3
+        .{ .s1 = 0x0A640738, .s = 0x14DB }, // e3, fn 2: e + 1
+        .{ .s1 = 0x0A280738, .s = 0xFFFDFE }, // fn 4: e - 1
+        .{ .s1 = 0x0A300738, .s = 0 }, // fn 8
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0xFDFF;
+        state.e[3] = 0x14DA;
+        try emu.executeBundle(gpa, &state, &.{ c.h, c.s1 });
+        try testing.expectEqual(@as(u32, 0x1498), state.a[c.a]);
+        try testing.expectEqual(c.s, state.s[1]);
+    }
 }
 
 test "mul13's head ALU slot and X store" {

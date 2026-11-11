@@ -309,6 +309,9 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
             if (head >> 31 == 1) return RunError.UnknownForm;
             return execYpair(state, bundle);
         }
+        // 891: head class 010 with a class-000 second and S[28:25] = 5 is its own A / s form;
+        // ytst keeps the rest.
+        if (head >> 29 == 0b010 and bundle[1] >> 29 == 0 and (bundle[1] >> 25) & 0xF == 5) return execX14A(state, bundle);
         if (head & 0xA0000000 == 0) {
             if (bundle[1] >> 29 == 0b100) return execYagu(state, bundle);
             if (bundle[1] >> 30 == 0b11) return execYpair(state, bundle);
@@ -1731,6 +1734,29 @@ fn execTst(state: *State, bundle: []const u32) RunError!void {
         return RunError.UnknownForm;
     if ((bundle[1] >> 25) & 0xF == 0) return RunError.UnknownForm; // p0 write: unmeasured
     state.p[(bundle[1] >> 25) & 0xF] = v;
+}
+
+/// low5 0x14 with a class-000 second and S[25] (fact 891, 0x1F7D 42229314 0a200738):
+/// A<head[28:25]> <- #head[20:5] (S[10] = 1; 0 takes R2 instead, OPEN) and s<head[24:21]> <-
+/// sx16 fn S[20:17] of e<S[24:21]>: 0 e, 2 e + 1, 4 e - 1, 8 zero.  Only the measured mux
+/// S[28:25] = 5 with S[31:29] = 0 runs; S[11] = 1 sets p1.  Reads before writes.
+fn execX14A(state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const sw = bundle[1];
+    if ((sw >> 25) & 0xF != 5 or sw >> 29 != 0 or (sw >> 10) & 1 == 0) return RunError.UnknownForm;
+    const e: u32 = state.e[(sw >> 21) & 0xF];
+    const v: u32 = switch ((sw >> 17) & 0xF) {
+        0 => e,
+        2 => e +% 1,
+        4 => e -% 1,
+        8 => 0,
+        else => return RunError.UnknownForm,
+    } & 0xFFFF;
+    const dest_a: u32 = (h >> 25) & 0xF;
+    const dest_s: u32 = (h >> 21) & 0xF;
+    if (dest_a != 0) state.a[dest_a] = (h >> 5) & 0xFFFF;
+    if (dest_s != 0) state.s[dest_s] = sx16To24(v);
+    if ((sw >> 11) & 1 == 1) state.p[1] = 1;
 }
 
 /// class-0A z move (fact 889): R<[25:22]> <- z and s<[29:26]> <- sx16(z); [21:5] and [31]
@@ -4305,7 +4331,17 @@ fn execX19Imm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         10 => ((if (y_src == 0) 0 else state.r[y_src]) +% imm) & 0xFFFF,
         else => return RunError.UnknownForm,
     };
+    // 891: R<w1[16:13]> <- Y:[e<w3[28:25]>] with w2[3] = 1, w2[4] = w2[14] = 0 (flips killed
+    // it; w3[29] is the class bit); s<head[24:21]> takes v as e does.  s<w1[23:20]> (X:0 seen)
+    // is OPEN.
+    if ((w1 >> 20) & 0xF != 0) return RunError.UnknownForm;
+    const dest_r: u32 = (w1 >> 13) & 0xF;
+    const r_on = dest_r != 0 and (w2 >> 3) & 1 == 1 and (w2 >> 4) & 1 == 0 and (w2 >> 14) & 1 == 0;
+    const r_val: u32 = if (r_on) (state.getY(state.e[x_src]) orelse 0) & 0xFFFF else 0;
+    const dest_s: u32 = (head >> 21) & 0xF;
     if (dest_e != 0) state.e[dest_e] = v;
+    if (dest_s != 0) state.s[dest_s] = v;
+    if (r_on) state.r[dest_r] = r_val;
 }
 
 fn execX19RAgua(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
