@@ -8935,6 +8935,23 @@ test "x00 control 5 returns past the call's delay bundles (911)" {
     try testing.expectEqual(@as(?usize, null), st.link);
 }
 
+test "x00 control 5's return clears p<w2[17:14]> under w4[5], w5[4], w5[31] (938)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w2: u32, w5: u32, cleared: ?usize }{
+        .{ .w2 = 0x00004000, .w5 = 0x80000010, .cleared = 1 }, // 0x1FBB
+        .{ .w2 = 0x00020000, .w5 = 0x80000010, .cleared = 8 },
+        .{ .w2 = 0x00004000, .w5 = 0x00000010, .cleared = null }, // w5[31] clear
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        @memset(state.p[1..], 1);
+        state.link = 0x4D2;
+        state.pc = 0x1FBB;
+        try emu.executeBundle(gpa, &state, &.{ 0, 0, c.w2, 5, 0x20, c.w5, 0 });
+        for (1..16) |k| try testing.expectEqual(@as(u8, if (c.cleared == k) 0 else 1), state.p[k]);
+    }
+}
+
 test "x03's counted jr writes the p it tests (915)" {
     const gpa = testing.allocator;
     const halt = try assemble(gpa, "x17.halt\n");
@@ -9027,6 +9044,54 @@ test "x17 S1[23:18] = 0x3F jumps q + 0xE iff p<S2[15:12]> (927)" {
     var state = emu.State{};
     defer state.deinit(gpa);
     try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x80A5D7F7, 0x00FC0007, 0x84010108 })); // S1[4:0] = 7 wedges
+}
+
+test "xld10 writes head[20:5] to e<S[6:3]> (930)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[1] = 0x2EAE;
+    try emu.executeBundle(gpa, &state, &.{ 0x4005D6D0, 0x60248188 }); // 0x1FA9
+    try testing.expectEqual(@as(u32, 0x2EB6), state.e[1]);
+}
+
+test "x16 0xE037 saves s<S2[3:0]> at Y:[e1] and loads e<S1[23:20]> (933, 934)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[1] = 0x2EB4;
+    state.s[5] = 0x14EC;
+    try emu.executeBundle(gpa, &state, &.{ 0x4005D6B6, 0x00140000, 0xE0370005 }); // 0x1F5D
+    try testing.expectEqual(@as(?u32, 0x14EC), state.getY(0x2EB4));
+    try testing.expectEqual(@as(u32, 0x2EB5), state.e[1]);
+}
+
+test "st.y's class-001 pair with S[3:0] = 4 copies e<S[8:5]> into s<head[24:21]> (935)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[1] = 0x2EB3;
+    state.e[5] = 0x14EC;
+    try emu.executeBundle(gpa, &state, &.{ 0x20A5D68F, 0x20A380A4 }); // 0x1F5B
+    try testing.expectEqual(@as(u32, 0x14EC), state.s[5]);
+    try testing.expectEqual(@as(u32, 0x2EB4), state.e[1]);
+    try testing.expectEqual(@as(?u32, 0), state.getY(0x2EB3)); // the old s5
+}
+
+test "x02 mode 1 writes p<w2[16:13]> <- R<w5[25:22]> != 0 under A fn 26 (936)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w5: u32 = 0x30821000, r2: u32 = 1, want: u8 = 1 }{
+        .{},
+        .{ .r2 = 0, .want = 0 },
+        .{ .w5 = 0x30021000, .want = 0 }, // R0
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[2] = c.r2;
+        state.p[3] = 1 - c.want;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000002, 0x00000008, 0x06806000, 0x18000000, 0x0000C868, c.w5 }); // 0x4D5
+        try testing.expectEqual(c.want, state.p[3]);
+    }
 }
 
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {

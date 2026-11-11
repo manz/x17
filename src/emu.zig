@@ -399,6 +399,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s2_class == 0b110 and s1_class16 == 0 and s2_mode <= 7) return execX16Mul(gpa, state, bundle);
         if (s2_class == 0b110 and s1_class16 == 1) return execX16Mac(state, bundle);
         if (s2_class == 0b100) return execX16Agu100(state, bundle);
+        if (bundle[1] & 0xFF00FFFF == 0 and bundle[2] & 0xFFF7FFF0 == 0xE0370000) return x16YSave(gpa, state, bundle);
         // 783: head[31] with head[30:25] 0x20-0x22, S1 class 000 with S1[18]: the stream read.
         const code16: u32 = (head >> 25) & 0x3F;
         if (s2_class == 0b111 and s1_class16 == 0 and head >> 31 == 1 and code16 >= 0x20 and code16 <= 0x22 and (bundle[1] >> 18) & 1 == 1) return execStreamRead(state, bundle);
@@ -670,6 +671,18 @@ fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!bool {
     const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
     if (w4_mode == 1) {
+        // 930, 931, 936: p<w2[16:13]> <- (R<w5[25:22]> != 0) with A-slot fn w2[26:22] = 26 (0x4D5;
+        // R 0 / 1 measured).  Not a function of the A-slot result: fns 16 / 18 give 1, 24 / 27 /
+        // 28 / 10 give 0 on the same R (OPEN): left unwritten, as measured x02 rows with those
+        // fns never read p.
+        const p_dest: u32 = (bundle[2] >> 13) & 0xF;
+        const p_val: ?u8 = if (p_dest != 0 and (bundle[2] >> 22) & 0x1F == 26)
+            @intFromBool(state.r[(bundle[5] >> 22) & 0xF] != 0)
+        else
+            null;
+        defer if (p_val) |v| {
+            state.p[p_dest] = v;
+        };
         try execX02Xrd(gpa, state, bundle);
         // 866: the w2 slot's X read runs here too, s<w2[12:9]> <- X:[A<w4[21:17]>] with w5[19];
         // without it the slot writes 0, not the product (868's probe).
@@ -1615,6 +1628,12 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         5 => if (!x01 and state.link != null) {
             state.pending_jmp_offset = @as(i32, @intCast(state.link.?)) - @as(i32, @intCast(state.pc));
             state.link = null;
+            // 938: with w4[5], w5[4] and w5[31] set (0x1FBB) the return clears p<w2[17:14]>;
+            // moving any of them clears nothing visible (their roles OPEN).
+            if ((bundle[4] >> 5) & 1 == 1 and (bundle[5] >> 4) & 1 == 1 and bundle[5] >> 31 == 1) {
+                const pd: u32 = (w2 >> 14) & 0xF;
+                if (pd != 0) state.p[pd] = 0;
+            }
         },
         // 759: 0x00 END: two delay slots run, then the normal halt; target fields inert, no link.
         6, 7 => {
@@ -2337,6 +2356,16 @@ fn x16Call(state: *State, bundle: []const u32) RunError!void {
     const target: usize = state.call_base + ((bundle[2] >> 9) & 0x1FFF);
     state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc));
     state.call_pending = true;
+}
+
+/// 933, 934: S1 = 0 outside [23:16], S2 = 0xE037000x (S2[19] inert): Y:[e1] <- s<S2[3:0]>, e1 as
+/// it stood before the bundle; e<S1[23:20]> <- head[20:5] (0x1F5D saves s5 at 0x2EB4, e1 <- 0x2EB5).
+/// No flipped field moved the address; S2[17] = 0 writes e 0 and other S2[23:16] change the form (unmodelled).
+fn x16YSave(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const addr: u32 = state.e[1];
+    state.y_mem.put(gpa, addr, state.s[bundle[2] & 0xF] & 0xFFFF) catch return RunError.OutOfMemory;
+    const ed: u32 = (bundle[1] >> 20) & 0xF;
+    if (ed != 0) state.e[ed] = (bundle[0] >> 5) & 0xFFFF;
 }
 
 fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -3792,6 +3821,8 @@ fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const v: u32 = state.readX(addr) orelse 0;
     if (dest_s_x != 0) state.s[dest_s_x] = v;
     if (dest_s2 != 0) state.s[dest_s2] = imm16;
+    // 930: e<S[6:3]> <- head[20:5], as the [7] = 0 pair's (835); 130's "S[6:3] inert" saw no e.
+    if ((s1 >> 3) & 0xF != 0) state.e[(s1 >> 3) & 0xF] = imm16;
 }
 
 fn execEalu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
@@ -4728,6 +4759,12 @@ fn execStY(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         // e as it stood before the bundle; w[25] inert, no lane or position dependence.
         // 899: class 011 is the same; [16:15] = 00 writes e1 alone, no store; 01 / 10 OPEN.
         const w = bundle[1];
+        // 935: with S[3:0] = 4 and S[9] = 0 (0x1F5B), s<head[24:21]> <- e<S[8:5]> as it stood
+        // before the bundle.  Other S[3:0] values give other words (OPEN, not modelled).
+        const s_copy: ?u32 = if (w >> 29 == 1 and w & 0xF == 4 and (w >> 9) & 1 == 0) state.e[(w >> 5) & 0xF] else null;
+        defer if (s_copy) |v| {
+            if ((head >> 21) & 0xF != 0) state.s[(head >> 21) & 0xF] = v;
+        };
         switch ((w >> 15) & 3) {
             3 => {
                 const v: u32 = state.s[(w >> 21) & 0xF] & 0xFFFF;
