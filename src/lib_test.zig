@@ -2661,16 +2661,41 @@ test "x16.mul2 jumps by sx15(S2[23:9]) unless S1[14:13] != 0 (893)" {
         .{},
         .{ .s2 = 0x20FFE01C, .off = -0x10 }, // S2[23:9] = 0x7FF0
         .{ .s1 = 0x01002040, .off = null }, // S1[13]
-        .{ .s1 = 0x01004040, .off = null }, // S1[14]
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
+        state.p[2] = 1;
         state.a[1] = 0x1498;
         state.s[4] = 4;
         try emu.executeBundle(gpa, &state, &.{ 0x00000016, c.s1, c.s2 });
         try testing.expectEqual(c.off, state.pending_jmp_offset);
         try testing.expectEqual(@as(?u32, 4), state.readX(0x1498));
     }
+}
+
+test "x16.mul2's jump needs p<S1[8:5]> unless it is 0 (905)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s1: u32 = 0x01000040, p: []const u4, off: ?i32 = null }{
+        .{ .p = &.{2}, .off = 0x45 },
+        .{ .p = &.{ 10, 12, 13 } },
+        .{ .s1 = 0x01000060, .p = &.{2} }, // S1[8:5] = 3
+        .{ .s1 = 0x01000060, .p = &.{3}, .off = 0x45 },
+        .{ .s1 = 0x010000C0, .p = &.{6}, .off = 0x45 }, // S1[8:5] = 6
+        .{ .s1 = 0x01000000, .p = &.{}, .off = 0x45 }, // S1[8:5] = 0
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (c.p) |i| state.p[i] = 1;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000016, c.s1, 0x20008A1C });
+        try testing.expectEqual(c.off, state.pending_jmp_offset);
+    }
+}
+
+test "x16.mul2 refuses S1[14] (905)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x00000016, 0x01004040, 0x20008A1C }));
 }
 
 test "0x1F82 stores Y:[e<S[20:17]>] <- s<S[24:21]>; 0x1F84 loads s1 from Y:[e1] (894)" {
@@ -2811,6 +2836,43 @@ test "x03 walks e from s and stores Y at the old e (902)" {
     try emu.executeBundle(gpa, &off, &nb);
     try testing.expectEqual(@as(u32, 7), off.e[3]);
     try testing.expectEqual(@as(?u32, null), off.getY(7));
+}
+
+test "zmv clears p1..p3 on a zero z (907)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    for (1..16) |i| state.p[i] = 1;
+    try emu.executeBundle(gpa, &state, &.{0x4216010A}); // 0x1F6F
+    try testing.expectEqual(@as(u8, 0), state.p[1] | state.p[2] | state.p[3]);
+    try testing.expectEqual(@as(u8, 1), state.p[4]);
+    var nz = emu.State{};
+    defer nz.deinit(gpa);
+    nz.z = 0x920D;
+    nz.p[2] = 1;
+    try emu.executeBundle(gpa, &nz, &.{0x4216010A});
+    try testing.expectEqual(@as(u8, 1), nz.p[2]);
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{0x4216010A ^ (1 << 19)}));
+}
+
+test "x17sty's stop form walks e from s and stores Y at the old e (908)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[2] = 0x2D00;
+    state.s[3] = 1;
+    state.e[2] = 0x14D4;
+    const b = [_]u32{ 0x000001D7, 0x60010009, 0x64021A0A }; // 0x1F8C
+    try emu.executeBundle(gpa, &state, &b);
+    try testing.expectEqual(@as(u32, 0x2D00), state.e[2]);
+    try testing.expectEqual(@as(?u32, 1), state.getY(0x14D4));
+    try testing.expect(!state.stop_now);
+    var p1 = emu.State{};
+    defer p1.deinit(gpa);
+    p1.p[1] = 1;
+    try emu.executeBundle(gpa, &p1, &b);
+    try testing.expectEqual(@as(?i32, 8), p1.pending_jmp_offset); // 0x1F94 (910)
+    try testing.expectEqual(@as(?i32, null), state.pending_jmp_offset);
 }
 
 test "mul13's head ALU slot and X store" {
