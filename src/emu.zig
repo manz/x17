@@ -3313,7 +3313,8 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // The source mux w1[14:12] (683, 369): 000 delivers 0, 001/010/101 the Y read, 110 the
     // immediate head[20:5]; 011, 100, 111 are OPEN, and so is e1 under 010/101.
     const ld_dest: u32 = (h >> 21) & 0xF;
-    const cond = try x18C3Cond(h, w1, w2, v, if (state.unset_reads) |u| &u.open_p else null);
+    const p_and = (w2 >> 28) == 0 or state.p[w2 >> 28] != 0;
+    const cond = try x18C3Cond(h, w1, w2, v, if (state.unset_reads) |u| &u.open_p else null, p_and);
     var ld_val: u32 = 0;
     if (ld_dest != 0) {
         switch ((w1 >> 12) & 7) {
@@ -3362,12 +3363,13 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 /// or b != s0 b enters the compare (OPEN): p is left alone, as 743 left the unmeasured conds,
 /// so the measured value rows (641-644) keep running.  Codes 0x10 up keep 743: cond 0 true,
 /// 11 v <= 0, 13 v == 0, others leave p alone.  null: no write.
-fn x18C3Cond(h: u32, w1: u32, w2: u32, v: u32, open_p: ?*u64) RunError!?bool {
+fn x18C3Cond(h: u32, w1: u32, w2: u32, v: u32, open_p: ?*u64, p_and: bool) RunError!?bool {
     const code: u32 = (h >> 25) & 0x3F;
     const cond: u32 = code & 0xF;
     const n: u32 = (w2 >> 6) & 0xF;
     const sv = sx16(v);
-    if (code == 0x0E) return switch (n) {
+    // 921: ANDed with p<w2[31:28]> (p0 reads 1, 776's case): 0x42B copies p8 into p3.
+    if (code == 0x0E) return p_and and switch (n) {
         2, 5, 6, 7, 9 => false,
         else => true,
     };

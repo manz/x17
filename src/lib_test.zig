@@ -2898,6 +2898,20 @@ test "x16 class-000 jumps by S2[23:9] on p<S1[8:5]> (917)" {
     }
 }
 
+test "x18 class 011 code 0x0E ANDs its p with p<w2[31:28]> (921)" {
+    const gpa = testing.allocator;
+    for ([_]struct { p8: u8, p3: u8 }{ .{ .p8 = 0, .p3 = 0 }, .{ .p8 = 1, .p3 = 1 } }) |c| {
+        for ([_]u8{ 0, 1 }) |pre| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.p[8] = c.p8;
+            state.p[3] = pre;
+            try emu.executeBundle(gpa, &state, &.{ 0x1C029538, 0x00000002, 0x8500C0C0, 0x60000009 }); // 0x42B
+            try testing.expectEqual(c.p3, state.p[3]);
+        }
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
