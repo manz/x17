@@ -6398,8 +6398,7 @@ test "x03 counted loop: jump to itself on p3, both slots every pass, p3 one pass
         try testing.expectEqual(c[1], st.x_mem.count());
     }
     // w2[28] = 0 with w2[27] = 1 is unconditional (329): to itself it runs away, refused.
-    // A jump to itself on a p the counter does not write never ends.
-    for ([_][2]u32{ .{ 0x08106000, 0x001CC000 }, .{ 0x18106000, 0x001D0000 } }) |v| {
+    for ([_][2]u32{.{ 0x08106000, 0x001CC000 }}) |v| {
         var st = emu.State{};
         defer st.deinit(testing.allocator);
         st.p[3] = 1;
@@ -8859,6 +8858,36 @@ test "x00 control 5 returns past the call's delay bundles (911)" {
     _ = try emu.runLinear(gpa, &st, prog.items);
     try testing.expectEqual([_]u32{ 1, 2, 3, 4, 0 }, st.s[1..6].*);
     try testing.expectEqual(@as(?usize, null), st.link);
+}
+
+test "x03's counted jr writes the p it tests (915)" {
+    const gpa = testing.allocator;
+    const halt = try assemble(gpa, "x17.halt\n");
+    defer gpa.free(halt);
+    const nop: u32 = 0x40000005;
+    for ([_]struct { e2: u32, p10: u8, n: u32 }{
+        .{ .e2 = 5, .p10 = 1, .n = 6 },
+        .{ .e2 = 1, .p10 = 1, .n = 2 },
+        .{ .e2 = 0, .p10 = 1, .n = 2 },
+        .{ .e2 = 5, .p10 = 0, .n = 1 },
+    }) |c| {
+        var prog: std.ArrayList(u32) = .empty;
+        defer prog.deinit(gpa);
+        try prog.appendSlice(gpa, &.{ 0xC0000003, 0x60000003, 0x181F4000, 0x0100000F, 0x00004001, 0x001E8000, nop, nop }); // 0x2F0
+        try prog.appendSlice(gpa, halt);
+        var st = emu.State{};
+        defer st.deinit(gpa);
+        st.e[2] = c.e2;
+        st.p[10] = c.p10;
+        st.s[3] = 0x777;
+        st.a[15] = 0x100;
+        _ = try emu.runLinear(gpa, &st, prog.items);
+        if (c.p10 == 1) try testing.expectEqual(@as(u8, 0), st.p[10]);
+        try testing.expectEqual(0x100 + c.n, st.a[15]);
+        try testing.expectEqual(@as(?u32, 0x777), st.readX(0x100));
+        try testing.expectEqual(@as(?u32, 0x777), st.readX(0x100 + c.n - 1));
+        try testing.expectEqual(@as(?u32, null), st.readX(0x100 + c.n));
+    }
 }
 
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {
