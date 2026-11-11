@@ -2875,6 +2875,83 @@ test "x17sty's stop form walks e from s and stores Y at the old e (908)" {
     try testing.expectEqual(@as(?i32, null), state.pending_jmp_offset);
 }
 
+test "x17sty's stop shape runs on with S2[22:18] = 11111 (916)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[2] = 0x700;
+    state.s[3] = 0x555;
+    try emu.executeBundle(gpa, &state, &.{ 0x28200017, 0x60012D50, 0x61FCB804 }); // 0x381
+    try testing.expectEqual(@as(?u32, 0x555), state.getY(0x700));
+    try testing.expect(!state.stop_now);
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x28200017, 0x60012D50, 0x61FCB804 ^ (1 << 19) }));
+}
+
+test "x16 class-000 jumps by S2[23:9] on p<S1[8:5]> (917)" {
+    const gpa = testing.allocator;
+    for ([_]struct { p2: u8, off: ?i32 }{ .{ .p2 = 1, .off = 0x5F }, .{ .p2 = 0, .off = null } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[2] = c.p2;
+        try emu.executeBundle(gpa, &state, &.{ 0x44029556, 0x0A100058, 0x0000BE00 }); // 0x39C
+        try testing.expectEqual(c.off, state.pending_jmp_offset);
+    }
+}
+
+test "x18 class 011 code 0x0E ANDs its p with p<w2[31:28]> (921)" {
+    const gpa = testing.allocator;
+    for ([_]struct { p8: u8, p3: u8 }{ .{ .p8 = 0, .p3 = 0 }, .{ .p8 = 1, .p3 = 1 } }) |c| {
+        for ([_]u8{ 0, 1 }) |pre| {
+            var state = emu.State{};
+            defer state.deinit(gpa);
+            state.p[8] = c.p8;
+            state.p[3] = pre;
+            try emu.executeBundle(gpa, &state, &.{ 0x1C029538, 0x00000002, 0x8500C0C0, 0x60000009 }); // 0x42B
+            try testing.expectEqual(c.p3, state.p[3]);
+        }
+    }
+}
+
+test "x15pt writes p<S[28:25]> <- p<S[6:3]> AND p<S[14:11]> (921, 911)" {
+    const gpa = testing.allocator;
+    for ([_][3]u8{ .{ 1, 1, 1 }, .{ 1, 0, 0 }, .{ 0, 1, 0 }, .{ 0, 0, 0 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[6] = c[0];
+        state.p[7] = c[1];
+        state.p[8] = 1 - c[2];
+        try emu.executeBundle(gpa, &state, &.{ 0x1C05D835, 0x300039B2 }); // 0x427
+        try testing.expectEqual(c[2], state.p[8]);
+    }
+    // 911: 0x1F82 (lut 101, sources p0) sets p2.
+    var st2 = emu.State{};
+    defer st2.deinit(gpa);
+    try emu.executeBundle(gpa, &st2, &.{ 0x9C029EF5, 0x24258500 });
+    try testing.expectEqual(@as(u8, 1), st2.p[2]);
+}
+
+test "x17 S2 class 101 with S1[22:19] = 0001 jumps on p8 (922)" {
+    const gpa = testing.allocator;
+    for ([_]struct { p8: u8, off: ?i32 }{ .{ .p8 = 1, .off = -0x1512 }, .{ .p8 = 0, .off = null } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[8] = c.p8;
+        try emu.executeBundle(gpa, &state, &.{ 0x00021697, 0x31088000, 0xA1D5DC02 }); // 0x19BC
+        try testing.expectEqual(c.off, state.pending_jmp_offset);
+    }
+}
+
+test "ystm's fn 10 fresh-read form clears p1..p3 (925)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    @memset(state.p[1..5], 1);
+    state.r[1] = 0x1000;
+    try state.y_mem.put(gpa, 0, 0x920D);
+    try emu.executeBundle(gpa, &state, &.{ 0xD0142650, 0x4216010A });
+    try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 1 }, state.p[1..5]);
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
@@ -8634,7 +8711,7 @@ test "x16 b16 placement 10 zero-extends the Y word (fact 800)" {
     try testing.expectEqual(@as(u32, 0x00B454), state.s[14]);
 }
 
-test "x17sty stop form under R mux 2: e<k> takes the AGU result; a stop then stores again (801)" {
+test "x17sty stop shape under R mux 2: e<k> takes the AGU result and runs on (801, 916)" {
     const gpa = testing.allocator;
     // 667's bundle with k = S1[2:0] = 1: e<2> is both the store's address and the side write.
     const word = [_]u32{ 0x28200017, 0x60012d51, 0x61fcb804 };
@@ -8645,19 +8722,19 @@ test "x17sty stop form under R mux 2: e<k> takes the AGU result; a stop then sto
         state.r[5] = 0x123;
         state.s[3] = 0x4567;
         state.p[1] = p1;
-        const n = try emu.runFrom(gpa, &state, &(word ++ [_]u32{ 0x00000017, 0x31308000, 0xA0000000 }), 0, 16);
+        const run = emu.runFrom(gpa, &state, &(word ++ [_]u32{ 0x00000017, 0x31308000, 0xA0000000 }), 0, 16);
+        if (p1 == 1) {
+            // 801's p1 = 1 row was a stop, retracted by 916 and not rechecked: refused.
+            try testing.expectError(emu.RunError.UnknownForm, run);
+            continue;
+        }
+        const n = try run;
         try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x420));
         try testing.expectEqual(@as(u32, 0x523), state.r[5]);
         try testing.expectEqual(@as(u32, 0x523), state.e[2]);
-        if (p1 == 0) {
-            try testing.expectEqual(@as(usize, 2), n);
-            try testing.expect(state.halted);
-            try testing.expectEqual(@as(?u32, null), state.y_mem.get(0x523));
-        } else {
-            try testing.expectEqual(@as(usize, 1), n);
-            try testing.expect(state.silent_stop);
-            try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x523));
-        }
+        try testing.expectEqual(@as(usize, 2), n);
+        try testing.expect(state.halted);
+        try testing.expectEqual(@as(?u32, null), state.y_mem.get(0x523));
     }
 }
 
@@ -8796,23 +8873,21 @@ test "x17agu2 fn 11 is y - i into e<2*S1[2:0] + h[31]> (fact 780)" {
 
 test "x17sty stop form: the store lands, then the run ends with no completion (fact 667)" {
     const gpa = testing.allocator;
-    // The decoder's bundle (k = 0, R mux 2), then an ldi that must not run.
+    // 667's row (k = 0, S2[22:18] = 00000; 916: the decoder's 61fcb804 runs on), then an ldi
+    // that must not run.
     var state = emu.State{};
     defer state.deinit(gpa);
-    state.e[2] = 0x420;
-    state.r[5] = 0x123;
+    state.e[6] = 0x420;
     state.s[3] = 0x4567;
-    const n = try emu.runFrom(gpa, &state, &.{ 0x28200017, 0x60012d50, 0x61fcb804, 0x00a00010, 0xe6420080 }, 0, 16);
+    const n = try emu.runFrom(gpa, &state, &.{ 0x28200017, 0x60030100, 0x60003800, 0x00a00010, 0xe6420080 }, 0, 16);
+    try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x420));
     try testing.expectEqual(@as(usize, 1), n);
     try testing.expect(state.silent_stop);
     try testing.expect(!state.halted);
-    try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x420));
-    // 781: R mux 2 is the AGU, fn 0xA = y + i = R5 + 0x400.
-    try testing.expectEqual(@as(u32, 0x523), state.r[5]);
     // k = 3 runs away: refused.
     var away = emu.State{};
     defer away.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &away, &.{ 0x28200017, 0x60012d53, 0x61fcb804 }));
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &away, &.{ 0x28200017, 0x60030103, 0x60003800 }));
 }
 
 test "x02.asrc and x02.esrc also write A1 (157, 795)" {
@@ -8888,6 +8963,70 @@ test "x03's counted jr writes the p it tests (915)" {
         try testing.expectEqual(@as(?u32, 0x777), st.readX(0x100 + c.n - 1));
         try testing.expectEqual(@as(?u32, null), st.readX(0x100 + c.n));
     }
+}
+
+test "x03's counter writes p<w2[16:13]>, not the tested p (922)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[0] = 5;
+    state.p[2] = 1;
+    state.s[3] = 0x123;
+    try emu.executeBundle(gpa, &state, &.{ 0x0D5001C3, 0x00240040, 0x18190000, 0, 0, 0x80008030 }); // 0x464
+    try testing.expectEqual(@as(u32, 0x123), state.e[8]); // 902's copy, w0[22] inert here
+    try testing.expectEqual(@as(u8, 1), state.p[8]);
+    try testing.expectEqual(@as(u8, 1), state.p[2]);
+    try testing.expectEqual(@as(?i32, 9), state.pending_jmp_offset);
+    // p8 is 1 with e0 = 0 and s3 = 0 too.
+    var zero = emu.State{};
+    defer zero.deinit(gpa);
+    try emu.executeBundle(gpa, &zero, &.{ 0x0D5001C3, 0x00240040, 0x18190000, 0, 0, 0x80008030 });
+    try testing.expectEqual(@as(u8, 1), zero.p[8]);
+    try testing.expectEqual(@as(u32, 0), zero.e[8]);
+}
+
+test "x16 calls the arm base + S2[21:9] under S1[23:21] = 001 (923, 924, 928)" {
+    const gpa = testing.allocator;
+    var state = emu.State{ .call_base = 0x100 };
+    defer state.deinit(gpa);
+    state.pc = 0x4CD;
+    try emu.executeBundle(gpa, &state, &.{ 0x80029D76, 0x01200000, 0x803C9400 }); // 0x4CD
+    try testing.expectEqual(@as(?i32, 0x1F4A - 0x4CD), state.pending_jmp_offset);
+    try testing.expect(state.call_pending);
+    var plain = emu.State{};
+    defer plain.deinit(gpa);
+    plain.pc = 0x4CD;
+    emu.executeBundle(gpa, &plain, &.{ 0x80029D76, 0x01000000, 0x803C9400 }) catch {}; // S1[21] clear
+    try testing.expect(!plain.call_pending);
+}
+
+test "ctl 4 calls land at the arm's base + field (926, 928)" {
+    const gpa = testing.allocator;
+    for ([_]struct { base: usize, want: i32 }{ .{ .base = 0, .want = 0x1F6F }, .{ .base = 0x100, .want = 0x206F } }) |c| {
+        var state = emu.State{ .call_base = c.base };
+        defer state.deinit(gpa);
+        state.pc = 0x2D2;
+        try emu.executeBundle(gpa, &state, &.{ 0x00A55000, 0x7DBC0000, 0x00000224, 0x00F00004, 0x00200000, 0x16000000, 0x00000090 });
+        try testing.expectEqual(@as(?i32, c.want - 0x2D2), state.pending_jmp_offset);
+    }
+}
+
+test "x17 S1[23:18] = 0x3F jumps q + 0xE iff p<S2[15:12]> (927)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s2: u32 = 0x84013108, p3: u8 = 1, want: ?i32 = 0xE }{
+        .{},
+        .{ .p3 = 0, .want = null },
+        .{ .s2 = 0x84010108, .p3 = 0 }, // sel 0: always
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[3] = c.p3;
+        try emu.executeBundle(gpa, &state, &.{ 0x80A5D7F7, 0x00FC0003, c.s2 });
+        try testing.expectEqual(c.want, state.pending_jmp_offset);
+    }
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x80A5D7F7, 0x00FC0007, 0x84010108 })); // S1[4:0] = 7 wedges
 }
 
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {

@@ -164,6 +164,8 @@ pub const Host = struct {
         // Each run enters at the entry syllable (Q1), in its own lane, not the last run's halt
         // lane: runFrom counts lanes from cur_lane at syllable 0.
         self.state.cur_lane = 0;
+        // 928: the decode arm's +0x988 entry is also its call base.
+        self.state.call_base = self.cfg.entry;
         const start = self.resume_at orelse self.cfg.entry;
         self.resume_at = null;
         const bundles = try emu.runFrom(self.gpa, &self.state, program, start, self.cfg.max_bundles);

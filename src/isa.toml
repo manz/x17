@@ -606,7 +606,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x18 class 011 store (885): w3[5:4] = 11, w2[22] = 0: X:[A<w2[21:18]>] <- s<w2[13:10]>, old values.
 # x19k (885, 886): A<{w1[2:0], head[31]}> <- #head[20:5] while w1[3] = 0; e<w2[11:8]> <- e<w2[7:4]> - 1 (w2[25] = 1), 0 (w2[25] = 0); fn 0 only.
 # x19k p (887): with e<w2[11:8]> live, cond 0 writes p <- sx16(e result) > 0; other conds OPEN.
-# x00 ctl 4 (888): call to absolute w1[31:18], two delay bundles; return OPEN.
+# x00 ctl 4 (888, 926, 928): call to base + w1[31:18], two delay bundles; base = the decode arm's +0x988 entry, 0 under pass-1.
 # class 0A z move (889): [30] = 1, not par: R<[25:22]> <- z, s<[29:26]> <- sx16(z); z has no known writer (0 in the decoder run).
 # ystm (890): h[26] = 0, store off, fn 10: e<h[12:9]> <- y + i, R<S[28:25]> <- the Y word; other fns OPEN.
 # x19 imm (891): R<w1[16:13]> <- Y:[e<w3[28:25]>] with w2[3] = 1, w2[4] = w2[14] = 0; s<head[24:21]> <- v.
@@ -616,7 +616,15 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # zmv p (907): [21:18] = 0101 with z[15:0] = 0 clears p1, p2, p3; z = 0x920D writes no p; other codes on z = 0 refused.
 # x17sty e (908): stop form, S2[3:1] = 101: v = op S2[10:8] of s<S2[28:25]> -> e<{S1[2:0], h[31]}>, R<S1[14:11]>, s<S1[22:19]>; Y:[old e<S1[18:15]>] <- s<{S2[0], S1[31:29]}> (S2[12:11] = 11); p1 = 1 does not stop (909): branch to q + 8 after two delay bundles (910).
 # x00 return (911): low5 0 with control w3[4:0] = 5 returns to the bundle after the call's two delay bundles, itself after two delay bundles; one level, nested calls refused.
-# x03 counted jr (915): the e counter writes p<w5[17:14]> (the p the jump tests; p3 when k = 0) <- (e_new > 0), after the jump reads it: e + 1 passes.
+# x03 counted jr (915, 922): the e counter writes p<w2[16:13]> <- (e_new > 0), after the jump reads it: e + 1 passes when that is the tested p; index 0 writes nothing.  0x464 (no counter e write) writes p8 = 1 whatever e0, s3, e8 hold: source OPEN, kept as 1.  902's w0[22] is inert beside a counted jr.
+# x17 p8 jump (922): S2 class 101 with S1[22:19] = 0001 jumps q + sx15(S2[23:9]) after two delays iff p8 (0x19BC); no field moves the p.
+# x16 call (923, 924, 928): S1[23:21] = 001, S2[31] = 1, S2[29] = 0 calls base + S2[21:9] after two delays, linking past them (0x4CD → 0x1F4A).
+# x17 jump (927): S1 class 000, S2 class 100, S1[23:18] = 0x3F: q + 0xE after two delays iff p<S2[15:12]> (0 always); only h[16:13] = 0xE, S1[4:0] = 3 measured, the encoding OPEN.
+# x17sty stop select (916): in the stop shape S2[22:18] = 00000 stops, 11111 stores and runs on (0x381; retracts 781/801's stop on S2 61fcb804, 801's p1 row refused); other values refused.
+# x16 jump stub (917): S1/S2 class 000, head[26:25] != 11: q + sx15(S2[23:9]) after two delays iff S1[8:5] = 0 or p<S1[8:5]>; s dests refused.
+# x18 class 011 code 0x0E (921): 776's n table ANDed with p<w2[31:28]> (p0 reads 1); 0x42B copies p8 into p3.
+# x15pt p (921): p<S[28:25]> <- p<S[6:3]> AND p<S[14:11]> with lut S[10:8] = 001 and S[7] = 1 (0x427); lut 101, S[7] = 0, sources p0 writes 1 (911, 0x1F82 sets p2); other ops refused.
+# ystm p (925): the fn 10 fresh-read form (890) with S[18] = 1 clears p1..p3 (0x1F6E), as 907's head entry; other forms OPEN.
 # x15pt Y store (894): S[16:15] = 11: Y:[e<S[20:17]>] <- s<S[24:21]> low 16.
 # x17.agu2 s mux (894): S2[9:6] = 6: s<S2[13:10]> <- Y:[e<S2[24:21]>] zx; 2 the AGU result; 4 / 14 OPEN.
 # x16agu mux 000 (895): e<{S1[2:0], head[31]}> <- AGU10 fn S1[10:7] (10 y+i, 11 y-i, 8 i, 14 y, 2 0) of y = R<head[30:27]>, i = head[26:11].
