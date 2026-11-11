@@ -2941,15 +2941,15 @@ test "x17 S2 class 101 with S1[22:19] = 0001 jumps on p8 (922)" {
     }
 }
 
-test "ystm's fn 10 fresh-read form clears p2 (925)" {
+test "ystm's fn 10 fresh-read form clears p1..p3 (925)" {
     const gpa = testing.allocator;
     var state = emu.State{};
     defer state.deinit(gpa);
-    state.p[2] = 1;
+    @memset(state.p[1..5], 1);
     state.r[1] = 0x1000;
     try state.y_mem.put(gpa, 0, 0x920D);
     try emu.executeBundle(gpa, &state, &.{ 0xD0142650, 0x4216010A });
-    try testing.expectEqual(@as(u8, 0), state.p[2]);
+    try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 1 }, state.p[1..5]);
 }
 
 test "mul13's head ALU slot and X store" {
