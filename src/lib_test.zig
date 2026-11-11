@@ -2396,6 +2396,26 @@ test "x17 rsub op 0 writes p<S1[7:4]> <- cond<head[24:21]>(R<S2[4:1]>) (878)" {
     }
 }
 
+test "x16 code 0x0E mux 110: s <- imm, e and A <- op(old s<S2[28:25]>) (879)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x1D201FF6, s1: u32 = 0x00656002, s2: u32 = 0xF2100000, e: u32 = 6, ev: u32 = 0x1234, a: u32 = 4, av: u32 = 0x1234 }{
+        .{},
+        .{ .s1 = 0x0065E002, .ev = 0x1235, .av = 0x1235 }, // S1[15]: a + 1
+        .{ .s1 = 0x00676002, .ev = 0xEDCC, .av = 0xEDCC }, // S1[17]: -a
+        .{ .s2 = 0xF2000000, .ev = 0 }, // S2[20] cleared: e <- 0
+        .{ .s1 = 0x00456002, .e = 4 }, // S1[21]
+        .{ .s1 = 0x00656003, .a = 6 }, // S1[0]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[9] = 0x1234;
+        try emu.executeBundle(gpa, &state, &.{ c.h, c.s1, c.s2 });
+        try testing.expectEqual(@as(u32, 0xFF), state.s[9]);
+        try testing.expectEqual(c.ev, state.e[c.e]);
+        try testing.expectEqual(c.av, state.a[c.a]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
