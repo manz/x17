@@ -2941,6 +2941,17 @@ test "x17 S2 class 101 with S1[22:19] = 0001 jumps on p8 (922)" {
     }
 }
 
+test "ystm's fn 10 fresh-read form clears p2 (925)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.p[2] = 1;
+    state.r[1] = 0x1000;
+    try state.y_mem.put(gpa, 0, 0x920D);
+    try emu.executeBundle(gpa, &state, &.{ 0xD0142650, 0x4216010A });
+    try testing.expectEqual(@as(u8, 0), state.p[2]);
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
