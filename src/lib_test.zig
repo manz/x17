@@ -821,6 +821,26 @@ test "x18 class 000's A write loads #head[20:5] when w2[30] = 1 (351)" {
     try testing.expectEqual(@as(u32, 0x1502), state.a[14]);
 }
 
+test "x18 classes 110 and 111 write A<2*w1[3:0] + head[31]> (345, 344)" {
+    // own-x18c6a: 80615798 00005007 0058146C C0500001 gives A15 <- #0xABC.
+    // own-x18c7a: 80600018 72343004 32300006 E60481D6 gives A9 <- A9 + 1.
+    const gpa = testing.allocator;
+    const halt = try assemble(gpa, "x17.halt\n");
+    defer gpa.free(halt);
+    for ([_]struct { w: [4]u32, a: usize, want: u32 }{
+        .{ .w = .{ 0x80615798, 0x00005007, 0x0058146C, 0xC0500001 }, .a = 15, .want = 0xABC },
+        .{ .w = .{ 0x80600018, 0x72343004, 0x32300006, 0xE60481D6 }, .a = 9, .want = 0x201 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x200;
+        const prog = try std.mem.concat(gpa, u32, &.{ &c.w, halt });
+        defer gpa.free(prog);
+        _ = try emu.runFrom(gpa, &state, prog, 0, 16);
+        try testing.expectEqual(c.want, state.a[c.a]);
+    }
+}
+
 test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[29:27]" {
     // fact 498-500: own-x01am (m1, b - a = 0x23), own-x01neg (m6 with a = s0: -b), m2
     // passes b; w5[3:2] = 10 is refused.

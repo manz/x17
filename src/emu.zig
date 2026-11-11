@@ -478,6 +478,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
                 if (state.s[st_s] != st_old) return RunError.UnknownForm;
                 state.x_mem.put(gpa, state.a[(bundle[2] >> 17) & 0x1F], st_old & M24) catch return RunError.OutOfMemory;
             }
+            // 345: A<2*w1[3:0] + head[31]> <- #head[20:5]; A31 is not a plain register (649).
+            const a110: u32 = 2 * (bundle[1] & 0xF) + (bundle[0] >> 31);
+            if (a110 == 31) return RunError.UnknownForm;
+            if (a110 != 0) state.a[a110] = (bundle[0] >> 5) & 0xFFFF;
             return;
         }
         // 485, 487: with w2[17], w2[18] and w3[7] all clear a class-000 bundle may stop two
@@ -3502,6 +3506,9 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const hi_dest: u32 = w3 & 0xF;
     const lo_dest: u32 = (w2 >> 12) & 0xF;
     const alu_dest: u32 = (w1 >> 8) & 0xF;
+    const dest_a: u32 = 2 * (w1 & 0xF) + (h >> 31);
+    if (dest_a == 31) return RunError.UnknownForm;
+    const a_val: u32 = if ((w2 >> 23) & 1 == 1) (h >> 5) & 0xFFFF else x18RSlot(state, w3);
     const x_lo_raw: u32 = state.s[w2 & 0xF] & 0xFFFF;
     const st_val: u32 = x_lo_raw;
     // X slot s<head[24:21]>: muxes 1, 2 and 6 the immediate head[20:5] (175); 3, 4 and 5 lanes
@@ -3575,6 +3582,8 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (hi_dest != 0) state.s[hi_dest] = @truncate((hi_u >> 24) & (if (mac48_on) M24 else 0xFFFF));
     if (lo_dest != 0) state.s[lo_dest] = @truncate(acc_u & (if (mode == 5) M24 else 0xFFFF));
     if (alu_dest != 0) state.s[alu_dest] = alu_v;
+    // 344: A<2*w1[3:0] + head[31]> <- #head[20:5] when w2[23] = 1, else the AGU3 sum.
+    if (dest_a != 0) state.a[dest_a] = a_val;
 }
 
 /// The class 010/101 R slot (fact 194, 195):
