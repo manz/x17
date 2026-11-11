@@ -5436,14 +5436,22 @@ fn execX17Rsub(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
 
 fn execX17Mve(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
+    const h = bundle[0];
     const s1 = bundle[1];
     const s2 = bundle[2];
 
     const dest_e: u32 = (s1 >> 16) & 0xF;
     const src_s: u32 = (s2 >> 25) & 0xF;
+    // 896: p<h[14:11]> <- cond h[25:22] of R<S2[4:1]> (the shared R table), read first.  The
+    // side slots seen on flips (A<h[18:15]>, e<S1[15:12]>, s<S1[20,22,23]>, R<S2[8:5]>) are
+    // OPEN: refused when set.
+    if ((h >> 15) & 0xF != 0 or (s1 >> 12) & 0xF != 0 or (s1 >> 20) & 0xD != 0 or (s2 >> 5) & 0xF != 0) return RunError.UnknownForm;
+    const pd: u32 = (h >> 11) & 0xF;
+    const pv: u8 = @intFromBool(rCond((h >> 22) & 0xF, state.r[(s2 >> 1) & 0xF]));
 
     const src_val: u32 = if (src_s == 0) 0 else state.s[src_s];
     state.e[dest_e] = (src_val +% 1) & M24;
+    if (pd != 0) state.p[pd] = pv;
 }
 
 /// x17agu2's bare alu05 op (fact 629); index 0 reads 0 (s0 is 0 here).

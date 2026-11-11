@@ -2715,6 +2715,23 @@ test "x16agu mux 000 writes AGU10 of R and the immediate to e<{S1[2:0], h31}> (8
     }
 }
 
+test "x17mve writes p<h[14:11]> from cond h[25:22] of R<S2[4:1]> (896)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s2: u32 = 0x46000006, h: u32 = 0x1F6009D7, p: u32 = 1, v: u8 = 1 }{
+        .{},
+        .{ .s2 = 0x46000004, .v = 0 }, // S2[1]: R2 = 0xE166 < 0
+        .{ .h = 0x1F6011D7, .p = 2 }, // h[12:11]: p2
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[2] = 0xE166;
+        state.r[3] = 1;
+        state.p[c.p] = 1 - c.v;
+        try emu.executeBundle(gpa, &state, &.{ c.h, 0x00050400, c.s2 });
+        try testing.expectEqual(c.v, state.p[c.p]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

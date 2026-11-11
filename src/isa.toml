@@ -615,6 +615,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x15pt Y store (894): S[16:15] = 11: Y:[e<S[20:17]>] <- s<S[24:21]> low 16.
 # x17.agu2 s mux (894): S2[9:6] = 6: s<S2[13:10]> <- Y:[e<S2[24:21]>] zx; 2 the AGU result; 4 / 14 OPEN.
 # x16agu mux 000 (895): e<{S1[2:0], head[31]}> <- AGU10 fn S1[10:7] (10 y+i, 11 y-i, 8 i, 14 y, 2 0) of y = R<head[30:27]>, i = head[26:11].
+# x17mve p (896): p<h[14:11]> <- cond h[25:22] of R<S2[4:1]>; side slots A<h[18:15]>, e<S1[15:12]>, s<S1[20,22,23]>, R<S2[8:5]> OPEN.
 # S[6:3] names an s write with an OPEN source (542 revises 123's clears; own-yld10k), refused; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the measured bundle is OPEN.  own-yld10
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12
