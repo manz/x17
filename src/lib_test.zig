@@ -2870,7 +2870,9 @@ test "x17sty's stop form walks e from s and stores Y at the old e (908)" {
     var p1 = emu.State{};
     defer p1.deinit(gpa);
     p1.p[1] = 1;
-    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &p1, &b));
+    try emu.executeBundle(gpa, &p1, &b);
+    try testing.expectEqual(@as(?i32, 8), p1.pending_jmp_offset); // 0x1F94 (910)
+    try testing.expectEqual(@as(?i32, null), state.pending_jmp_offset);
 }
 
 test "mul13's head ALU slot and X store" {

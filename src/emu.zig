@@ -4852,16 +4852,15 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
 
 /// x17sty stop form under S2[3:1] = 101 (fact 908): v = op S2[10:8] of s<S2[28:25]> goes to
 /// e<{S1[2:0], h[31]}>, R<S1[14:11]> and s<S1[22:19]>; Y:[old e<S1[18:15]>] <- s<{S2[0],
-/// S1[31:29]}> with S2[12:11] = 11.  Measured with k = S1[2:0] = 1 and p1 = 0.  p1 = 1 does
-/// not stop here (909) but changes the following bundles, unmeasured: refused, as are h[10]
-/// (kills e) and the other k.
+/// S1[31:29]}> with S2[12:11] = 11.  Measured with k = S1[2:0] = 1.  p1 = 1 does not stop
+/// here (909): it branches to q + 8 after two delay bundles (910; offset field vs skip not
+/// split).  h[10] (kills e) and the other k are refused.
 fn execX17StyE(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const s1 = bundle[1];
     const s2 = bundle[2];
     const stop_form = (s1 >> 27) & 3 == 0 and (s1 >> 5) & 1 == 0;
     if (!stop_form or s1 & 7 != 1 or (h >> 10) & 1 == 1 or (s2 >> 11) & 3 != 3) return RunError.UnknownForm;
-    if (state.p[1] != 0) return RunError.UnknownForm;
     const v = try walkOp((s2 >> 8) & 7, state.s[(s2 >> 25) & 0xF]);
     const y_val: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
     state.y_mem.put(gpa, state.e[(s1 >> 15) & 0xF], y_val) catch return RunError.OutOfMemory;
@@ -4870,6 +4869,7 @@ fn execX17StyE(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     if (dest_r != 0) state.r[dest_r] = v;
     if (dest_s != 0) state.s[dest_s] = v;
     state.e[((s1 & 7) << 1) | (h >> 31)] = v;
+    if (state.p[1] != 0) state.pending_jmp_offset = 8;
 }
 
 /// (S1 class 100, S2 class 100) with S2[3:0] = 10 (fact 273):
