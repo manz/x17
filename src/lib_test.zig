@@ -8962,6 +8962,20 @@ test "x04 w2[28] jumps q + w1[31:18] (940)" {
     }
 }
 
+test "x16agu's e slot sets p<S2[10:7]> under head[6], !head[9], S1[23] (942)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0xB0A689D6, s1: u32 = 0x00A04500, want: u8 = 1 }{
+        .{},
+        .{ .h = 0xB0A68996, .want = 0 }, // head[6]
+        .{ .s1 = 0x00204500, .want = 0 }, // S1[23]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        _ = emu.executeBundle(gpa, &state, &.{ c.h, c.s1, 0x60002180 }) catch {}; // 0x596
+        try testing.expectEqual(c.want, state.p[3]);
+    }
+}
+
 test "x03's counted jr writes the p it tests (915)" {
     const gpa = testing.allocator;
     const halt = try assemble(gpa, "x17.halt\n");

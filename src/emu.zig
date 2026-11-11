@@ -2591,6 +2591,10 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         const dest_e: u32 = ((s1 & 7) << 1) | (head >> 31);
         if (dest_e != 0) state.e[dest_e] = ev;
         if (alu0) |w| state.s[w.dest] = w.val;
+        // 942: with head[6] = 1, head[9] = 0 and S1[23] = 1 (0x596) the slot also sets
+        // p<S2[10:7]>; which of the three is the enable or the value is OPEN.
+        const pd: u32 = (s2 >> 7) & 0xF;
+        if (pd != 0 and (head >> 6) & 1 == 1 and (head >> 9) & 1 == 0 and (s1 >> 23) & 1 == 1) state.p[pd] = 1;
         return;
     }
     const yd: u32 = (state.getY(x_val) orelse 0) & 0xFFFF;
