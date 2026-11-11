@@ -8935,6 +8935,23 @@ test "x00 control 5 returns past the call's delay bundles (911)" {
     try testing.expectEqual(@as(?usize, null), st.link);
 }
 
+test "x00 control 5's return clears p<w2[17:14]> under w4[5], w5[4], w5[31] (938)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w2: u32, w5: u32, cleared: ?usize }{
+        .{ .w2 = 0x00004000, .w5 = 0x80000010, .cleared = 1 }, // 0x1FBB
+        .{ .w2 = 0x00020000, .w5 = 0x80000010, .cleared = 8 },
+        .{ .w2 = 0x00004000, .w5 = 0x00000010, .cleared = null }, // w5[31] clear
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        @memset(state.p[1..], 1);
+        state.link = 0x4D2;
+        state.pc = 0x1FBB;
+        try emu.executeBundle(gpa, &state, &.{ 0, 0, c.w2, 5, 0x20, c.w5, 0 });
+        for (1..16) |k| try testing.expectEqual(@as(u8, if (c.cleared == k) 0 else 1), state.p[k]);
+    }
+}
+
 test "x03's counted jr writes the p it tests (915)" {
     const gpa = testing.allocator;
     const halt = try assemble(gpa, "x17.halt\n");

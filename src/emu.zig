@@ -1628,6 +1628,12 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         5 => if (!x01 and state.link != null) {
             state.pending_jmp_offset = @as(i32, @intCast(state.link.?)) - @as(i32, @intCast(state.pc));
             state.link = null;
+            // 938: with w4[5], w5[4] and w5[31] set (0x1FBB) the return clears p<w2[17:14]>;
+            // moving any of them clears nothing visible (their roles OPEN).
+            if ((bundle[4] >> 5) & 1 == 1 and (bundle[5] >> 4) & 1 == 1 and bundle[5] >> 31 == 1) {
+                const pd: u32 = (w2 >> 14) & 0xF;
+                if (pd != 0) state.p[pd] = 0;
+            }
         },
         // 759: 0x00 END: two delay slots run, then the normal halt; target fields inert, no link.
         6, 7 => {
