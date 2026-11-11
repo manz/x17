@@ -1716,6 +1716,10 @@ fn execYstm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     }
     if ((h >> 9) & 0xF != 0) state.e[(h >> 9) & 0xF] = e_val;
     if ((sw >> 25) & 0xF != 0) state.r[(sw >> 25) & 0xF] = v;
+    // 897: A<h[25:21]> mirrors the e write (0x1FC7's A1 = e4), as lde's A slot (882).
+    const dest_a: u32 = (h >> 21) & 0x1F;
+    if (dest_a == 31) return RunError.UnknownForm;
+    if (dest_a != 0) state.a[dest_a] = e_val;
 }
 
 /// tst (fact 84, 85): p<S[28:25]> <- f(head[29:26], head[25:21]); f is

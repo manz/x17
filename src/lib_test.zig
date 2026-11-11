@@ -2732,6 +2732,19 @@ test "x17mve writes p<h[14:11]> from cond h[25:22] of R<S2[4:1]> (896)" {
     }
 }
 
+test "ystm's A<h[25:21]> mirrors its e write (897)" {
+    const gpa = testing.allocator;
+    for ([_]u32{ 0, 0x1234, 0x920D }) |seed| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |k| state.r[k] = seed;
+        for (1..16) |k| state.e[k] = seed;
+        state.a[1] = 0x1498;
+        try emu.executeBundle(gpa, &state, &.{ 0x0C224850, 0x44160000 });
+        try testing.expectEqual(state.e[4], state.a[1]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
