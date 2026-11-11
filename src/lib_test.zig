@@ -2556,6 +2556,24 @@ test "x19k: A<{w1[2:0], h31}> <- imm, e<w2[11:8]> <- e<w2[7:4]> - 1 (885, 886)" 
     }
 }
 
+test "x19k cond 0 tests the e slot's result when it is live (887)" {
+    const gpa = testing.allocator;
+    for ([_]struct { e1: u32, p: u8 }{
+        .{ .e1 = 1, .p = 0 },
+        .{ .e1 = 2, .p = 1 },
+        .{ .e1 = 0x10, .p = 1 },
+        .{ .e1 = 0x8001, .p = 0 },
+        .{ .e1 = 0, .p = 0 },
+    }) |c| for ([_]u8{ 0, 1 }) |pre| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = c.e1;
+        state.p[10] = pre;
+        try emu.executeBundle(gpa, &state, &.{ 0x80031019, 0x90040007, 0x52DE0210, 0x00000004 });
+        try testing.expectEqual(c.p, state.p[10]);
+    };
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

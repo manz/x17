@@ -3865,12 +3865,15 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // R write; conds 2, 3 and 4 test y + 1, y - 1 and -y > 0 with 16-bit wrap.
     const pd: u32 = (w2 >> 27) & 0xF;
     const p_on = pd != 0;
-    const p_val: u8 = @intFromBool(rCond((w3 >> 20) & 0xF, y));
+    // 887: with the e slot live, cond 0 tests the e result instead (sx16 > 0), y unused;
+    // other conds there are unmeasured.
+    const dest_e2: u32 = (w2 >> 8) & 0xF;
+    const e2_val: u32 = if ((w2 >> 25) & 1 == 0) 0 else (state.e[(w2 >> 4) & 0xF] -% 1) & 0xFFFF;
+    if (dest_e2 != 0 and p_on and (w3 >> 20) & 0xF != 0) return RunError.UnknownForm;
+    const p_val: u8 = @intFromBool(if (dest_e2 != 0) sx16(e2_val) > 0 else rCond((w3 >> 20) & 0xF, y));
     // 886: e<w2[11:8]> <- e<w2[7:4]> - 1 (16-bit) under w2[25] = 1 (AGU10), 0 under w2[25] = 0;
     // measured with fn w1[27:24] = 0 only.
-    const dest_e2: u32 = (w2 >> 8) & 0xF;
     if (dest_e2 != 0 and fn_op != 0) return RunError.UnknownForm;
-    const e2_val: u32 = if ((w2 >> 25) & 1 == 0) 0 else (state.e[(w2 >> 4) & 0xF] -% 1) & 0xFFFF;
     // 885: A<{w1[2:0], head[31]}> <- #head[20:5] while w1[3] = 0, 872's slot.
     const dest_a: u32 = ((w1 & 7) << 1) | (head >> 31);
     if (kalu and (mux == 1 or mux == 2)) state.s[(w1 >> 8) & 0xF] = s_val else state.s[(head >> 21) & 0xF] = s_val;
