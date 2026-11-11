@@ -2930,6 +2930,17 @@ test "x15pt writes p<S[28:25]> <- p<S[6:3]> AND p<S[14:11]> (921, 911)" {
     try testing.expectEqual(@as(u8, 1), st2.p[2]);
 }
 
+test "x17 S2 class 101 with S1[22:19] = 0001 jumps on p8 (922)" {
+    const gpa = testing.allocator;
+    for ([_]struct { p8: u8, off: ?i32 }{ .{ .p8 = 1, .off = -0x1512 }, .{ .p8 = 0, .off = null } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[8] = c.p8;
+        try emu.executeBundle(gpa, &state, &.{ 0x00021697, 0x31088000, 0xA1D5DC02 }); // 0x19BC
+        try testing.expectEqual(c.off, state.pending_jmp_offset);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

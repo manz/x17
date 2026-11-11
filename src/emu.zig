@@ -4742,6 +4742,7 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 
     // S2 class 101: S2[1] stores Y:[e<S1[16:15]>] <- reg<S1[28:24]> (fact
     // 22, 32, 47; [16:15] = 10 hits the drifting pointer a2).
+    if (s2_class == 0b101 and (s1 >> 19) & 0xF == 1) return x17JumpP8(state, bundle);
     if (s2_class == 0b101) return execX17Ms(gpa, state, bundle);
     // S1[22:20] = 010 on any other continue-shape form: its fields, then the stop
     // (fact 478: all 20 silicon rows stopped; the two-bundle shadow is the synthetic's).
@@ -4782,6 +4783,15 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 /// two more bundles and stops unhalted (457, 465); S1[19], S1[22] and other S1[21] rows wedge;
 /// mux 2 sign-extends (414), mux 4 is the same word (436); S1[28] = 0 with mux 4 loads 0 in a plain program (490); muxes
 /// 1/3/5 are OPEN.
+/// 922: S2 class 101 with S1[22:19] = 0001 (0x19BC) jumps q + sx15(S2[23:9]) after two delay
+/// bundles iff p8.  No flipped field moves the p (S1[28:25], S1[20] included): it is fixed for
+/// this selector, or encoded in it.
+fn x17JumpP8(state: *State, bundle: []const u32) RunError!void {
+    const off: u32 = (bundle[2] >> 9) & 0x7FFF;
+    if (off == 0) return RunError.UnknownForm;
+    if (state.p[8] != 0) state.pending_jmp_offset = @as(i32, @bitCast(off << 17)) >> 17;
+}
+
 fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const s1 = bundle[1];
