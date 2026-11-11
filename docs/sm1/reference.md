@@ -725,10 +725,10 @@ Six-syllable VLIW that multiplies two source registers and writes the rounded pr
 
 ### `x02.ainc`
 
-Six-syllable VLIW that increments an A register (A<w2[21:17]> <- A<w3[4:0]> + 1) and also performs the rounded multiply into s2.
+Six-syllable VLIW that increments an A register (A<w2[21:17]> <- A<w3[4:0]> + 1); its multiply slot targets s0, so no s register changes.
 
 - Syllables: 6
-- Base: `00000002` `0000a000` `00020442` `00000002` `00042800` `00004200`
+- Base: `00000002` `0000a000` `00020042` `00000002` `00042800` `00004200`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -1098,7 +1098,7 @@ Computes an R register from an address-generation function of another R register
 Copies an element register e into a scalar s register; also steps A1 by one.
 
 - Syllables: 6
-- Base: `00000002` `0000a000` `00020442` `00000001` `00041000` `20004200`
+- Base: `00000002` `0000a000` `00020042` `00000001` `00041000` `20004200`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -1110,7 +1110,7 @@ Copies an element register e into a scalar s register; also steps A1 by one.
 Copies an A register plus one into a scalar s register; A1 gets the same value.
 
 - Syllables: 6
-- Base: `00000002` `0000a000` `00020442` `00000000` `00041000` `10004200`
+- Base: `00000002` `0000a000` `00020042` `00000000` `00041000` `10004200`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -2019,7 +2019,7 @@ Address-generation op writing R: dest_R gets AGU3 function fn of an A register a
 
 ### `x18.rag101`
 
-Writes R from the AGU3 function of an A and an R register, plus an X-slot load into destination s.
+Writes R and A5 from the AGU3 function of an A and an R register, plus an X-slot load into destination s.
 
 - Syllables: 4
 - Base: `80000018` `00001002` `60000000` `a0000000`

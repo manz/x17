@@ -748,8 +748,9 @@ fn imMul(a: i64, b: i64) i64 {
     return (a * b + (1 << 22)) >> 23;
 }
 
-test "x02.ainc's template writes s2 and x18.rag's steps e7" {
-    // Side writes of two templates (subforms.txt); x18.rag101 has none.
+test "x02.ainc's template leaves s2 (954) and x18.rag's steps e7" {
+    // Side writes of two templates (subforms.txt): ainc's w2 multiply points at s0 (954);
+    // x18.rag101's A5 write is 955's test.
     const gpa = testing.allocator;
     const prog = try assemble(gpa,
         \\ldi s1, #0x4000
@@ -766,8 +767,27 @@ test "x02.ainc's template writes s2 and x18.rag's steps e7" {
     var state = emu.State{};
     defer state.deinit(gpa);
     _ = try emu.runFrom(gpa, &state, prog, 0, 64);
-    try testing.expectEqual(@as(u32, 0x30), state.s[2]);
+    try testing.expectEqual(@as(u32, 0x6000), state.s[2]);
     try testing.expectEqual(@as(u32, 0x2401), state.e[7]);
+}
+
+test "x18 class 101 also writes its R slot sum to A<2*w1[3:0] + head[31]> (955)" {
+    // The AAC TNS loop's rag101 (80000018 00001002 60000000 A0262980): R3 and A5 <- A12 + R5.
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\x18.rag101 s0, R3, A12, R5, #2
+        \\x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    try testing.expectEqualSlices(u32, &.{ 0x80000018, 0x00001002, 0x60000000, 0xA0262980 }, prog[0..4]);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.r[3] = 0x1234;
+    state.r[5] = 5;
+    state.a[12] = 0x100;
+    _ = try emu.runFrom(gpa, &state, prog, 0, 16);
+    try testing.expectEqual([2]u32{ 0x105, 0x105 }, [2]u32{ state.r[3], state.a[5] });
 }
 
 test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[29:27]" {
@@ -9018,6 +9038,47 @@ test "x01 tests p<w1[5:3]> with x00's sense (943, 946)" {
     var st = emu.State{};
     defer st.deinit(gpa);
     try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &st, &.{ 0x100031C1, 0x4E5405A2, 0x00024280, 0x80000003, 0x00000081, 0x00001800, 0 })); // c = 4
+}
+
+test "x02.asrc also runs the w2 multiply into s<w2[12:9]> (953)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s1: u32, s2: u32, want: u32 }{
+        .{ .s1 = 0x7FFF, .s2 = 0x6000, .want = 0x60 },
+        .{ .s1 = 0x4000, .s2 = 0x4000, .want = 0x20 },
+        .{ .s1 = 0x111, .s2 = 0x222, .want = 0 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = c.s1;
+        state.s[2] = c.s2;
+        state.a[15] = 0x40;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000002, 0x0000A000, 0x00020442, 0x0000000F, 0x00041068, 0x10004200 });
+        try testing.expectEqual(c.want, state.s[2]);
+        try testing.expectEqual(@as(u32, 0x41), state.s[13]);
+        try testing.expectEqual(@as(u32, 0x40), state.a[15]);
+    }
+}
+
+test "x02 esrc multiplies too; the templates' w2 dest s0 writes no s (954)" {
+    const gpa = testing.allocator;
+    {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |k| state.s[k] = 0x111 * @as(u32, @intCast(k));
+        state.e[3] = 0x490;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000002, 0x0000A000, 0x00020442, 0x18000001, 0x00041008, 0x20004200 });
+        try testing.expectEqual(@as(u32, 0x490), state.s[1]);
+        try testing.expectEqual(@as(u32, 0), state.s[2]);
+    }
+    for ([_][]const u8{ "x02.asrc s13, A15", "x02.esrc s13, e3", "x02.ainc #6, #6" }) |src| {
+        const m = try asm_mod.assembleOne(src);
+        try testing.expectEqual(@as(u32, 0), (m.slice()[2] >> 9) & 0xF);
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |k| state.s[k] = 0x111 * @as(u32, @intCast(k));
+        try emu.executeBundle(gpa, &state, m.slice());
+        for (1..16) |k| if (k != 13) try testing.expectEqual(0x111 * @as(u32, @intCast(k)), state.s[k]);
+    }
 }
 
 test "x03's counted jr writes the p it tests (915)" {

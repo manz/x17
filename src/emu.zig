@@ -715,6 +715,9 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         return true;
     }
     if (w4_mode == 2) {
+        // 953, 954: asrc and esrc also run the w2 multiply (156), s<w2[12:9]> <-
+        // s<w2[4:1]> * s<w2[8:5]>, reading s before the X read writes; dest s0 drops it.
+        try execX02Mpy(gpa, state, bundle);
         try execX02Xrd(gpa, state, bundle); // esrc path
         // The A slot runs here too: asrc and esrc name A1 as its destination, so asrc An
         // sets A1 <- An + 1 and esrc steps A1 (157, 795).
@@ -3608,8 +3611,9 @@ fn execX18C2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (dest_r != 0) state.r[dest_r] = r_val;
 }
 
-/// Class 101 (fact 195): the rimm e slot, class 010's R slot, and an
-/// X slot s<head[24:21]> whose mux 001 is the R slot's value.
+/// Class 101 (fact 195): the rimm e slot, class 010's R slot (its sum also lands
+/// in A<2*w1[3:0] + head[31]>, fact 955), and an X slot s<head[24:21]> whose mux
+/// 001 is the R slot's value.
 ///
 /// Also the ALU word slot (fact 237): s<w1[11:8]> <- ALU05 code
 /// head[30:25], m w1[17:15], # w2[7:4] over a = s<w1[7:4]>, b = s<w3[6:3]>;
@@ -3632,6 +3636,9 @@ fn execX18C5(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     try execX18Rimm(gpa, state, bundle);
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_r != 0) state.r[dest_r] = r_val;
+    // 955: A<2*w1[3:0] + head[31]> also gets the R slot's sum; index 0 unmeasured.
+    const dest_a: u32 = 2 * (w1 & 0xF) + (h >> 31);
+    if (dest_a != 0) state.a[dest_a] = r_val;
     if (dest_s != 0) state.s[dest_s] = r_val;
     if (alu_dest != 0) state.s[alu_dest] = alu_val orelse return RunError.UnknownForm;
     if ((w2 >> 29) & 3 == 0 and state.p[(((w3 & 7) << 1) | (w2 >> 31)) & 0xF] == 1) {
