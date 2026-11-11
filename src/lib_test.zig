@@ -2952,6 +2952,15 @@ test "ystm's fn 10 fresh-read form clears p1..p3 (925)" {
     try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 1 }, state.p[1..5]);
 }
 
+test "ystm's fn 10 fresh-read form with h[28] = 0 leaves p (949)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    @memset(state.p[1..4], 1);
+    try emu.executeBundle(gpa, &state, &.{ 0xC014C890, 0x4C1602A6 });
+    try testing.expectEqualSlices(u8, &.{ 1, 1, 1 }, state.p[1..4]);
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
