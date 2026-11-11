@@ -619,6 +619,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x03 counted jr (915, 922): the e counter writes p<w2[16:13]> <- (e_new > 0), after the jump reads it: e + 1 passes when that is the tested p; index 0 writes nothing.  0x464 (no counter e write) writes p8 = 1 whatever e0, s3, e8 hold: source OPEN, kept as 1.  902's w0[22] is inert beside a counted jr.
 # x17 p8 jump (922): S2 class 101 with S1[22:19] = 0001 jumps q + sx15(S2[23:9]) after two delays iff p8 (0x19BC); no field moves the p.
 # x16 call (923, 924, 928): S1[23:21] = 001, S2[31] = 1, S2[29] = 0 calls base + S2[21:9] after two delays, linking past them (0x4CD → 0x1F4A).
+# x17 jump (927): S1 class 000, S2 class 100, S1[23:18] = 0x3F: q + 0xE after two delays iff p<S2[15:12]> (0 always); only h[16:13] = 0xE, S1[4:0] = 3 measured, the encoding OPEN.
 # x17sty stop select (916): in the stop shape S2[22:18] = 00000 stops, 11111 stores and runs on (0x381; retracts 781/801's stop on S2 61fcb804, 801's p1 row refused); other values refused.
 # x16 jump stub (917): S1/S2 class 000, head[26:25] != 11: q + sx15(S2[23:9]) after two delays iff S1[8:5] = 0 or p<S1[8:5]>; s dests refused.
 # x18 class 011 code 0x0E (921): 776's n table ANDed with p<w2[31:28]> (p0 reads 1); 0x42B copies p8 into p3.

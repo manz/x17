@@ -9011,6 +9011,24 @@ test "ctl 4 calls land at the arm's base + field (926, 928)" {
     }
 }
 
+test "x17 S1[23:18] = 0x3F jumps q + 0xE iff p<S2[15:12]> (927)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s2: u32 = 0x84013108, p3: u8 = 1, want: ?i32 = 0xE }{
+        .{},
+        .{ .p3 = 0, .want = null },
+        .{ .s2 = 0x84010108, .p3 = 0 }, // sel 0: always
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[3] = c.p3;
+        try emu.executeBundle(gpa, &state, &.{ 0x80A5D7F7, 0x00FC0003, c.s2 });
+        try testing.expectEqual(c.want, state.pending_jmp_offset);
+    }
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x80A5D7F7, 0x00FC0007, 0x84010108 })); // S1[4:0] = 7 wedges
+}
+
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {
     const gpa = testing.allocator;
     const prog = try assemble(gpa, "ldi s12, #0\nptst p13, s0, #11, #0x0B\nx17.halt\n");

@@ -4782,6 +4782,7 @@ fn execX17(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (s1_class != 0b000 and s2_class == 0b010 and (s1 >> 28) & 1 == 1) return execX17Agu(gpa, state, bundle);
     // S1 classes 011, 101 (fact 551) and 111 (619) run as 001.
     if (s1_class & 1 == 1 and s2_class == 0b000) return execX17Agu2(gpa, state, bundle);
+    if (s1_class == 0b000 and s2_class == 0b100 and (s1 >> 18) & 0x3F == 0x3F) return x17EJump(state, bundle);
     if (s1_class == 0b000 and s2_class == 0b100) return execX17E(gpa, state, bundle);
     if (s1_class == 0b000 and s2_class == 0b011) return execX17Ld(gpa, state, bundle);
     if (s2_class == 0b011) return execX17Sty(gpa, state, bundle);
@@ -4810,6 +4811,15 @@ fn x17JumpP8(state: *State, bundle: []const u32) RunError!void {
     const off: u32 = (bundle[2] >> 9) & 0x7FFF;
     if (off == 0) return RunError.UnknownForm;
     if (state.p[8] != 0) state.pending_jmp_offset = @as(i32, @bitCast(off << 17)) >> 17;
+}
+
+/// 927: S1 class 000 / S2 class 100 with S1[23:18] all set (0x4DB) jumps q + 0xE after two
+/// delay bundles iff p<S2[15:12]> (0: always).  Only h[16:13] = 0xE with S1[4:0] = 3 is
+/// measured; other values wedge (the encoding is OPEN), and the other slots are unmeasured.
+fn x17EJump(state: *State, bundle: []const u32) RunError!void {
+    if ((bundle[0] >> 13) & 0xF != 0xE or bundle[1] & 0x1F != 3) return RunError.UnknownForm;
+    const sel: u32 = (bundle[2] >> 12) & 0xF;
+    if (sel == 0 or state.p[sel] != 0) state.pending_jmp_offset = 0xE;
 }
 
 fn execX17Ms(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
