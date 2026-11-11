@@ -581,6 +581,45 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # yld10 (0x10 with S class 111; fact 123 pass 149): s<head[24:21]> <- by S[23:22], S[17:16]: 01/10 Y:[e<S[28:25]>] (e0 reads 0), 00/10 0, 11/10 0x700?, S[17:16] != 10 yd;
 # 844, 845: e<2*S[2:0] + head[31]> <- #head[20:5] beside the load (measured into e5 and e8).
 # x16 b16 (855): e<S1[23:20]> <- #head[20:5] (S2[20] = S2[17] = 1; either clear writes 0) and A<2*S1[3:0] + head[31]> <- #head[20:5] (840's A17 is this route).
+# x19k (859, 862): e<w1[23:20]> <- #head[20:5] after the slots read e; p<w2[30:27]> <- cond w3[23:20] of R<w3[14:11]> (864, 865 over 0, 1, 9, 0x7FFF, 0x8000, 0xFFFF: 0 1; 1/5 0; 6 >0; 7/13 >=0; 8 <=0; 9/12 <0; 10/14 !=0; 11/15 ==0; 867 over 13 values: 2 (R+1) > 0, 3 (R-1) > 0, 4 -R > 0, 16-bit wrap).
+# x19k s slot (871, 874): mux 1/2 run AGU10 with w2[25] = 1 (own-x19kmux2), else AGU10B, whose fn 2 reads e<w2[7:4]> here.
+# x15 pt (860): e<2*S[2:0] + head[31]> <- #head[20:5] beside the s <- p slot; S[23:20] inert here.
+# aset0b (861): e<[12:9]> <- the raw Y word and s<[29:26]> sign-extended, as dld (854).
+# aset0b A write (862): only while [19] = 0 (324 called [19] inert); [14:13] also changes the word read (address mode, OPEN).
+# x02 (863): the R slot's Y side (w5[27:26] = 00, w5[31:30] = 00) with w5[17] also writes the raw word to e<w1[6:3]>; w4[2] adds 0x100 to that copy (refused).
+# x02 (866, 868): under w4 mode 001 the w2 slot also runs: s<w2[12:9]> <- X:[A<w4[21:17]>] with w5[19], else 0 (no product: four operand pairs gave 0); w5[15] = 1 reads a Y word there (OPEN).
+# ystm (868): store on with h[26] = h[27] = 0: e<h[12:9]> <- op h[20:17] of i = {S[11:0], h[31:28]} (1000/1010 i, 1011 -i, 0010 0, 1110 x + 1; others OPEN); h[27] = 1 and the R / A / e side slots OPEN there.
+# st.x 0x0F (869): head[29] = 0 also writes A<head[28:25]> <- #head[20:5]; head[29] = 1 stops it.
+# alu.m (870): code 0x2B with m = 1, # = 0 is the unsigned 24-bit min of a and b; code 0x28 with m = 5 is the signed max of #[22:19] and b (871; 779's move where b >= #).
+# x17 rsub op 0 (872): S1[3] = 0 writes A<{S1[2:0], head[31]}> <- #head[20:5]; s<S1[22:19]> <- 0, R<S2[8:5]> <- #head[20:5]; p<S1[7:4]> <- cond head[24:21] of R<S2[4:1]> (878, x19k's table; head[25] = 0 OPEN); Y (S2[31]) OPEN.
+# x00 A slot (873): A<w3[23:20]> <- #head[26:11] with w3[24] = 0, w4[21] = 1, w5[26:25] = 11 (876: the s4 load is the next bundle's, not this one's).
+# ealu (875): w[10:7] is an s index, not one-hot: s<w[10:7]> <- #sx16(head[26:11]) with w[24:22] = 001 (flips of w[22..24] stopped it).
+# pair (876): with S[21:20] = 10 and S[18], s<S[10:7]> <- X:[A<4*S[2:0] + head[31:30]>] (24 bits) beside the e write.
+# alu.m 0x20 (877): writes 0 under every m / # / b tried, as 0x22 (775).
+# x16 esa (879): S1 class 000 / S2 class 111, head code 0x0E, S1 mux 110: s<head[24:21]> <- #head[20:5]; e<S1[23:20]> (S2[20], else 0) and A<2*S1[2:0] + head[31]> (S1[3] = 0) <- X16_ALU op of the old s<S2[28:25]>, 16 bits.
+# x16 esa (880): s<S1[11:8]> <- the same value as e/A (not a Y load).
+# x00 ctl 2 (881): relative jump q + sx15({w2[0], w1[31:18]}) taken when p<w4[31:28]> = 0; delay slots / link OPEN.
+# x00 ctl 1 (882): unconditional; ctl 3 jumps on p<c> set (772 confirmed).
+# lde (882): class 011 also writes A<[25:21]> <- #[20:5]; k = 1..7 leaves A (59, 829); lde.arm / class 111 OPEN.
+# x19alu mode 0xE (883): op 2 writes s<w1[27:24]> <- 0; other ops OPEN.
+# x19alu X mux 100 (884): X[15:0] << 7 over 24 bits.
+# x18 class 011 store (885): w3[5:4] = 11, w2[22] = 0: X:[A<w2[21:18]>] <- s<w2[13:10]>, old values.
+# x19k (885, 886): A<{w1[2:0], head[31]}> <- #head[20:5] while w1[3] = 0; e<w2[11:8]> <- e<w2[7:4]> - 1 (w2[25] = 1), 0 (w2[25] = 0); fn 0 only.
+# x19k p (887): with e<w2[11:8]> live, cond 0 writes p <- sx16(e result) > 0; other conds OPEN.
+# x00 ctl 4 (888): call to absolute w1[31:18], two delay bundles; return OPEN.
+# class 0A z move (889): [30] = 1, not par: R<[25:22]> <- z, s<[29:26]> <- sx16(z); z has no known writer (0 in the decoder run).
+# ystm (890): h[26] = 0, store off, fn 10: e<h[12:9]> <- y + i, R<S[28:25]> <- the Y word; other fns OPEN.
+# x19 imm (891): R<w1[16:13]> <- Y:[e<w3[28:25]>] with w2[3] = 1, w2[4] = w2[14] = 0; s<head[24:21]> <- v.
+# x14 A (891): head class 010, S class 000, S[28:25] = 5: A<head[28:25]> <- #head[20:5]; s<head[24:21]> <- sx16 fn S[20:17] (0 e, 2 e+1, 4 e-1, 8 0) of e<S[24:21]>.
+# x16.mul2 jump (893): q + sx15(S2[23:9]) after two delay bundles while S1[14:13] = 0; offset 0 OPEN.
+# x15pt Y store (894): S[16:15] = 11: Y:[e<S[20:17]>] <- s<S[24:21]> low 16.
+# x17.agu2 s mux (894): S2[9:6] = 6: s<S2[13:10]> <- Y:[e<S2[24:21]>] zx; 2 the AGU result; 4 / 14 OPEN.
+# x16agu mux 000 (895): e<{S1[2:0], head[31]}> <- AGU10 fn S1[10:7] (10 y+i, 11 y-i, 8 i, 14 y, 2 0) of y = R<head[30:27]>, i = head[26:11].
+# x17mve p (896): p<h[14:11]> <- cond h[25:22] of R<S2[4:1]>; side slots A<h[18:15]>, e<S1[15:12]>, s<S1[20,22,23]>, R<S2[8:5]> OPEN.
+# ystm A (897): A<h[25:21]> <- the e<h[12:9]> value (store-off paths).
+# st second (899): class 001 / 011 words pair with st; [16:15] = 11 stores Y:[e<w[20:17]>] <- s<w[24:21]>, 00 writes e1 only.
+# pair X load (900): head[25] = 1 steps A<4*S[2:0]+h[31:30]> down by 1 after the load.
+# dld (900): [13] = 1 reads Y for e<[12:9]> even with s<[29:26]> = s0.
 # S[6:3] names an s write with an OPEN source (542 revises 123's clears; own-yld10k), refused; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the measured bundle is OPEN.  own-yld10
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12

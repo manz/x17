@@ -492,7 +492,7 @@ fn parseU32(s: []const u8) u32 {
 }
 
 fn parseLayout(src: []const u8) Layout {
-    @setEvalBranchQuota(100_000);
+    @setEvalBranchQuota(200_000);
 
     // Walk the file line by line, picking only the three keys we care about
     // inside the [layout] section.  This is deliberately dumb: no general
