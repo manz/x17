@@ -774,13 +774,10 @@ test "x02.ainc's template leaves s2 (954) and x18.rag's steps e7" {
 test "x18 class 101 also writes its R slot sum to A<2*w1[3:0] + head[31]> (955)" {
     // The AAC TNS loop's rag101 (80000018 00001002 60000000 A0262980): R3 and A5 <- A12 + R5.
     const gpa = testing.allocator;
-    const prog = try assemble(gpa,
-        \\x18.rag101 s0, R3, A12, R5, #2
-        \\x17.halt
-        \\
-    );
+    const halt = try assemble(gpa, "x17.halt\n");
+    defer gpa.free(halt);
+    const prog = try std.mem.concat(gpa, u32, &.{ &.{ 0x80000018, 0x00001002, 0x60000000, 0xA0262980 }, halt });
     defer gpa.free(prog);
-    try testing.expectEqualSlices(u32, &.{ 0x80000018, 0x00001002, 0x60000000, 0xA0262980 }, prog[0..4]);
     var state = emu.State{};
     defer state.deinit(gpa);
     state.r[3] = 0x1234;
@@ -788,6 +785,79 @@ test "x18 class 101 also writes its R slot sum to A<2*w1[3:0] + head[31]> (955)"
     state.a[12] = 0x100;
     _ = try emu.runFrom(gpa, &state, prog, 0, 16);
     try testing.expectEqual([2]u32{ 0x105, 0x105 }, [2]u32{ state.r[3], state.a[5] });
+}
+
+test "x18 class 000 writes A<2*w1[3:0] + head[31]> <- A8 + 1 beside its e step (956)" {
+    // own-x18eagu-a: the im_pre loop's eagu, A8 = 0x17FB -> 0x17FC; w1[3:0] = 5 moves the dest to A10.
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, dest: usize }{ .{ .w1 = 0x09C00004, .dest = 8 }, .{ .w1 = 0x09C00005, .dest = 10 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[8] = 0x17FB;
+        state.a[10] = 0x55;
+        const halt = try assemble(gpa, "x17.halt\n");
+        defer gpa.free(halt);
+        const prog = try std.mem.concat(gpa, u32, &.{ &.{ 0x00000018, c.w1, 0x0002AC00, 0x0E040000 }, halt });
+        defer gpa.free(prog);
+        _ = try emu.runFrom(gpa, &state, prog, 0, 16);
+        try testing.expectEqual(@as(u32, 0x17FC), state.a[c.dest]);
+    }
+}
+
+test "x18 class 000's A write loads #head[20:5] when w2[30] = 1 (351)" {
+    // 352's T-phase bundle (w2[17] = w2[18] = w3[7] = 0) is refused under 485/487.
+    const gpa = testing.allocator;
+    const halt = try assemble(gpa, "x17.halt\n");
+    defer gpa.free(halt);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    // 351: own-x18c0a, 0042A058 C0028017 4002A25D 00000000 writes A14 <- #head[20:5] = 0x1502.
+    const imm = try std.mem.concat(gpa, u32, &.{ &.{ 0x0042A058, 0xC0028017, 0x4002A25D, 0x00000000 }, halt });
+    defer gpa.free(imm);
+    _ = try emu.runFrom(gpa, &state, imm, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1502), state.a[14]);
+}
+
+test "x18 classes 110 and 111 write A<2*w1[3:0] + head[31]> (345, 344)" {
+    // own-x18c6a: 80615798 00005007 0058146C C0500001 gives A15 <- #0xABC.
+    // own-x18c7a: 80600018 72343004 32300006 E60481D6 gives A9 <- A9 + 1.
+    const gpa = testing.allocator;
+    const halt = try assemble(gpa, "x17.halt\n");
+    defer gpa.free(halt);
+    for ([_]struct { w: [4]u32, a: usize, want: u32 }{
+        .{ .w = .{ 0x80615798, 0x00005007, 0x0058146C, 0xC0500001 }, .a = 15, .want = 0xABC },
+        .{ .w = .{ 0x80600018, 0x72343004, 0x32300006, 0xE60481D6 }, .a = 9, .want = 0x201 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[9] = 0x200;
+        const prog = try std.mem.concat(gpa, u32, &.{ &c.w, halt });
+        defer gpa.free(prog);
+        _ = try emu.runFrom(gpa, &state, prog, 0, 16);
+        try testing.expectEqual(c.want, state.a[c.a]);
+    }
+}
+
+test "the x18.eagu and x18.rag101 templates park their A write on A16 / A17 (957)" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\x18.eagu e7, e7, #2
+        \\x18.rag101 s0, R3, A12, R5, #2
+        \\x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    for (1..16) |k| state.a[k] = @intCast(0x100 * k);
+    state.r[5] = 5;
+    _ = try emu.runFrom(gpa, &state, prog, 0, 16);
+    var want: [16]u32 = undefined;
+    for (&want, 0..) |*w, k| w.* = @intCast(0x100 * k);
+    try testing.expectEqualSlices(u32, &want, state.a[0..16]);
+    try testing.expectEqual([2]u32{ 0x801, 0xC05 }, [2]u32{ state.a[16], state.a[17] });
+    // The template is a base: the operands fill w1[25:22] / w1[29:26], so eagu still steps e7.
+    try testing.expectEqual(@as(u32, 1), state.e[7]);
 }
 
 test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[29:27]" {

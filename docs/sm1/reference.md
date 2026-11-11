@@ -737,10 +737,10 @@ Six-syllable VLIW that increments an A register (A<w2[21:17]> <- A<w3[4:0]> + 1)
 
 ### `x18.eagu`
 
-Updates an element register e from an address-generation function (selected by a 4-bit field) applied to another e register, with y fixed at zero.
+Updates an element register e from an address-generation function (selected by a 4-bit field) applied to another e register, with y fixed at zero; its A side write is parked on A16.
 
 - Syllables: 4
-- Base: `00000018` `00000004` `0002ac00` `00040000`
+- Base: `00000018` `00000008` `0002ac00` `00040000`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
@@ -2019,10 +2019,10 @@ Address-generation op writing R: dest_R gets AGU3 function fn of an A register a
 
 ### `x18.rag101`
 
-Writes R and A5 from the AGU3 function of an A and an R register, plus an X-slot load into destination s.
+Writes R (and the unused A17) from the AGU3 function of an A and an R register, plus an X-slot load into destination s.
 
 - Syllables: 4
-- Base: `80000018` `00001002` `60000000` `a0000000`
+- Base: `80000018` `00001008` `60000000` `a0000000`
 
 | operand | kind | syllable | bits |
 |---|---|---|---|

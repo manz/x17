@@ -478,6 +478,10 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
                 if (state.s[st_s] != st_old) return RunError.UnknownForm;
                 state.x_mem.put(gpa, state.a[(bundle[2] >> 17) & 0x1F], st_old & M24) catch return RunError.OutOfMemory;
             }
+            // 345: A<2*w1[3:0] + head[31]> <- #head[20:5]; A31 is not a plain register (649).
+            const a110: u32 = 2 * (bundle[1] & 0xF) + (bundle[0] >> 31);
+            if (a110 == 31) return RunError.UnknownForm;
+            if (a110 != 0) state.a[a110] = (bundle[0] >> 5) & 0xFFFF;
             return;
         }
         // 485, 487: with w2[17], w2[18] and w3[7] all clear a class-000 bundle may stop two
@@ -3502,6 +3506,9 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const hi_dest: u32 = w3 & 0xF;
     const lo_dest: u32 = (w2 >> 12) & 0xF;
     const alu_dest: u32 = (w1 >> 8) & 0xF;
+    const dest_a: u32 = 2 * (w1 & 0xF) + (h >> 31);
+    if (dest_a == 31) return RunError.UnknownForm;
+    const a_val: u32 = if ((w2 >> 23) & 1 == 1) (h >> 5) & 0xFFFF else x18RSlot(state, w3);
     const x_lo_raw: u32 = state.s[w2 & 0xF] & 0xFFFF;
     const st_val: u32 = x_lo_raw;
     // X slot s<head[24:21]>: muxes 1, 2 and 6 the immediate head[20:5] (175); 3, 4 and 5 lanes
@@ -3575,6 +3582,8 @@ fn execX18C7(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (hi_dest != 0) state.s[hi_dest] = @truncate((hi_u >> 24) & (if (mac48_on) M24 else 0xFFFF));
     if (lo_dest != 0) state.s[lo_dest] = @truncate(acc_u & (if (mode == 5) M24 else 0xFFFF));
     if (alu_dest != 0) state.s[alu_dest] = alu_v;
+    // 344: A<2*w1[3:0] + head[31]> <- #head[20:5] when w2[23] = 1, else the AGU3 sum.
+    if (dest_a != 0) state.a[dest_a] = a_val;
 }
 
 /// The class 010/101 R slot (fact 194, 195):
@@ -3618,6 +3627,9 @@ fn execX18C2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if (fresh3 and dest_s != 0) state.yd = y3;
     if (dest_e != 0) state.e[dest_e] = e_val;
     if (dest_r != 0) state.r[dest_r] = r_val;
+    // 353: A<2*w1[3:0] + head[31]> <- #head[20:5] when w1[31] = 1, else the R slot sum.
+    const dest_a: u32 = 2 * (w1 & 0xF) + (h >> 31);
+    if (dest_a != 0) state.a[dest_a] = if (w1 >> 31 == 1) (h >> 5) & 0xFFFF else r_val;
 }
 
 /// Class 101 (fact 195): the rimm e slot, class 010's R slot (its sum also lands
@@ -3665,7 +3677,9 @@ fn execX18C5(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 /// w1[17:15] (0 / - / the AGU / - / - / X:[A<w2[12:8]>] when w2[14:13] = 01, else
 /// xd / - / 0); Y store (w2[7], w2[16]) of s<{w3[2:0], w2[31]}> at Y:[x]; second e
 /// slot e<w2[5:2]> <- y - 1, where w2[17] = 0 reads y as 0 in phase T = 0 and
-/// flips T (T survives runs, reset to 0).
+/// flips T (T survives runs, reset to 0).  A<2*w1[3:0] + head[31]> <- #head[20:5]
+/// (w2[30] = 1) or AGU3 over A and R plus y on the phase the second e slot reads 0
+/// (fact 351, 352, 956).
 fn execX18C0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const w1 = bundle[1];
@@ -3706,10 +3720,16 @@ fn execX18C0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if ((w2 >> 7) & 1 == 1 and (w2 >> 16) & 1 == 1) {
         state.y_mem.put(gpa, x, st_val) catch return RunError.OutOfMemory;
     }
+    // 351, 352, 956: A<2*w1[3:0] + head[31]> <- #head[20:5] when w2[30] = 1, else
+    // AGU3[w3[24:20]](A<w3[19:15]>, R<w3[14:11]>), plus the second e slot's source on the
+    // T phase where that slot reads 0.  Index 0 unmeasured.
+    const dest_a: u32 = 2 * (w1 & 0xF) + (h >> 31);
+    const a_val: u32 = if ((w2 >> 30) & 1 == 1) (h >> 5) & 0xFFFF else (x18RSlot(state, w3) +% (y -% y2)) & 0xFFFF;
     if (dest_e != 0) state.e[dest_e] = eop;
     if (dest_s != 0) state.s[dest_s] = src;
     if (dest_s2 != 0) state.s[dest_s2] = src;
     if (dest_e2 != 0) state.e[dest_e2] = (y2 -% 1) & 0xFFFF;
+    if (dest_a != 0) state.a[dest_a] = a_val;
 }
 
 /// Class 100 (fact 172, 196-198, 204), slots latched then written:
