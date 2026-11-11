@@ -1586,7 +1586,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     if (mac_dest != 0) state.s[mac_dest] = mac_val;
     if (mpy_dest != 0) state.s[mpy_dest] = mpy_val;
     // 873: A<w3[23:20]> <- the immediate with w3[24] = 0, w4[21] = 1 and w5[26:25] = 11 (each
-    // flip stopped it); unmeasured on 0x01.  The bundle's X load through the new A11 is OPEN.
+    // flip stopped it); unmeasured on 0x01.
     const dest_a: u32 = (w3 >> 20) & 0xF;
     if (!x01 and dest_a != 0 and (w3 >> 24) & 1 == 0 and (w4 >> 21) & 1 == 1 and (w5 >> 25) & 3 == 3) state.a[dest_a] = imm;
 }
@@ -3609,7 +3609,7 @@ fn execYld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     state.yd = v; // 571
 }
 
-/// 0x10 with a class-011 second, S[7] = 0: e<S[6:3]> <- #head[20:5] (835).  Fact 828: S[19:16] = 6
+/// 0x10 with a class-011 second, S[7] = 0: e<S[6:3]> <- #head[20:5] (835), and 876's X load.  Fact 828: S[19:16] = 6
 /// also loads R6 <- Y:[e<S[28:25]>] (head[23:22] does not move the R; which field names it is
 /// open); 5 writes R6 another value (0 seen) and is refused.  Other codes keep the e write
 /// alone (own-pair's 4 is measured on e only; their R effects are unmapped).
@@ -3622,6 +3622,13 @@ fn execPair(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
         5 => return RunError.UnknownForm,
         6 => state.r[6] = (state.getY(state.e[(s1 >> 25) & 0xF]) orelse 0) & 0xFFFF,
         else => {},
+    }
+    // 876: with S[21:20] = 10 and S[18], s<S[10:7]> <- X:[A<4*S[2:0] + head[31:30]>] (24 bits),
+    // xld10's load; flipping S[20] or S[21] stopped it.
+    const ld_dest: u32 = (s1 >> 7) & 0xF;
+    if (ld_dest != 0 and (s1 >> 20) & 3 == 2 and (s1 >> 18) & 1 == 1) {
+        const a_idx: u32 = (4 * (s1 & 7) + (head >> 30)) & 0x1F;
+        state.s[ld_dest] = (state.readX(state.a[a_idx]) orelse 0) & M24;
     }
     const imm: u32 = (head >> 5) & 0xFFFF;
     // e<S[6:3]> (fact 835: S[6:3] = 5 and 13 land in e5 and e13).

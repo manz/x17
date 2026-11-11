@@ -2349,6 +2349,23 @@ test "ealu's s<w[10:7]> is an index: 0x24B writes s9 <- 0xFFFFFF (875)" {
     }
 }
 
+test "pair also loads s<S[10:7]> <- X:[A<4*S[2:0] + head[31:30]>] (876)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s1: u32 = 0x6024822A, d: u32 = 4, v: ?u32 = 0x123456 }{
+        .{},
+        .{ .s1 = 0x6014822A, .v = null }, // S[21:20] = 01: no load
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[11] = 0x14AA;
+        state.s[c.d] = 0x77;
+        try state.x_mem.put(gpa, 0x14AA, 0x123456);
+        try emu.executeBundle(gpa, &state, &.{ 0xC005D9D0, c.s1 });
+        try testing.expectEqual(c.v orelse 0x77, state.s[c.d]);
+        try testing.expectEqual(@as(u32, 0x2ECE), state.e[5]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
