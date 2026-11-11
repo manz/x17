@@ -2457,6 +2457,17 @@ test "x00 ctl 2 jumps by sx15 when p<w4[31:28]> is 0 (881)" {
     }
 }
 
+test "x00 ctl 1 jumps whatever p<w4[31:28]> holds (882)" {
+    const gpa = testing.allocator;
+    for ([_]u32{ 0, 1, 10, 12, 14 }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[12] = 1;
+        try emu.executeBundle(gpa, &state, &.{ 0x008E09C0, 0x01F80008, 0x003F6680, 0x00000001, (c << 28) | 0x00100000, 0x06000006, 0x00009000 });
+        try testing.expectEqual(@as(?i32, 0x7E), state.pending_jmp_offset);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
@@ -3313,7 +3324,8 @@ test "x00's jump controls take sx15({w2[0], w1[31:18]}) (fact 575, 772)" {
         .{ .ctl = 0xE, .w1 = (1 << 26) | (4 << 18), .off = 260 }, // +256 per w1[26]
         .{ .ctl = 0x17, .w1 = 0x3FFF << 18, .w2 = 1, .off = -1 },
         .{ .ctl = 3, .w1 = 0x0C << 18, .w4 = 1 << 28, .off = null }, // 772: p1 = 0, not taken
-        .{ .ctl = 1, .w1 = 0x0C << 18, .w4 = 1 << 28, .off = null }, // condition under control 1: unmeasured
+        .{ .ctl = 1, .w1 = 0x0C << 18, .w4 = 1 << 28, .off = 12 }, // 882: control 1 ignores c
+        .{ .ctl = 0xE, .w1 = 0x0C << 18, .w4 = 1 << 28, .off = null }, // condition under control 0xE: unmeasured
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -7852,7 +7864,7 @@ test "0x00 jump control 3 is taken iff p<w4[31:28]>, code 0 always (fact 772)" {
     // Other jump controls with a nonzero condition stay unmeasured.
     var state = emu.State{};
     defer state.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0, 16 << 18, 0, 1, 0xD0000000, 0, 0 }));
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0, 16 << 18, 0, 0xE, 0xD0000000, 0, 0 }));
 }
 
 test "alu head shifts asr / asrrs / lsr over every count (fact 774); clr 0x22 with modifiers (775)" {
