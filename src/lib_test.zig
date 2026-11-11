@@ -2745,6 +2745,25 @@ test "ystm's A<h[25:21]> mirrors its e write (897)" {
     }
 }
 
+test "st takes a class-011 second as its wr; [16:15] = 00 writes e1 alone (899)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w: u32, store: ?u32 }{
+        .{ .w = 0x60238000, .store = 0x1234 }, // s<w[24:21]> = s1 at Y:[old e1]
+        .{ .w = 0x60638000, .store = 0x0333 }, // s3
+        .{ .w = 0x60000000, .store = null },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.e[1] = 0x10AB;
+        state.s[1] = 0x1234;
+        state.s[3] = 0x0333;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x20029D8F, c.w, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.store, state.getY(0x10AB));
+        try testing.expectEqual(@as(?u32, null), state.getY(0x14EC));
+        try testing.expectEqual(@as(u32, 0x14EC), state.e[1]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

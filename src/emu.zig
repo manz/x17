@@ -184,9 +184,16 @@ pub const UnsetReads = struct {
     open_p: u64 = 0,
 };
 
-/// st paired with its wr second ([31:29] = 001, [16:15] = 11).
+/// st paired with its wr second ([31:29] = 001 or 011, [16:15] = 11; 899).
 fn isStWr(slice: []const u32) bool {
-    return slice.len == 2 and slice[0] & 0x1F == 0x0F and slice[0] >> 29 == 1 and slice[1] & 0xE0018000 == 0x20018000;
+    return slice.len == 2 and slice[0] & 0x1F == 0x0F and slice[0] >> 29 == 1 and stSecond(slice[1]) and (slice[1] >> 15) & 3 == 3;
+}
+
+/// A word st takes as its second: class 001 or 011 (765, 899).  Another st head (low5 0x0F)
+/// is x17's back-to-back store shorthand (the own-st3 gates; on silicon each has its own
+/// second, 899), so it is not taken.
+fn stSecond(w: u32) bool {
+    return (w >> 29 == 0b001 or w >> 29 == 0b011) and w & 0x1F != 0x0F;
 }
 
 pub const BundlePhase = enum { before, after };
@@ -365,7 +372,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (w1 >> 29 == 0b101 and w1 & 0x00500000 == 0x00500000) return execStx0f(gpa, state, bundle);
         if (w1 >> 29 == 0b101) return execRimm(state, bundle);
         // 757: st.y with a class-011 second; the loop head (0x6044800x) keeps its own row.
-        if (w1 >> 29 == 0b011 and head & 0xFFFFFFF0 != 0x60448000) return execSte011(state, bundle);
+        if (w1 >> 29 == 0b011 and head >> 29 != 0b001 and head & 0xFFFFFFF0 != 0x60448000) return execSte011(state, bundle);
     }
     if (low5 == 0x08 and (head >> 29) == 0b010 and (head >> 5) & 0x30 == 0x30) {
         return execStk(gpa, state, head);
@@ -4602,13 +4609,20 @@ fn execStY(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         },
         else => {},
     }
-    const pair = bundle.len >= 2 and bundle[1] & 0xE0018000 == 0x20018000;
+    const pair = bundle.len >= 2 and stSecond(bundle[1]);
     if (pair) {
         // 765: with a class-001 store second the one store is Y:[e<w[20:17]>] <- s<w[24:21]>,
         // e as it stood before the bundle; w[25] inert, no lane or position dependence.
+        // 899: class 011 is the same; [16:15] = 00 writes e1 alone, no store; 01 / 10 OPEN.
         const w = bundle[1];
-        const v: u32 = state.s[(w >> 21) & 0xF] & 0xFFFF;
-        state.y_mem.put(gpa, try yAddrE(state, (w >> 17) & 0xF), v) catch return RunError.OutOfMemory;
+        switch ((w >> 15) & 3) {
+            3 => {
+                const v: u32 = state.s[(w >> 21) & 0xF] & 0xFFFF;
+                state.y_mem.put(gpa, try yAddrE(state, (w >> 17) & 0xF), v) catch return RunError.OutOfMemory;
+            },
+            0 => {},
+            else => return RunError.UnknownForm,
+        }
     } else {
         const value: u32 = state.v[state.cur_lane & 0x3];
         state.y_mem.put(gpa, addr, value) catch return RunError.OutOfMemory;
@@ -6116,9 +6130,10 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         // Each syllable sits in lane (position mod 4) (fact 21).
         state.cur_lane = @intCast((lane0 + i) & 3);
         var len = bundleLen(head) orelse return RunError.UnknownBundleLength;
-        // st pairs only with a wr second ([31:29] = 001, [16:15] = 11).
+        // st pairs with a class-001 or (899) class-011 second; other words stay x17's own
+        // one-word st, which silicon never runs (899: every st there has a second).
         if (head & 0x1F == 0x0F and head >> 29 == 1 and len == 2 and
-            (i + 1 >= syllables.len or syllables[i + 1] & 0xE0018000 != 0x20018000)) len = 1;
+            (i + 1 >= syllables.len or !stSecond(syllables[i + 1]))) len = 1;
         if (i + len > syllables.len) return RunError.UnknownBundleLength;
         const slice = syllables[i .. i + len];
         const pc_at_bundle = i;
