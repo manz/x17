@@ -9029,6 +9029,15 @@ test "x17 S1[23:18] = 0x3F jumps q + 0xE iff p<S2[15:12]> (927)" {
     try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x80A5D7F7, 0x00FC0007, 0x84010108 })); // S1[4:0] = 7 wedges
 }
 
+test "xld10 writes head[20:5] to e<S[6:3]> (930)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[1] = 0x2EAE;
+    try emu.executeBundle(gpa, &state, &.{ 0x4005D6D0, 0x60248188 }); // 0x1FA9
+    try testing.expectEqual(@as(u32, 0x2EB6), state.e[1]);
+}
+
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {
     const gpa = testing.allocator;
     const prog = try assemble(gpa, "ldi s12, #0\nptst p13, s0, #11, #0x0B\nx17.halt\n");

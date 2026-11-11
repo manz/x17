@@ -3792,6 +3792,8 @@ fn execXld10(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     const v: u32 = state.readX(addr) orelse 0;
     if (dest_s_x != 0) state.s[dest_s_x] = v;
     if (dest_s2 != 0) state.s[dest_s2] = imm16;
+    // 930: e<S[6:3]> <- head[20:5], as the [7] = 0 pair's (835); 130's "S[6:3] inert" saw no e.
+    if ((s1 >> 3) & 0xF != 0) state.e[(s1 >> 3) & 0xF] = imm16;
 }
 
 fn execEalu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
