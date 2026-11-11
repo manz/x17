@@ -2787,6 +2787,32 @@ test "pair's X load steps its A with head[25]; dld's e takes Y beside s0 (900)" 
     try testing.expectEqual(@as(u32, 0x1496), flat.a[1]);
 }
 
+test "x03 walks e from s and stores Y at the old e (902)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    for (1..16) |n| state.s[n] = @as(u32, @intCast(n)) * 0x100 + 0x23;
+    state.e[3] = 0x13C8;
+    const b = [_]u32{ 0x150001C3, 0x00280018, 0x60000000, 0x18000000, 0x00000000, 0x8020A610 }; // 0x1F94
+    try emu.executeBundle(gpa, &state, &b);
+    try testing.expectEqual(@as(u32, 0x523), state.e[3]);
+    try testing.expectEqual(@as(?u32, 0x323), state.getY(0x13C8));
+    var neg = emu.State{};
+    defer neg.deinit(gpa);
+    neg.s[5] = 0x10;
+    var nb = b;
+    nb[0] = 0x150001C3 ^ (4 << 23); // op 110
+    try emu.executeBundle(gpa, &neg, &nb);
+    try testing.expectEqual(@as(u32, 0xFFF0), neg.e[3]);
+    var off = emu.State{};
+    defer off.deinit(gpa);
+    off.e[3] = 7;
+    nb[0] = 0x150001C2; // w0[0] = 0
+    try emu.executeBundle(gpa, &off, &nb);
+    try testing.expectEqual(@as(u32, 7), off.e[3]);
+    try testing.expectEqual(@as(?u32, null), off.getY(7));
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
