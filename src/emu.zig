@@ -2228,6 +2228,11 @@ fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const a_s: u32 = (s1 >> 1) & 0xF;
     const b_s: u32 = (s1 >> 26) & 0xF;
     const half: bool = (s1 & 1) == 1;
+    // 893: a relative jump to q + sx15(S2[23:9]) after two delay bundles while S1[14:13] = 0
+    // (either bit set blocks it; no p condition).  A zero offset is OPEN (it re-ran the
+    // store in one frame): no jump.
+    const off: u32 = (s2 >> 9) & 0x7FFF;
+    if ((s1 >> 13) & 3 == 0 and off != 0) state.pending_jmp_offset = @as(i32, @bitCast(off << 17)) >> 17;
     // S2[3:2] = 11: X:[A<S2[8:4]>] <- s<S1[25:22]> (fact 209).
     if ((s2 >> 2) & 3 == 3) {
         try state.x_mem.put(gpa, state.a[(s2 >> 4) & 0x1F], state.s[(s1 >> 22) & 0xF] & M24);

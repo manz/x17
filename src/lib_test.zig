@@ -2655,6 +2655,24 @@ test "x14 class 010 with a class-000 second: A <- imm, s <- sx16 fn of e (891)" 
     }
 }
 
+test "x16.mul2 jumps by sx15(S2[23:9]) unless S1[14:13] != 0 (893)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s1: u32 = 0x01000040, s2: u32 = 0x20008A1C, off: ?i32 = 0x45 }{
+        .{},
+        .{ .s2 = 0x20FFE01C, .off = -0x10 }, // S2[23:9] = 0x7FF0
+        .{ .s1 = 0x01002040, .off = null }, // S1[13]
+        .{ .s1 = 0x01004040, .off = null }, // S1[14]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[1] = 0x1498;
+        state.s[4] = 4;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000016, c.s1, c.s2 });
+        try testing.expectEqual(c.off, state.pending_jmp_offset);
+        try testing.expectEqual(@as(?u32, 4), state.readX(0x1498));
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
