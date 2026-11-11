@@ -1614,14 +1614,22 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             // 882: ctl 1 jumps whatever c holds.
             if (c != 0 and ctl != 3 and ctl != 1) return RunError.UnknownForm;
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
+            // 944: 0x01 flips ctl 3's sense (not taken with p<c> set, 0x5D9); p<c> clear is
+            // unmeasured there: refused.
+            if (x01 and ctl == 3) {
+                if (state.p[c] == 0) return RunError.UnknownForm;
+                return;
+            }
             if (ctl == 1 or state.p[c] != 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
         // 881: 0x00 ctl 2 is the same relative jump taken when p<w4[31:28]> is 0 (p0 reads 1,
         // never taken); delay slots and any link are unmeasured, run as ctl 1/3's.
+        // 944: 0x01 flips the sense: taken with p<c> set; p<c> clear unmeasured (refused).
         2 => {
-            if (x01) return RunError.UnknownForm;
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
-            if (state.p[bundle[4] >> 28] == 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
+            const pc: u8 = state.p[bundle[4] >> 28];
+            if (x01 and pc == 0) return RunError.UnknownForm;
+            if ((pc == 0) != x01) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
         // 888: a call: two delay bundles, then the target; 911's return comes back after the
         // delay bundles.  A call inside a call is unmeasured: refused.
