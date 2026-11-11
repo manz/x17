@@ -1815,6 +1815,11 @@ fn execZmv(state: *State, head: u32) RunError!void {
     const dest_s: u32 = (head >> 26) & 0xF;
     if (dest_r != 0) state.r[dest_r] = state.z & 0xFFFF;
     if (dest_s != 0) state.s[dest_s] = sx16To24(state.z & 0xFFFF);
+    // 907: with [21:18] = 0101 a zero z clears p1..p3 (z = 0x920D writes no p).  Other
+    // codes on a zero z are unmeasured: refused.
+    if (state.z & 0xFFFF != 0) return;
+    if ((head >> 18) & 0xF != 5) return RunError.UnknownForm;
+    for (1..4) |i| state.p[i] = 0;
 }
 
 /// class-0A parallel move (fact 68, 69, 76): X:[A<[15:11]>] <- s<[19:16]>

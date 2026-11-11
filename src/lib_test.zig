@@ -2838,6 +2838,23 @@ test "x03 walks e from s and stores Y at the old e (902)" {
     try testing.expectEqual(@as(?u32, null), off.getY(7));
 }
 
+test "zmv clears p1..p3 on a zero z (907)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    for (1..16) |i| state.p[i] = 1;
+    try emu.executeBundle(gpa, &state, &.{0x4216010A}); // 0x1F6F
+    try testing.expectEqual(@as(u8, 0), state.p[1] | state.p[2] | state.p[3]);
+    try testing.expectEqual(@as(u8, 1), state.p[4]);
+    var nz = emu.State{};
+    defer nz.deinit(gpa);
+    nz.z = 0x920D;
+    nz.p[2] = 1;
+    try emu.executeBundle(gpa, &nz, &.{0x4216010A});
+    try testing.expectEqual(@as(u8, 1), nz.p[2]);
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{0x4216010A ^ (1 << 19)}));
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
