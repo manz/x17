@@ -403,6 +403,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         // 000; class 000 keeps x16alu (563, 571 measured bundles match the same pattern).
         if (s2_class == 0b111 and s1_class16 != 0 and ((bundle[1] >> 18) & 1 == 1 and bundle[2] & 0xE0050000 == 0xE0040000)) return execX16B16(gpa, state, bundle);
         if (s1_class16 == 1 and s2_class == 0b111) return execX16B16(gpa, state, bundle);
+        if (s1_class16 == 0 and s2_class == 0 and (head >> 25) & 3 != 3 and (bundle[2] >> 9) & 0x7FFF != 0) return x16Jump(state, bundle);
         if (s1_class16 == 0 and s2_class == 0 and (bundle[2] >> 12) & 1 == 1) return execX16Sh(state, bundle);
         if (s2_class == 0b010 and (s1_class16 == 0 or (bundle[1] >> 24) & 1 == 1)) return execX16Xs(state, bundle);
         if (s1_class16 == 3 and s2_class == 0b000) return execX16Xld(state, bundle);
@@ -2294,6 +2295,18 @@ fn execX16Hd(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // Full class-05 word with its [25:19] m/s modifiers (fact 210).
     const v = (try aluWord(head, sx24(av), sx24(bv))) orelse return RunError.UnknownForm;
     state.s[dest_s] = v;
+}
+
+/// 917: x16 with S1 / S2 class 000 and head[26:25] != 11 (not the shifter) jumps like mul2
+/// (893, 905): q + sx15(S2[23:9]) after two delay bundles, taken iff S1[8:5] = 0 or
+/// p<S1[8:5]> (0x39C, + 0x5F on p2).  Measured with no s dest (head[24:21], S1[11:8] = 0):
+/// other slots refused.
+fn x16Jump(state: *State, bundle: []const u32) RunError!void {
+    if ((bundle[0] >> 21) & 0xF != 0 or (bundle[1] >> 8) & 0xF != 0) return RunError.UnknownForm;
+    const off: u32 = (bundle[2] >> 9) & 0x7FFF;
+    const p_sel: u32 = (bundle[1] >> 5) & 0xF;
+    if (p_sel != 0 and state.p[p_sel] == 0) return;
+    state.pending_jmp_offset = @as(i32, @bitCast(off << 17)) >> 17;
 }
 
 fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

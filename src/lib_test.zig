@@ -2887,6 +2887,17 @@ test "x17sty's stop shape runs on with S2[22:18] = 11111 (916)" {
     try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x28200017, 0x60012D50, 0x61FCB804 ^ (1 << 19) }));
 }
 
+test "x16 class-000 jumps by S2[23:9] on p<S1[8:5]> (917)" {
+    const gpa = testing.allocator;
+    for ([_]struct { p2: u8, off: ?i32 }{ .{ .p2 = 1, .off = 0x5F }, .{ .p2 = 0, .off = null } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[2] = c.p2;
+        try emu.executeBundle(gpa, &state, &.{ 0x44029556, 0x0A100058, 0x0000BE00 }); // 0x39C
+        try testing.expectEqual(c.off, state.pending_jmp_offset);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

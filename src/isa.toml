@@ -618,6 +618,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x00 return (911): low5 0 with control w3[4:0] = 5 returns to the bundle after the call's two delay bundles, itself after two delay bundles; one level, nested calls refused.
 # x03 counted jr (915): the e counter writes p<w5[17:14]> (the p the jump tests; p3 when k = 0) <- (e_new > 0), after the jump reads it: e + 1 passes.
 # x17sty stop select (916): in the stop shape S2[22:18] = 00000 stops, 11111 stores and runs on (0x381; retracts 781/801's stop on S2 61fcb804, 801's p1 row refused); other values refused.
+# x16 jump stub (917): S1/S2 class 000, head[26:25] != 11: q + sx15(S2[23:9]) after two delays iff S1[8:5] = 0 or p<S1[8:5]>; s dests refused.
 # x15pt Y store (894): S[16:15] = 11: Y:[e<S[20:17]>] <- s<S[24:21]> low 16.
 # x17.agu2 s mux (894): S2[9:6] = 6: s<S2[13:10]> <- Y:[e<S2[24:21]>] zx; 2 the AGU result; 4 / 14 OPEN.
 # x16agu mux 000 (895): e<{S1[2:0], head[31]}> <- AGU10 fn S1[10:7] (10 y+i, 11 y-i, 8 i, 14 y, 2 0) of y = R<head[30:27]>, i = head[26:11].
