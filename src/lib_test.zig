@@ -2583,6 +2583,26 @@ test "x00 ctl 4 calls the absolute w1[31:18] (888)" {
     try testing.expectEqual(@as(?i32, 0x1F6F - 0x2D2), state.pending_jmp_offset);
 }
 
+test "class 0A reads z into R<[25:22]> and s<[29:26]> (889)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, r: u32, s: u32 }{
+        .{ .h = 0x4216010A, .r = 8, .s = 0 },
+        .{ .h = 0x4256010A, .r = 9, .s = 0 },
+        .{ .h = 0x4616010A, .r = 8, .s = 1 },
+        .{ .h = 0xC216010A, .r = 8, .s = 0 }, // [31] inert
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.z = 0x920D;
+        try emu.executeBundle(gpa, &state, &.{c.h});
+        try testing.expectEqual(@as(u32, 0x920D), state.r[c.r]);
+        if (c.s != 0) try testing.expectEqual(@as(u32, 0xFF920D), state.s[c.s]);
+    }
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &state, &.{0x0216010A})); // [30] = 0 wedges
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

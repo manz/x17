@@ -68,6 +68,9 @@ pub const State = struct {
     /// 842: set by an x00 with w2[17:14] = 1, w4[4:1] = 2 and w5[3]; until the run halts the
     /// x18 class-000 and ystm bundles execute twice.
     x00_double: bool = false,
+    /// 889: a persistent register no known form writes (0x920D after boot history, 0 in the
+    /// decoder's run); read by the class-0A z move.
+    z: u32 = 0,
     /// The running bundle's syllable index, for absolute jumps.
     pc: usize = 0,
     /// The value the last X read left (fact 241).
@@ -315,6 +318,8 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         return execTst(state, bundle);
     }
     if (low5 == 0x0A and (head >> 30) & 1 == 1 and (head >> 20) & 3 == 3) return execPar(gpa, state, head);
+    // 889: class-0A words with [30] = 1 and ldy's enable [9] clear read z ([30] = 0 wedges).
+    if (low5 == 0x0A and bundle.len == 1 and (head >> 30) & 1 == 1 and (head >> 9) & 1 == 0) return execZmv(state, head);
     if (low5 == 0x14 and bundle.len >= 2) {
         const s_class: u32 = (bundle[1] >> 29) & 0x7;
         if (s_class == 0b001) return execXst(gpa, state, bundle);
@@ -1723,6 +1728,16 @@ fn execTst(state: *State, bundle: []const u32) RunError!void {
         return RunError.UnknownForm;
     if ((bundle[1] >> 25) & 0xF == 0) return RunError.UnknownForm; // p0 write: unmeasured
     state.p[(bundle[1] >> 25) & 0xF] = v;
+}
+
+/// class-0A z move (fact 889): R<[25:22]> <- z and s<[29:26]> <- sx16(z); [21:5] and [31]
+/// inert in the one word flipped (par's [21:20] = 11 and ldy's [9] keep their forms); reads
+/// do not consume z.
+fn execZmv(state: *State, head: u32) RunError!void {
+    const dest_r: u32 = (head >> 22) & 0xF;
+    const dest_s: u32 = (head >> 26) & 0xF;
+    if (dest_r != 0) state.r[dest_r] = state.z & 0xFFFF;
+    if (dest_s != 0) state.s[dest_s] = sx16To24(state.z & 0xFFFF);
 }
 
 /// class-0A parallel move (fact 68, 69, 76): X:[A<[15:11]>] <- s<[19:16]>
