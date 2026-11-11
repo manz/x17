@@ -8985,6 +8985,21 @@ test "x16agu's e slot sets p<S2[10:7]> under head[6], !head[9], S1[23] (942)" {
     }
 }
 
+test "x10's class-100 second with S1[15:14] = 00 jumps q + 4 * S1[12:0] (948)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x0A0001D0, s1: u32, want: ?i32 }{
+        .{ .s1 = 0x80A20017, .want = 0x5C }, // 0x5F2 -> 0x64E
+        .{ .s1 = 0x80A20037, .want = 0xDC }, // S1[5]
+        .{ .s1 = 0x80A24017, .want = null }, // S1[14]: no jump
+        .{ .h = 0xF1178050, .s1 = 0x801A0658, .want = null }, // 0x12F: head[31:30] = 11 runs on
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        emu.executeBundle(gpa, &state, &.{ c.h, c.s1 }) catch {};
+        try testing.expectEqual(c.want, state.pending_jmp_offset);
+    }
+}
+
 test "x01 tests p<w1[5:3]> with x00's sense (943, 946)" {
     const gpa = testing.allocator;
     for ([_]struct { w1: u32 = 0x4E54058A, ctl: u32, p: u8, want: ?i32 }{

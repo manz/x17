@@ -1938,6 +1938,12 @@ fn execMul13(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 
 fn execX10Alu(state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
+    // 948: S1[15:14] = 00 also jumps q + 4 * S1[12:0] after two delay bundles (0x5F2, the same
+    // words as own-x10alu0, skips its loop to 0x64E; the gate's halt sits in a delay slot).
+    // No p dependence seen; a zero field is unmeasured and does not jump.  head[31:30] and
+    // S1[30:28] change the form: only 00 / 000 jump (0x12F's head[31:30] = 11 runs on).
+    const s1 = bundle[1];
+    if (h >> 30 == 0 and (s1 >> 28) & 7 == 0 and (s1 >> 14) & 3 == 0 and s1 & 0x1FFF != 0) state.pending_jmp_offset = @intCast(4 * (s1 & 0x1FFF));
     const dest: u32 = (bundle[1] >> 21) & 0xF;
     if ((h >> 5) & 0x3F == 0x3F and (h >> 23) & 7 == 2) {
         if (dest != 0) state.r[dest] = shiftM2((h >> 19) & 0xF, state.s[(h >> 11) & 0xF] & 0xFFFF, state.s[(h >> 26) & 0xF] & 0xFFFF);
@@ -6451,9 +6457,9 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         // delay-slot bundles run before the jump fires (fact 94).
         if (state.pending_jmp_offset) |off| {
             const target_i64: i64 = @as(i64, @intCast(pc_at_bundle)) + off;
-            if (target_i64 < 0 or target_i64 > @as(i64, @intCast(syllables.len))) {
-                return RunError.UnknownBundleLength;
-            }
+            // A target past the program only matters if the jump fires (948: a halt in the
+            // delay slots stops first); it is checked there.
+            if (target_i64 < 0) return RunError.UnknownBundleLength;
             state.jump_target = @intCast(target_i64);
             state.jump_delay = 2;
             state.pending_jmp_offset = null;
@@ -6464,6 +6470,7 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
                     state.link = i;
                     state.call_pending = false;
                 }
+                if (state.jump_target > syllables.len) return RunError.UnknownBundleLength;
                 i = state.jump_target;
             }
         }
