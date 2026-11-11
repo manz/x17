@@ -2468,6 +2468,20 @@ test "x00 ctl 1 jumps whatever p<w4[31:28]> holds (882)" {
     }
 }
 
+test "lde class 011 writes A<[25:21]> with e<[29:26]> (882)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32, a: u32 }{
+        .{ .h = 0x65600066, .a = 11 },
+        .{ .h = 0x64A00066, .a = 5 }, // [24:21] = 5
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try emu.executeBundle(gpa, &state, &.{c.h});
+        try testing.expectEqual(@as(u32, 3), state.e[9]);
+        try testing.expectEqual(@as(u32, 3), state.a[c.a]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

@@ -6677,11 +6677,15 @@ fn execLde(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
     _ = gpa;
     const k: u32 = (head >> 26) & 0xF;
     const imm: u32 = (head >> 5) & 0xFFFF;
-    // k = 0 loads A<[25:21]> instead (fact 51, 829); with k != 0, [25:21] is ignored (59).
+    // k = 0 loads A<[25:21]> instead (fact 51, 829); with k = 1..7, [25:21] is ignored (59, 829).
     if (k == 0) {
         state.a[(head >> 21) & 0x1F] = imm;
         return;
     }
+    // 882: class 011 (k = 8..15 under h[31:30] = 01) writes A<[25:21]> as well; the other
+    // classes with h[29] = 1 (lde.arm, 111) are unmeasured and keep the e write alone.
+    const a_idx: u32 = (head >> 21) & 0x1F;
+    if (head >> 29 == 0b011 and a_idx != 0) state.a[a_idx] = imm;
     state.e[k] = imm;
 }
 
