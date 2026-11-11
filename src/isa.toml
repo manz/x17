@@ -602,6 +602,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x00 ctl 1 (882): unconditional; ctl 3 jumps on p<c> set (772 confirmed).
 # lde (882): class 011 also writes A<[25:21]> <- #[20:5]; k = 1..7 leaves A (59, 829); lde.arm / class 111 OPEN.
 # x19alu mode 0xE (883): op 2 writes s<w1[27:24]> <- 0; other ops OPEN.
+# x19alu X mux 100 (884): X[15:0] << 7 over 24 bits.
 # S[6:3] names an s write with an OPEN source (542 revises 123's clears; own-yld10k), refused; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the measured bundle is OPEN.  own-yld10
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12

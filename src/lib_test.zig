@@ -1870,7 +1870,8 @@ test "x19alu's two X writes beside its ALU" {
     for ([_]struct { h: u32, w1: u32, w2: u32, dest: u32, want: ?u32, w3: u32 = 0x80000000 }{
         .{ .h = 0x00000019, .w1 = 0x00004000, .w2 = 0x01821220, .dest = 2, .want = 0x567, .w3 = 0x84000000 },
         .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac0220a, .dest = 3, .want = 0x246 },
-        .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac02208, .dest = 3, .want = 0x2300 },
+        // 533 read 0x2300 through a 16-bit Y window; 884 keeps the full X[15:0] << 7.
+        .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac02208, .dest = 3, .want = 0x12300 },
         .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac02202, .dest = 3, .want = 0xA050 },
         .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac02200, .dest = 3, .want = 0 },
         .{ .h = 0xa8a40019, .w1 = 0x00004503, .w2 = 0x1ac02204, .dest = 3, .want = null },
@@ -2494,6 +2495,17 @@ test "x19alu mode 0xE op 2 writes 0 beside the X load (883)" {
     try testing.expectEqual(@as(u32, 0x8978AE), state.s[5]);
     try testing.expectEqual(@as(u32, 0), state.s[9]);
     try testing.expectEqual(@as(u8, 1), state.p[7]);
+}
+
+test "x19alu X mux 100 keeps X[15:0] << 7 over 24 bits (884)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.a[15] = 0x20F;
+    try state.x_mem.put(gpa, 0x20F, 0x8978AE);
+    // 0x2CE with w2[1] flipped: mux 101 -> 100.
+    try emu.executeBundle(gpa, &state, &.{ 0x00000459, 0x09007000, 0x2BC1C309, 0x81E58000 });
+    try testing.expectEqual(@as(u32, 0x3C5700), state.s[5]);
 }
 
 test "mul13's head ALU slot and X store" {

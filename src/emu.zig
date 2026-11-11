@@ -4141,7 +4141,7 @@ fn x19AluYBit(state: *State, bundle: []const u32) RunError!PWrite {
 }
 
 /// x19alu's two X writes (fact 533), both from X = X:[A<w2[26:22]>]: s<w2[7:4]> <- X and
-/// s<w2[30:27]> <- mux w2[3:1]: 5 X, 4 (X << 7)[15:0], 1 the stale yd, 0 zero (others OPEN).
+/// s<w2[30:27]> <- mux w2[3:1]: 5 X, 4 X[15:0] << 7 (884), 1 the stale yd, 0 zero (others OPEN).
 /// Two writes to one s are refused.
 fn x19AluX(state: *State, w2: u32, alu_dest: u32) RunError!struct { x: u32, muxed: u32 } {
     const d1: u32 = (w2 >> 4) & 0xF;
@@ -4151,7 +4151,8 @@ fn x19AluX(state: *State, w2: u32, alu_dest: u32) RunError!struct { x: u32, muxe
     const muxed: u32 = switch ((w2 >> 1) & 7) {
         0 => 0,
         1 => state.yd,
-        4 => shl7(x),
+        // 884: X[15:0] << 7 kept over 24 bits (0x8978AE gives 0x3C5700), not shl7's 16.
+        4 => (x & 0xFFFF) << 7,
         5 => x,
         else => return RunError.UnknownForm,
     };
