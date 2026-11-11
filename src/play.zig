@@ -104,7 +104,6 @@ fn jsonMem(gpa: std.mem.Allocator, w: *std.Io.Writer, name: []const u8, mem: *co
 /// disasm, then the registers and predicates it changed and its X / Y reads and writes.
 pub const Tracer = struct {
     const Regs = struct { s: [16]u32, e: [16]u32, r: [16]u32, a: [32]u32, p: [16]u8, v: [4]u32 };
-    const Mem = std.AutoHashMapUnmanaged(u32, u32);
     const Write = struct { addr: u32, old: ?u32, new: u32 };
 
     gpa: std.mem.Allocator,
@@ -115,16 +114,12 @@ pub const Tracer = struct {
     pass: u8 = 0,
     state: *emu.State = undefined,
     log: emu.ReadLog = .{},
+    wlog: emu.WriteLog = .{},
     regs: Regs = undefined,
-    y: Mem = .{},
-    x: Mem = .{},
     /// A write or allocation failed; the trace is cut short.
     failed: bool = false,
 
-    pub fn deinit(self: *Tracer) void {
-        self.y.deinit(self.gpa);
-        self.x.deinit(self.gpa);
-    }
+    pub fn deinit(_: *Tracer) void {}
 
     fn attach(self: *Tracer, state: *emu.State) void {
         self.state = state;
@@ -139,32 +134,26 @@ pub const Tracer = struct {
         const self: *Tracer = @ptrCast(@alignCast(ctx));
         if (self.left == 0 or self.failed) {
             self.state.read_log = null;
+            self.state.write_log = null;
             return;
         }
         switch (phase) {
-            .before => self.before() catch {
-                self.failed = true;
+            .before => {
+                self.regs = regsOf(self.state);
+                self.log = .{};
+                self.wlog = .{};
+                self.state.read_log = &self.log;
+                self.state.write_log = &self.wlog;
             },
             .after => {
                 self.state.read_log = null;
+                self.state.write_log = null;
                 self.after(pc, bundle) catch {
                     self.failed = true;
                 };
                 self.left -= 1;
             },
         }
-    }
-
-    fn before(self: *Tracer) !void {
-        self.regs = regsOf(self.state);
-        self.y.deinit(self.gpa);
-        self.x.deinit(self.gpa);
-        self.y = .{};
-        self.x = .{};
-        self.y = try self.state.y_mem.clone(self.gpa);
-        self.x = try self.state.x_mem.clone(self.gpa);
-        self.log = .{};
-        self.state.read_log = &self.log;
     }
 
     fn after(self: *Tracer, pc: usize, bundle: []const u32) !void {
@@ -188,8 +177,9 @@ pub const Tracer = struct {
             if (r.value) |v| try w.print("0x{x}", .{v}) else try w.writeAll("unset");
         }
         if (self.log.n > self.log.items.len) try w.print(" (+{d} reads)", .{self.log.n - self.log.items.len});
-        try self.memDiffs(w, 'X', &self.x, &self.state.x_mem);
-        try self.memDiffs(w, 'Y', &self.y, &self.state.y_mem);
+        try self.memDiffs(w, .x, &self.state.x_mem);
+        try self.memDiffs(w, .y, &self.state.y_mem);
+        if (self.wlog.n > self.wlog.items.len) try w.print(" (+{d} writes)", .{self.wlog.n - self.wlog.items.len});
         if (self.state.stream_starved) try w.writeAll(" (waits for the stream; did not run)");
     }
 
@@ -207,21 +197,26 @@ pub const Tracer = struct {
         for (old, new, 0..) |o, n, k| if (o != n) try w.print(" {s}{d} 0x{x}->0x{x}", .{ name, k, o, n });
     }
 
-    fn memDiffs(self: *Tracer, w: *std.Io.Writer, bank: u8, old: *const Mem, new: *const Mem) !void {
+    /// The bank's stores this bundle, by address: the word before the first and the one left
+    /// now, kept only where they differ.
+    fn memDiffs(self: *Tracer, w: *std.Io.Writer, bank: emu.ReadLog.Bank, mem: anytype) !void {
         var list: std.ArrayList(Write) = .empty;
         defer list.deinit(self.gpa);
-        var it = new.iterator();
-        while (it.next()) |kv| {
-            const o = old.get(kv.key_ptr.*);
-            if (o == null or o.? != kv.value_ptr.*) try list.append(self.gpa, .{ .addr = kv.key_ptr.*, .old = o, .new = kv.value_ptr.* });
+        const ws = self.wlog.writes();
+        outer: for (ws, 0..) |x, k| {
+            if (x.bank != bank) continue;
+            for (ws[0..k]) |y| if (y.bank == bank and y.addr == x.addr) continue :outer;
+            const now = mem.get(x.addr) orelse continue;
+            if (x.old == null or x.old.? != now) try list.append(self.gpa, .{ .addr = x.addr, .old = x.old, .new = now });
         }
         std.mem.sort(Write, list.items, {}, struct {
             fn lt(_: void, a: Write, b: Write) bool {
                 return a.addr < b.addr;
             }
         }.lt);
+        const c: u8 = if (bank == .x) 'X' else 'Y';
         for (list.items) |x| {
-            try w.print(" w{c}[0x{x}]=0x{x}", .{ bank, x.addr, x.new });
+            try w.print(" w{c}[0x{x}]=0x{x}", .{ c, x.addr, x.new });
             if (x.old) |o| try w.print(" (was 0x{x})", .{o});
         }
     }
