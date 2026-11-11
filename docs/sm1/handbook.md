@@ -166,7 +166,7 @@ decrements: a pointer step rides on a compute or store bundle instead of costing
   undefined (§12).
 - Memory stalls are not characterised.
 
-`x17 run --profile N` gives the bundle counts to set against this rate.
+`x17 play --profile N` (§10) gives the bundle counts to set against this rate.
 
 ## 7. Arithmetic
 
@@ -300,6 +300,39 @@ unknown.
 
 ## 10. Writing fast code
 
+### Cost model
+
+- **Time is issued bundles.** Every bundle costs one bundle time whatever its width (§379): a
+  7-syllable x02 costs the same as a 1-syllable alu. Packing work into a wide bundle is free;
+  splitting it into narrow ones is not.
+- **A taken jump is three bundles**, the jump and its two delay slots (§379, §304). A not-taken
+  jump still runs its slots (§680). Slots that do useful work make the jump cost one.
+- **The budget is per packet.** A host feeds one packet per decoder run, so the number that
+  matters is the worst packet's bundle count, not the mean. Leave headroom: a packet that runs
+  over its deadline is lost output.
+- **Program memory is its own limit:** 4 lanes x 4096 rows = 16,384 syllables, shared by every
+  pass (a pass overwrites only its own rows). Unrolling trades it for time.
+- **Rank by dynamic cost.** A bundle's cost is its width-free count times how often it runs.
+  Static size says nothing about time: one inner loop is usually most of a packet.
+
+### Measuring
+
+Measure before changing anything. `x17 play --profile N` runs an `.x17i` over a packet file
+and prints, for the decoder pass only (init passes are not counted):
+
+- total bundles, the configure run's share (945's arming), the mean and the worst packet, and
+  the five heaviest packets;
+- P memory use: syllables placed across every pass against 16,384, and the highest row;
+- bundles **by function** (each label not starting with `__`, up to the next one) and **by
+  block** (every label, so assembler-made loop heads in macros count separately), hottest
+  first;
+- the hottest bundles with file:line, source text and the macro they came from.
+
+Labels and lines come from the assembler's sidecar (`<name>.json` next to the `.x17i`, or `--debug FILE`); without
+one only the bundle table prints, as disassembly. A block runs from its label to the next
+label, so a block's count can include straight code after its loop; read the bundle table to
+see where the loop ends. `x17 run --profile N` gives the bundle table for a single `.sm` file.
+
 Measured idioms, cheapest first:
 
 - **No padding.** Loads, A steps, alu results feeding branches and back-to-back multiplies all
@@ -400,9 +433,28 @@ Measured idioms, cheapest first:
 - **Constants.** ldi is 16 bits, sign-extended: 0xFFFF costs ldi plus two adds, or a mask.
   Compute constants once per loop, not per pass.
 - **Masks.** Every low product is 24 bits (§655, §657, §663): x18.and when 16 are wanted.
-
-`x17 run --profile N` lists the hottest bundles with their source lines, macro call sites
-included.
+  x18.or and x18.and are plain 24-bit bitwise ops over signed operands (fact 952).
+- **Test and jump in one bundle.** x00 and x01 test p<c> in the jump bundle itself, beside
+  their ALU and store slots (§772, §881, fact 946); x04 jumps on its own w2 field (fact 940).
+  A separate ptst then jmp costs a bundle more per pass.
+- **Bottom-tested loops.** Put the test and the back edge at the bottom, one jump per pass,
+  with its slots filled. Guard a loop that may run zero times with one jump before it, not a
+  test inside: x10's class-100 jump (fact 948) also runs its ALU slot, so the guard can carry
+  the first step of the loop's setup.
+- **Constants from head immediates.** Several forms carry a free 16-bit immediate in
+  head[20:5] beside their main work (§130, facts 930, 933, 935, and the free e and R loads above).
+  Load loop constants into spare s, e, R or A registers before the loop with those, not with a
+  standalone ldi or lde per pass.
+- **Software pipelining.** Load the operands of pass i + 1 in the bundles that compute pass i:
+  the read latency is zero (§659) but the slot is otherwise idle. The x03 tap (§671) is this
+  pattern built into one form.
+- **Fewer, wider stream reads.** Each stream read is a bundle; read a wider field once and
+  split it with shifts rather than reading narrow fields one at a time (*inferred* from the
+  bundle cost; stream read widths are in the reference).
+- **Measured forms only.** A fit on small operands can hide a different rule: x18 min/max
+  matched a signed compare on every pair §644 measured, and a sweep over the extremes showed
+  otherwise (fact 951). Before leaning on a form in a hot loop, sweep it over the extremes of
+  its operands: 0, ±1, the 16-bit and 24-bit limits, and both operand orders.
 
 ## 11. Host interface
 
