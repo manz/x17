@@ -142,7 +142,7 @@ x18.pw	Writes predicate p from a chosen condition applied to the result of the s
 x18.c2x	Class-2 X slot: loads into destination s from a source selected by mux, an e register or a 16-bit immediate.
 x18.eagu2	Address-generation op writing an e register: dest_e gets function fn (AGU10 table when tab is 1) of an e register.
 x18.rag	Address-generation op writing R: dest_R gets AGU3 function fn of an A register and an R register; also steps e7.
-x18.rag101	Writes R from the AGU3 function of an A and an R register, plus an X-slot load into destination s.
+x18.rag101	Writes R and A5 from the AGU3 function of an A and an R register, plus an X-slot load into destination s.
 x18.eagu0	Address-generation op writing an e register, using the class-000 function table (fn and y low bits).
 x18.agu000	Class-000 e address-generation op feeding the X slot into destination s, with a Y-memory store of a source s.
 x18.e2nd	Second e slot: writes an e register with the value y minus one.

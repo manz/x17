@@ -2019,7 +2019,7 @@ Address-generation op writing R: dest_R gets AGU3 function fn of an A register a
 
 ### `x18.rag101`
 
-Writes R from the AGU3 function of an A and an R register, plus an X-slot load into destination s.
+Writes R and A5 from the AGU3 function of an A and an R register, plus an X-slot load into destination s.
 
 - Syllables: 4
 - Base: `80000018` `00001002` `60000000` `a0000000`
