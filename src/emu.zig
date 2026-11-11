@@ -1524,6 +1524,13 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
             if (state.p[c] != 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
+        // 881: 0x00 ctl 2 is the same relative jump taken when p<w4[31:28]> is 0 (p0 reads 1,
+        // never taken); delay slots and any link are unmeasured, run as ctl 1/3's.
+        2 => {
+            if (x01) return RunError.UnknownForm;
+            const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
+            if (state.p[bundle[4] >> 28] == 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
+        },
         4 => state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc)),
         // 759: 0x00 END: two delay slots run, then the normal halt; target fields inert, no link.
         6, 7 => {
@@ -1537,7 +1544,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             if (w1 | w2 | w4 | w5 | w6 | (h & ~@as(u32, 0x1F)) | (w3 & ~@as(u32, 0x1F)) == 0) return RunError.UnknownForm;
             state.next_arm_parks = true;
         },
-        0, 2, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
+        0, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
         else => return RunError.UnknownForm,
     }
 

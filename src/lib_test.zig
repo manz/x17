@@ -2439,6 +2439,24 @@ test "x16 code 0x0E mux 110: s<S1[11:8]> takes the e/A value (880)" {
     try testing.expectEqual(@as(u32, 0), state.e[6]);
 }
 
+test "x00 ctl 2 jumps by sx15 when p<w4[31:28]> is 0 (881)" {
+    const gpa = testing.allocator;
+    for ([_]struct { c: u32, w1: u32 = 0x01F80008, o: ?i32 = 0x7E }{
+        .{ .c = 10 },
+        .{ .c = 1 },
+        .{ .c = 14 },
+        .{ .c = 10, .w1 = 0x01FC0008, .o = 0x7F }, // S1[18]
+        .{ .c = 0, .o = null }, // p0 reads 1
+        .{ .c = 12, .o = null }, // p12 set
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[12] = 1;
+        try emu.executeBundle(gpa, &state, &.{ 0x008E09C0, c.w1, 0x003F6680, 0x00000002, (c.c << 28) | 0x00100000, 0x06000006, 0x00009000 });
+        try testing.expectEqual(c.o, state.pending_jmp_offset);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

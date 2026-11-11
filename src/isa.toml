@@ -598,6 +598,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # alu.m 0x20 (877): writes 0 under every m / # / b tried, as 0x22 (775).
 # x16 esa (879): S1 class 000 / S2 class 111, head code 0x0E, S1 mux 110: s<head[24:21]> <- #head[20:5]; e<S1[23:20]> (S2[20], else 0) and A<2*S1[2:0] + head[31]> (S1[3] = 0) <- X16_ALU op of the old s<S2[28:25]>, 16 bits.
 # x16 esa (880): s<S1[11:8]> <- the same value as e/A (not a Y load).
+# x00 ctl 2 (881): relative jump q + sx15({w2[0], w1[31:18]}) taken when p<w4[31:28]> = 0; delay slots / link OPEN.
 # S[6:3] names an s write with an OPEN source (542 revises 123's clears; own-yld10k), refused; S[7] = 0 and S[31:29] != 111 wedge; an X:[1] <- s2 store in the measured bundle is OPEN.  own-yld10
 # aset12 (0x12 with S class 101; fact 124 pass 150): with S[3] = 0, A<2*S[2:0]> <- by head[25:21]: 22/23 R<head[16:13]>, 0/6 1, 21 0, others wedge or OPEN;
 # no s, R, e or p effect (flip sweep + p/e dumps); head[20:17] inert.  own-aset12
