@@ -393,6 +393,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         const s2_class: u32 = (bundle[2] >> 29) & 0x7;
         const s2_mode: u32 = (bundle[2] >> 16) & 0x1F;
         const s1_class16: u32 = (bundle[1] >> 29) & 0x7;
+        if ((bundle[1] >> 21) & 7 == 1 and bundle[2] >> 31 == 1 and (bundle[2] >> 29) & 1 == 0) return x16Call(state, bundle);
         if (s2_class == 0b110 and s1_class16 == 0 and s2_mode <= 7) return execX16Mul(gpa, state, bundle);
         if (s2_class == 0b110 and s1_class16 == 1) return execX16Mac(state, bundle);
         if (s2_class == 0b100) return execX16Agu100(state, bundle);
@@ -2321,6 +2322,16 @@ fn x16Jump(state: *State, bundle: []const u32) RunError!void {
     const p_sel: u32 = (bundle[1] >> 5) & 0xF;
     if (p_sel != 0 and state.p[p_sel] == 0) return;
     state.pending_jmp_offset = @as(i32, @bitCast(off << 17)) >> 17;
+}
+
+/// 923, 924: x16 with S1[23:21] = 001, S2[31] = 1 and S2[29] = 0 calls 0x100 + S2[21:9]
+/// (absolute, added) after two delay bundles, linking past them (0x4CD calls 0x1F4A).  Its other
+/// slots are unmeasured; a call inside a call is refused as for 888's.
+fn x16Call(state: *State, bundle: []const u32) RunError!void {
+    if (state.link != null or state.call_pending) return RunError.UnknownForm;
+    const target: u32 = 0x100 + ((bundle[2] >> 9) & 0x1FFF);
+    state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc));
+    state.call_pending = true;
 }
 
 fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {

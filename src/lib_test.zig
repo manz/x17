@@ -8974,6 +8974,21 @@ test "x03's counter writes p<w2[16:13]>, not the tested p (922)" {
     try testing.expectEqual(@as(u32, 0), zero.e[8]);
 }
 
+test "x16 calls 0x100 + S2[21:9] under S1[23:21] = 001 (923, 924)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.pc = 0x4CD;
+    try emu.executeBundle(gpa, &state, &.{ 0x80029D76, 0x01200000, 0x803C9400 }); // 0x4CD
+    try testing.expectEqual(@as(?i32, 0x1F4A - 0x4CD), state.pending_jmp_offset);
+    try testing.expect(state.call_pending);
+    var plain = emu.State{};
+    defer plain.deinit(gpa);
+    plain.pc = 0x4CD;
+    emu.executeBundle(gpa, &plain, &.{ 0x80029D76, 0x01000000, 0x803C9400 }) catch {}; // S1[21] clear
+    try testing.expect(!plain.call_pending);
+}
+
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {
     const gpa = testing.allocator;
     const prog = try assemble(gpa, "ldi s12, #0\nptst p13, s0, #11, #0x0B\nx17.halt\n");
