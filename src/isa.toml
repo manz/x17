@@ -616,7 +616,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # zmv p (907): [21:18] = 0101 with z[15:0] = 0 clears p1, p2, p3; z = 0x920D writes no p; other codes on z = 0 refused.
 # x17sty e (908): stop form, S2[3:1] = 101: v = op S2[10:8] of s<S2[28:25]> -> e<{S1[2:0], h[31]}>, R<S1[14:11]>, s<S1[22:19]>; Y:[old e<S1[18:15]>] <- s<{S2[0], S1[31:29]}> (S2[12:11] = 11); p1 = 1 does not stop (909): branch to q + 8 after two delay bundles (910).
 # x00 return (911): low5 0 with control w3[4:0] = 5 returns to the bundle after the call's two delay bundles, itself after two delay bundles; one level, nested calls refused.
-# x03 counted jr (915): the e counter writes p<w5[17:14]> (the p the jump tests; p3 when k = 0) <- (e_new > 0), after the jump reads it: e + 1 passes.
+# x03 counted jr (915, 922): the e counter writes p<w2[16:13]> <- (e_new > 0), after the jump reads it: e + 1 passes when that is the tested p; index 0 writes nothing.  0x464 writes p8 = 1 for e0 in {0, 1, 2, 5}: its value source is OPEN.
 # x17sty stop select (916): in the stop shape S2[22:18] = 00000 stops, 11111 stores and runs on (0x381; retracts 781/801's stop on S2 61fcb804, 801's p1 row refused); other values refused.
 # x16 jump stub (917): S1/S2 class 000, head[26:25] != 11: q + sx15(S2[23:9]) after two delays iff S1[8:5] = 0 or p<S1[8:5]>; s dests refused.
 # x18 class 011 code 0x0E (921): 776's n table ANDed with p<w2[31:28]> (p0 reads 1); 0x42B copies p8 into p3.

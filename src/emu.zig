@@ -929,7 +929,7 @@ fn execX18Q23c(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
 /// with w2[27] = 1, if clear with w2[27] = 0; w2[31:29] is ignored; p0 reads 1, so k = 0 with
 /// w2[27] = 1 always jumps.  w2[28:27] = 01 is unconditional (329).  Two delay slots, both run on every pass of a loop (680).
 /// With w2[28] = 1 the e counter e<2*w4[2:0] + w3[31]> <- e<w3[26:23]> - 1 (349) also writes
-/// p<k> <- (e_new > 0, signed 16) (915; p3 when k = 0) after the jump has read p, so it sees it one pass late
+/// p<w2[16:13]> <- (e_new > 0, signed 16) (915, 922) after the jump has read p, so it sees it one pass late
 /// (675): an offset-0 jump on p3 with e = N - 1 and p3 = 1 runs the bundle and its slots N times.
 /// Measured on mode-0 rows only.
 fn x03CondJump(state: *State, bundle: []const u32) RunError!void {
@@ -963,10 +963,11 @@ fn x03CondJump(state: *State, bundle: []const u32) RunError!void {
     const e_new: u32 = (state.e[(bundle[3] >> 23) & 0xF] -% 1) & 0xFFFF;
     const ec_dest: u32 = ((bundle[4] & 7) << 1) | (bundle[3] >> 31);
     if (ec_dest != 0) state.e[ec_dest] = e_new;
-    // 915: the counter writes the p its jump tests (p10 on 0x2F0's row; p3 in 675's loops), read
-    // by the jump before the write.  k = 0 (p0 reads 1) keeps the p3 write and never ends on itself.
-    state.p[if (k == 0) 3 else k] = @intFromBool(sx16(e_new) > 0);
-    if (off == 0 and taken and k == 0) return RunError.RunawayProgram;
+    // 915, 922: the counter writes p<w2[16:13]> (p3 in 675's loops, p10 at 0x2F0, p8 at 0x464),
+    // read by the jump before the write.  Index 0 writes nothing (p0 reads 1; own-x03jrc).
+    const pd: u32 = (w2 >> 13) & 0xF;
+    if (pd != 0) state.p[pd] = @intFromBool(sx16(e_new) > 0);
+    if (off == 0 and taken and k != pd) return RunError.RunawayProgram;
     if (taken) state.pending_jmp_offset = off;
 }
 
