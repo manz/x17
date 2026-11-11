@@ -345,6 +345,7 @@ const play_params = clap.parseParamsComptime(
     \\    --stop-after <usize> stop once this many bundles have run (init passes included)
     \\    --dump <str>         on a stop or trap, write the state (registers, X, Y) as JSON
     \\    --p-entry <usize>    p1..p15 at the start, bit k = p<k> (default 0; 0xFFFC = 803's state)
+    \\    --configure-arm      945's arming: one run at configure, packet 1 only queued, then one run per packet
     \\<str>                    image path (.x17i)
     \\
 );
@@ -361,7 +362,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
     defer parsed.deinit();
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] <image.x17i>\n");
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] [--configure-arm] <image.x17i>\n");
         return;
     }
     const img_path = parsed.positionals[0] orelse {
@@ -421,6 +422,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
         .stop_after = parsed.args.@"stop-after",
         .dump = if (parsed.args.dump != null) &dump.writer else null,
         .p_entry = @truncate(parsed.args.@"p-entry" orelse 0),
+        .configure_arm = parsed.args.@"configure-arm" != 0,
     });
     defer res.deinit(gpa);
     try writeFile(gpa, out_path, std.mem.sliceAsBytes(res.pcm));
