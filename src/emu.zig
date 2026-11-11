@@ -73,6 +73,10 @@ pub const State = struct {
     z: u32 = 0,
     /// The running bundle's syllable index, for absolute jumps.
     pc: usize = 0,
+    /// 888 / 911: set by an x00 call; when its jump fires the bundle after the two delay
+    /// bundles becomes `link`, where an x00 return (control 5) resumes.  One level only.
+    call_pending: bool = false,
+    link: ?usize = null,
     /// The value the last X read left (fact 241).
     xd: u32 = 0,
     /// xd as it stood before the running bundle: the multiply's X (fact 161).
@@ -1589,9 +1593,19 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
             if (state.p[bundle[4] >> 28] == 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
-        // 888: a call: two delay bundles, then the target; control comes back after the
-        // delay bundles, through a return that is unmeasured (no link is kept yet).
-        4 => state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc)),
+        // 888: a call: two delay bundles, then the target; 911's return comes back after the
+        // delay bundles.  A call inside a call is unmeasured: refused.
+        4 => {
+            if (state.link != null or state.call_pending) return RunError.UnknownForm;
+            state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc));
+            state.call_pending = true;
+        },
+        // 911: 0x00 control 5 under a call returns to the link after two delay bundles.  With
+        // no call in flight it stays the old fall-through.
+        5 => if (!x01 and state.link != null) {
+            state.pending_jmp_offset = @as(i32, @intCast(state.link.?)) - @as(i32, @intCast(state.pc));
+            state.link = null;
+        },
         // 759: 0x00 END: two delay slots run, then the normal halt; target fields inert, no link.
         6, 7 => {
             if (x01) return RunError.UnknownForm;
@@ -1604,7 +1618,7 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             if (w1 | w2 | w4 | w5 | w6 | (h & ~@as(u32, 0x1F)) | (w3 & ~@as(u32, 0x1F)) == 0) return RunError.UnknownForm;
             state.next_arm_parks = true;
         },
-        0, 5, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
+        0, 0xC, 0x18, 0x10, 0x12, 0x14, 0x15, 0x19, 0x1A, 0x1C => {},
         else => return RunError.UnknownForm,
     }
 
@@ -6318,6 +6332,10 @@ pub fn runFrom(gpa: std.mem.Allocator, state: *State, syllables: []const u32, st
         } else if (state.jump_delay > 0) {
             state.jump_delay -= 1;
             if (state.jump_delay == 0) {
+                if (state.call_pending) {
+                    state.link = i;
+                    state.call_pending = false;
+                }
                 i = state.jump_target;
             }
         }

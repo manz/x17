@@ -8837,6 +8837,30 @@ test "x02.asrc and x02.esrc also write A1 (157, 795)" {
     }
 }
 
+fn ldiS(n: u32, v: u32) u32 {
+    return 0xC800000B | ((16 + n) << 21) | (v << 5);
+}
+
+test "x00 control 5 returns past the call's delay bundles (911)" {
+    const gpa = testing.allocator;
+    const halt = try assemble(gpa, "x17.halt\n");
+    defer gpa.free(halt);
+    const nop: u32 = 0x40000005;
+    var prog: std.ArrayList(u32) = .empty;
+    defer prog.deinit(gpa);
+    // 0: call 13; 7, 8: its delay bundles; 9: the link.
+    try prog.appendSlice(gpa, &.{ 0, 13 << 18, 0, 4, 0, 0, 0, ldiS(1, 1), nop, ldiS(2, 2) });
+    try prog.appendSlice(gpa, halt);
+    while (prog.items.len < 13) try prog.append(gpa, nop);
+    // 13: the callee, then its return and two delay bundles.
+    try prog.appendSlice(gpa, &.{ ldiS(3, 3), 0, 0, 0, 5, 0, 0, 0, ldiS(4, 4), nop, ldiS(5, 5) });
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    _ = try emu.runLinear(gpa, &st, prog.items);
+    try testing.expectEqual([_]u32{ 1, 2, 3, 4, 0 }, st.s[1..6].*);
+    try testing.expectEqual(@as(?usize, null), st.link);
+}
+
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {
     const gpa = testing.allocator;
     const prog = try assemble(gpa, "ldi s12, #0\nptst p13, s0, #11, #0x0B\nx17.halt\n");
