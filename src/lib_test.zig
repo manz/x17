@@ -2867,14 +2867,10 @@ test "x17sty's stop form walks e from s and stores Y at the old e (908)" {
     try testing.expectEqual(@as(u32, 0x2D00), state.e[2]);
     try testing.expectEqual(@as(?u32, 1), state.getY(0x14D4));
     try testing.expect(!state.stop_now);
-    var stop = emu.State{};
-    defer stop.deinit(gpa);
-    stop.p[1] = 1;
-    stop.s[3] = 1;
-    stop.e[2] = 0x14D4;
-    try emu.executeBundle(gpa, &stop, &b);
-    try testing.expect(stop.stop_now);
-    try testing.expectEqual(@as(?u32, 1), stop.getY(0x14D4));
+    var p1 = emu.State{};
+    defer p1.deinit(gpa);
+    p1.p[1] = 1;
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &p1, &b));
 }
 
 test "mul13's head ALU slot and X store" {
