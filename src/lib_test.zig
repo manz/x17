@@ -2482,6 +2482,20 @@ test "lde class 011 writes A<[25:21]> with e<[29:26]> (882)" {
     }
 }
 
+test "x19alu mode 0xE op 2 writes 0 beside the X load (883)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.s[9] = 0x1234;
+    state.a[15] = 0x20F;
+    state.p[7] = 1;
+    try state.x_mem.put(gpa, 0x20F, 0x8978AE);
+    try emu.executeBundle(gpa, &state, &.{ 0x00000459, 0x09007000, 0x2BC1C30B, 0x81E58000 });
+    try testing.expectEqual(@as(u32, 0x8978AE), state.s[5]);
+    try testing.expectEqual(@as(u32, 0), state.s[9]);
+    try testing.expectEqual(@as(u8, 1), state.p[7]);
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

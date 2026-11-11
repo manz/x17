@@ -4061,6 +4061,8 @@ fn execX19Alu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
             // 857: op 31 here is a | b (b = s<w1[19:16]>), not a.
             0xA => if (code == 31) a_val | b_val else x19ModeOp(code, a_val, 0, true),
             9 => null,
+            // 883: mode 0xE op 2 writes 0 (0x2CE, s9 <- 0); its other ops are unmeasured.
+            0xE => if (code == 2) 0 else return RunError.UnknownForm,
             else => return RunError.UnknownForm,
         };
     };
