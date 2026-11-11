@@ -856,6 +856,8 @@ test "the x18.eagu and x18.rag101 templates park their A write on A16 / A17 (957
     for (&want, 0..) |*w, k| w.* = @intCast(0x100 * k);
     try testing.expectEqualSlices(u32, &want, state.a[0..16]);
     try testing.expectEqual([2]u32{ 0x801, 0xC05 }, [2]u32{ state.a[16], state.a[17] });
+    // The template is a base: the operands fill w1[25:22] / w1[29:26], so eagu still steps e7.
+    try testing.expectEqual(@as(u32, 1), state.e[7]);
 }
 
 test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[29:27]" {
