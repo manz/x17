@@ -1513,7 +1513,8 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     };
 
     const ctl: u32 = w3 & 0x1F;
-    const target: u32 = (w1 >> 18) & 0xFF;
+    // 888: ctl 4's absolute target is w1[31:18], 14 bits (0x2D2 calls 0x1F6F).
+    const target: u32 = (w1 >> 18) & 0x3FFF;
     switch (ctl) {
         // q + sx15({w2[0], w1[31:18]}), two delay slots, no link (575, retracting 572-574).
         // 772 (retracting 578's hidden state): condition c = w4[31:28] tests p<c> (p0 reads 1),
@@ -1532,6 +1533,8 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
             if (state.p[bundle[4] >> 28] == 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
+        // 888: a call: two delay bundles, then the target; control comes back after the
+        // delay bundles, through a return that is unmeasured (no link is kept yet).
         4 => state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc)),
         // 759: 0x00 END: two delay slots run, then the normal halt; target fields inert, no link.
         6, 7 => {

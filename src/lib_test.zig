@@ -2574,6 +2574,15 @@ test "x19k cond 0 tests the e slot's result when it is live (887)" {
     };
 }
 
+test "x00 ctl 4 calls the absolute w1[31:18] (888)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.pc = 0x2D2;
+    try emu.executeBundle(gpa, &state, &.{ 0x00A55000, 0x7DBC0000, 0x00000224, 0x00F00004, 0x00200000, 0x16000000, 0x00000090 });
+    try testing.expectEqual(@as(?i32, 0x1F6F - 0x2D2), state.pending_jmp_offset);
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

@@ -2641,7 +2641,7 @@ Seven-syllable control bundle: a jump (jr or ja) to an 8-bit target with two del
 
 | operand | kind | syllable | bits |
 |---|---|---|---|
-| target | imm | s1 | [25:18] |
+| target | imm | s1 | [31:18] |
 | ctl | imm | s3 | [4:0] |
 
 ### `x0e`

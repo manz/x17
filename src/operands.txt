@@ -1177,7 +1177,7 @@ x00.mac	xl	imm	13	15	s4
 x00.mac	mode	imm	11	13	s1
 
 # x00.ctl #<target>, #<ctl>
-x00.ctl	target	imm	18	25	s1
+x00.ctl	target	imm	18	31	s1
 x00.ctl	ctl	imm	0	4	s3
 
 # x0e <head_s>, #<imm>, #<code>, <alu_dest>, <a_s>, <b_s>, #<m>, #<mux>, #<s18>
