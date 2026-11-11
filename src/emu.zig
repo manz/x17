@@ -1292,6 +1292,13 @@ fn execX04Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         },
         else => return RunError.UnknownForm,
     };
+    // 940: w2[31:27] = 00010 jumps q + sx15({w2[0], w1[31:18]}) after two delay bundles,
+    // unconditionally as far as measured (0x506 lands 0x566; w2[28] = 0 runs on).  own-x04xst's
+    // 00011 does not jump.  Its other slots also write e1 (OPEN, unmodelled).
+    if (w2 >> 27 == 0b00010) {
+        const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
+        state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
+    }
     const dest_s: u32 = (w4 >> 3) & 0xF;
     const xst = (w5 >> 22) & 3 == 3;
     const x_addr: u32 = state.a[(w4 >> 17) & 0x1F];
