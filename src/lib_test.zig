@@ -748,8 +748,9 @@ fn imMul(a: i64, b: i64) i64 {
     return (a * b + (1 << 22)) >> 23;
 }
 
-test "x02.ainc's template writes s2 and x18.rag's steps e7" {
-    // Side writes of two templates (subforms.txt); x18.rag101 has none.
+test "x02.ainc's template leaves s2 (954) and x18.rag's steps e7" {
+    // Side writes of two templates (subforms.txt): ainc's w2 multiply points at s0 (954);
+    // x18.rag101 has none.
     const gpa = testing.allocator;
     const prog = try assemble(gpa,
         \\ldi s1, #0x4000
@@ -766,7 +767,7 @@ test "x02.ainc's template writes s2 and x18.rag's steps e7" {
     var state = emu.State{};
     defer state.deinit(gpa);
     _ = try emu.runFrom(gpa, &state, prog, 0, 64);
-    try testing.expectEqual(@as(u32, 0x30), state.s[2]);
+    try testing.expectEqual(@as(u32, 0x6000), state.s[2]);
     try testing.expectEqual(@as(u32, 0x2401), state.e[7]);
 }
 
@@ -9036,6 +9037,28 @@ test "x02.asrc also runs the w2 multiply into s<w2[12:9]> (953)" {
         try testing.expectEqual(c.want, state.s[2]);
         try testing.expectEqual(@as(u32, 0x41), state.s[13]);
         try testing.expectEqual(@as(u32, 0x40), state.a[15]);
+    }
+}
+
+test "x02 esrc multiplies too; the templates' w2 dest s0 writes no s (954)" {
+    const gpa = testing.allocator;
+    {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |k| state.s[k] = 0x111 * @as(u32, @intCast(k));
+        state.e[3] = 0x490;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000002, 0x0000A000, 0x00020442, 0x18000001, 0x00041008, 0x20004200 });
+        try testing.expectEqual(@as(u32, 0x490), state.s[1]);
+        try testing.expectEqual(@as(u32, 0), state.s[2]);
+    }
+    for ([_][]const u8{ "x02.asrc s13, A15", "x02.esrc s13, e3", "x02.ainc #6, #6" }) |src| {
+        const m = try asm_mod.assembleOne(src);
+        try testing.expectEqual(@as(u32, 0), (m.slice()[2] >> 9) & 0xF);
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |k| state.s[k] = 0x111 * @as(u32, @intCast(k));
+        try emu.executeBundle(gpa, &state, m.slice());
+        for (1..16) |k| if (k != 13) try testing.expectEqual(0x111 * @as(u32, @intCast(k)), state.s[k]);
     }
 }
 
