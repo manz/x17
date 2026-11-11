@@ -9020,6 +9020,25 @@ test "x01 tests p<w1[5:3]> with x00's sense (943, 946)" {
     try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &st, &.{ 0x100031C1, 0x4E5405A2, 0x00024280, 0x80000003, 0x00000081, 0x00001800, 0 })); // c = 4
 }
 
+test "x02.asrc also runs the w2 multiply into s<w2[12:9]> (953)" {
+    const gpa = testing.allocator;
+    for ([_]struct { s1: u32, s2: u32, want: u32 }{
+        .{ .s1 = 0x7FFF, .s2 = 0x6000, .want = 0x60 },
+        .{ .s1 = 0x4000, .s2 = 0x4000, .want = 0x20 },
+        .{ .s1 = 0x111, .s2 = 0x222, .want = 0 },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[1] = c.s1;
+        state.s[2] = c.s2;
+        state.a[15] = 0x40;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000002, 0x0000A000, 0x00020442, 0x0000000F, 0x00041068, 0x10004200 });
+        try testing.expectEqual(c.want, state.s[2]);
+        try testing.expectEqual(@as(u32, 0x41), state.s[13]);
+        try testing.expectEqual(@as(u32, 0x40), state.a[15]);
+    }
+}
+
 test "x03's counted jr writes the p it tests (915)" {
     const gpa = testing.allocator;
     const halt = try assemble(gpa, "x17.halt\n");
