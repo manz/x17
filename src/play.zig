@@ -100,8 +100,9 @@ fn jsonMem(gpa: std.mem.Allocator, w: *std.Io.Writer, name: []const u8, mem: *co
     try w.writeAll("}");
 }
 
-/// One line per bundle run for the first `left` bundles: where it ran, its syllables and
-/// disasm, then the registers and predicates it changed and its X / Y reads and writes.
+/// One line per bundle run for the first `left` bundles (from packet `from` on, when set):
+/// where it ran, its syllables and disasm, then the registers and predicates it changed and
+/// its X / Y reads and writes.
 pub const Tracer = struct {
     const Regs = struct { s: [16]u32, e: [16]u32, r: [16]u32, a: [32]u32, p: [16]u8, v: [4]u32 };
     const Write = struct { addr: u32, old: ?u32, new: u32 };
@@ -109,6 +110,8 @@ pub const Tracer = struct {
     gpa: std.mem.Allocator,
     out: *std.Io.Writer,
     left: usize,
+    /// When set, init passes and packets before this one are not traced.
+    from: ?usize = null,
     /// Set by play: the packet being fed, null in an init pass.
     packet: ?usize = null,
     pass: u8 = 0,
@@ -130,9 +133,16 @@ pub const Tracer = struct {
         return .{ .s = st.s, .e = st.e, .r = st.r, .a = st.a, .p = st.p, .v = st.v };
     }
 
+    fn active(self: *const Tracer) bool {
+        if (self.left == 0 or self.failed) return false;
+        const f = self.from orelse return true;
+        const i = self.packet orelse return false;
+        return i >= f;
+    }
+
     fn hook(ctx: *anyopaque, phase: emu.BundlePhase, pc: usize, bundle: []const u32) void {
         const self: *Tracer = @ptrCast(@alignCast(ctx));
-        if (self.left == 0 or self.failed) {
+        if (!self.active()) {
             self.state.read_log = null;
             self.state.write_log = null;
             return;
@@ -788,6 +798,31 @@ test "play --trace prints the first N bundles with their changes, reads and writ
     try testing.expect(std.mem.indexOf(u8, text, "s3 0x0->0x1234 e8 0x40->0x41 rY[0x40]=0x1234\n") != null);
     try testing.expect(std.mem.indexOf(u8, text, "wY[0x80]=0x1234\n") != null);
     try testing.expect(std.mem.indexOf(u8, text, "q 0x109") == null);
+}
+
+test "play --trace-from skips the init passes and earlier packets" {
+    const gpa = testing.allocator;
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        lde e6, #0x80
+        \\        x17.sty e6, #3, #0
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    var tr: Tracer = .{ .gpa = gpa, .out = &out.writer, .left = 2, .from = 1 };
+    defer tr.deinit();
+    var r = try play(gpa, &img, &.{ "a", "b" }, .{ .tracer = &tr });
+    defer r.deinit(gpa);
+    const text = out.written();
+    try testing.expect(std.mem.indexOf(u8, text, "pass ") == null);
+    try testing.expect(std.mem.indexOf(u8, text, "pkt 0") == null);
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, text, "pkt 1 q 0x"));
+    // s3 is 0 and Y 0x80 already holds 0 from packet 0: the store changes nothing.
+    try testing.expect(std.mem.indexOf(u8, text, "wY[") == null);
 }
 
 test "play --stop-at stops before the first decoder bundle at q and dumps the state" {
