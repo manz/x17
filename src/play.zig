@@ -40,7 +40,8 @@ pub const Options = struct {
     /// matching that passes 0xFFFC.
     p_entry: u16 = 0,
     /// Fact 945's arming: configure arms one decoder run before any packet is queued, feed 1
-    /// only queues its bytes, and feed N >= 2 arms one run.  Off: one run per packet.
+    /// arms nothing (it queues its bytes and, 947, resumes that run if it parked on the
+    /// stream), and feed N >= 2 arms one run.  Off: one run per packet.
     configure_arm: bool = false,
 };
 
@@ -373,7 +374,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     }
     for (pkts, 0..) |pkt, i| {
         if (opts.tracer) |t| t.packet = i;
-        if (opts.configure_arm and i == 0) {
+        if (opts.configure_arm and i == 0 and h.resume_at == null) {
             try h.queue(pkt);
             res.packets += 1;
             continue;
@@ -594,7 +595,7 @@ test "play's configure arm runs once before packet 1, which only queues (945)" {
     for ([_]struct { arm: bool, n: usize, runs: usize }{
         .{ .arm = false, .n = 0, .runs = 0 },
         .{ .arm = true, .n = 0, .runs = 1 }, // configure's run, no packet
-        .{ .arm = true, .n = 1, .runs = 1 }, // packet 1 only queues
+        .{ .arm = true, .n = 1, .runs = 1 }, // packet 1 only queues (the run halted)
         .{ .arm = true, .n = 3, .runs = 3 },
         .{ .arm = false, .n = 3, .runs = 3 },
     }) |c| {
@@ -606,6 +607,31 @@ test "play's configure arm runs once before packet 1, which only queues (945)" {
         try testing.expectEqual(c.n, r.packets);
         try testing.expectEqual(none.bundles + 4 * c.runs, r.bundles);
     }
+}
+
+test "play's configure run parked on the stream resumes with packet 1 (947)" {
+    const gpa = testing.allocator;
+    // The decoder reads 12 stream bits, so with nothing queued the configure run parks.
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        ldi s12, #1
+        \\        ldi s14, #4
+        \\        ld0e.sen #0, #0
+        \\        x16.getb #7, #11
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    const pk = [_][]const u8{&.{ 0xDE, 0xAD }};
+    var parked = try play(gpa, &img, pk[0..0], .{ .configure_arm = true });
+    defer parked.deinit(gpa);
+    var r = try play(gpa, &img, &pk, .{ .configure_arm = true });
+    defer r.deinit(gpa);
+    // Configure parks (one wait); packet 1 alone resumes it and the run goes on to its halt.
+    try testing.expectEqual(@as(usize, 1), parked.waits);
+    try testing.expect(r.bundles > parked.bundles);
+    try testing.expect(r.trap == null);
 }
 
 test "play --p-entry sets p1..p15 before the init passes" {
