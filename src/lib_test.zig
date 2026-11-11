@@ -8960,11 +8960,18 @@ test "x03's counter writes p<w2[16:13]>, not the tested p (922)" {
     defer state.deinit(gpa);
     state.e[0] = 5;
     state.p[2] = 1;
-    // 0x464 with w5[4] clear: its e walk beside w0[22] is unmeasured (902 refuses it).
-    try emu.executeBundle(gpa, &state, &.{ 0x0D5001C3, 0x00240040, 0x18190000, 0, 0, 0x80008020 });
+    state.s[3] = 0x123;
+    try emu.executeBundle(gpa, &state, &.{ 0x0D5001C3, 0x00240040, 0x18190000, 0, 0, 0x80008030 }); // 0x464
+    try testing.expectEqual(@as(u32, 0x123), state.e[8]); // 902's copy, w0[22] inert here
     try testing.expectEqual(@as(u8, 1), state.p[8]);
     try testing.expectEqual(@as(u8, 1), state.p[2]);
     try testing.expectEqual(@as(?i32, 9), state.pending_jmp_offset);
+    // p8 is 1 with e0 = 0 and s3 = 0 too.
+    var zero = emu.State{};
+    defer zero.deinit(gpa);
+    try emu.executeBundle(gpa, &zero, &.{ 0x0D5001C3, 0x00240040, 0x18190000, 0, 0, 0x80008030 });
+    try testing.expectEqual(@as(u8, 1), zero.p[8]);
+    try testing.expectEqual(@as(u32, 0), zero.e[8]);
 }
 
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {

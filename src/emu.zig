@@ -966,7 +966,9 @@ fn x03CondJump(state: *State, bundle: []const u32) RunError!void {
     // 915, 922: the counter writes p<w2[16:13]> (p3 in 675's loops, p10 at 0x2F0, p8 at 0x464),
     // read by the jump before the write.  Index 0 writes nothing (p0 reads 1; own-x03jrc).
     const pd: u32 = (w2 >> 13) & 0xF;
-    if (pd != 0) state.p[pd] = @intFromBool(sx16(e_new) > 0);
+    // Without the e write (ec_dest 0) 0x464 writes 1 whatever e0, s3 or e8 hold (922): the
+    // source is OPEN, the measured constant is kept.
+    if (pd != 0) state.p[pd] = if (ec_dest == 0) 1 else @intFromBool(sx16(e_new) > 0);
     if (off == 0 and taken and k != pd) return RunError.RunawayProgram;
     if (taken) state.pending_jmp_offset = off;
 }
@@ -1126,7 +1128,9 @@ fn x03EWalk(state: *const State, bundle: []const u32) RunError!?EWrite {
     const w0 = bundle[0];
     const dest: u32 = (bundle[1] >> 3) & 0xF;
     if (dest == 0 or w0 & 1 == 0 or (bundle[5] >> 4) & 1 == 0) return null;
-    if ((w0 >> 10) & 1 == 1 or (w0 >> 22) & 1 == 1) return RunError.UnknownForm;
+    // w0[22] wedged beside 0x1F94's plain row; beside a counted jr (w2[28] = 1, 0x464) it
+    // changes nothing (922).
+    if ((w0 >> 10) & 1 == 1 or ((w0 >> 22) & 1 == 1 and (bundle[2] >> 28) & 1 == 0)) return RunError.UnknownForm;
     return .{ .dest = dest, .value = try walkOp((w0 >> 23) & 7, state.s[(w0 >> 26) & 0xF]) };
 }
 
