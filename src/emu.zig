@@ -1103,6 +1103,43 @@ fn x03ProductLow(state: *const State, bundle: []const u32) RunError!?SWrite {
 }
 
 fn execX03Mode0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const e_w = try x03EWalk(state, bundle);
+    const y_st = x03YStore(state, bundle);
+    try execX03Mode0Slots(gpa, state, bundle);
+    if (y_st) |w| state.y_mem.put(gpa, w.addr, w.value) catch return RunError.OutOfMemory;
+    if (e_w) |w| state.e[w.dest] = w.value;
+}
+
+const EWrite = struct { dest: u32, value: u32 };
+const YWrite = struct { addr: u32, value: u32 };
+
+/// Fact 902: with w0[0] = 1 and w5[4] = 1, e<w1[6:3]> <- op w0[25:23] of s<w0[29:26]>:
+/// 010 copy, 011 +1, 110 negate.  Op 000, w0[10] (gives 0) and w0[22] (wedges) are refused.
+fn x03EWalk(state: *const State, bundle: []const u32) RunError!?EWrite {
+    const w0 = bundle[0];
+    const dest: u32 = (bundle[1] >> 3) & 0xF;
+    if (dest == 0 or w0 & 1 == 0 or (bundle[5] >> 4) & 1 == 0) return null;
+    if ((w0 >> 10) & 1 == 1 or (w0 >> 22) & 1 == 1) return RunError.UnknownForm;
+    const sv: u32 = state.s[(w0 >> 26) & 0xF];
+    const v: u32 = switch ((w0 >> 23) & 7) {
+        2 => sv,
+        3 => sv +% 1,
+        6 => 0 -% sv,
+        else => return RunError.UnknownForm,
+    };
+    return .{ .dest = dest, .value = v & 0xFFFF };
+}
+
+/// Fact 902 / 898: with w0[0] = 1, w5[13] = w5[21] = 1 and no R read or w5[20] row,
+/// Y:[e<w3[30:27]>] <- s<w5[12:9]>, both read before the bundle's writes.
+fn x03YStore(state: *const State, bundle: []const u32) ?YWrite {
+    const w5 = bundle[5];
+    if (bundle[0] & 1 == 0 or (w5 >> 13) & 1 == 0 or (w5 >> 21) & 1 == 0) return null;
+    if ((w5 >> 20) & 1 == 1 or (bundle[3] >> 19) & 0xF != 0) return null;
+    return .{ .addr = state.e[(bundle[3] >> 27) & 0xF], .value = state.s[(w5 >> 9) & 0xF] & 0xFFFF };
+}
+
+fn execX03Mode0Slots(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     try execX03XStore(gpa, state, bundle);
     try execX03Alu(gpa, state, bundle);
     try execX03Mpy(gpa, state, bundle);
