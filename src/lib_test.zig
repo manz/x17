@@ -2875,6 +2875,18 @@ test "x17sty's stop form walks e from s and stores Y at the old e (908)" {
     try testing.expectEqual(@as(?i32, null), state.pending_jmp_offset);
 }
 
+test "x17sty's stop shape runs on with S2[22:18] = 11111 (916)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[2] = 0x700;
+    state.s[3] = 0x555;
+    try emu.executeBundle(gpa, &state, &.{ 0x28200017, 0x60012D50, 0x61FCB804 }); // 0x381
+    try testing.expectEqual(@as(?u32, 0x555), state.getY(0x700));
+    try testing.expect(!state.stop_now);
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &state, &.{ 0x28200017, 0x60012D50, 0x61FCB804 ^ (1 << 19) }));
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
@@ -8634,7 +8646,7 @@ test "x16 b16 placement 10 zero-extends the Y word (fact 800)" {
     try testing.expectEqual(@as(u32, 0x00B454), state.s[14]);
 }
 
-test "x17sty stop form under R mux 2: e<k> takes the AGU result; a stop then stores again (801)" {
+test "x17sty stop shape under R mux 2: e<k> takes the AGU result and runs on (801, 916)" {
     const gpa = testing.allocator;
     // 667's bundle with k = S1[2:0] = 1: e<2> is both the store's address and the side write.
     const word = [_]u32{ 0x28200017, 0x60012d51, 0x61fcb804 };
@@ -8645,19 +8657,19 @@ test "x17sty stop form under R mux 2: e<k> takes the AGU result; a stop then sto
         state.r[5] = 0x123;
         state.s[3] = 0x4567;
         state.p[1] = p1;
-        const n = try emu.runFrom(gpa, &state, &(word ++ [_]u32{ 0x00000017, 0x31308000, 0xA0000000 }), 0, 16);
+        const run = emu.runFrom(gpa, &state, &(word ++ [_]u32{ 0x00000017, 0x31308000, 0xA0000000 }), 0, 16);
+        if (p1 == 1) {
+            // 801's p1 = 1 row was a stop, retracted by 916 and not rechecked: refused.
+            try testing.expectError(emu.RunError.UnknownForm, run);
+            continue;
+        }
+        const n = try run;
         try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x420));
         try testing.expectEqual(@as(u32, 0x523), state.r[5]);
         try testing.expectEqual(@as(u32, 0x523), state.e[2]);
-        if (p1 == 0) {
-            try testing.expectEqual(@as(usize, 2), n);
-            try testing.expect(state.halted);
-            try testing.expectEqual(@as(?u32, null), state.y_mem.get(0x523));
-        } else {
-            try testing.expectEqual(@as(usize, 1), n);
-            try testing.expect(state.silent_stop);
-            try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x523));
-        }
+        try testing.expectEqual(@as(usize, 2), n);
+        try testing.expect(state.halted);
+        try testing.expectEqual(@as(?u32, null), state.y_mem.get(0x523));
     }
 }
 
@@ -8796,23 +8808,21 @@ test "x17agu2 fn 11 is y - i into e<2*S1[2:0] + h[31]> (fact 780)" {
 
 test "x17sty stop form: the store lands, then the run ends with no completion (fact 667)" {
     const gpa = testing.allocator;
-    // The decoder's bundle (k = 0, R mux 2), then an ldi that must not run.
+    // 667's row (k = 0, S2[22:18] = 00000; 916: the decoder's 61fcb804 runs on), then an ldi
+    // that must not run.
     var state = emu.State{};
     defer state.deinit(gpa);
-    state.e[2] = 0x420;
-    state.r[5] = 0x123;
+    state.e[6] = 0x420;
     state.s[3] = 0x4567;
-    const n = try emu.runFrom(gpa, &state, &.{ 0x28200017, 0x60012d50, 0x61fcb804, 0x00a00010, 0xe6420080 }, 0, 16);
+    const n = try emu.runFrom(gpa, &state, &.{ 0x28200017, 0x60030100, 0x60003800, 0x00a00010, 0xe6420080 }, 0, 16);
+    try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x420));
     try testing.expectEqual(@as(usize, 1), n);
     try testing.expect(state.silent_stop);
     try testing.expect(!state.halted);
-    try testing.expectEqual(@as(?u32, 0x4567), state.y_mem.get(0x420));
-    // 781: R mux 2 is the AGU, fn 0xA = y + i = R5 + 0x400.
-    try testing.expectEqual(@as(u32, 0x523), state.r[5]);
     // k = 3 runs away: refused.
     var away = emu.State{};
     defer away.deinit(gpa);
-    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &away, &.{ 0x28200017, 0x60012d53, 0x61fcb804 }));
+    try testing.expectError(error.UnknownForm, emu.executeBundle(gpa, &away, &.{ 0x28200017, 0x60030103, 0x60003800 }));
 }
 
 test "x02.asrc and x02.esrc also write A1 (157, 795)" {

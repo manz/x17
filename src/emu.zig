@@ -4838,14 +4838,21 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // S1[28:27] = 00 with S1[5] = 0 is a stop form keyed by S1[2:0] (648, 667): k = 1 stops
     // after the store iff p1, k = 3 runs away (refused), any other k stops.  A stop lands the
     // store once and ends the run with no completion (bit 2 never rises): `stop_now`.
-    const stop_form = (s1 >> 27) & 3 == 0 and (s1 >> 5) & 1 == 0;
+    // 916: S2[22:18] picks the stop: 00000 stops (648, 667's shape), 11111 stores and runs on
+    // (0x381); other values are not decoded: refused.
+    const stop_sel: u32 = (s2 >> 18) & 0x1F;
+    const stop_shape = (s1 >> 27) & 3 == 0 and (s1 >> 5) & 1 == 0;
+    if (stop_shape and stop_sel != 0 and stop_sel != 0x1F) return RunError.UnknownForm;
+    const stop_form = stop_shape and stop_sel == 0;
     if (stop_form and s1 & 7 == 3) return RunError.UnknownForm;
+    // 801's k = 1 under p1 "stores again" was measured as a stop, retracted by 916: refused.
+    if (stop_shape and !stop_form and s1 & 7 == 1 and state.p[1] != 0) return RunError.UnknownForm;
     const stops = stop_form and (s1 & 7 != 1 or state.p[1] != 0);
     // e<2*S1[2:0] + h[31]> <- AGU10[S1[10:7]](x = e<k>), written after the store (fact 658,
     // 429), measured with R mux 0 (fns x and x+1).  Under mux 2 it takes the R slot's AGU
     // result instead (801, measured on the stop form); elsewhere under a nonzero mux: refused.
     const ec_dest: u32 = ((s1 & 7) << 1) | (h >> 31);
-    if (ec_dest != 0 and r_mode != 0 and !stops and !(r_mode == 2 and stop_form)) return RunError.UnknownForm;
+    if (ec_dest != 0 and r_mode != 0 and !stops and !(r_mode == 2 and stop_shape)) return RunError.UnknownForm;
     const k: u32 = (s1 >> 15) & 0xF;
     const e_post: u32 = if (ec_dest == 0) 0 else try agu10ImmEval((s1 >> 7) & 0xF, state.e[k], state.r[(h >> 27) & 0xF], (h >> 11) & 0xFFFF);
     const v: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
@@ -4856,7 +4863,7 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     }
     // Under mux 7 the e write lands elsewhere; after a stop nothing reads it.
     if (ec_dest != 0 and r_mode == 0) state.e[ec_dest] = e_post;
-    if (ec_dest != 0 and r_mode == 2 and stop_form) {
+    if (ec_dest != 0 and r_mode == 2 and stop_shape) {
         state.e[ec_dest] = r_val.?;
         // A stop whose side write moves its own store's e stores again at the new address
         // (801, measured with k = 1 under p1).
