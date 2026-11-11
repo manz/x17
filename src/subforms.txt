@@ -147,8 +147,9 @@ x02.ainc   6   0x00000002   0x0000A000   0x00020042   0x00000002   0x00042800   
 # x18.eagu: 4-syllable low5 0x18, w3 class 000 (fact 169 /
 # own-x18eagu).  Uses AGU10 to update e:
 #   e<w1[25:22]> <- AGU10[w1[29:26]](x = e<w3[28:25]>, y = 0)
-# The template also steps A8 (w1[3:0] = 4, A<w3[19:15]> = A8, fn 0; fact 956).
-x18.eagu   4   0x00000018   0x00000004   0x0002AC00   0x00040000
+# Its A slot (956: A<2*w1[3:0]+h31> <- A8 + 1) is parked on A16, which nothing
+# reads (957); w1[3:0] = 4 would step A8.
+x18.eagu   4   0x00000018   0x00000008   0x0002AC00   0x00040000
 
 # x18.edec: 4-syllable low5 0x18 w3 class 100 (fact 172 /
 # own-x18edec).  e <- e +/- 1, sign picked by w2[20].
@@ -622,9 +623,9 @@ x18.eagu2  4   0x00000018   0x00040000   0x00000000   0x40000000
 # steps e7 (w1[29] = 1, w1[23:20] = 7, source e7).
 x18.rag    4   0x9C0238B8   0xA2750102   0x00000400   0x4E000008
 
-# x18.rag101: class 101 R slot and the mux-001 X slot (fact 195); the sum also lands in
-# A5 (A<2*w1[3:0] + head[31]>, fact 955).
-x18.rag101 4   0x80000018   0x00001002   0x60000000   0xA0000000
+# x18.rag101: class 101 R slot and the mux-001 X slot (fact 195).  The sum also lands in
+# A<2*w1[3:0] + head[31]> (955), parked on A17 (957); w1[3:0] = 2 would write A5.
+x18.rag101 4   0x80000018   0x00001008   0x60000000   0xA0000000
 
 # x18.eagu0: class 000 e AGU from the w2[15] = 0 table (fact 266).
 x18.eagu0  4   0x00000018   0x00000000   0x00020000   0x06000000

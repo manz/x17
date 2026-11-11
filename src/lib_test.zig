@@ -774,13 +774,10 @@ test "x02.ainc's template leaves s2 (954) and x18.rag's steps e7" {
 test "x18 class 101 also writes its R slot sum to A<2*w1[3:0] + head[31]> (955)" {
     // The AAC TNS loop's rag101 (80000018 00001002 60000000 A0262980): R3 and A5 <- A12 + R5.
     const gpa = testing.allocator;
-    const prog = try assemble(gpa,
-        \\x18.rag101 s0, R3, A12, R5, #2
-        \\x17.halt
-        \\
-    );
+    const halt = try assemble(gpa, "x17.halt\n");
+    defer gpa.free(halt);
+    const prog = try std.mem.concat(gpa, u32, &.{ &.{ 0x80000018, 0x00001002, 0x60000000, 0xA0262980 }, halt });
     defer gpa.free(prog);
-    try testing.expectEqualSlices(u32, &.{ 0x80000018, 0x00001002, 0x60000000, 0xA0262980 }, prog[0..4]);
     var state = emu.State{};
     defer state.deinit(gpa);
     state.r[3] = 0x1234;
@@ -839,6 +836,26 @@ test "x18 classes 110 and 111 write A<2*w1[3:0] + head[31]> (345, 344)" {
         _ = try emu.runFrom(gpa, &state, prog, 0, 16);
         try testing.expectEqual(c.want, state.a[c.a]);
     }
+}
+
+test "the x18.eagu and x18.rag101 templates park their A write on A16 / A17 (957)" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\x18.eagu e7, e7, #2
+        \\x18.rag101 s0, R3, A12, R5, #2
+        \\x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    for (1..16) |k| state.a[k] = @intCast(0x100 * k);
+    state.r[5] = 5;
+    _ = try emu.runFrom(gpa, &state, prog, 0, 16);
+    var want: [16]u32 = undefined;
+    for (&want, 0..) |*w, k| w.* = @intCast(0x100 * k);
+    try testing.expectEqualSlices(u32, &want, state.a[0..16]);
+    try testing.expectEqual([2]u32{ 0x801, 0xC05 }, [2]u32{ state.a[16], state.a[17] });
 }
 
 test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[29:27]" {
