@@ -5628,8 +5628,9 @@ pub fn aluWord(h: u32, a_s: i32, b_s: i32) RunError!?u32 {
     }
     // 870: code 0x2B with m = 1, # = 0 is the unsigned 24-bit min of a and b.
     if (code == 0x2B and m == 1 and s_mod == 0) return @min(a24, b24);
-    // clr with modifiers: 0x22 writes 0 for every m and # (775); the other clr codes are OPEN.
-    if (op == .clr) return if (code == 0x22) 0 else null;
+    // clr with modifiers: 0x22 writes 0 for every m and # (775), 0x20 too (877: m 0, # 7, and
+    // flips of m, # and b); the other clr codes are OPEN.
+    if (op == .clr) return if (code == 0x22 or code == 0x20) 0 else null;
     // mova/asr/asrrs/lsr with s == 0: modifier m is ignored.
     if ((op == .mova or op == .asr or op == .asrrs or op == .lsr) and s_mod == 0) {
         return alu05Eval(op, a_s, b_s);
@@ -6927,8 +6928,8 @@ test "aluWord: add with s=3 code<=2 shifts left" {
 }
 
 test "aluWord: clr with modifiers is OPEN (null)" {
-    // code 0x20 is clr; m=1 -> OPEN per the Python model.
-    const h: u32 = (0x20 << 5) | (1 << 23);
+    // code 0x21 is clr; m=1 -> OPEN (0x20 and 0x22 are measured: 0, 775 / 877).
+    const h: u32 = (0x21 << 5) | (1 << 23);
     const r = try aluWord(h, 0x100, 0x200);
     try testing.expect(r == null);
 }

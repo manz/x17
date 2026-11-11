@@ -2366,6 +2366,18 @@ test "pair also loads s<S[10:7]> <- X:[A<4*S[2:0] + head[31:30]>] (876)" {
     }
 }
 
+test "alu.m 0x20 with modifiers writes 0 (877)" {
+    const gpa = testing.allocator;
+    for ([_]u32{ 0x403C8405, 0x40BC8405, 0x403C8405 | 1 << 26 }) |w| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.s[9] = 0x923;
+        state.s[1] = 0x55;
+        try emu.executeBundle(gpa, &state, &.{w});
+        try testing.expectEqual(@as(u32, 0), state.s[9]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
