@@ -614,6 +614,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x16.mul2 jump (893): q + sx15(S2[23:9]) after two delay bundles while S1[14:13] = 0; offset 0 OPEN.
 # x16.mul2 jump gate (905): taken iff S1[8:5] = 0 or p<S1[8:5]>; S1[14] wedges (refused).
 # zmv p (907): [21:18] = 0101 with z[15:0] = 0 clears p1, p2, p3; z = 0x920D writes no p; other codes on z = 0 refused.
+# x17sty e (908): stop form, S2[3:1] = 101: v = op S2[10:8] of s<S2[28:25]> -> e<{S1[2:0], h[31]}>, R<S1[14:11]>, s<S1[22:19]>; Y:[old e<S1[18:15]>] <- s<{S2[0], S1[31:29]}> (S2[12:11] = 11); p1 = 1 stops after the store.
 # x15pt Y store (894): S[16:15] = 11: Y:[e<S[20:17]>] <- s<S[24:21]> low 16.
 # x17.agu2 s mux (894): S2[9:6] = 6: s<S2[13:10]> <- Y:[e<S2[24:21]>] zx; 2 the AGU result; 4 / 14 OPEN.
 # x16agu mux 000 (895): e<{S1[2:0], head[31]}> <- AGU10 fn S1[10:7] (10 y+i, 11 y-i, 8 i, 14 y, 2 0) of y = R<head[30:27]>, i = head[26:11].

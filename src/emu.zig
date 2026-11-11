@@ -1120,14 +1120,18 @@ fn x03EWalk(state: *const State, bundle: []const u32) RunError!?EWrite {
     const dest: u32 = (bundle[1] >> 3) & 0xF;
     if (dest == 0 or w0 & 1 == 0 or (bundle[5] >> 4) & 1 == 0) return null;
     if ((w0 >> 10) & 1 == 1 or (w0 >> 22) & 1 == 1) return RunError.UnknownForm;
-    const sv: u32 = state.s[(w0 >> 26) & 0xF];
-    const v: u32 = switch ((w0 >> 23) & 7) {
+    return .{ .dest = dest, .value = try walkOp((w0 >> 23) & 7, state.s[(w0 >> 26) & 0xF]) };
+}
+
+/// The e walk op (fact 902, 908): 010 copy, 011 +1, 110 negate, 16 bits; others refused.
+fn walkOp(op: u32, sv: u32) RunError!u32 {
+    const v: u32 = switch (op) {
         2 => sv,
         3 => sv +% 1,
         6 => 0 -% sv,
         else => return RunError.UnknownForm,
     };
-    return .{ .dest = dest, .value = v & 0xFFFF };
+    return v & 0xFFFF;
 }
 
 /// Fact 902 / 898: with w0[0] = 1, w5[13] = w5[21] = 1 and no R read or w5[20] row,
@@ -4798,6 +4802,7 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const s1 = bundle[1];
     const s2 = bundle[2];
     const r_mode: u32 = (s2 >> 1) & 7;
+    if (r_mode == 5 and (s1 >> 27) & 1 == 0) return execX17StyE(gpa, state, bundle);
     if (r_mode == 1 or r_mode == 5) {
         if ((s1 >> 27) & 1 == 0 or (bundle[0] >> 5) & 0x3F != 0 or (s2 >> 11) & 3 != 2) return RunError.UnknownForm;
         const a: u32 = state.s[(s2 >> 25) & 0xF];
@@ -4843,6 +4848,30 @@ fn execX17Sty(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
         if (stops and ec_dest == k) state.y_mem.put(gpa, state.e[k], v) catch return RunError.OutOfMemory;
     }
     if (stops) state.stop_now = true;
+}
+
+/// x17sty stop form under S2[3:1] = 101 (fact 908): v = op S2[10:8] of s<S2[28:25]> goes to
+/// e<{S1[2:0], h[31]}>, R<S1[14:11]> and s<S1[22:19]>; Y:[old e<S1[18:15]>] <- s<{S2[0],
+/// S1[31:29]}> with S2[12:11] = 11.  Measured with k = S1[2:0] = 1 and p1 = 0; with p1 = 1 the
+/// stop (648) ends the run after the store.  h[10] (kills e) and the other k are refused.
+fn execX17StyE(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const h = bundle[0];
+    const s1 = bundle[1];
+    const s2 = bundle[2];
+    const stop_form = (s1 >> 27) & 3 == 0 and (s1 >> 5) & 1 == 0;
+    if (!stop_form or s1 & 7 != 1 or (h >> 10) & 1 == 1 or (s2 >> 11) & 3 != 3) return RunError.UnknownForm;
+    const v = try walkOp((s2 >> 8) & 7, state.s[(s2 >> 25) & 0xF]);
+    const y_val: u32 = state.s[((s2 & 1) << 3) | (s1 >> 29)] & 0xFFFF;
+    state.y_mem.put(gpa, state.e[(s1 >> 15) & 0xF], y_val) catch return RunError.OutOfMemory;
+    if (state.p[1] != 0) {
+        state.stop_now = true;
+        return;
+    }
+    const dest_r: u32 = (s1 >> 11) & 0xF;
+    const dest_s: u32 = (s1 >> 19) & 0xF;
+    if (dest_r != 0) state.r[dest_r] = v;
+    if (dest_s != 0) state.s[dest_s] = v;
+    state.e[((s1 & 7) << 1) | (h >> 31)] = v;
 }
 
 /// (S1 class 100, S2 class 100) with S2[3:0] = 10 (fact 273):
