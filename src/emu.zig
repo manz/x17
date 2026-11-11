@@ -715,6 +715,9 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         return true;
     }
     if (w4_mode == 2) {
+        // 953, 954: asrc and esrc also run the w2 multiply (156), s<w2[12:9]> <-
+        // s<w2[4:1]> * s<w2[8:5]>, reading s before the X read writes; dest s0 drops it.
+        try execX02Mpy(gpa, state, bundle);
         try execX02Xrd(gpa, state, bundle); // esrc path
         // The A slot runs here too: asrc and esrc name A1 as its destination, so asrc An
         // sets A1 <- An + 1 and esrc steps A1 (157, 795).

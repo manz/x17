@@ -140,9 +140,9 @@ x02.mpy    6   0x00000002   0x0000A000   0x00020000   0x00000001   0x00042800   
 
 # x02.ainc: 6-syllable VLIW at low5 0x02 with the A-increment slot active
 # (w3[1] = 1).  A<w2[21:17]> <- A<w3[4:0]> + 1 (fact 157 /
-# own-x02ainc).  The template's w2 multiply slot also writes s2 <- rnd(s1 * s2 >> 23)
-# (w2[12:9] = 2, mode 4): nothing may live in s2 across it.
-x02.ainc   6   0x00000002   0x0000A000   0x00020442   0x00000002   0x00042800   0x00004200
+# own-x02ainc).  The template's w2 multiply slot points at s0 (w2[12:9] = 0), which drops the
+# write (954); with w2[12:9] = 2 it wrote s2 <- rnd(s1 * s2 >> 23) (953).
+x02.ainc   6   0x00000002   0x0000A000   0x00020042   0x00000002   0x00042800   0x00004200
 
 # x18.eagu: 4-syllable low5 0x18, w3 class 000 (fact 169 /
 # own-x18eagu).  Uses AGU10 to update e:
@@ -264,11 +264,11 @@ x02.agu    6   0x10049802   0x00000000   0x00004000   0x08000000   0x00008000   
 
 # x02.esrc: 6-syllable low5 0x02 w4 mode 010 (fact 187 / own-x02esrc).
 # s<w4[6:3]> <- e<w3[30:27]>.
-x02.esrc   6   0x00000002   0x0000A000   0x00020442   0x00000001   0x00041000   0x20004200
+x02.esrc   6   0x00000002   0x0000A000   0x00020042   0x00000001   0x00041000   0x20004200
 
 # x02.asrc: 6-syllable low5 0x02 w4 mode 010 with w5[29:28]=01.
 # s<w4[6:3]> <- A<w3[4:0]> + 1 (fact 190 / own-x02asrc).
-x02.asrc   6   0x00000002   0x0000A000   0x00020442   0x00000000   0x00041000   0x10004200
+x02.asrc   6   0x00000002   0x0000A000   0x00020042   0x00000000   0x00041000   0x10004200
 
 # x03.mpy: 6-syllable low5 0x03 with 0x02-style mpy in w2 slot.
 # fact 165 / own-x03mpy.  s<w2[12:9]> <- (s_a*s_b+2^22) >> 23.
