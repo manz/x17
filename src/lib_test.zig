@@ -2694,6 +2694,27 @@ test "0x1F82 stores Y:[e<S[20:17]>] <- s<S[24:21]>; 0x1F84 loads s1 from Y:[e1] 
     try testing.expectEqual(@as(u32, 0x13C8), state.s[1]);
 }
 
+test "x16agu mux 000 writes AGU10 of R and the immediate to e<{S1[2:0], h31}> (895)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x18952416, s1: u32 = 0x03304501, e: u32 = 2, v: u32 = 0xA4B1 }{
+        .{},
+        .{ .h = 0x98952416, .e = 3 }, // h[31]
+        .{ .s1 = 0x03304503, .e = 6 }, // S1[1]
+        .{ .h = 0x10952416, .v = 0xF40A }, // h[27]: R2
+        .{ .s1 = 0x03304581, .v = 0x7F69 }, // fn 11: y - i
+        .{ .s1 = 0x03304401, .v = 0x12A4 }, // fn 8: i
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[2] = 0xE166;
+        state.r[3] = 0x920D;
+        state.s[3] = 0x77;
+        try emu.executeBundle(gpa, &state, &.{ c.h, c.s1, 0x60002000 });
+        try testing.expectEqual(c.v, state.e[c.e]);
+        try testing.expectEqual(@as(u32, 0), state.s[3]); // clr 0x20 in s<S1[27:24]>
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

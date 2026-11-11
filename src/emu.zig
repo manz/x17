@@ -2419,6 +2419,25 @@ fn execX16Agu(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // S1[30:28] is a source mux (fact 207): 001 = AGU10, 101 = Y:[x],
     // 011 = Y:[x][7:0] << 8 (refused, 488), 100 = (Y:[x] << 7)[15:0], 110 = head[26:11] << 6.
     const mux: u32 = (s1 >> 28) & 7;
+    // 895: mux 000 with no s dest is the e slot: e<{S1[2:0], head[31]}> <- AGU10 fn S1[10:7]
+    // (y = R<h[30:27]>, i = h[26:11]): 10 y + i, 11 y - i, 8 i, 14 y, 2 zero (measured set).
+    if (mux == 0) {
+        if (dest_s != 0) return RunError.UnknownForm;
+        const i: u32 = (head >> 11) & 0xFFFF;
+        const ev: u32 = switch (fn_op) {
+            10 => y_val +% i,
+            11 => y_val -% i,
+            8 => i,
+            14 => y_val,
+            2 => 0,
+            else => return RunError.UnknownForm,
+        } & 0xFFFF;
+        const alu0 = try x16AguAlu(state, head, s1, s2);
+        const dest_e: u32 = ((s1 & 7) << 1) | (head >> 31);
+        if (dest_e != 0) state.e[dest_e] = ev;
+        if (alu0) |w| state.s[w.dest] = w.val;
+        return;
+    }
     const yd: u32 = (state.getY(x_val) orelse 0) & 0xFFFF;
     const v: u32 = switch (mux) {
         1 => switch (fn_op) {
@@ -2449,6 +2468,8 @@ fn x16AguAlu(state: *const State, h: u32, s1: u32, s2: u32) RunError!?struct { d
     const code: u32 = (h >> 5) & 0x3F;
     const m: u32 = (s1 >> 11) & 7;
     const sh: u32 = (s1 >> 20) & 0xF;
+    // 877, 895: clr 0x20 writes 0 under any modifier.
+    if (code == 32) return .{ .dest = d, .val = 0 };
     const ok = switch (code) {
         0, 1 => (m == 0 or m == 2 or m == 3 or m == 6 or m == 7) and (sh == 0 or m == 2),
         16, 6, 35, 42, 51, 32, 34 => m == 2 and sh == 0,
