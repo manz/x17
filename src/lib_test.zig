@@ -2673,6 +2673,27 @@ test "x16.mul2 jumps by sx15(S2[23:9]) unless S1[14:13] != 0 (893)" {
     }
 }
 
+test "0x1F82 stores Y:[e<S[20:17]>] <- s<S[24:21]>; 0x1F84 loads s1 from Y:[e1] (894)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[1] = 0xFDFF;
+    state.e[2] = 0x13CB;
+    state.e[3] = 0x14DA;
+    state.s[1] = 0xFFFDFF;
+    state.r[1] = 9;
+    try state.y_mem.put(gpa, 0x14F7, 0x7B6E);
+    try emu.executeBundle(gpa, &state, &.{ 0x9C029EF5, 0x24258500 });
+    try testing.expectEqual(@as(?u32, 0xFDFF), state.getY(0x13CB));
+    try testing.expectEqual(@as(u32, 0x14F7), state.e[1]);
+    try emu.executeBundle(gpa, &state, &.{ 0x889DFC17, 0x28280501, 0x00200580 });
+    try testing.expectEqual(@as(u32, 0x7B6E), state.s[1]);
+    try testing.expectEqual(@as(u32, 0x13C8), state.e[3]);
+    // S2[8] flipped: mux 2 is the AGU result.
+    try emu.executeBundle(gpa, &state, &.{ 0x889DFC17, 0x28280501, 0x00200480 });
+    try testing.expectEqual(@as(u32, 0x13C8), state.s[1]);
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU

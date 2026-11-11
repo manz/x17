@@ -2095,15 +2095,20 @@ fn execJmp(gpa: std.mem.Allocator, state: *State, head: u32) RunError!void {
 }
 
 fn execX15Pt(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
     if (bundle.len < 2) return RunError.UnknownForm;
     const head = bundle[0];
     const s = bundle[1];
     const dest_s: u32 = (head >> 21) & 0xF;
     const lut: u32 = (s >> 8) & 0x7;
     const p_idx: u32 = (s >> 3) & 0xF;
+    // 894: S[16:15] = 11 stores Y:[e<S[20:17]>] <- s<S[24:21]> (16 bits); either bit clear
+    // removes it.  Read before the e write.
+    const y_on = (s >> 15) & 3 == 3;
+    const y_addr: u32 = state.e[(s >> 17) & 0xF];
+    const y_val: u32 = state.s[(s >> 21) & 0xF] & 0xFFFF;
     // 860: e<2*S[2:0] + head[31]> <- #head[20:5], the 845 / 851 form.
     const dest_e: u32 = ((s & 7) << 1) | (head >> 31);
+    if (y_on) state.y_mem.put(gpa, y_addr, y_val) catch return RunError.OutOfMemory;
     if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
     if (dest_s == 0) return;
     const p_val: u8 = if (p_idx == 0) 0 else state.p[p_idx];
@@ -5453,6 +5458,12 @@ fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     // y - i here (780, own-a2f11; still refused in x17ld, 443).
     const x_e: u32 = (s2 >> 21) & 0xF;
     const result = if (fn_op == 11) (y_val -% imm) & 0xFFFF else try agu10ImmEval(fn_op, if (x_e == 0) 0 else state.e[x_e], y_val, imm);
+    // 894: s<S2[13:10]>'s mux S2[9:6]: 6 is Y:[e<S2[24:21]>] zero-extended (e0 loads nothing,
+    // left as the AGU result: OPEN); 4 and 14 gave another sign-extended word (OPEN).
+    const s_mux: u32 = (s2 >> 6) & 0xF;
+    if (dest_s != 0 and (s_mux == 4 or s_mux == 14)) return RunError.UnknownForm;
+    if (dest_s != 0 and s_mux == 6 and x_e == 0) return RunError.UnknownForm;
+    const s_val: u32 = if (s_mux == 6) (state.getY(state.e[x_e]) orelse 0) & 0xFFFF else result;
     // S2[5:2] = k != 0 (630): e<k> <- e<{S2[1:0], S1[31:30]}> - 1, read before the writes.
     const dec_k: u32 = (s2 >> 2) & 0xF;
     const dec_v: u32 = (state.e[((s2 & 3) << 2) | (s1 >> 30)] -% 1) & 0xFFFF;
@@ -5463,7 +5474,7 @@ fn execX17Agu2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const alu_v: u32 = if (alu_d == 0) 0 else try x17Agu2Alu(head, state.s[(s1 >> 15) & 0xF], state.s[(s2 >> 25) & 0xF]);
     if (alu_d != 0 and alu_d == dest_s) return RunError.UnknownForm;
     if (alu_d != 0) state.s[alu_d] = alu_v;
-    if (dest_s != 0) state.s[dest_s] = result;
+    if (dest_s != 0) state.s[dest_s] = s_val;
     if (dest_e != 0) state.e[dest_e] = result;
     if (dec_k != 0) state.e[dec_k] = dec_v;
     // R<S1[14:11]> takes it too, x17ld's R field (fact 540, own-x17a2r).
