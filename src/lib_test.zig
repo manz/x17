@@ -8952,6 +8952,30 @@ test "x00 control 5's return clears p<w2[17:14]> under w4[5], w5[4], w5[31] (938
     }
 }
 
+test "x04 w2[28] jumps q + w1[31:18] (940)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w2: u32, want: ?i32 }{ .{ .w2 = 0x10000000, .want = 0x60 }, .{ .w2 = 0, .want = null } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        try emu.executeBundle(gpa, &state, &.{ 0x88001804, 0x01800518, c.w2, 0x08200000, 0x00000000, 0x03000000 }); // 0x506
+        try testing.expectEqual(c.want, state.pending_jmp_offset);
+    }
+}
+
+test "x16agu's e slot sets p<S2[10:7]> under head[6], !head[9], S1[23] (942)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0xB0A689D6, s1: u32 = 0x00A04500, want: u8 = 1 }{
+        .{},
+        .{ .h = 0xB0A68996, .want = 0 }, // head[6]
+        .{ .s1 = 0x00204500, .want = 0 }, // S1[23]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        _ = emu.executeBundle(gpa, &state, &.{ c.h, c.s1, 0x60002180 }) catch {}; // 0x596
+        try testing.expectEqual(c.want, state.p[3]);
+    }
+}
+
 test "x03's counted jr writes the p it tests (915)" {
     const gpa = testing.allocator;
     const halt = try assemble(gpa, "x17.halt\n");
