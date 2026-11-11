@@ -3665,7 +3665,8 @@ fn execX18C5(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
 /// w1[17:15] (0 / - / the AGU / - / - / X:[A<w2[12:8]>] when w2[14:13] = 01, else
 /// xd / - / 0); Y store (w2[7], w2[16]) of s<{w3[2:0], w2[31]}> at Y:[x]; second e
 /// slot e<w2[5:2]> <- y - 1, where w2[17] = 0 reads y as 0 in phase T = 0 and
-/// flips T (T survives runs, reset to 0).
+/// flips T (T survives runs, reset to 0).  A<2*w1[3:0] + head[31]> <- the class 010
+/// R slot sum (fact 956).
 fn execX18C0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     const h = bundle[0];
     const w1 = bundle[1];
@@ -3706,10 +3707,15 @@ fn execX18C0(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     if ((w2 >> 7) & 1 == 1 and (w2 >> 16) & 1 == 1) {
         state.y_mem.put(gpa, x, st_val) catch return RunError.OutOfMemory;
     }
+    // 956: A<2*w1[3:0] + head[31]> <- A8 + 1 on the measured bundle (w3[24:20] = 0,
+    // w3[19:15] = 8, w3[14:11] = 0); read as class 010's R slot sum, source fields inferred.
+    const dest_a: u32 = 2 * (w1 & 0xF) + (h >> 31);
+    const a_val: u32 = x18RSlot(state, w3);
     if (dest_e != 0) state.e[dest_e] = eop;
     if (dest_s != 0) state.s[dest_s] = src;
     if (dest_s2 != 0) state.s[dest_s2] = src;
     if (dest_e2 != 0) state.e[dest_e2] = (y2 -% 1) & 0xFFFF;
+    if (dest_a != 0) state.a[dest_a] = a_val;
 }
 
 /// Class 100 (fact 172, 196-198, 204), slots latched then written:

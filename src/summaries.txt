@@ -55,7 +55,7 @@ x16.mul	Three-syllable bundle that multiplies two source registers, shifts the p
 x13.agu	Two-syllable bundle that loads a 16-bit immediate into an address entry e and writes an address-unit result of e and R into a modifier register R.
 x02.mpy	Six-syllable VLIW that multiplies two source registers and writes the rounded product divided by 2^23 to a source register.
 x02.ainc	Six-syllable VLIW that increments an A register (A<w2[21:17]> <- A<w3[4:0]> + 1); its multiply slot targets s0, so no s register changes.
-x18.eagu	Updates an element register e from an address-generation function (selected by a 4-bit field) applied to another e register, with y fixed at zero.
+x18.eagu	Updates an element register e from an address-generation function (selected by a 4-bit field) applied to another e register, with y fixed at zero; it also increments A8.
 x18.edec	Writes an e register with another e register plus or minus one, the sign chosen by a bit in the second syllable.
 x18.una	Applies a unary operation selected by a 3-bit op field (for example plus one or absolute value) to scalar s, writing the result to another s.
 x18.and	Bitwise ANDs two scalar s registers and writes the result to a third s register.

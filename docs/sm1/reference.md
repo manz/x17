@@ -737,7 +737,7 @@ Six-syllable VLIW that increments an A register (A<w2[21:17]> <- A<w3[4:0]> + 1)
 
 ### `x18.eagu`
 
-Updates an element register e from an address-generation function (selected by a 4-bit field) applied to another e register, with y fixed at zero.
+Updates an element register e from an address-generation function (selected by a 4-bit field) applied to another e register, with y fixed at zero; it also increments A8.
 
 - Syllables: 4
 - Base: `00000018` `00000004` `0002ac00` `00040000`

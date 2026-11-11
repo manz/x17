@@ -790,6 +790,23 @@ test "x18 class 101 also writes its R slot sum to A<2*w1[3:0] + head[31]> (955)"
     try testing.expectEqual([2]u32{ 0x105, 0x105 }, [2]u32{ state.r[3], state.a[5] });
 }
 
+test "x18 class 000 writes A<2*w1[3:0] + head[31]> <- A8 + 1 beside its e step (956)" {
+    // own-x18eagu-a: the im_pre loop's eagu, A8 = 0x17FB -> 0x17FC; w1[3:0] = 5 moves the dest to A10.
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32, dest: usize }{ .{ .w1 = 0x09C00004, .dest = 8 }, .{ .w1 = 0x09C00005, .dest = 10 } }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[8] = 0x17FB;
+        state.a[10] = 0x55;
+        const halt = try assemble(gpa, "x17.halt\n");
+        defer gpa.free(halt);
+        const prog = try std.mem.concat(gpa, u32, &.{ &.{ 0x00000018, c.w1, 0x0002AC00, 0x0E040000 }, halt });
+        defer gpa.free(prog);
+        _ = try emu.runFrom(gpa, &state, prog, 0, 16);
+        try testing.expectEqual(@as(u32, 0x17FC), state.a[c.dest]);
+    }
+}
+
 test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[29:27]" {
     // fact 498-500: own-x01am (m1, b - a = 0x23), own-x01neg (m6 with a = s0: -b), m2
     // passes b; w5[3:2] = 10 is refused.
