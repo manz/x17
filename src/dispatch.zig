@@ -346,6 +346,8 @@ const play_params = clap.parseParamsComptime(
     \\    --dump <str>         on a stop or trap, write the state (registers, X, Y) as JSON
     \\    --p-entry <usize>    p1..p15 at the start, bit k = p<k> (default 0; 0xFFFC = 803's state)
     \\    --configure-arm      945's arming: one run at configure, packet 1 only queued, then one run per packet
+    \\    --profile <usize>    print the decoder's hot list, N rows per table: packets, P use, functions, blocks, bundles
+    \\    --debug <str>        sidecar for --profile labels and lines (default: the image path with .json)
     \\<str>                    image path (.x17i)
     \\
 );
@@ -362,7 +364,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
     defer parsed.deinit();
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] [--configure-arm] <image.x17i>\n");
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] [--configure-arm] [--profile N [--debug FILE]] <image.x17i>\n");
         return;
     }
     const img_path = parsed.positionals[0] orelse {
@@ -411,6 +413,8 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     defer tracer.deinit();
     var dump: std.Io.Writer.Allocating = .init(gpa);
     defer dump.deinit();
+    var prof: play_mod.Profile = .{ .gpa = gpa };
+    defer prof.deinit();
     var res = try play_mod.play(gpa, &img, pkts, .{
         .rate_hz = @intCast(parsed.args.rate orelse 44100),
         .y_writes = writes.items,
@@ -423,6 +427,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
         .dump = if (parsed.args.dump != null) &dump.writer else null,
         .p_entry = @truncate(parsed.args.@"p-entry" orelse 0),
         .configure_arm = parsed.args.@"configure-arm" != 0,
+        .profile = if (parsed.args.profile != null) &prof else null,
     });
     defer res.deinit(gpa);
     try writeFile(gpa, out_path, std.mem.sliceAsBytes(res.pcm));
@@ -437,6 +442,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
             try out.writeAll("\n");
         }
     }
+    if (parsed.args.profile) |n| try printPlayProfile(gpa, out, &prof, &img, img_path, parsed.args.debug, n);
     if (parsed.args.dump) |path| if (res.trap != null) try writeFile(gpa, path, dump.written());
     if (res.trap) |t| if (t.err == error.Breakpoint) {
         if (t.packet) |i| try out.print("stopped in packet {d}", .{i}) else try out.print("stopped in init pass {d}", .{t.pass});
@@ -452,6 +458,29 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
         try out.print("\n  {s}\n", .{if (n == 0) "?" else buf[0..n]});
         return error.Trapped;
     }
+}
+
+/// The profile report, with labels and lines from the sidecar when one can be read.  An
+/// explicit --debug that cannot be read is an error; the default path is optional.
+fn printPlayProfile(gpa: std.mem.Allocator, out: *Writer, prof: *const play_mod.Profile, img: *const image_mod.Image, img_path: []const u8, debug: ?[]const u8, n: usize) !void {
+    const stem = if (std.mem.endsWith(u8, img_path, ".x17i")) img_path[0 .. img_path.len - 5] else img_path;
+    const default_path = try std.fmt.allocPrint(gpa, "{s}.json", .{stem});
+    defer gpa.free(default_path);
+    const bytes: ?[]u8 = readFileMax(gpa, debug orelse default_path, 256 * 1024 * 1024) catch |e| blk: {
+        if (debug != null) {
+            try out.print("play: cannot read sidecar '{s}': {s}\n", .{ debug.?, @errorName(e) });
+            return e;
+        }
+        break :blk null;
+    };
+    defer if (bytes) |b| gpa.free(b);
+    var parsed: ?std.json.Parsed(std.json.Value) = null;
+    defer if (parsed) |*p| p.deinit();
+    if (bytes) |b| parsed = std.json.parseFromSlice(std.json.Value, gpa, b, .{}) catch |e| {
+        try out.print("play: sidecar '{s}' is not JSON: {s}\n", .{ debug orelse default_path, @errorName(e) });
+        return e;
+    };
+    try play_mod.writeProfile(gpa, out, prof, img, if (parsed) |p| p.value else null, n);
 }
 
 // ---------------------------------------------------------------------------
