@@ -8985,9 +8985,9 @@ test "x03's counter writes p<w2[16:13]>, not the tested p (922)" {
     try testing.expectEqual(@as(u32, 0), zero.e[8]);
 }
 
-test "x16 calls 0x100 + S2[21:9] under S1[23:21] = 001 (923, 924)" {
+test "x16 calls the arm base + S2[21:9] under S1[23:21] = 001 (923, 924, 928)" {
     const gpa = testing.allocator;
-    var state = emu.State{};
+    var state = emu.State{ .call_base = 0x100 };
     defer state.deinit(gpa);
     state.pc = 0x4CD;
     try emu.executeBundle(gpa, &state, &.{ 0x80029D76, 0x01200000, 0x803C9400 }); // 0x4CD
@@ -8998,6 +8998,17 @@ test "x16 calls 0x100 + S2[21:9] under S1[23:21] = 001 (923, 924)" {
     plain.pc = 0x4CD;
     emu.executeBundle(gpa, &plain, &.{ 0x80029D76, 0x01000000, 0x803C9400 }) catch {}; // S1[21] clear
     try testing.expect(!plain.call_pending);
+}
+
+test "ctl 4 calls land at the arm's base + field (926, 928)" {
+    const gpa = testing.allocator;
+    for ([_]struct { base: usize, want: i32 }{ .{ .base = 0, .want = 0x1F6F }, .{ .base = 0x100, .want = 0x206F } }) |c| {
+        var state = emu.State{ .call_base = c.base };
+        defer state.deinit(gpa);
+        state.pc = 0x2D2;
+        try emu.executeBundle(gpa, &state, &.{ 0x00A55000, 0x7DBC0000, 0x00000224, 0x00F00004, 0x00200000, 0x16000000, 0x00000090 });
+        try testing.expectEqual(@as(?i32, c.want - 0x2D2), state.pending_jmp_offset);
+    }
 }
 
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {

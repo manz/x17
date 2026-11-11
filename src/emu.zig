@@ -76,6 +76,8 @@ pub const State = struct {
     /// 888 / 911: set by an x00 call; when its jump fires the bundle after the two delay
     /// bundles becomes `link`, where an x00 return (control 5) resumes.  One level only.
     call_pending: bool = false,
+    /// 928: calls land at this base + their field; the arm sets it (decode: +0x988, pass-1: 0).
+    call_base: usize = 0,
     link: ?usize = null,
     /// The value the last X read left (fact 241).
     xd: u32 = 0,
@@ -1581,8 +1583,8 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
     };
 
     const ctl: u32 = w3 & 0x1F;
-    // 888: ctl 4's absolute target is w1[31:18], 14 bits (0x2D2 calls 0x1F6F).
-    const target: u32 = (w1 >> 18) & 0x3FFF;
+    // 888, 926, 928: ctl 4 lands at the arm's base + w1[31:18] (0x2D2 calls 0x206F live).
+    const target: usize = state.call_base + ((w1 >> 18) & 0x3FFF);
     switch (ctl) {
         // q + sx15({w2[0], w1[31:18]}), two delay slots, no link (575, retracting 572-574).
         // 772 (retracting 578's hidden state): condition c = w4[31:28] tests p<c> (p0 reads 1),
@@ -2327,12 +2329,12 @@ fn x16Jump(state: *State, bundle: []const u32) RunError!void {
     state.pending_jmp_offset = @as(i32, @bitCast(off << 17)) >> 17;
 }
 
-/// 923, 924: x16 with S1[23:21] = 001, S2[31] = 1 and S2[29] = 0 calls 0x100 + S2[21:9]
-/// (absolute, added) after two delay bundles, linking past them (0x4CD calls 0x1F4A).  Its other
+/// 923, 924: x16 with S1[23:21] = 001, S2[31] = 1 and S2[29] = 0 calls the arm's base (928) +
+/// S2[21:9] after two delay bundles, linking past them (0x4CD calls 0x1F4A).  Its other
 /// slots are unmeasured; a call inside a call is refused as for 888's.
 fn x16Call(state: *State, bundle: []const u32) RunError!void {
     if (state.link != null or state.call_pending) return RunError.UnknownForm;
-    const target: u32 = 0x100 + ((bundle[2] >> 9) & 0x1FFF);
+    const target: usize = state.call_base + ((bundle[2] >> 9) & 0x1FFF);
     state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc));
     state.call_pending = true;
 }
@@ -6244,6 +6246,7 @@ pub fn arm(gpa: std.mem.Allocator, state: *State, syllables: []const u32, kind: 
         .decode => |q| q,
     };
     if (entry >= syllables.len) return RunError.UnknownBundleLength;
+    state.call_base = entry;
     return runFrom(gpa, state, syllables, entry, max_bundles);
 }
 
