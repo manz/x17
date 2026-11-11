@@ -3131,7 +3131,6 @@ fn x18C3Value(h: u32, w1: u32, w2: u32, a: u32, b: u32, p3: bool) RunError!u32 {
 /// Conds 0 (true), 11 (v <= 0) and 13 (v == 0) are measured (743); other conds leave p alone.
 /// w3[0] = 0 is the branch form (178), not modelled.
 fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
-    _ = gpa;
     const h = bundle[0];
     const w1 = bundle[1];
     const w2 = bundle[2];
@@ -3173,6 +3172,12 @@ fn execX18C3(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErro
     // (A2 <- s12 & s11). A31 is not a plain register (649): refused.
     const dest_a: u32 = ((w1 & 0xF) << 1) | (h >> 31);
     if (dest_a == 31) return RunError.UnknownForm;
+    // 885: with w3[5:4] = 11 and w2[22] = 0, X:[A<w2[21:18]>] <- s<w2[13:10]>, both read
+    // before this bundle's writes; w2[23] is inert.  The A field is 4 bits: w2[22] is the enable.
+    if ((w3 >> 4) & 3 == 3 and (w2 >> 22) & 1 == 0) {
+        const st_a: u32 = (w2 >> 18) & 0xF;
+        state.x_mem.put(gpa, state.a[st_a], state.s[(w2 >> 10) & 0xF] & M24) catch return RunError.OutOfMemory;
+    }
     if (dest_s != 0) state.s[dest_s] = v;
     if (ld_dest != 0) state.s[ld_dest] = ld_val;
     if (dest_r != 0) state.r[dest_r] = r_val;
@@ -3861,6 +3866,13 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const pd: u32 = (w2 >> 27) & 0xF;
     const p_on = pd != 0;
     const p_val: u8 = @intFromBool(rCond((w3 >> 20) & 0xF, y));
+    // 886: e<w2[11:8]> <- e<w2[7:4]> - 1 (16-bit) under w2[25] = 1 (AGU10), 0 under w2[25] = 0;
+    // measured with fn w1[27:24] = 0 only.
+    const dest_e2: u32 = (w2 >> 8) & 0xF;
+    if (dest_e2 != 0 and fn_op != 0) return RunError.UnknownForm;
+    const e2_val: u32 = if ((w2 >> 25) & 1 == 0) 0 else (state.e[(w2 >> 4) & 0xF] -% 1) & 0xFFFF;
+    // 885: A<{w1[2:0], head[31]}> <- #head[20:5] while w1[3] = 0, 872's slot.
+    const dest_a: u32 = ((w1 & 7) << 1) | (head >> 31);
     if (kalu and (mux == 1 or mux == 2)) state.s[(w1 >> 8) & 0xF] = s_val else state.s[(head >> 21) & 0xF] = s_val;
     const dest_r: u32 = (w3 >> 7) & 0xF;
     if (dest_r != 0) state.r[dest_r] = r_val;
@@ -3869,6 +3881,8 @@ fn execX19K00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     // 859: e<w1[23:20]> <- #head[20:5], as b16's (855), written after the slots read e.
     const dest_e: u32 = (w1 >> 20) & 0xF;
     if (dest_e != 0) state.e[dest_e] = (head >> 5) & 0xFFFF;
+    if (dest_e2 != 0) state.e[dest_e2] = e2_val;
+    if ((w1 >> 3) & 1 == 0 and dest_a != 0) state.a[dest_a] = (head >> 5) & 0xFFFF;
     if (p_on) state.p[pd] = p_val;
 }
 

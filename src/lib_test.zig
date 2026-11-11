@@ -2508,6 +2508,54 @@ test "x19alu X mux 100 keeps X[15:0] << 7 over 24 bits (884)" {
     try testing.expectEqual(@as(u32, 0x3C5700), state.s[5]);
 }
 
+test "x18 class 011 stores the old s<w2[13:10]> at the old A<w2[21:18]> (885)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w2: u32 = 0x00373240, w3: u32 = 0x60000039, addr: ?u32 = 0x305, v: u32 = 0x44 }{
+        .{},
+        .{ .w2 = 0x00373640, .v = 0x13 }, // w2[10]: s13
+        .{ .w2 = 0x00333240, .addr = 0x30C }, // w2[18]: A12
+        .{ .w2 = 0x00773240, .addr = null }, // w2[22] off
+        .{ .w3 = 0x60000029, .addr = null }, // w3[4] off
+        .{ .w2 = 0x00B73240 }, // w2[23] inert
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[13] = 0x305;
+        state.a[12] = 0x30C;
+        state.s[12] = 0x44;
+        state.s[13] = 0x13;
+        try emu.executeBundle(gpa, &state, &.{ 0x9D829438, 0x00000006, c.w2, c.w3 });
+        if (c.addr) |a| try testing.expectEqual(@as(?u32, c.v), state.readX(a)) else {
+            try testing.expectEqual(@as(?u32, null), state.readX(0x305));
+            try testing.expectEqual(@as(?u32, null), state.readX(0x30C));
+        }
+        try testing.expectEqual(@as(u32, 0x14A1), state.a[13]);
+        try testing.expectEqual(@as(u32, 1), state.s[12]);
+    }
+}
+
+test "x19k: A<{w1[2:0], h31}> <- imm, e<w2[11:8]> <- e<w2[7:4]> - 1 (885, 886)" {
+    const gpa = testing.allocator;
+    for ([_]struct { h: u32 = 0x80031019, w1: u32 = 0x90040007, w2: u32 = 0x52DE0210, a: u32 = 15, a_on: bool = true, e: u32 = 2, ev: u32 = 0x100 }{
+        .{},
+        .{ .h = 0x00031019, .a = 14 }, // h31
+        .{ .w1 = 0x90040006, .a = 13 }, // w1[0]
+        .{ .w1 = 0x9004000F, .a_on = false }, // w1[3] stops it
+        .{ .w2 = 0x52DE0230, .ev = 0x102 }, // w2[5]: e3 - 1
+        .{ .w2 = 0x52DE0200, .ev = 0xFFFF }, // w2[4]: e0 - 1
+        .{ .w2 = 0x52DE0310, .e = 3 }, // w2[8]
+        .{ .w2 = 0x50DE0210, .ev = 0 }, // w2[25]
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        for (1..16) |n| state.e[n] = @intCast(0x100 + n);
+        for (1..31) |n| state.a[n] = @intCast(0x200 + n);
+        try emu.executeBundle(gpa, &state, &.{ c.h, c.w1, c.w2, 0x00000004 });
+        try testing.expectEqual(if (c.a_on) @as(u32, 0x1880) else 0x200 + c.a, state.a[c.a]);
+        try testing.expectEqual(c.ev, state.e[c.e]);
+    }
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
