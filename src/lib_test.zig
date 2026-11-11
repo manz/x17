@@ -8976,11 +8976,10 @@ test "x16agu's e slot sets p<S2[10:7]> under head[6], !head[9], S1[23] (942)" {
     }
 }
 
-test "x01 flips the ctl 2 / 3 jump sense (944)" {
+test "x01 flips the ctl 2 jump sense; x01 ctl 3 is refused (943, 944)" {
     const gpa = testing.allocator;
     for ([_]struct { h: u32, ctl: u32, want: ?i32 }{
-        .{ .h = 0x100031C1, .ctl = 3, .want = null }, // 0x5D9 as is
-        .{ .h = 0x100031C1, .ctl = 2, .want = 0x1395 },
+        .{ .h = 0x100031C1, .ctl = 2, .want = 0x1395 }, // 0x5D9 under ctl 2
         .{ .h = 0x100031C0, .ctl = 3, .want = 0x1395 }, // x00
         .{ .h = 0x100031C0, .ctl = 2, .want = null },
     }) |c| {
@@ -8991,6 +8990,9 @@ test "x01 flips the ctl 2 / 3 jump sense (944)" {
         try emu.executeBundle(gpa, &state, &.{ c.h, 0x4E54058A, 0x00024280, 0x80000000 | c.ctl, 0x30000081, 0x00001800, 0 });
         try testing.expectEqual(c.want, state.pending_jmp_offset);
     }
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &st, &.{ 0x100031C1, 0x4E54058A, 0x00024280, 0x80000003, 0x30000081, 0x00001800, 0 }));
 }
 
 test "x03's counted jr writes the p it tests (915)" {

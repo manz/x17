@@ -1614,12 +1614,9 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
             // 882: ctl 1 jumps whatever c holds.
             if (c != 0 and ctl != 3 and ctl != 1) return RunError.UnknownForm;
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
-            // 944: 0x01 flips ctl 3's sense (not taken with p<c> set, 0x5D9); p<c> clear is
-            // unmeasured there: refused.
-            if (x01 and ctl == 3) {
-                if (state.p[c] == 0) return RunError.UnknownForm;
-                return;
-            }
+            // 943, 944: 0x01 ctl 3 is not taken at 0x5D9 for any p<c>, yet 0x2E1's (same ctl and c)
+            // is: another field decides (OPEN): refused.
+            if (x01 and ctl == 3) return RunError.UnknownForm;
             if (ctl == 1 or state.p[c] != 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
         // 881: 0x00 ctl 2 is the same relative jump taken when p<w4[31:28]> is 0 (p0 reads 1,
