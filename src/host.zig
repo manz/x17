@@ -146,6 +146,11 @@ pub const Host = struct {
     /// `waiting`: the run read past the queued bits and waits for the next packet (784).
     pub const Report = struct { bundles: usize, units: usize, waiting: bool = false };
 
+    /// Queue a packet on the input stream without arming a run (945: feed 1 arms nothing).
+    pub fn queue(self: *Host, packet: []const u8) Error!void {
+        try self.state.queueStream(self.gpa, packet);
+    }
+
     /// One packet: queue it on the input stream, run the program from the entry (or from
     /// the read a waiting run stopped at) to its stop, check the owned buffers survived,
     /// drain the ring.

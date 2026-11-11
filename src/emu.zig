@@ -1610,7 +1610,10 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         // 772 (retracting 578's hidden state): condition c = w4[31:28] tests p<c> (p0 reads 1),
         // measured under control 3 only; other controls keep c = 0.
         1, 3, 0xE, 0x11, 0x13, 0x16, 0x17 => {
-            const c: u32 = bundle[4] >> 28;
+            // 946: 0x01 reads its condition from w1[5:3] (w4 inert), same sense as 0x00; indices
+            // 4 and 5 are unmeasured on 0x01: refused.
+            const c: u32 = if (x01) (w1 >> 3) & 7 else bundle[4] >> 28;
+            if (x01 and ctl == 3 and (c == 4 or c == 5)) return RunError.UnknownForm;
             // 882: ctl 1 jumps whatever c holds.
             if (c != 0 and ctl != 3 and ctl != 1) return RunError.UnknownForm;
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
@@ -1618,10 +1621,12 @@ fn execX00(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         },
         // 881: 0x00 ctl 2 is the same relative jump taken when p<w4[31:28]> is 0 (p0 reads 1,
         // never taken); delay slots and any link are unmeasured, run as ctl 1/3's.
+        // 946: 0x01 takes c from w1[5:3] (4 and 5 refused), same sense.
         2 => {
-            if (x01) return RunError.UnknownForm;
             const f15: u32 = ((w2 & 1) << 14) | ((w1 >> 18) & 0x3FFF);
-            if (state.p[bundle[4] >> 28] == 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
+            const c: u32 = if (x01) (w1 >> 3) & 7 else bundle[4] >> 28;
+            if (x01 and (c == 4 or c == 5)) return RunError.UnknownForm;
+            if (state.p[c] == 0) state.pending_jmp_offset = @as(i32, @bitCast(f15 << 17)) >> 17;
         },
         // 888: a call: two delay bundles, then the target; 911's return comes back after the
         // delay bundles.  A call inside a call is unmeasured: refused.
@@ -1809,8 +1814,9 @@ fn execYstm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError
     // the one measured) while R<S[28:25]> takes the Y word; other fns keep the Y word (OPEN).
     const fn10_read = (h >> 26) & 1 == 0 and !store_on and (h >> 17) & 0xF == 10;
     const e_val: u32 = if (fn10_read) (y +% i) & 0xFFFF else v;
-    // 925: on that fn 10 fresh-read form S[18] clears p1..p3 (other forms OPEN).
-    if (fn10_read and (sw >> 16) & 3 == 2) @memset(state.p[1..4], 0);
+    // 925: on that fn 10 fresh-read form S[18] clears p1..p3 with h[28] = 1 (0x1F6E); 949: the
+    // h[28] = 0 word at 0x5CC leaves p3 set.  The clear is data dependent (907), rule OPEN.
+    if (fn10_read and (sw >> 16) & 3 == 2 and (h >> 28) & 1 == 1) @memset(state.p[1..4], 0);
     // the fresh read only runs with the store off, so the order cannot show
     if (store_on) {
         state.y_mem.put(gpa, x, state.s[(sw >> 12) & 0xF] & 0xFFFF) catch return RunError.OutOfMemory;

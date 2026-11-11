@@ -2952,6 +2952,15 @@ test "ystm's fn 10 fresh-read form clears p1..p3 (925)" {
     try testing.expectEqualSlices(u8, &.{ 0, 0, 0, 1 }, state.p[1..5]);
 }
 
+test "ystm's fn 10 fresh-read form with h[28] = 0 leaves p (949)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    @memset(state.p[1..4], 1);
+    try emu.executeBundle(gpa, &state, &.{ 0xC014C890, 0x4C1602A6 });
+    try testing.expectEqualSlices(u8, &.{ 1, 1, 1 }, state.p[1..4]);
+}
+
 test "mul13's head ALU slot and X store" {
     // fact 535: own-mul13a, s6 = 0x100, s7 = 0x300: 80bbb1d3 a0283051 gives s7 = 0x200
     // (add m1, b - a); h[23] = 0 (m0) 0x400.  The multiply lands in s6 (0 * 0) after the ALU
@@ -8989,6 +8998,26 @@ test "x10's class-100 second with S1[15:14] = 00 jumps q + 4 * S1[12:0] (948)" {
         emu.executeBundle(gpa, &state, &.{ c.h, c.s1 }) catch {};
         try testing.expectEqual(c.want, state.pending_jmp_offset);
     }
+}
+
+test "x01 tests p<w1[5:3]> with x00's sense (943, 946)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w1: u32 = 0x4E54058A, ctl: u32, p: u8, want: ?i32 }{
+        .{ .ctl = 3, .p = 0, .want = null }, // 0x5D9: c = 1, p1 = 0
+        .{ .ctl = 2, .p = 0, .want = 0x1395 },
+        .{ .ctl = 3, .p = 1, .want = 0x1395 },
+        .{ .w1 = 0x4E54059A, .ctl = 3, .p = 1, .want = 0x1395 }, // c = 3
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.p[(c.w1 >> 3) & 7] = c.p;
+        state.pc = 0x5D9;
+        try emu.executeBundle(gpa, &state, &.{ 0x100031C1, c.w1, 0x00024280, 0x80000000 | c.ctl, 0x00000081, 0x00001800, 0 });
+        try testing.expectEqual(c.want, state.pending_jmp_offset);
+    }
+    var st = emu.State{};
+    defer st.deinit(gpa);
+    try testing.expectError(emu.RunError.UnknownForm, emu.executeBundle(gpa, &st, &.{ 0x100031C1, 0x4E5405A2, 0x00024280, 0x80000003, 0x00000081, 0x00001800, 0 })); // c = 4
 }
 
 test "x03's counted jr writes the p it tests (915)" {
