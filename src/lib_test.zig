@@ -807,6 +807,20 @@ test "x18 class 000 writes A<2*w1[3:0] + head[31]> <- A8 + 1 beside its e step (
     }
 }
 
+test "x18 class 000's A write loads #head[20:5] when w2[30] = 1 (351)" {
+    // 352's T-phase bundle (w2[17] = w2[18] = w3[7] = 0) is refused under 485/487.
+    const gpa = testing.allocator;
+    const halt = try assemble(gpa, "x17.halt\n");
+    defer gpa.free(halt);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    // 351: own-x18c0a, 0042A058 C0028017 4002A25D 00000000 writes A14 <- #head[20:5] = 0x1502.
+    const imm = try std.mem.concat(gpa, u32, &.{ &.{ 0x0042A058, 0xC0028017, 0x4002A25D, 0x00000000 }, halt });
+    defer gpa.free(imm);
+    _ = try emu.runFrom(gpa, &state, imm, 0, 16);
+    try testing.expectEqual(@as(u32, 0x1502), state.a[14]);
+}
+
 test "the 0x01 ALU slot is the class-05 adder with a = s<w6[23:20]> and m = w5[29:27]" {
     // fact 498-500: own-x01am (m1, b - a = 0x23), own-x01neg (m6 with a = s0: -b), m2
     // passes b; w5[3:2] = 10 is refused.
