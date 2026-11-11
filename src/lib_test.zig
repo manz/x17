@@ -9038,6 +9038,17 @@ test "xld10 writes head[20:5] to e<S[6:3]> (930)" {
     try testing.expectEqual(@as(u32, 0x2EB6), state.e[1]);
 }
 
+test "x16 0xE037 saves s<S2[3:0]> at Y:[e1] and loads e<S1[23:20]> (933, 934)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[1] = 0x2EB4;
+    state.s[5] = 0x14EC;
+    try emu.executeBundle(gpa, &state, &.{ 0x4005D6B6, 0x00140000, 0xE0370005 }); // 0x1F5D
+    try testing.expectEqual(@as(?u32, 0x14EC), state.getY(0x2EB4));
+    try testing.expectEqual(@as(u32, 0x2EB5), state.e[1]);
+}
+
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {
     const gpa = testing.allocator;
     const prog = try assemble(gpa, "ldi s12, #0\nptst p13, s0, #11, #0x0B\nx17.halt\n");

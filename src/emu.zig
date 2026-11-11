@@ -399,6 +399,7 @@ pub fn executeBundle(gpa: std.mem.Allocator, state: *State, bundle: []const u32)
         if (s2_class == 0b110 and s1_class16 == 0 and s2_mode <= 7) return execX16Mul(gpa, state, bundle);
         if (s2_class == 0b110 and s1_class16 == 1) return execX16Mac(state, bundle);
         if (s2_class == 0b100) return execX16Agu100(state, bundle);
+        if (bundle[1] & 0xFF00FFFF == 0 and bundle[2] & 0xFFF7FFF0 == 0xE0370000) return x16YSave(gpa, state, bundle);
         // 783: head[31] with head[30:25] 0x20-0x22, S1 class 000 with S1[18]: the stream read.
         const code16: u32 = (head >> 25) & 0x3F;
         if (s2_class == 0b111 and s1_class16 == 0 and head >> 31 == 1 and code16 >= 0x20 and code16 <= 0x22 and (bundle[1] >> 18) & 1 == 1) return execStreamRead(state, bundle);
@@ -2337,6 +2338,16 @@ fn x16Call(state: *State, bundle: []const u32) RunError!void {
     const target: usize = state.call_base + ((bundle[2] >> 9) & 0x1FFF);
     state.pending_jmp_offset = @as(i32, @intCast(target)) - @as(i32, @intCast(state.pc));
     state.call_pending = true;
+}
+
+/// 933, 934: S1 = 0 outside [23:16], S2 = 0xE037000x (S2[19] inert): Y:[e1] <- s<S2[3:0]>, e1 as
+/// it stood before the bundle; e<S1[23:20]> <- head[20:5] (0x1F5D saves s5 at 0x2EB4, e1 <- 0x2EB5).
+/// No flipped field moved the address; S2[17] = 0 writes e 0 and other S2[23:16] change the form (unmodelled).
+fn x16YSave(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+    const addr: u32 = state.e[1];
+    state.y_mem.put(gpa, addr, state.s[bundle[2] & 0xF] & 0xFFFF) catch return RunError.OutOfMemory;
+    const ed: u32 = (bundle[1] >> 20) & 0xF;
+    if (ed != 0) state.e[ed] = (bundle[0] >> 5) & 0xFFFF;
 }
 
 fn execX16Mul2(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
