@@ -9049,6 +9049,18 @@ test "x16 0xE037 saves s<S2[3:0]> at Y:[e1] and loads e<S1[23:20]> (933, 934)" {
     try testing.expectEqual(@as(u32, 0x2EB5), state.e[1]);
 }
 
+test "st.y's class-001 pair with S[3:0] = 4 copies e<S[8:5]> into s<head[24:21]> (935)" {
+    const gpa = testing.allocator;
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    state.e[1] = 0x2EB3;
+    state.e[5] = 0x14EC;
+    try emu.executeBundle(gpa, &state, &.{ 0x20A5D68F, 0x20A380A4 }); // 0x1F5B
+    try testing.expectEqual(@as(u32, 0x14EC), state.s[5]);
+    try testing.expectEqual(@as(u32, 0x2EB4), state.e[1]);
+    try testing.expectEqual(@as(?u32, 0), state.getY(0x2EB3)); // the old s5
+}
+
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {
     const gpa = testing.allocator;
     const prog = try assemble(gpa, "ldi s12, #0\nptst p13, s0, #11, #0x0B\nx17.halt\n");

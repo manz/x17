@@ -4741,6 +4741,12 @@ fn execStY(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
         // e as it stood before the bundle; w[25] inert, no lane or position dependence.
         // 899: class 011 is the same; [16:15] = 00 writes e1 alone, no store; 01 / 10 OPEN.
         const w = bundle[1];
+        // 935: with S[3:0] = 4 and S[9] = 0 (0x1F5B), s<head[24:21]> <- e<S[8:5]> as it stood
+        // before the bundle.  Other S[3:0] values give other words (OPEN, not modelled).
+        const s_copy: ?u32 = if (w >> 29 == 1 and w & 0xF == 4 and (w >> 9) & 1 == 0) state.e[(w >> 5) & 0xF] else null;
+        defer if (s_copy) |v| {
+            if ((head >> 21) & 0xF != 0) state.s[(head >> 21) & 0xF] = v;
+        };
         switch ((w >> 15) & 3) {
             3 => {
                 const v: u32 = state.s[(w >> 21) & 0xF] & 0xFFFF;

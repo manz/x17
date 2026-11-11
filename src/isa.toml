@@ -622,6 +622,7 @@ ref = "fact 14: inert when it replaces a single syllable (not a NOP for whole ro
 # x17 jump (927): S1 class 000, S2 class 100, S1[23:18] = 0x3F: q + 0xE after two delays iff p<S2[15:12]> (0 always); only h[16:13] = 0xE, S1[4:0] = 3 measured, the encoding OPEN.
 # xld10 e (930): e<S[6:3]> <- head[20:5] (0x1FA9 sets e1 = 0x2EB6), as 835's [7] = 0 pair; 130 read no e.
 # x16 Y save (933, 934): S2 = 0xE037000x, S1 only [23:16]: Y:[e1] <- s<S2[3:0]> (pre-bundle e1), e<S1[23:20]> <- head[20:5]; address field not found.
+# st.y pair s copy (935): class-001 second with S[3:0] = 4, S[9] = 0: s<head[24:21]> <- e<S[8:5]> (pre-bundle); other S[3:0] OPEN.
 # x17sty stop select (916): in the stop shape S2[22:18] = 00000 stops, 11111 stores and runs on (0x381; retracts 781/801's stop on S2 61fcb804, 801's p1 row refused); other values refused.
 # x16 jump stub (917): S1/S2 class 000, head[26:25] != 11: q + sx15(S2[23:9]) after two delays iff S1[8:5] = 0 or p<S1[8:5]>; s dests refused.
 # x18 class 011 code 0x0E (921): 776's n table ANDed with p<w2[31:28]> (p0 reads 1); 0x42B copies p8 into p3.
