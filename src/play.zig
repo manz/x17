@@ -39,6 +39,9 @@ pub const Options = struct {
     /// p is unknown; silicon reads p1 = 0, p2..p15 = 1 after an init pass (803), so a caller
     /// matching that passes 0xFFFC.
     p_entry: u16 = 0,
+    /// Fact 945's arming: configure arms one decoder run before any packet is queued, feed 1
+    /// only queues its bytes, and feed N >= 2 arms one run.  Off: one run per packet.
+    configure_arm: bool = false,
 };
 
 /// The state as one JSON object: where the run stopped, the register files, and every X and Y
@@ -359,8 +362,22 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     h.state.break_skip = opts.stop_skip;
     for (opts.y_writes) |w| try h.state.y_mem.put(gpa, w.addr, w.value & 0xFFFF);
 
+    if (opts.configure_arm) {
+        const r = h.feed(prog, &.{}) catch |e| {
+            res.trap = trapAt(e, null, image.decoder_pass, prog, h.state.pc);
+            res.pcm = try h.pcm.toOwnedSlice(gpa);
+            return res;
+        };
+        res.bundles += r.bundles;
+        if (r.waiting) res.waits += 1;
+    }
     for (pkts, 0..) |pkt, i| {
         if (opts.tracer) |t| t.packet = i;
+        if (opts.configure_arm and i == 0) {
+            try h.queue(pkt);
+            res.packets += 1;
+            continue;
+        }
         const r = h.feed(prog, pkt) catch |e| {
             res.trap = trapAt(e, i, image.decoder_pass, prog, h.state.pc);
             break;
@@ -561,6 +578,34 @@ test "play --stop-skip stops on a later arrival at the q" {
     const t = r.trap orelse return error.TestUnexpectedResult;
     try testing.expectEqual(@as(anyerror, error.Breakpoint), t.err);
     try testing.expectEqual(@as(?usize, 2), t.packet);
+}
+
+test "play's configure arm runs once before packet 1, which only queues (945)" {
+    const gpa = testing.allocator;
+    // The decoder is one bundle, its halt and the halt's two trailing bundles: four a run.
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        ldi s3, #1
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    for ([_]struct { arm: bool, n: usize, runs: usize }{
+        .{ .arm = false, .n = 0, .runs = 0 },
+        .{ .arm = true, .n = 0, .runs = 1 }, // configure's run, no packet
+        .{ .arm = true, .n = 1, .runs = 1 }, // packet 1 only queues
+        .{ .arm = true, .n = 3, .runs = 3 },
+        .{ .arm = false, .n = 3, .runs = 3 },
+    }) |c| {
+        const pk = [_][]const u8{ "a", "b", "c" };
+        var none = try play(gpa, &img, pk[0..0], .{});
+        defer none.deinit(gpa);
+        var r = try play(gpa, &img, pk[0..c.n], .{ .configure_arm = c.arm });
+        defer r.deinit(gpa);
+        try testing.expectEqual(c.n, r.packets);
+        try testing.expectEqual(none.bundles + 4 * c.runs, r.bundles);
+    }
 }
 
 test "play --p-entry sets p1..p15 before the init passes" {
