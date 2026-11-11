@@ -9061,6 +9061,22 @@ test "st.y's class-001 pair with S[3:0] = 4 copies e<S[8:5]> into s<head[24:21]>
     try testing.expectEqual(@as(?u32, 0), state.getY(0x2EB3)); // the old s5
 }
 
+test "x02 mode 1 writes p<w2[16:13]> <- R<w5[25:22]> != 0 under A fn 26 (936)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w5: u32 = 0x30821000, r2: u32 = 1, want: u8 = 1 }{
+        .{},
+        .{ .r2 = 0, .want = 0 },
+        .{ .w5 = 0x30021000, .want = 0 }, // R0
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.r[2] = c.r2;
+        state.p[3] = 1 - c.want;
+        try emu.executeBundle(gpa, &state, &.{ 0x00000002, 0x00000008, 0x06806000, 0x18000000, 0x0000C868, c.w5 }); // 0x4D5
+        try testing.expectEqual(c.want, state.p[3]);
+    }
+}
+
 test "ptst writes p13 through the class-011 dest bit (fact 219)" {
     const gpa = testing.allocator;
     const prog = try assemble(gpa, "ldi s12, #0\nptst p13, s0, #11, #0x0B\nx17.halt\n");

@@ -671,6 +671,18 @@ fn execYrm(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!
 fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!bool {
     const w4_mode: u32 = (bundle[4] >> 11) & 0x7;
     if (w4_mode == 1) {
+        // 930, 931, 936: p<w2[16:13]> <- (R<w5[25:22]> != 0) with A-slot fn w2[26:22] = 26 (0x4D5;
+        // R 0 / 1 measured).  Not a function of the A-slot result: fns 16 / 18 give 1, 24 / 27 /
+        // 28 / 10 give 0 on the same R (OPEN): left unwritten, as measured x02 rows with those
+        // fns never read p.
+        const p_dest: u32 = (bundle[2] >> 13) & 0xF;
+        const p_val: ?u8 = if (p_dest != 0 and (bundle[2] >> 22) & 0x1F == 26)
+            @intFromBool(state.r[(bundle[5] >> 22) & 0xF] != 0)
+        else
+            null;
+        defer if (p_val) |v| {
+            state.p[p_dest] = v;
+        };
         try execX02Xrd(gpa, state, bundle);
         // 866: the w2 slot's X read runs here too, s<w2[12:9]> <- X:[A<w4[21:17]>] with w5[19];
         // without it the slot writes 0, not the product (868's probe).
