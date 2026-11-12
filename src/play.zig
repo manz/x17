@@ -49,6 +49,9 @@ pub const Options = struct {
     /// and reruns the init passes on the state the last track left (silicon resets nothing
     /// but P and the image's X / Y sections).
     chain: usize = 1,
+    /// When set, X / Y reads of words nothing stored (by the image, the host or a store) are
+    /// counted here.
+    unset: ?*emu.UnsetReads = null,
     /// Count the decoder's bundles by q and by packet (init passes are not counted).
     profile: ?*Profile = null,
 };
@@ -367,6 +370,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     if (opts.trap_list) |tl| h.state.on_unknown = .{ .ctx = tl, .f = TrapList.hook };
     if (opts.tracer) |t| t.attach(&h.state);
     h.state.break_after = opts.stop_after;
+    h.state.unset_reads = opts.unset;
     if (opts.poison) |seed| h.state.poisonWith(seed);
     if (opts.poison == null or opts.p_entry != 0) for (1..16) |k| {
         h.state.p[k] = @intCast((opts.p_entry >> @intCast(k)) & 1);
@@ -898,7 +902,8 @@ test "play --chain reruns the init passes and packets on the state the last trac
     var out: std.Io.Writer.Allocating = .init(gpa);
     defer out.deinit();
     var tr: Tracer = .{ .gpa = gpa, .out = &out.writer, .left = 100 };
-    var r = try play(gpa, &img, &.{"a"}, .{ .tracer = &tr, .chain = 2 });
+    var unset: emu.UnsetReads = .{};
+    var r = try play(gpa, &img, &.{"a"}, .{ .tracer = &tr, .chain = 2, .unset = &unset });
     defer r.deinit(gpa);
     try testing.expectEqual(@as(?Trap, null), r.trap);
     try testing.expectEqual(@as(usize, 2), r.packets);
@@ -906,6 +911,9 @@ test "play --chain reruns the init passes and packets on the state the last trac
     // Track 0 starts from e8 = 0; track 1 starts from the 0x41 track 0 left.
     try testing.expect(std.mem.indexOf(u8, text, "e8 0x0->0x40") != null);
     try testing.expect(std.mem.indexOf(u8, text, "e8 0x41->0x40") != null);
+    // Y 0x40 is never stored: both tracks read it unset.
+    try testing.expectEqual(@as(u64, 2), unset.y);
+    try testing.expectEqual(@as(?u32, 0x40), unset.first_y);
 }
 
 test "play --stop-at stops before the first decoder bundle at q and dumps the state" {
