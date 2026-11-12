@@ -889,7 +889,7 @@ fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
                 break :blk if ((w5 >> 11) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y);
             },
             // The A slot's sum, wrapped by R<w3[18:15]> for fn 6..11 (566, 567, 963).
-            2 => wrapOnce(state, aguXrEval((w2 >> 22) & 0x1F, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]), if (x02Wraps((w2 >> 22) & 0x1F)) (w3 >> 15) & 0xF else 0),
+            2 => wrapOnce(state, aguXrEval((w2 >> 22) & 0x1F, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]), if (aguWraps((w2 >> 22) & 0x1F)) (w3 >> 15) & 0xF else 0),
             else => return RunError.UnknownForm,
         };
     }
@@ -915,8 +915,8 @@ fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const dest_a: u32 = (w2 >> 17) & 0x1F;
     const dest_b: u32 = (w3 >> 10) & 0x1F;
     // Wrapped once by R<w3[18:15]> for fn 6..11 only (567, 963); the second write adds to the
-    // wrapped sum, unwrapped (626, 963).  962's mode-5 probe ran fn 2; mode 5 with fn 6..11 is OPEN.
-    const sum = wrapOnce(state, aguXrEval(fn_op, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]), if (x02Wraps(fn_op)) (w3 >> 15) & 0xF else 0);
+    // wrapped sum, unwrapped (626, 963).  Mode 5 (vc) wraps the same way (964).
+    const sum = wrapOnce(state, aguXrEval(fn_op, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]), if (aguWraps(fn_op)) (w3 >> 15) & 0xF else 0);
     if (dest_a != 0) state.a[dest_a] = if ((w5 >> 18) & 1 == 1) state.yd else sum;
     if (dest_b != 0) {
         if ((w5 >> 21) & 1 == 1) {
@@ -2655,7 +2655,7 @@ fn execX16Xs(state: *State, bundle: []const u32) RunError!void {
     const s2 = bundle[2];
     // S1[24] picks agu_xr for R<S2[16:13]>, wrapped once by R<S2[5:2]> (568).
     const rd: u32 = if ((s1 >> 24) & 1 == 1) (s2 >> 13) & 0xF else 0;
-    const rv: u32 = if (rd == 0) 0 else wrapOnce(state, aguXrEval((s2 >> 6) & 0x1F, state.a[(s1 >> 25) & 0x1F], state.r[((s2 & 3) << 2) | (s1 >> 30)]), (s2 >> 2) & 0xF);
+    const rv: u32 = if (rd == 0) 0 else wrapOnce(state, aguXrEval((s2 >> 6) & 0x1F, state.a[(s1 >> 25) & 0x1F], state.r[((s2 & 3) << 2) | (s1 >> 30)]), if (aguWraps((s2 >> 6) & 0x1F)) (s2 >> 2) & 0xF else 0);
     try x16Alu(state, s1, s2);
     if (rd != 0) state.r[rd] = rv;
     const dest: u32 = (h >> 21) & 0xF;
@@ -7112,8 +7112,8 @@ fn execRagu0c(state: *State, head: u32) RunError!void {
 /// agu_xr (fact 338, 385): the x19mac A slot and the 0x0C R form.
 /// agu_xr's once-only wrap (fact 566-568): with M = R<k>, a sum >= M becomes sum - M and
 /// a negative one (16-bit signed) sum + M.  k = 0 (no wrap) needs no case: R0 reads 0.
-/// x02's agu_xr sum wraps for fn 6..11 only; the others never do (963).
-fn x02Wraps(fn_op: u32) bool {
+/// agu_xr's sum wraps for fn 6..11 only, on x02 (963, 964) and x16alu (964).
+fn aguWraps(fn_op: u32) bool {
     return fn_op >= 6 and fn_op <= 11;
 }
 

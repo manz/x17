@@ -241,9 +241,9 @@ write wraps the sum, then adds A unwrapped (§626).
 
 On x02 the wrap also needs the right function (§963): only fn 6..11 wrap. fn 0..5 and 12..15
 never do, whatever k says. fn 6..11 repeat fn 0..5's operations (x+1, x-1, x+r, x-r, -x, x), so
-fn 8 is x+r with the wrap and fn 2 is x+r without it. In the mode-5 bundle (x02.vc), fn 2 with
-k = 1 does not wrap (§962); fn 6..11 there, and fn 16..31 anywhere, are unmeasured. The
-assembler refuses a `#k` on an x02 form whose fn never wraps. No bit-reversed mode has been
+fn 8 is x+r with the wrap and fn 2 is x+r without it. The same rule holds in the mode-5 bundle
+(x02.vc, §962, §964) and on x16alu's R slot (§964). fn 16..31 are unmeasured. The assembler
+refuses a `#k` on an x02 form whose fn never wraps. No bit-reversed mode has been
 measured.
 
 **Byte loads.** x19agu's and x16agu's s mux 3 load Y[7:0] << 8 (§637, §638); x19agu only with
@@ -368,7 +368,7 @@ Measured idioms, cheapest first:
   counts an e down (§349); x02 steps an A (§660). Each replaces an x18.eagu or aset bundle.
 - **Free wraps.** agu_xr's wrap-once modulo (§8, §566-§568) wraps a ring or window pointer
   inside the step it already takes, instead of an x17.mve or x18.eagu bundle per wrap. Each step
-  must move by less than M, and on x02 the step must use fn 6..11 (§963). Measured on x02's A
+  must move by less than M, and the step must use fn 6..11 (§963, §964). Measured on x02's A
   slot and R slot and x16alu's R slot.
 - **Packed bundles that are measured** (§155, §183, §185, §347-§350, §513, §174, §203):
   - x02: X read, multiply, second product, third-slot ALU, A step, and an optional X store;

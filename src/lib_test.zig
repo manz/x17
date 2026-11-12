@@ -3832,13 +3832,15 @@ test "x03 with w5[1] = 0: w5[21] picks a fresh Y read or yd (fact 565)" {
     try testing.expectEqual(@as(u32, 0x777), x.s[5]);
 }
 
-test "the mode-5 x02 A step does not wrap by R<w3[18:15]> (962)" {
+test "the mode-5 x02 A step wraps by R<w3[18:15]> with fn 8, not fn 2 (962, 964)" {
     const gpa = testing.allocator;
-    for ([_]struct { w3: u32, a1: u32, r2: u32, a2: u32, a3: u32 }{
-        .{ .w3 = 0x00008c81, .a1 = 0xF0, .r2 = 0x22, .a2 = 0x112, .a3 = 0x512 },
-        .{ .w3 = 0x00000c81, .a1 = 0xF0, .r2 = 0x22, .a2 = 0x112, .a3 = 0x512 },
-        .{ .w3 = 0x00008c81, .a1 = 0x10, .r2 = 0xFFDE, .a2 = 0xFFEE, .a3 = 0x3EE },
-        .{ .w3 = 0x00000c81, .a1 = 0x10, .r2 = 0xFFDE, .a2 = 0xFFEE, .a3 = 0x3EE },
+    for ([_]struct { w2: u32, w3: u32, a1: u32, r2: u32, a2: u32, a3: u32 }{
+        .{ .w2 = 0x00840000, .w3 = 0x00008c81, .a1 = 0xF0, .r2 = 0x22, .a2 = 0x112, .a3 = 0x512 },
+        .{ .w2 = 0x00840000, .w3 = 0x00008c81, .a1 = 0x10, .r2 = 0xFFDE, .a2 = 0xFFEE, .a3 = 0x3EE },
+        .{ .w2 = 0x02040000, .w3 = 0x00008c81, .a1 = 0xF0, .r2 = 0x22, .a2 = 0x002, .a3 = 0x402 },
+        .{ .w2 = 0x02040000, .w3 = 0x00008c81, .a1 = 0x10, .r2 = 0xFFDE, .a2 = 0x0FE, .a3 = 0x4FE },
+        .{ .w2 = 0x02040000, .w3 = 0x00000c81, .a1 = 0xF0, .r2 = 0x22, .a2 = 0x112, .a3 = 0x512 },
+        .{ .w2 = 0x02040000, .w3 = 0x00000c81, .a1 = 0x10, .r2 = 0xFFDE, .a2 = 0xFFEE, .a3 = 0x3EE },
     }) |c| {
         var state = emu.State{};
         defer state.deinit(gpa);
@@ -3846,7 +3848,7 @@ test "the mode-5 x02 A step does not wrap by R<w3[18:15]> (962)" {
         state.a[4] = 0x400;
         state.r[1] = 0x110;
         state.r[2] = c.r2;
-        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0x00002000, 0x00840000, c.w3, 0x00002800, 0x00804200, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0x00002000, c.w2, c.w3, 0x00002800, 0x00804200, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c.a2, state.a[2]);
         try testing.expectEqual(c.a3, state.a[3]);
     }
@@ -3920,13 +3922,23 @@ test "own-x16rmod: x16alu's R slot wraps by R<S2[5:2]> (fact 568)" {
     state.r[12] = 0x40;
     _ = try emu.runFrom(gpa, &state, &.{ 0x1c0047f6, 0x43948440, 0x50002231, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
     try testing.expectEqual(@as(u32, 0x210), state.r[1]);
-    // -A1 (fn 4) with A1 = 0x110 and M = 0x300C adds M: 0x2EFC.
-    var neg = emu.State{};
-    defer neg.deinit(gpa);
-    neg.a[1] = 0x110;
-    neg.r[12] = 0x300C;
-    _ = try emu.runFrom(gpa, &neg, &.{ 0x1c0047f6, 0x43948440, 0x50002131, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
-    try testing.expectEqual(@as(u32, 0x2EFC), neg.r[1]);
+    // -A1 with A1 = 0x110 and M = 0x300C: fn 10 adds M (0x2EFC), fn 4 never wraps (964).
+    for ([_][2]u32{ .{ 0x500022b1, 0x2EFC }, .{ 0x50002131, 0xFEF0 } }) |c| {
+        var neg = emu.State{};
+        defer neg.deinit(gpa);
+        neg.a[1] = 0x110;
+        neg.r[12] = 0x300C;
+        _ = try emu.runFrom(gpa, &neg, &.{ 0x1c0047f6, 0x43948440, c[0], 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c[1], neg.r[1]);
+    }
+    // fn 2 (x+r) with the same M field: 0x250, unwrapped (964).
+    var plain = emu.State{};
+    defer plain.deinit(gpa);
+    plain.a[1] = 0x200;
+    plain.r[5] = 0x50;
+    plain.r[12] = 0x40;
+    _ = try emu.runFrom(gpa, &plain, &.{ 0x1c0047f6, 0x43948440, 0x500020b1, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+    try testing.expectEqual(@as(u32, 0x250), plain.r[1]);
 }
 
 test "the Y read forms that set yd (fact 571)" {
