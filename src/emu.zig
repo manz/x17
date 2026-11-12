@@ -110,6 +110,8 @@ pub const State = struct {
     on_bundle: ?BundleHook = null,
     /// When set, X / Y reads are logged here (`x17 play --trace`).
     read_log: ?*ReadLog = null,
+    /// When set (`x17 play --poison`), X / Y words nothing stored read as junk from this seed.
+    poison: ?u64 = null,
     /// When set, X / Y stores are logged here with the word they replace (`x17 play --trace`).
     write_log: ?*WriteLog = null,
     /// runFrom returns Breakpoint before running the bundle at this pc (`x17 play --stop-at`).
@@ -160,7 +162,14 @@ pub const State = struct {
             u.y += 1;
             if (u.first_y == null) u.first_y = addr;
         };
+        if (v == null) if (self.poison) |seed| return junk(seed, .y, addr) & 0xFFFF;
         return if (v) |w| w & 0xFFFF else null;
+    }
+
+    /// The host's view of Y: what was stored, never logged or poisoned (the host protocol
+    /// words are the host's own, not left-over engine state).
+    pub fn peekY(self: *const State, addr: u32) ?u32 {
+        return if (self.y_mem.get(addr)) |w| w & 0xFFFF else null;
     }
 
     pub fn getX(self: *const State, addr: u32) ?u32 {
@@ -170,7 +179,24 @@ pub const State = struct {
             u.x += 1;
             if (u.first_x == null) u.first_x = addr;
         };
+        if (v == null) if (self.poison) |seed| return junk(seed, .x, addr) & 0xFFFFFF;
         return v;
+    }
+
+    /// A dirty engine, as silicon leaves it for the next configure: every register a
+    /// previous run could have left set gets a junk value derived from `seed`, and from now
+    /// on an X / Y word nothing stored reads as junk too instead of 0.
+    pub fn poisonWith(self: *State, seed: u64) void {
+        self.poison = seed;
+        for (1..16) |k| self.s[k] = junk(seed, .s, @intCast(k)) & 0xFFFFFF;
+        for (0..16) |k| self.e[k] = junk(seed, .e, @intCast(k)) & 0xFFFF;
+        for (1..16) |k| self.r[k] = junk(seed, .r, @intCast(k)) & 0xFFFF;
+        for (1..32) |k| self.a[k] = junk(seed, .a, @intCast(k)) & 0xFFFF;
+        for (1..16) |k| self.p[k] = @intCast(junk(seed, .p, @intCast(k)) & 1);
+        for (0..4) |k| self.v[k] = junk(seed, .v, @intCast(k)) & 0xFFFF;
+        self.xd = junk(seed, .misc, 0) & 0xFFFFFF;
+        self.yd = junk(seed, .misc, 1) & 0xFFFF;
+        self.z = junk(seed, .misc, 2) & 0xFFFF;
     }
 
     pub fn putX(self: *State, gpa: std.mem.Allocator, addr: u32, v: u32) error{OutOfMemory}!void {
@@ -191,6 +217,16 @@ pub const State = struct {
         return v;
     }
 };
+
+const JunkKind = enum(u8) { x, y, s, e, r, a, p, v, misc };
+
+/// splitmix64 over (seed, kind, index): fixed per seed, unrelated across kinds and indices.
+fn junk(seed: u64, kind: JunkKind, i: u32) u32 {
+    var z = seed +% (@as(u64, @backingInt(kind)) << 32 | i) *% 0x9E3779B97F4A7C15;
+    z = (z ^ (z >> 30)) *% 0xBF58476D1CE4E5B9;
+    z = (z ^ (z >> 27)) *% 0x94D049BB133111EB;
+    return @truncate(z ^ (z >> 31));
+}
 
 /// X / Y reads of never-written addresses (and OPEN p skips), counted while `State.unset_reads` is set.
 pub const UnsetReads = struct {

@@ -132,7 +132,7 @@ pub const Host = struct {
     }
 
     fn getY(self: *const Host, addr: u32) u32 {
-        return self.state.getY(addr) orelse 0;
+        return self.state.peekY(addr) orelse 0;
     }
 
     fn putY(self: *Host, addr: u32, v: u32) Error!void {
@@ -178,7 +178,7 @@ pub const Host = struct {
         if (!self.state.halted and self.resume_at == null) return error.NoStop;
 
         for (guard) |g| {
-            if (self.state.getY(g.addr) != g.value) {
+            if (self.state.peekY(g.addr) != g.value) {
                 self.overwritten = g.entry;
                 return error.OverwroteOwnedBuffer;
             }
@@ -203,7 +203,7 @@ pub const Host = struct {
             if (self.getY(m.entry_table + 5 + 2 * e) == 0) continue;
             for (0..units) |k| {
                 const addr = m.pcm + e * units + @as(u32, @intCast(k));
-                try list.append(self.gpa, .{ .entry = e, .addr = addr, .value = self.state.getY(addr) });
+                try list.append(self.gpa, .{ .entry = e, .addr = addr, .value = self.state.peekY(addr) });
             }
         }
         return list.toOwnedSlice(self.gpa);

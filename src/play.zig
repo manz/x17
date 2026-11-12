@@ -39,6 +39,8 @@ pub const Options = struct {
     /// p is unknown; silicon reads p1 = 0, p2..p15 = 1 after an init pass (803), so a caller
     /// matching that passes 0xFFFC.
     p_entry: u16 = 0,
+    /// When set, start from a dirty engine (State.poisonWith); a nonzero p_entry still sets p.
+    poison: ?u64 = null,
     /// Fact 945's arming: configure arms one decoder run before any packet is queued, feed 1
     /// arms nothing (it queues its bytes and, 947, resumes that run if it parked on the
     /// stream), and feed N >= 2 arms one run.  Off: one run per packet.
@@ -359,7 +361,10 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     if (opts.trap_list) |tl| h.state.on_unknown = .{ .ctx = tl, .f = TrapList.hook };
     if (opts.tracer) |t| t.attach(&h.state);
     h.state.break_after = opts.stop_after;
-    for (1..16) |k| h.state.p[k] = @intCast((opts.p_entry >> @intCast(k)) & 1);
+    if (opts.poison) |seed| h.state.poisonWith(seed);
+    if (opts.poison == null or opts.p_entry != 0) for (1..16) |k| {
+        h.state.p[k] = @intCast((opts.p_entry >> @intCast(k)) & 1);
+    };
 
     var res: Result = .{ .pcm = &.{}, .packets = 0, .bundles = 0, .waits = 0, .trap = null };
     defer if (opts.dump) |w| if (res.trap) |t| writeDump(gpa, w, &h.state, t) catch {};
@@ -823,6 +828,47 @@ test "play --trace-from skips the init passes and earlier packets" {
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, text, "pkt 1 q 0x"));
     // s3 is 0 and Y 0x80 already holds 0 from packet 0: the store changes nothing.
     try testing.expect(std.mem.indexOf(u8, text, "wY[") == null);
+}
+
+fn poisonTrace(gpa: std.mem.Allocator, seed: ?u64) ![]u8 {
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        lde e8, #0x40
+        \\        x19.ld s3, #4, e8, #2
+        \\        lde e6, #0x80
+        \\        x17.sty e6, #3, #0
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    errdefer out.deinit();
+    var tr: Tracer = .{ .gpa = gpa, .out = &out.writer, .left = 7 };
+    var r = try play(gpa, &img, &.{"a"}, .{ .tracer = &tr, .poison = seed });
+    defer r.deinit(gpa);
+    return out.toOwnedSlice();
+}
+
+test "play --poison starts from junk registers and reads unstored Y as junk, fixed per seed" {
+    const gpa = testing.allocator;
+    const clean = try poisonTrace(gpa, null);
+    defer gpa.free(clean);
+    const a = try poisonTrace(gpa, 1);
+    defer gpa.free(a);
+    const b = try poisonTrace(gpa, 1);
+    defer gpa.free(b);
+    const c = try poisonTrace(gpa, 2);
+    defer gpa.free(c);
+    // Clean: the unstored Y 0x40 reads 0, and 0 is what lands at Y 0x80.
+    try testing.expect(std.mem.indexOf(u8, clean, "wY[0x80]=0x0\n") != null);
+    // Poisoned: e8 starts as junk, the read still shows unset, and junk lands at Y 0x80.
+    try testing.expect(std.mem.indexOf(u8, a, "e8 0x0->") == null);
+    try testing.expect(std.mem.indexOf(u8, a, "rY[0x40]=unset") != null);
+    try testing.expect(std.mem.indexOf(u8, a, "wY[0x80]=0x0\n") == null);
+    try testing.expect(std.mem.indexOf(u8, a, "wY[0x80]=0x") != null);
+    try testing.expectEqualStrings(a, b);
+    try testing.expect(!std.mem.eql(u8, a, c));
 }
 
 test "play --stop-at stops before the first decoder bundle at q and dumps the state" {
