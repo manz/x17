@@ -45,6 +45,10 @@ pub const Options = struct {
     /// arms nothing (it queues its bytes and, 947, resumes that run if it parked on the
     /// stream), and feed N >= 2 arms one run.  Off: one run per packet.
     configure_arm: bool = false,
+    /// Play the image this many times on one engine: each later track reconfigures the host
+    /// and reruns the init passes on the state the last track left (silicon resets nothing
+    /// but P and the image's X / Y sections).
+    chain: usize = 1,
     /// Count the decoder's bundles by q and by packet (init passes are not counted).
     profile: ?*Profile = null,
 };
@@ -286,6 +290,8 @@ pub const TrapList = struct {
 
 /// Where and why a run stopped short.
 pub const Trap = struct {
+    /// The track (0 unless Options.chain > 1).
+    track: usize = 0,
     err: anyerror,
     /// null: an init pass; otherwise the packet index.
     packet: ?usize,
@@ -328,8 +334,8 @@ pub fn packets(gpa: std.mem.Allocator, bytes: []const u8) (PacketError || error{
     return list.toOwnedSlice(gpa);
 }
 
-fn trapAt(err: anyerror, packet: ?usize, pass: u8, prog: []const u32, pc: usize) Trap {
-    var t: Trap = .{ .err = err, .packet = packet, .pass = pass, .pc = pc };
+fn trapAt(track: usize, err: anyerror, packet: ?usize, pass: u8, prog: []const u32, pc: usize) Trap {
+    var t: Trap = .{ .track = track, .err = err, .packet = packet, .pass = pass, .pc = pc };
     if (pc < prog.len) {
         const len = @min(emu.bundleLen(prog[pc]) orelse 1, t.syllables.len, prog.len - pc);
         @memcpy(t.syllables[0..len], prog[pc..][0..len]);
@@ -369,6 +375,18 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     var res: Result = .{ .pcm = &.{}, .packets = 0, .bundles = 0, .waits = 0, .trap = null };
     defer if (opts.dump) |w| if (res.trap) |t| writeDump(gpa, w, &h.state, t) catch {};
 
+    for (0..opts.chain) |k| {
+        if (k > 0) try h.reconfigure();
+        try runTrack(gpa, &h, prog, img, pkts, opts, &res, k);
+        if (res.trap != null) break;
+    }
+    res.pcm = try h.pcm.toOwnedSlice(gpa);
+    return res;
+}
+
+/// One configure and track: the init passes, the decoder pass, then every packet.  A trap
+/// lands in res.trap.
+fn runTrack(gpa: std.mem.Allocator, h: *host_mod.Host, prog: []u32, img: *const image.Image, pkts: []const []const u8, opts: Options, res: *Result, k: usize) !void {
     // Init passes in load order: the sections come pass by pass.
     var last: ?u8 = null;
     for (img.sections) |sec| {
@@ -378,29 +396,26 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
         try loadData(gpa, &h.state, prog, img, sec.pass);
         h.state.cur_lane = 0;
         const n = emu.arm(gpa, &h.state, prog, .pass1, opts.max_bundles_init) catch |e| {
-            res.trap = trapAt(e, null, sec.pass, prog, h.state.pc);
-            res.pcm = try h.pcm.toOwnedSlice(gpa);
-            return res;
+            res.trap = trapAt(k, e, null, sec.pass, prog, h.state.pc);
+            return;
         };
         res.bundles += n;
         if (!h.state.halted) {
-            res.trap = trapAt(error.NoStop, null, sec.pass, prog, h.state.pc);
-            res.pcm = try h.pcm.toOwnedSlice(gpa);
-            return res;
+            res.trap = trapAt(k, error.NoStop, null, sec.pass, prog, h.state.pc);
+            return;
         }
     }
 
     try loadData(gpa, &h.state, prog, img, image.decoder_pass);
-    if (opts.profile) |pf| try pf.attach(&h.state, prog.len);
+    if (k == 0) if (opts.profile) |pf| try pf.attach(&h.state, prog.len);
     h.state.break_at = opts.stop_at;
     h.state.break_skip = opts.stop_skip;
     for (opts.y_writes) |w| try h.state.y_mem.put(gpa, w.addr, w.value & 0xFFFF);
 
     if (opts.configure_arm) {
         const r = h.feed(prog, &.{}) catch |e| {
-            res.trap = trapAt(e, null, image.decoder_pass, prog, h.state.pc);
-            res.pcm = try h.pcm.toOwnedSlice(gpa);
-            return res;
+            res.trap = trapAt(k, e, null, image.decoder_pass, prog, h.state.pc);
+            return;
         };
         res.bundles += r.bundles;
         if (r.waiting) res.waits += 1;
@@ -415,7 +430,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
             continue;
         }
         const r = h.feed(prog, pkt) catch |e| {
-            res.trap = trapAt(e, i, image.decoder_pass, prog, h.state.pc);
+            res.trap = trapAt(k, e, i, image.decoder_pass, prog, h.state.pc);
             break;
         };
         res.packets += 1;
@@ -423,8 +438,6 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
         if (r.waiting) res.waits += 1;
         if (opts.profile) |pf| try pf.per_packet.append(gpa, r.bundles);
     }
-    res.pcm = try h.pcm.toOwnedSlice(gpa);
-    return res;
 }
 
 // ---------------------------------------------------------------------------
@@ -869,6 +882,30 @@ test "play --poison starts from junk registers and reads unstored Y as junk, fix
     try testing.expect(std.mem.indexOf(u8, a, "wY[0x80]=0x") != null);
     try testing.expectEqualStrings(a, b);
     try testing.expect(!std.mem.eql(u8, a, c));
+}
+
+test "play --chain reruns the init passes and packets on the state the last track left" {
+    const gpa = testing.allocator;
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        lde e8, #0x40
+        \\        x19.ld s3, #4, e8, #2
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    var tr: Tracer = .{ .gpa = gpa, .out = &out.writer, .left = 100 };
+    var r = try play(gpa, &img, &.{"a"}, .{ .tracer = &tr, .chain = 2 });
+    defer r.deinit(gpa);
+    try testing.expectEqual(@as(?Trap, null), r.trap);
+    try testing.expectEqual(@as(usize, 2), r.packets);
+    const text = out.written();
+    // Track 0 starts from e8 = 0; track 1 starts from the 0x41 track 0 left.
+    try testing.expect(std.mem.indexOf(u8, text, "e8 0x0->0x40") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "e8 0x41->0x40") != null);
 }
 
 test "play --stop-at stops before the first decoder bundle at q and dumps the state" {

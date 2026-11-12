@@ -347,6 +347,7 @@ const play_params = clap.parseParamsComptime(
     \\    --dump <str>         on a stop or trap, write the state (registers, X, Y) as JSON
     \\    --p-entry <usize>    p1..p15 at the start, bit k = p<k> (default 0; 0xFFFC = 803's state)
     \\    --poison <usize>     start dirty: registers, p and unstored X / Y words read as junk from this seed
+    \\    --chain <usize>      play the image N times on one engine, each track reconfigured over the last one's state
     \\    --configure-arm      945's arming: one run at configure, packet 1 only queued, then one run per packet
     \\    --profile <usize>    print the decoder's hot list, N rows per table: packets, P use, functions, blocks, bundles
     \\    --debug <str>        sidecar for --profile labels and lines (default: the image path with .json)
@@ -366,7 +367,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
     defer parsed.deinit();
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N [--trace-from PKT]] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] [--poison SEED] [--configure-arm] [--profile N [--debug FILE]] <image.x17i>\n");
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N [--trace-from PKT]] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] [--poison SEED] [--chain N] [--configure-arm] [--profile N [--debug FILE]] <image.x17i>\n");
         return;
     }
     const img_path = parsed.positionals[0] orelse {
@@ -428,13 +429,14 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
         .stop_after = parsed.args.@"stop-after",
         .dump = if (parsed.args.dump != null) &dump.writer else null,
         .p_entry = @truncate(parsed.args.@"p-entry" orelse 0),
+        .chain = parsed.args.chain orelse 1,
         .poison = if (parsed.args.poison) |v| @intCast(v) else null,
         .configure_arm = parsed.args.@"configure-arm" != 0,
         .profile = if (parsed.args.profile != null) &prof else null,
     });
     defer res.deinit(gpa);
     try writeFile(gpa, out_path, std.mem.sliceAsBytes(res.pcm));
-    try out.print("{d}/{d} packets, {d} bundles, {d} samples out, {d} stream waits\n", .{ res.packets, pkts.len, res.bundles, res.pcm.len, res.waits });
+    try out.print("{d}/{d} packets, {d} bundles, {d} samples out, {d} stream waits\n", .{ res.packets, pkts.len * (parsed.args.chain orelse 1), res.bundles, res.pcm.len, res.waits });
     if (parsed.args.@"trap-list" != 0) {
         const ranked = try tl.ranked(gpa);
         defer gpa.free(ranked);
@@ -447,12 +449,15 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     }
     if (parsed.args.profile) |n| try printPlayProfile(gpa, out, &prof, &img, img_path, parsed.args.debug, n);
     if (parsed.args.dump) |path| if (res.trap != null) try writeFile(gpa, path, dump.written());
+    const track_note: []const u8 = if ((parsed.args.chain orelse 1) > 1) "track " else "";
     if (res.trap) |t| if (t.err == error.Breakpoint) {
+        if (track_note.len > 0) try out.print("{s}{d}: ", .{ track_note, t.track });
         if (t.packet) |i| try out.print("stopped in packet {d}", .{i}) else try out.print("stopped in init pass {d}", .{t.pass});
         try out.print(" before q {d} (0x{x})\n", .{ t.pc, t.pc });
         return;
     };
     if (res.trap) |t| {
+        if (track_note.len > 0) try out.print("{s}{d}: ", .{ track_note, t.track });
         if (t.packet) |i| try out.print("trap: {s} in packet {d}", .{ @errorName(t.err), i }) else try out.print("trap: {s} in init pass {d}", .{ @errorName(t.err), t.pass });
         try out.print(" at q {d} (0x{x}):", .{ t.pc, t.pc });
         for (t.syllables[0..t.n_syllables]) |w| try out.print(" {x:0>8}", .{w});
