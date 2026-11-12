@@ -7,7 +7,7 @@
 //!   4   u16 version (1)
 //!   6   u16 section count
 //!   8   sections, back to back:
-//!         u8  kind      1 P, 2 X, 3 Y, 4 param
+//!         u8  kind      1 P, 2 X, 3 Y, 4 param, 5 mode
 //!         u8  pass      init passes 0..N-1 in load order, 0xFF the decoder
 //!         u16 0
 //!         u32 addr      P: first row; X, Y, param: first word address
@@ -15,6 +15,9 @@
 //!         payload       P: count * 4 u32, row by row, lanes 0..3 in each row
 //!                       (lane l of row r is the syllable at q = 8*(r/2) + 2*l + r%2);
 //!                       X: count u32 (24-bit); Y, param: count u32 (16-bit)
+//!
+//! A mode section (`.mode N`, fact 960) has pass 0xFF, addr = the configure mode and count 0;
+//! when present it is the first section.
 //!
 //! Sections come pass by pass in load order: each pass's P, then its X, Y and
 //! param blocks in source order.  A P section runs from the pass's base row
@@ -32,7 +35,7 @@ pub const magic = "X17I";
 pub const version: u16 = 1;
 pub const decoder_pass: u8 = 0xFF;
 
-pub const SectionKind = enum(u8) { p = 1, x = 2, y = 3, param = 4 };
+pub const SectionKind = enum(u8) { p = 1, x = 2, y = 3, param = 4, mode = 5 };
 
 pub const Section = struct {
     kind: SectionKind,
@@ -76,6 +79,10 @@ pub fn write(gpa: std.mem.Allocator, prog: *const asm_mod.Program) ![]u8 {
     try putInt(gpa, &out, u16, version);
     try putInt(gpa, &out, u16, 0); // patched below
     var count: u16 = 0;
+    if (prog.mode) |m| {
+        try putSection(gpa, &out, .{ .kind = .mode, .pass = decoder_pass, .addr = m, .count = 0, .words = &.{} });
+        count += 1;
+    }
     for (prog.passes, 0..) |*pass, i| {
         const p_rows = try rows(gpa, pass);
         defer gpa.free(p_rows);
@@ -115,6 +122,12 @@ pub const Image = struct {
     pub fn deinit(self: *Image, gpa: std.mem.Allocator) void {
         gpa.free(self.sections);
         gpa.free(self.words);
+    }
+
+    /// The configure mode the image was built for, if it says.
+    pub fn mode(self: *const Image) ?u8 {
+        for (self.sections) |s| if (s.kind == .mode) return std.math.cast(u8, s.addr);
+        return null;
     }
 };
 

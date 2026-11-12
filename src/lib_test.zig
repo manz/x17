@@ -8954,6 +8954,7 @@ test "image: init pass then decode arm from one x17 image" {
             .p => image.placeRows(p, sec),
             .x => for (sec.words, 0..) |w, k| try state.x_mem.put(gpa, sec.addr + @as(u32, @intCast(k)), w),
             .y, .param => for (sec.words, 0..) |w, k| try state.y_mem.put(gpa, sec.addr + @as(u32, @intCast(k)), w),
+            .mode => {},
         }
     }
     try runImagePass(gpa, &state, p, pass.?);

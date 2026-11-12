@@ -652,6 +652,8 @@ pub const Env = struct {
     sizing: bool = false,
     /// An image build: `.pass`, `.xdata`, `.ydata` and `.param` are allowed.
     image: bool = false,
+    /// `.mode N` when given: `.ydata` must sit in that mode's 16-bit Y range (fact 960).
+    mode: ?u8 = null,
 };
 
 const Value = struct {
@@ -1377,6 +1379,31 @@ pub const layout = struct {
     pub const param_lo: u32 = 0xFD80;
     pub const param_hi: u32 = 0xFD94;
 
+    /// The DSP's Y map per configure mode (fact 960): the descriptor table's 16-bit Y entry and
+    /// its window entry, in 0x80-word blocks, plus the parameter block every mode maps.  Modes
+    /// without a table are null.
+    pub fn yMap(mode: u8) ?[]const [2]u32 {
+        const param_block = [2]u32{ 0xFD80, 0xFDFF };
+        const S = struct {
+            const m0 = [_][2]u32{ .{ 0, 0x2E7F }, .{ 0x2E80, 0x2EFF }, param_block };
+            const m1 = [_][2]u32{ .{ 0, 0x177F }, .{ 0x1780, 0x187F }, param_block };
+            const m3 = [_][2]u32{ .{ 0, 0x227F }, .{ 0x2400, 0x267F }, param_block };
+            const m5 = [_][2]u32{ .{ 0, 0x15FF }, .{ 0x2000, 0x20FF }, param_block };
+        };
+        return switch (mode) {
+            0 => &S.m0,
+            1 => &S.m1,
+            3 => &S.m3,
+            5 => &S.m5,
+            else => null,
+        };
+    }
+
+    pub fn yMapped(map: []const [2]u32, addr: u32) bool {
+        for (map) |r| if (addr >= r[0] and addr <= r[1]) return true;
+        return false;
+    }
+
     /// q order runs column-major over row pairs (fact 45).
     pub fn qOf(row: u32, lane: u32) u32 {
         return 8 * (row / 2) + 2 * lane + row % 2;
@@ -1445,6 +1472,8 @@ pub const Program = struct {
     arena: std.heap.ArenaAllocator,
     passes: []const Pass = &.{},
     labels: []const Label = &.{},
+    /// `.mode N`: the configure mode the image is built for (fact 960), if given.
+    mode: ?u8 = null,
 
     pub fn deinit(self: *Program) void {
         self.arena.deinit();
@@ -1506,6 +1535,7 @@ fn assembleProgramWith(gpa: std.mem.Allocator, source: []const u8, opts: FileOpt
         if (!sizing) {
             prog.passes = b.passes.items;
             prog.labels = b.labels.items;
+            prog.mode = b.mode;
         }
     }
     return .{ .ok = prog };
@@ -1528,6 +1558,8 @@ const Builder = struct {
     implicit_used: bool = false,
     /// The line of each init pass's last bundle once its end row reaches the decoder's.
     init_overlap: ?usize = null,
+    /// `.mode N`, which must come before any pass, bundle or data.
+    mode: ?u8 = null,
 
     fn fail(self: *Builder, at: usize, d: Diagnostic) FileError {
         return FileError.from(self.lines[at], d);
@@ -1535,7 +1567,7 @@ const Builder = struct {
 
     fn run(self: *Builder, symbols: *SymbolTable, image: bool) !?FileError {
         for (self.lines, 0..) |l, i| {
-            const env: Env = .{ .symbols = symbols, .pc = self.pc, .sizing = self.sizing, .image = image };
+            const env: Env = .{ .symbols = symbols, .pc = self.pc, .sizing = self.sizing, .image = image, .mode = self.mode };
             var label: ?[]const u8 = null;
             const r = try fileLine(self.gpa, l.text, symbols, env, &label);
             if (label) |name| {
@@ -1547,6 +1579,7 @@ const Builder = struct {
                 .bundle => |b| try self.bundle(l, i, b),
                 .pass => |p| try self.open(i, p.kind, p.span),
                 .org => |o| try self.org(i, o.row, o.span),
+                .mode => |m| self.setMode(i, m.mode, m.span),
                 .data => |blk| try self.addData(l, i, blk),
             };
             if (fe != null) return fe;
@@ -1579,6 +1612,13 @@ const Builder = struct {
         }
         self.cur.last_line = i;
         self.pc += b.len;
+        return null;
+    }
+
+    fn setMode(self: *Builder, i: usize, mode: u8, span: Span) ?FileError {
+        if (self.mode != null or self.explicit or self.implicit_used)
+            return self.fail(i, passDiag(span, "'.mode' after a pass, code, data or another '.mode'", "give '.mode' once, before the first '.pass'"));
+        self.mode = mode;
         return null;
     }
 
@@ -1660,6 +1700,7 @@ const LineResult = union(enum) {
     err: Diagnostic,
     pass: struct { kind: PassKind, span: Span },
     org: struct { row: u32, span: Span },
+    mode: struct { mode: u8, span: Span },
     /// `words` is gpa-allocated; the builder frees it.
     data: DataLine,
 };
@@ -1780,7 +1821,7 @@ fn directive(gpa: std.mem.Allocator, lex: *Lexer, dir: Token, symbols: *SymbolTa
         if (val.v < 0 or val.v > 0xFFFF_FFFF) return lineErr(diagAt(.e0030_bad_placement, val.span, "'.org' row out of range", "rows are 0..0xFFF"));
         return .{ .org = .{ .row = @intCast(val.v), .span = val.span } };
     }
-    const image_only = [_][]const u8{ ".pass", ".xdata", ".ydata", ".param" };
+    const image_only = [_][]const u8{ ".pass", ".xdata", ".ydata", ".param", ".mode" };
     for (image_only) |name| if (std.mem.eql(u8, dir.text, name) and !env.image) {
         var d = Diagnostic{ .code = .e0023_bad_directive, .span = tokSpan(dir) };
         var buf: [96]u8 = undefined;
@@ -1789,13 +1830,23 @@ fn directive(gpa: std.mem.Allocator, lex: *Lexer, dir: Token, symbols: *SymbolTa
         return .{ .err = d };
     };
     if (std.mem.eql(u8, dir.text, ".pass")) return passDirective(lex, dir);
+    if (std.mem.eql(u8, dir.text, ".mode")) {
+        const val = switch (parseExpr(lex, env)) {
+            .ok => |v| v,
+            .err => |r| return lineErr(r),
+        };
+        if (expectEnd(lex)) |d| return .{ .err = d };
+        if (val.v < 0 or val.v > 0xFF or layout.yMap(@intCast(val.v)) == null)
+            return lineErr(diagAt(.e0023_bad_directive, val.span, "no Y map for this mode", "known modes are 0, 1, 3 and 5 (fact 960)"));
+        return .{ .mode = .{ .mode = @intCast(val.v), .span = val.span } };
+    }
     if (std.mem.eql(u8, dir.text, ".xdata")) return dataDirective(gpa, lex, .x, env);
     if (std.mem.eql(u8, dir.text, ".ydata")) return dataDirective(gpa, lex, .y, env);
     if (std.mem.eql(u8, dir.text, ".param")) return dataDirective(gpa, lex, .param, env);
     var d = Diagnostic{ .code = .e0023_bad_directive, .span = tokSpan(dir) };
     var buf: [96]u8 = undefined;
     d.setMsg(std.fmt.bufPrint(&buf, "unknown directive '{s}'", .{dir.text}) catch buf[0..0]);
-    d.setHint("directives: .const, .assert, .org, .pass, .xdata, .ydata, .param");
+    d.setHint("directives: .const, .assert, .org, .mode, .pass, .xdata, .ydata, .param");
     return .{ .err = d };
 }
 
@@ -1868,7 +1919,7 @@ fn dataDirective(gpa: std.mem.Allocator, lex: *Lexer, space: Space, env: *const 
         return lineErr(diagAt(.e0005_missing_operand, span, "no data words", "write the words after the address: .xdata addr, w0, w1"));
     }
     if (!env.sizing) {
-        if (dataAddrDiag(space, addr.v, words.items.len, span)) |d| {
+        if (dataAddrDiag(space, addr.v, words.items.len, span, env.mode)) |d| {
             words.deinit(gpa);
             return .{ .err = d };
         }
@@ -1883,7 +1934,14 @@ fn dataValueDiag(space: Space, v: Value) ?Diagnostic {
     return diagAt(.e0031_data_range, v.span, "data word out of range", hint).err;
 }
 
-fn dataAddrDiag(space: Space, addr: i64, n: usize, span: Span) ?Diagnostic {
+fn dataAddrDiag(space: Space, addr: i64, n: usize, span: Span, mode: ?u8) ?Diagnostic {
+    // With a mode, host-written Y fills the mode's 16-bit range (its map's first entry); the
+    // window behind it is a 32-bit halfword mapping (653) and is not loaded as 16-bit words.
+    if (space == .y) if (mode) |m| {
+        const r = layout.yMap(m).?[0];
+        if (addr >= r[0] and addr + @as(i64, @intCast(n)) <= @as(i64, r[1]) + 1) return null;
+        return diagAt(.e0031_data_range, span, "Y data outside the mode's 16-bit Y range", "outside its mode's map the DSP neither sees nor keeps Y (fact 960)").err;
+    };
     const lo: i64, const hi: i64, const hint: []const u8 = switch (space) {
         .x => .{ 0, layout.x_words, "host-written X stays below 0x1C00 (fact 653)" },
         .y => .{ 0, layout.y_words, "host-written Y stays below 0x2E80 (fact 760)" },
@@ -2398,6 +2456,30 @@ test "program: data windows and word widths" {
         const fe = try progErr(src);
         try testing.expectEqual(ErrorCode.e0031_data_range, fe.diag.code);
     }
+}
+
+test "program: .mode checks .ydata against the mode's 16-bit Y range (960)" {
+    var ok = try progOk(".mode 3\n.pass init\nx17.halt\n.ydata 0x227F, 1");
+    try testing.expectEqual(@as(?u8, 3), ok.mode);
+    ok.deinit();
+    for ([_][]const u8{
+        ".mode 3\n.pass init\nx17.halt\n.ydata 0x2D00, 1", // ALAC's old setup block
+        ".mode 3\n.pass init\nx17.halt\n.ydata 0x227F, 1, 2", // runs off the end
+        ".mode 3\n.pass init\nx17.halt\n.ydata 0x2400, 1", // the window
+        ".mode 0\n.pass init\nx17.halt\n.ydata 0x2E80, 1", // the window
+    }) |src| {
+        const fe = try progErr(src);
+        try testing.expectEqual(ErrorCode.e0031_data_range, fe.diag.code);
+    }
+    for ([_][]const u8{
+        ".pass init\n.mode 3\nx17.halt", // after a pass
+        ".mode 3\n.mode 3\n.pass init\nx17.halt", // twice
+    }) |src| {
+        const fe = try progErr(src);
+        try testing.expectEqual(ErrorCode.e0030_bad_placement, fe.diag.code);
+    }
+    const fe = try progErr(".mode 2\n.pass init\nx17.halt");
+    try testing.expectEqual(ErrorCode.e0023_bad_directive, fe.diag.code);
 }
 
 test "program: init passes stay below the decoder's row 0x40" {
