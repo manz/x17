@@ -1085,10 +1085,12 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
     const ops = isa.operandsFor(sf.name);
     var given: usize = 0;
     var want: usize = 0;
-    for (ops) |o| want += @intFromBool(!o.isTie());
+    for (ops) |o| want += @intFromBool(!o.isTie() and !o.isOptional());
     for (ops) |op| {
         // Tie rows take no token; they are filled from their source after the loop.
         if (op.isTie()) continue;
+        // An optional row (trailing) left out keeps its field 0.
+        if (op.isOptional() and peekKind(lex) == .end) break;
         defer given += 1;
         if (given > 0) {
             const cr = lex.next();

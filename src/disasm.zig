@@ -82,6 +82,7 @@ fn writeFormLine(
     var shown: usize = 0;
     for (ops) |op| {
         if (op.isTie()) continue;
+        if (op.isOptional() and op.syll < bundle.len and op.valueIn(bundle) == 0) continue;
         const sep: []const u8 = if (shown == 0) " " else ", ";
         shown += 1;
         cur += printTo(out[cur..], "{s}", .{sep});
@@ -142,6 +143,23 @@ fn roundTrip(src: []const u8) ![]const u8 {
     // Persist into a static via dupeZ-like trick: leak ok for tests.
     const out = try testing.allocator.dupe(u8, buf[0..n]);
     return out;
+}
+
+test "the x02 A-step forms take an optional trailing #k at w3[18:15] (567)" {
+    for ([_][2][]const u8{
+        .{ "x02.aa A2, A1, R2, #0x2, A3, A4, #0x5", "x02.aa A2, A1, R2, #0x2, A3, A4" },
+        .{ "x02.ainc #0x2, #0x1, #0x5", "x02.ainc #0x2, #0x1" },
+        .{ "x02.vc s0, A0, A2, A3, A1, s0, s0, s0, s0, #0x0, #0x0, #0x0, s0, s0, #0x0, #0x0, #0x0, #0x2, R2, #0x5", "x02.vc s0, A0, A2, A3, A1, s0, s0, s0, s0, #0x0, #0x0, #0x0, s0, s0, #0x0, #0x0, #0x0, #0x2, R2" },
+    }) |k| {
+        const with = try asm_mod.assembleOne(k[0]);
+        const without = try asm_mod.assembleOne(k[1]);
+        try testing.expectEqual(without.slice()[3] | 5 << 15, with.slice()[3]);
+        for (k) |src| {
+            const s = try roundTrip(src);
+            defer testing.allocator.free(s);
+            try testing.expectEqualStrings(src, s);
+        }
+    }
 }
 
 test "disasm rli" {

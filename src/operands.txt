@@ -19,6 +19,9 @@
 #   relu branch offset, syllables from own q, unsigned  (label target or #raw)
 #   rel4 branch offset, 4-syllable units, signed        (label target or #raw)
 #
+# A name starting `?` is optional: it must trail the form's other operands, and when
+# omitted its field stays 0.  Disassembly omits it while the field is 0.
+#
 # Sources: each `[lo:hi]` reference here is quoted from `src/isa.toml`'s ref
 # string for the form.  When the assembler's needs grow this table gets more
 # forms; when every form is covered we migrate the rows back into isa.toml
@@ -248,9 +251,10 @@ x02.mpy	b_s	s	5	8	s2
 
 # x02.ainc (6 syllables): A-increment slot.  The bundle is a whole x02: its
 # template's multiply slot also runs, s2 <- round(s1 * s2 / 2^23).
-# Grammar: x02.ainc <dest_a>, <src_a>
+# Grammar: x02.ainc <dest_a>, <src_a>[, #<k>]  (k: wrap by R<w3[18:15]>, 567)
 x02.ainc	dest_a	imm	17	21	s2
 x02.ainc	src_a	imm	0	4	s3
+x02.ainc	?k	imm	15	18	s3
 
 # x18.eagu (4 syllables): e update via AGU10.
 # Grammar: x18.eagu <dest_e>, <x_e>, #<fn>
@@ -1363,7 +1367,7 @@ x03.jrc	pred	p	14	17	s5
 x03.jrc	offset	rel	18	28	s1
 
 # x02.v <xrd_d>, <xrd_a>, <inc_d1>, <inc_d2>, <inc_s>, <mpy_d>, <mpy_a>, <mpy_b>, <plo>, #<sgn>,
-#       #<x3_dlo>, #<x3_dhi>, <x3_a>, <x3_b>, #<x3_op>, #<x3_sh>
+#       #<x3_dlo>, #<x3_dhi>, <x3_a>, <x3_b>, #<x3_op>, #<x3_sh>[, #<k>]
 x02.v	xrd_d	s	3	6	s4
 x02.v	xrd_a	A	17	20	s4
 x02.v	inc_d1	A	17	21	s2
@@ -1380,8 +1384,9 @@ x02.v	x3_a	s	22	25	s4
 x02.v	x3_b	s	26	29	s4
 x02.v	x3_op	imm	6	8	s5
 x02.v	x3_sh	imm	2	5	s5
+x02.v	?k	imm	15	18	s3
 
-# x02.vc: x02.v's operands, then #<code>, #<fn>, <r>: the A step agu_xr fn w2[26:22], r = R<w5[25:22]> (738)
+# x02.vc: x02.v's operands, then #<code>, #<fn>, <r>[, #<k>]: the A step agu_xr fn w2[26:22], r = R<w5[25:22]> (738), wrapped by R<k> (567, unmeasured here)
 x02.vc	xrd_d	s	3	6	s4
 x02.vc	xrd_a	A	17	20	s4
 x02.vc	inc_d1	A	17	21	s2
@@ -1401,8 +1406,9 @@ x02.vc	x3_sh	imm	2	5	s5
 x02.vc	code	imm	5	10	head
 x02.vc	fn	imm	22	26	s2
 x02.vc	r	R	22	25	s5
+x02.vc	?k	imm	15	18	s3
 
-# x02.vs: x02.v's operands, then #<st_lo>, #<st_hi>, #<fn>, <r> (738)
+# x02.vs: x02.v's operands, then #<st_lo>, #<st_hi>, #<fn>, <r>[, #<k>] (738)
 x02.vs	xrd_d	s	3	6	s4
 x02.vs	xrd_a	A	17	20	s4
 x02.vs	inc_d1	A	17	21	s2
@@ -1423,14 +1429,17 @@ x02.vs	st_lo	imm	29	31	s1
 x02.vs	st_hi	imm	0	0	s2
 x02.vs	fn	imm	22	26	s2
 x02.vs	r	R	22	25	s5
+x02.vs	?k	imm	15	18	s3
 
-# x02.aa <dest_A>, <x_A>, <r_R>, #<fn>, <dest2_A>, <add_A>
+# x02.aa <dest_A>, <x_A>, <r_R>, #<fn>, <dest2_A>, <add_A>[, #<k>]
+# k: the A sum wraps once by R<w3[18:15]> (567); the second write's add does not (626).
 x02.aa	dest_A	A	17	21	s2
 x02.aa	x_A	A	0	4	s3
 x02.aa	r_R	R	22	25	s5
 x02.aa	fn	imm	22	26	s2
 x02.aa	dest2_A	A	10	14	s3
 x02.aa	add_A	A	5	9	s3
+x02.aa	?k	imm	15	18	s3
 
 # ragu <dest_R>, <x_A>, <r_R>, #<fn>
 ragu	dest_R	R	27	30	head

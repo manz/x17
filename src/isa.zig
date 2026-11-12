@@ -155,6 +155,12 @@ pub const Operand = struct {
         return self.name.len > 1 and self.name[0] == '=';
     }
 
+    /// An optional row, named `?name`: it trails the form's other operands, its field
+    /// stays 0 when the source omits it, and disassembly omits it while the field is 0.
+    pub fn isOptional(self: Operand) bool {
+        return self.name.len > 1 and self.name[0] == '?';
+    }
+
     pub fn tieSource(self: Operand) []const u8 {
         const body = self.name[1..];
         return if (std.mem.indexOf(u8, body, ">>")) |k| body[0..k] else body;
