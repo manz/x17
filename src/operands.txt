@@ -1367,7 +1367,8 @@ x03.jrc	pred	p	14	17	s5
 x03.jrc	offset	rel	18	28	s1
 
 # x02.v <xrd_d>, <xrd_a>, <inc_d1>, <inc_d2>, <inc_s>, <mpy_d>, <mpy_a>, <mpy_b>, <plo>, #<sgn>,
-#       #<x3_dlo>, #<x3_dhi>, <x3_a>, <x3_b>, #<x3_op>, #<x3_sh>[, #<k>]
+#       #<x3_dlo>, #<x3_dhi>, <x3_a>, <x3_b>, #<x3_op>, #<x3_sh>[, <add>]
+# add: A<w3[14:10]> <- the step + A<w3[9:5]> (962); A0 when left out.  No wrap here (962).
 x02.v	xrd_d	s	3	6	s4
 x02.v	xrd_a	A	17	20	s4
 x02.v	inc_d1	A	17	21	s2
@@ -1384,9 +1385,9 @@ x02.v	x3_a	s	22	25	s4
 x02.v	x3_b	s	26	29	s4
 x02.v	x3_op	imm	6	8	s5
 x02.v	x3_sh	imm	2	5	s5
-x02.v	?k	imm	15	18	s3
+x02.v	?add	A	5	9	s3
 
-# x02.vc: x02.v's operands, then #<code>, #<fn>, <r>[, #<k>]: the A step agu_xr fn w2[26:22], r = R<w5[25:22]> (738), wrapped by R<k> (567, unmeasured here)
+# x02.vc: x02.v's operands, then #<code>, #<fn>, <r>[, <add>]: the A step agu_xr fn w2[26:22], r = R<w5[25:22]> (738), never wrapped (962)
 x02.vc	xrd_d	s	3	6	s4
 x02.vc	xrd_a	A	17	20	s4
 x02.vc	inc_d1	A	17	21	s2
@@ -1406,9 +1407,9 @@ x02.vc	x3_sh	imm	2	5	s5
 x02.vc	code	imm	5	10	head
 x02.vc	fn	imm	22	26	s2
 x02.vc	r	R	22	25	s5
-x02.vc	?k	imm	15	18	s3
+x02.vc	?add	A	5	9	s3
 
-# x02.vs: x02.v's operands, then #<st_lo>, #<st_hi>, #<fn>, <r>[, #<k>] (738)
+# x02.vs: x02.v's operands, then #<st_lo>, #<st_hi>, #<fn>, <r>[, <add>] (738)
 x02.vs	xrd_d	s	3	6	s4
 x02.vs	xrd_a	A	17	20	s4
 x02.vs	inc_d1	A	17	21	s2
@@ -1429,7 +1430,7 @@ x02.vs	st_lo	imm	29	31	s1
 x02.vs	st_hi	imm	0	0	s2
 x02.vs	fn	imm	22	26	s2
 x02.vs	r	R	22	25	s5
-x02.vs	?k	imm	15	18	s3
+x02.vs	?add	A	5	9	s3
 
 # x02.aa <dest_A>, <x_A>, <r_R>, #<fn>, <dest2_A>, <add_A>[, #<k>]
 # k: the A sum wraps once by R<w3[18:15]> (567); the second write's add does not (626).
