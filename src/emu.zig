@@ -800,14 +800,15 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         // into s0 is never seen (652).
         try execX02Xrd(gpa, state, bundle);
         try execX02Mpy(gpa, state, bundle);
-        try execX02Ainc(gpa, state, bundle);
+        // No wrap here: k = 1 leaves the sum as is (962).
+        try execX02Ainc(gpa, state, bundle, false);
         try execX02X3Pre(gpa, state, bundle, s_pre);
         return true;
     }
     if (w4_mode == 0) {
         // The third slot runs here too (fact 549, own-x02t3).
         const s_pre = state.s;
-        try execX02Ainc(gpa, state, bundle);
+        try execX02Ainc(gpa, state, bundle, true);
         try execX02X3Pre(gpa, state, bundle, s_pre);
         return true;
     }
@@ -817,8 +818,8 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         try execX02Mpy(gpa, state, bundle);
         try execX02Xrd(gpa, state, bundle); // esrc path
         // The A slot runs here too: asrc and esrc name A1 as its destination, so asrc An
-        // sets A1 <- An + 1 and esrc steps A1 (157, 795).
-        try execX02Ainc(gpa, state, bundle);
+        // sets A1 <- An + 1 and esrc steps A1 (157, 795).  The wrap is unmeasured here.
+        try execX02Ainc(gpa, state, bundle, true);
         return true;
     }
     return false;
@@ -903,7 +904,7 @@ fn x02YSide(state: *const State, bundle: []const u32) u32 {
     return state.getY(state.e[(bundle[3] >> 27) & 0xF]) orelse 0;
 }
 
-fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
+fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32, wrap: bool) RunError!void {
     _ = gpa;
     const w2 = bundle[2];
     const w3 = bundle[3];
@@ -914,9 +915,10 @@ fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
     const fn_op: u32 = (w2 >> 22) & 0x1F;
     const dest_a: u32 = (w2 >> 17) & 0x1F;
     const dest_b: u32 = (w3 >> 10) & 0x1F;
-    // Wrapped once by R<w3[18:15]> (567); the second write's add is not wrapped (626).
-    const mk: u32 = (w3 >> 15) & 0xF;
-    const sum = wrapOnce(state, aguXrEval(fn_op, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]), mk);
+    // Wrapped once by R<w3[18:15]> where `wrap` (567); the second write's add is not wrapped
+    // (626).  The mode-5 bundle does not wrap (962).
+    const raw = aguXrEval(fn_op, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]);
+    const sum = if (wrap) wrapOnce(state, raw, (w3 >> 15) & 0xF) else raw;
     if (dest_a != 0) state.a[dest_a] = if ((w5 >> 18) & 1 == 1) state.yd else sum;
     if (dest_b != 0) {
         if ((w5 >> 21) & 1 == 1) {

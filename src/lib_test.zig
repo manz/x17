@@ -3832,6 +3832,26 @@ test "x03 with w5[1] = 0: w5[21] picks a fresh Y read or yd (fact 565)" {
     try testing.expectEqual(@as(u32, 0x777), x.s[5]);
 }
 
+test "the mode-5 x02 A step does not wrap by R<w3[18:15]> (962)" {
+    const gpa = testing.allocator;
+    for ([_]struct { w3: u32, a1: u32, r2: u32, a2: u32, a3: u32 }{
+        .{ .w3 = 0x00008c81, .a1 = 0xF0, .r2 = 0x22, .a2 = 0x112, .a3 = 0x512 },
+        .{ .w3 = 0x00000c81, .a1 = 0xF0, .r2 = 0x22, .a2 = 0x112, .a3 = 0x512 },
+        .{ .w3 = 0x00008c81, .a1 = 0x10, .r2 = 0xFFDE, .a2 = 0xFFEE, .a3 = 0x3EE },
+        .{ .w3 = 0x00000c81, .a1 = 0x10, .r2 = 0xFFDE, .a2 = 0xFFEE, .a3 = 0x3EE },
+    }) |c| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[1] = c.a1;
+        state.a[4] = 0x400;
+        state.r[1] = 0x110;
+        state.r[2] = c.r2;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0x00002000, 0x00840000, c.w3, 0x00002800, 0x00804200, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        try testing.expectEqual(c.a2, state.a[2]);
+        try testing.expectEqual(c.a3, state.a[3]);
+    }
+}
+
 test "agu_xr's once-only wrap on x02's A sum and R slot (fact 566, 567)" {
     // A9 = 0x200, R9 = 0x50 (y), R3 = 0x40 (M, w3[18:15] = 3): fn 2 sum 0x250 wraps to 0x210 in
     // A1 (w5[27] = 0) and in R9 (w5[27:26] = 10); M field 0 leaves 0x250.
