@@ -1368,7 +1368,7 @@ x03.jrc	offset	rel	18	28	s1
 # x02.v <xrd_d>, <xrd_a>, <inc_d1>, <inc_d2>, <inc_s>, <mpy_d>, <mpy_a>, <mpy_b>, <plo>, #<sgn>,
 #       #<x3_dlo>, #<x3_dhi>, <x3_a>, <x3_b>, #<x3_op>, #<x3_sh>[, <add>]
 # add: A<w3[14:10]> <- the step + A<w3[9:5]> (962); A0 when left out.  k: as x02.aa's
-# (fn 6..11 only, 963), on vc/vs (x02.v's step is fn 0); mode 5 with fn 6..11 unmeasured.
+# (fn 6..11 only, 963, 964), on vc/vs (x02.v's step is fn 0).
 x02.v	xrd_d	s	3	6	s4
 x02.v	xrd_a	A	17	20	s4
 x02.v	inc_d1	A	17	21	s2
