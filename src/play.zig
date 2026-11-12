@@ -46,8 +46,8 @@ pub const Options = struct {
     /// stream), and feed N >= 2 arms one run.  Off: one run per packet.
     configure_arm: bool = false,
     /// Play the image this many times on one engine: each later track reconfigures the host
-    /// and reruns the init passes on the state the last track left (silicon resets nothing
-    /// but P and the image's X / Y sections).
+    /// and reruns the init passes on the state the last track left (silicon resets only P,
+    /// the image's X / Y sections and the stream enable, fact 958).
     chain: usize = 1,
     /// When set, X / Y reads of words nothing stored (by the image, the host or a store) are
     /// counted here.

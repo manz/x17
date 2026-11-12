@@ -132,12 +132,14 @@ pub const Host = struct {
     }
 
     /// The next track's configure on the same engine: the host starts its ring over, drops
-    /// the old track's unread stream and writes the parameter block again.  Everything else
-    /// the engine holds, the stream enable included, is left as the last track left it.
+    /// the old track's unread stream and writes the parameter block again.  The stream enable
+    /// drops too (fact 958): a decoder must enable it again.  Everything else the engine
+    /// holds is left as the last track left it.
     pub fn reconfigure(self: *Host) Error!void {
         self.idx = 0;
         self.resume_at = null;
         self.overwritten = null;
+        self.state.stream_on = false;
         self.state.stream.clearRetainingCapacity();
         self.state.stream_bit = 0;
         self.state.stream_starved = false;
@@ -289,6 +291,20 @@ test "rate index: listed rates, and unlisted ones fall back to 44100's" {
     try testing.expectEqual(@as(u16, 4), rateIndex(44100));
     try testing.expectEqual(@as(u16, 11), rateIndex(8000));
     try testing.expectEqual(@as(u16, 4), rateIndex(37800));
+}
+
+test "reconfigure drops the stream enable and the unread stream, and keeps registers (958)" {
+    var h = try Host.init(testing.allocator, .{});
+    defer h.deinit();
+    h.state.stream_on = true;
+    h.state.s[3] = 0x123;
+    try h.queue("ab");
+    h.state.stream_bit = 3;
+    try h.reconfigure();
+    try testing.expect(!h.state.stream_on);
+    try testing.expectEqual(@as(usize, 0), h.state.stream.items.len);
+    try testing.expectEqual(@as(usize, 0), h.state.stream_bit);
+    try testing.expectEqual(@as(u32, 0x123), h.state.s[3]);
 }
 
 test "init writes the parameter block" {
