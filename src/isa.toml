@@ -304,7 +304,8 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x17 S1 class 000 + S2 class 010: e<S1[19:16]> <- s<S2[28:25]> (+1 when S1[9]) with head[27] set and head[10] clear,
 # else 0; S1[15:12] zero e1/e2/e4/e8, S1[23:20] zero s1/s2/s4/s8; S2[9]/[11]/[12] wedge (fact 142, own-x17mve).
 # x17mve (960, superseding 959): e <- s + 1 plain, no saturation: 0xFF8000 -> 0x8001, 0xFFFFFE -> 0xFFFF, 0x123 -> 0x124 through an AGU read.
-# Y map (960): per configure mode, the descriptor table's 16-bit entry and window entry in 0x80-word blocks, plus the 0xFD80 block.  Mode 0 0..0x2EFF (760), 1 0..0x187F, 3 0..0x227F and 0x2400..0x267F, 5 0..0x15FF and 0x2000..0x20FF.  Outside it a DSP store drops and ldy reads 0 (measured on mode 3).  X per entries 2 / 3 is INFERRED and not modelled.  `x17 play --mode`.
+# Y map (960): per configure mode, the descriptor table's 16-bit entry and window entry in 0x80-word blocks, plus the 0xFD80 block.  Mode 0 0..0x2EFF (760), 1 0..0x187F, 3 0..0x227F and 0x2400..0x267F, 5 0..0x15FF and 0x2000..0x20FF.  Outside it a DSP store drops and ldy reads 0 (measured on mode 3).  `x17 play --mode`.
+# X map (961): entries 2 and 3 of the same table, same packing: mode 0 0..0x1BFF (653), 1 0..0x11FF, 3 0..0x20FF (entry 2 0..0x1FFF, entry 3 0x2000..0x20FF), 5 0..0x37F (table only).  Outside it an X store drops and dld reads 0 (measured modes 0, 1, 3).  Mode 1's Y map 0..0x187F measured too.
 # low5 0x19 (4 words) is a VLIW like x17: the syllable classes pick the slots (fact 143).  x and y are e<w3[28:25]>
 # and R<w3[14:11]> in both measured forms.  Classes (0,0,0): R<w3[10:7]>, e<w1[23:20]> <- AGU10[w1[27:24]](x, y), w1[18]
 # required (own-x19agu).  Classes (0,0,7) with w3[1:0] = 3, w3[11:10] = 1: s<w2[13:10]> <- Y:[x];

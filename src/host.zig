@@ -105,6 +105,8 @@ pub const Error = emu.RunError || error{
 
 /// The DSP's Y map per configure mode (fact 960); see asm.layout.yMap.
 pub const yMap = asm_mod.layout.yMap;
+/// The DSP's X map per configure mode (fact 961); see asm.layout.xMap.
+pub const xMap = asm_mod.layout.xMap;
 
 pub const Host = struct {
     gpa: std.mem.Allocator,
@@ -310,7 +312,7 @@ test "reconfigure drops the stream enable and the unread stream, and keeps regis
     try testing.expectEqual(@as(u32, 0x123), h.state.s[3]);
 }
 
-test "the mode 3 Y map drops stores outside it and reads them as 0 (960)" {
+test "the mode maps drop stores outside them and read them as 0 (960, 961)" {
     var st: emu.State = .{ .y_map = yMap(3).? };
     defer st.deinit(testing.allocator);
     const in_map = [_]u32{ 0x0100, 0x2200, 0x227F, 0x2400, 0x2402, 0x267F, 0xFD90 };
@@ -318,6 +320,16 @@ test "the mode 3 Y map drops stores outside it and reads them as 0 (960)" {
     for (in_map ++ out_map, 0..) |a, k| try st.putY(testing.allocator, a, 0x1100 + @as(u32, @intCast(k)));
     for (in_map, 0..) |a, k| try testing.expectEqual(@as(?u32, 0x1100 + @as(u32, @intCast(k))), st.getY(a));
     for (out_map) |a| try testing.expectEqual(@as(?u32, 0), st.getY(a));
+    // X (961): mode 3 is entries 2 and 3, 0..0x20FF; mode 1 stops at 0x11FF.
+    st.x_map = xMap(3).?;
+    try st.putX(testing.allocator, 0x20FF, 7);
+    try st.putX(testing.allocator, 0x2100, 8);
+    try testing.expectEqual(@as(?u32, 7), st.getX(0x20FF));
+    try testing.expectEqual(@as(?u32, 0), st.getX(0x2100));
+    st.x_map = xMap(1).?;
+    try testing.expect(st.xMapped(0x11FF) and !st.xMapped(0x1200));
+    st.x_map = xMap(0).?;
+    try testing.expect(st.xMapped(0x1BFF) and !st.xMapped(0x1C00));
     // Mode 0 is 760's flat Y below 0x2F00.
     try testing.expectEqual(@as(?[]const [2]u32, null), yMap(2));
     st.y_map = yMap(0).?;

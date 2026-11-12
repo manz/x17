@@ -349,7 +349,7 @@ const play_params = clap.parseParamsComptime(
     \\    --poison <usize>     start dirty: registers, p and unstored X / Y words read as junk from this seed
     \\    --chain <usize>      play the image N times on one engine, each track reconfigured over the last one's state
     \\    --unset-reads        count X / Y reads of words nothing stored, with the first address of each
-    \\    --mode <usize>       configure mode for the DSP's Y map: 0, 1, 3 or 5 (default: .mode from the x17i, else 0); outside it stores drop and loads read 0
+    \\    --mode <usize>       configure mode for the DSP's X / Y maps: 0, 1, 3 or 5 (default: .mode from the x17i, else 0); outside it stores drop and loads read 0
     \\    --configure-arm      945's arming: one run at configure, packet 1 only queued, then one run per packet
     \\    --profile <usize>    print the decoder's hot list, N rows per table: packets, P use, functions, blocks, bundles
     \\    --debug <str>        sidecar for --profile labels and lines (default: the image path with .json)

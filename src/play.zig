@@ -375,7 +375,10 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     if (opts.tracer) |t| t.attach(&h.state);
     h.state.break_after = opts.stop_after;
     h.state.unset_reads = opts.unset;
-    if (opts.mode orelse img.mode()) |m| h.state.y_map = host_mod.yMap(m) orelse return error.UnknownMode;
+    if (opts.mode orelse img.mode()) |m| {
+        h.state.y_map = host_mod.yMap(m) orelse return error.UnknownMode;
+        h.state.x_map = host_mod.xMap(m) orelse return error.UnknownMode;
+    }
     if (opts.poison) |seed| h.state.poisonWith(seed);
     if (opts.poison == null or opts.p_entry != 0) for (1..16) |k| {
         h.state.p[k] = @intCast((opts.p_entry >> @intCast(k)) & 1);

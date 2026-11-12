@@ -1399,6 +1399,23 @@ pub const layout = struct {
         };
     }
 
+    /// The DSP's X map per configure mode (fact 961): the descriptor table's entries 2 and 3.
+    pub fn xMap(mode: u8) ?[]const [2]u32 {
+        const S = struct {
+            const m0 = [_][2]u32{.{ 0, 0x1BFF }};
+            const m1 = [_][2]u32{.{ 0, 0x11FF }};
+            const m3 = [_][2]u32{ .{ 0, 0x1FFF }, .{ 0x2000, 0x20FF } };
+            const m5 = [_][2]u32{.{ 0, 0x37F }};
+        };
+        return switch (mode) {
+            0 => &S.m0,
+            1 => &S.m1,
+            3 => &S.m3,
+            5 => &S.m5,
+            else => null,
+        };
+    }
+
     pub fn yMapped(map: []const [2]u32, addr: u32) bool {
         for (map) |r| if (addr >= r[0] and addr <= r[1]) return true;
         return false;
@@ -1935,6 +1952,17 @@ fn dataValueDiag(space: Space, v: Value) ?Diagnostic {
 }
 
 fn dataAddrDiag(space: Space, addr: i64, n: usize, span: Span, mode: ?u8) ?Diagnostic {
+    // With a mode, host-written X fills that mode's X map (fact 961).
+    if (space == .x) if (mode) |m| {
+        const map = layout.xMap(m).?;
+        var k: i64 = 0;
+        while (k < n) : (k += 1) {
+            const a = addr + k;
+            if (a < 0 or a > 0xFFFF or !layout.yMapped(map, @intCast(a)))
+                return diagAt(.e0031_data_range, span, "X data outside the mode's X map", "outside its mode's map the DSP neither sees nor keeps X (fact 961)").err;
+        }
+        return null;
+    };
     // With a mode, host-written Y fills the mode's 16-bit range (its map's first entry); the
     // window behind it is a 32-bit halfword mapping (653) and is not loaded as 16-bit words.
     if (space == .y) if (mode) |m| {
@@ -2458,8 +2486,8 @@ test "program: data windows and word widths" {
     }
 }
 
-test "program: .mode checks .ydata against the mode's 16-bit Y range (960)" {
-    var ok = try progOk(".mode 3\n.pass init\nx17.halt\n.ydata 0x227F, 1");
+test "program: .mode checks .ydata and .xdata against the mode's maps (960, 961)" {
+    var ok = try progOk(".mode 3\n.pass init\nx17.halt\n.ydata 0x227F, 1\n.xdata 0x20FF, 1");
     try testing.expectEqual(@as(?u8, 3), ok.mode);
     ok.deinit();
     for ([_][]const u8{
@@ -2467,6 +2495,7 @@ test "program: .mode checks .ydata against the mode's 16-bit Y range (960)" {
         ".mode 3\n.pass init\nx17.halt\n.ydata 0x227F, 1, 2", // runs off the end
         ".mode 3\n.pass init\nx17.halt\n.ydata 0x2400, 1", // the window
         ".mode 0\n.pass init\nx17.halt\n.ydata 0x2E80, 1", // the window
+        ".mode 1\n.pass init\nx17.halt\n.xdata 0x1200, 1", // past mode 1's X (961)
     }) |src| {
         const fe = try progErr(src);
         try testing.expectEqual(ErrorCode.e0031_data_range, fe.diag.code);
