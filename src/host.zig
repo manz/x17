@@ -118,12 +118,30 @@ pub const Host = struct {
 
     pub fn init(gpa: std.mem.Allocator, cfg: Config) Error!Host {
         var h: Host = .{ .gpa = gpa, .cfg = cfg };
-        // The firmware leaves the parameter block as "----" fill (0x2D2D per word, fact 828)
-        // and configures over it: FF00 |= 1, mode 0 FF00 |= 6, FF06 = rate index.
-        for (0..param_words) |k| try h.putY(cfg.map.param + @as(u32, @intCast(k)), param_fill);
-        try h.orY(cfg.map.param, 7);
-        try h.putY(cfg.map.param + 3, rateIndex(cfg.rate_hz));
+        try h.writeParams();
         return h;
+    }
+
+    /// The firmware leaves the parameter block as "----" fill (0x2D2D per word, fact 828)
+    /// and configures over it: FF00 |= 1, mode 0 FF00 |= 6, FF06 = rate index.
+    fn writeParams(self: *Host) Error!void {
+        const m = self.cfg.map;
+        for (0..param_words) |k| try self.putY(m.param + @as(u32, @intCast(k)), param_fill);
+        try self.orY(m.param, 7);
+        try self.putY(m.param + 3, rateIndex(self.cfg.rate_hz));
+    }
+
+    /// The next track's configure on the same engine: the host starts its ring over, drops
+    /// the old track's unread stream and writes the parameter block again.  Everything else
+    /// the engine holds, the stream enable included, is left as the last track left it.
+    pub fn reconfigure(self: *Host) Error!void {
+        self.idx = 0;
+        self.resume_at = null;
+        self.overwritten = null;
+        self.state.stream.clearRetainingCapacity();
+        self.state.stream_bit = 0;
+        self.state.stream_starved = false;
+        try self.writeParams();
     }
 
     pub fn deinit(self: *Host) void {
