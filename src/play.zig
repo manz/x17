@@ -39,6 +39,8 @@ pub const Options = struct {
     /// p is unknown; silicon reads p1 = 0, p2..p15 = 1 after an init pass (803), so a caller
     /// matching that passes 0xFFFC.
     p_entry: u16 = 0,
+    /// The configure mode whose Y map the DSP sees (fact 960); null keeps Y flat.
+    mode: ?u8 = null,
     /// When set, start from a dirty engine (State.poisonWith); a nonzero p_entry still sets p.
     poison: ?u64 = null,
     /// Fact 945's arming: configure arms one decoder run before any packet is queued, feed 1
@@ -371,6 +373,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     if (opts.tracer) |t| t.attach(&h.state);
     h.state.break_after = opts.stop_after;
     h.state.unset_reads = opts.unset;
+    if (opts.mode) |m| h.state.y_map = host_mod.yMap(m) orelse return error.UnknownMode;
     if (opts.poison) |seed| h.state.poisonWith(seed);
     if (opts.poison == null or opts.p_entry != 0) for (1..16) |k| {
         h.state.p[k] = @intCast((opts.p_entry >> @intCast(k)) & 1);

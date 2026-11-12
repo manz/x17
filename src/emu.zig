@@ -110,6 +110,9 @@ pub const State = struct {
     on_bundle: ?BundleHook = null,
     /// When set, X / Y reads are logged here (`x17 play --trace`).
     read_log: ?*ReadLog = null,
+    /// When set (`x17 play --mode`), the DSP's Y map as inclusive [lo, hi] ranges (fact 960):
+    /// outside it a store is dropped and a load reads 0.  Null: flat Y.
+    y_map: ?[]const [2]u32 = null,
     /// When set (`x17 play --poison`), X / Y words nothing stored read as junk from this seed.
     poison: ?u64 = null,
     /// When set, X / Y stores are logged here with the word they replace (`x17 play --trace`).
@@ -156,6 +159,10 @@ pub const State = struct {
 
     /// Y words are 16 bits (700): a store keeps s[15:0], so only those bits read back.
     pub fn getY(self: *const State, addr: u32) ?u32 {
+        if (!self.yMapped(addr)) {
+            if (self.read_log) |l| l.add(.y, addr, 0);
+            return 0;
+        }
         const v = self.y_mem.get(addr);
         if (self.read_log) |l| l.add(.y, addr, v);
         if (v == null) if (self.unset_reads) |u| {
@@ -164,6 +171,13 @@ pub const State = struct {
         };
         if (v == null) if (self.poison) |seed| return junk(seed, .y, addr) & 0xFFFF;
         return if (v) |w| w & 0xFFFF else null;
+    }
+
+    /// Whether the DSP sees Y:[addr] under the current map (fact 960).
+    pub fn yMapped(self: *const State, addr: u32) bool {
+        const m = self.y_map orelse return true;
+        for (m) |r| if (addr >= r[0] and addr <= r[1]) return true;
+        return false;
     }
 
     /// The host's view of Y: what was stored, never logged or poisoned (the host protocol
@@ -205,6 +219,7 @@ pub const State = struct {
     }
 
     pub fn putY(self: *State, gpa: std.mem.Allocator, addr: u32, v: u32) error{OutOfMemory}!void {
+        if (!self.yMapped(addr)) return;
         if (self.write_log) |l| l.add(.y, addr, self.y_mem.get(addr));
         try self.y_mem.put(gpa, addr, v);
     }
@@ -5793,11 +5808,8 @@ fn execX17Mve(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const pv: u8 = @intFromBool(rCond((h >> 22) & 0xF, state.r[(s2 >> 1) & 0xF]));
 
     const src_val: u32 = if (src_s == 0) 0 else state.s[src_s];
-    const v: u32 = (src_val +% 1) & M24;
-    // 959: a negative result leaves e = 0xFFFF (s = 0xFFEFFE read back 0xFFFF, not 0xEFFF).
-    // Whether a positive one past 16 bits clamps too is OPEN: refused.
-    if (v & 0x800000 == 0 and v > 0xFFFF) return RunError.UnknownForm;
-    state.e[dest_e] = if (v & 0x800000 != 0) 0xFFFF else v;
+    // Plain s + 1, no saturation (960 supersedes 959: 0xFF8000 reads back 0x8001).
+    state.e[dest_e] = (src_val +% 1) & M24;
     if (pd != 0) state.p[pd] = pv;
 }
 
