@@ -121,6 +121,7 @@ of passes; the flat `x17 asm` takes one program at q0 and refuses the pass and
 data directives.
 
 ```
+.mode 3                         # optional: the configure mode, before any pass (fact 960)
 .pass init                      # an init pass: loads at row 0 (q0), arms in turn
 .xdata 0x100, 0x123456, -1      # host-written X for this pass (24-bit words)
 .ydata 0x40, 0xBEEF             # host-written Y for this pass (16-bit words)
@@ -134,6 +135,11 @@ data directives.
 
 - Bundles pack in q order, `q = 8*(row/2) + 2*lane + row%2` (fact 45); a
   row holds 4 syllables, one per lane, and rows go in pairs.
+- `.mode N` (optional, once, before the first `.pass`): the configure mode the
+  image is built for, 0, 1, 3 or 5.  Each mode maps its own DSP Y (fact 960);
+  with a mode, `.ydata` must sit in that mode's 16-bit range (mode 0
+  0..0x2E7F, 1 0..0x177F, 3 0..0x227F, 5 0..0x15FF), and `x17 play` runs
+  with that map (a different `--mode` is refused).
 - `.pass init` / `.pass decoder`: init passes come first, in load order;
   at most one decoder, last.  A source with no `.pass` is one init pass.
   Every pass needs at least one bundle.  Labels are q values, so a decoder
@@ -158,7 +164,7 @@ data directives.
 4   u16 version = 1
 6   u16 section count
 8   sections, back to back:
-      u8  kind     1 P, 2 X, 3 Y, 4 param
+      u8  kind     1 P, 2 X, 3 Y, 4 param, 5 mode
       u8  pass     init passes 0..N-1 in load order, 0xFF the decoder
       u16 0
       u32 addr     P: first row; X, Y, param: first word address
@@ -166,6 +172,9 @@ data directives.
       payload      P: count*4 u32, row by row, lanes 0..3 per row
                    X: count u32 (24-bit); Y, param: count u32 (16-bit)
 ```
+
+A mode section (from `.mode N`) comes first: pass 0xFF, addr = the mode,
+count 0, no payload.  Images without `.mode` have none.
 
 Sections come pass by pass: each pass's P, then its data blocks in source
 order.  A P section runs from the pass's base row through its two zero

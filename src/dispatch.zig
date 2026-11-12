@@ -349,7 +349,7 @@ const play_params = clap.parseParamsComptime(
     \\    --poison <usize>     start dirty: registers, p and unstored X / Y words read as junk from this seed
     \\    --chain <usize>      play the image N times on one engine, each track reconfigured over the last one's state
     \\    --unset-reads        count X / Y reads of words nothing stored, with the first address of each
-    \\    --mode <usize>       configure mode for the DSP's Y map: 0 (default), 1, 3 or 5; outside it stores drop and loads read 0
+    \\    --mode <usize>       configure mode for the DSP's Y map: 0, 1, 3 or 5 (default: .mode from the x17i, else 0); outside it stores drop and loads read 0
     \\    --configure-arm      945's arming: one run at configure, packet 1 only queued, then one run per packet
     \\    --profile <usize>    print the decoder's hot list, N rows per table: packets, P use, functions, blocks, bundles
     \\    --debug <str>        sidecar for --profile labels and lines (default: the image path with .json)
@@ -412,11 +412,16 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     };
     defer gpa.free(pkts);
 
-    const mode: u8 = std.math.cast(u8, parsed.args.mode orelse 0) orelse 0xFF;
+    const img_mode = img.mode();
+    const mode: u8 = if (parsed.args.mode) |m| std.math.cast(u8, m) orelse 0xFF else img_mode orelse 0;
     if (host_mod.yMap(mode) == null) {
-        try out.print("play: no Y map for mode {d}; known modes are 0, 1, 3 and 5\n", .{parsed.args.mode orelse 0});
+        try out.print("play: no Y map for mode {d}; known modes are 0, 1, 3 and 5\n", .{parsed.args.mode orelse mode});
         return error.InvalidArgument;
     }
+    if (img_mode) |im| if (im != mode) {
+        try out.print("play: --mode {d} but the image is built for mode {d}\n", .{ mode, im });
+        return error.InvalidArgument;
+    };
     var tl: play_mod.TrapList = .{ .gpa = gpa };
     defer tl.deinit();
     var tracer: play_mod.Tracer = .{ .gpa = gpa, .out = out, .left = parsed.args.trace orelse 0, .from = parsed.args.@"trace-from" };

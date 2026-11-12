@@ -39,7 +39,8 @@ pub const Options = struct {
     /// p is unknown; silicon reads p1 = 0, p2..p15 = 1 after an init pass (803), so a caller
     /// matching that passes 0xFFFC.
     p_entry: u16 = 0,
-    /// The configure mode whose Y map the DSP sees (fact 960); null keeps Y flat.
+    /// The configure mode whose Y map the DSP sees (fact 960); null takes the image's `.mode`,
+    /// and with neither Y stays flat.
     mode: ?u8 = null,
     /// When set, start from a dirty engine (State.poisonWith); a nonzero p_entry still sets p.
     poison: ?u64 = null,
@@ -354,6 +355,7 @@ fn loadData(gpa: std.mem.Allocator, state: *emu.State, prog: []u32, img: *const 
         .p => image.placeRows(prog, sec),
         .x => for (sec.words, 0..) |w, k| try state.x_mem.put(gpa, sec.addr + @as(u32, @intCast(k)), w & 0xFFFFFF),
         .y, .param => for (sec.words, 0..) |w, k| try state.y_mem.put(gpa, sec.addr + @as(u32, @intCast(k)), w & 0xFFFF),
+        .mode => {},
     };
 }
 
@@ -373,7 +375,7 @@ pub fn play(gpa: std.mem.Allocator, img: *const image.Image, pkts: []const []con
     if (opts.tracer) |t| t.attach(&h.state);
     h.state.break_after = opts.stop_after;
     h.state.unset_reads = opts.unset;
-    if (opts.mode) |m| h.state.y_map = host_mod.yMap(m) orelse return error.UnknownMode;
+    if (opts.mode orelse img.mode()) |m| h.state.y_map = host_mod.yMap(m) orelse return error.UnknownMode;
     if (opts.poison) |seed| h.state.poisonWith(seed);
     if (opts.poison == null or opts.p_entry != 0) for (1..16) |k| {
         h.state.p[k] = @intCast((opts.p_entry >> @intCast(k)) & 1);
@@ -917,6 +919,29 @@ test "play --chain reruns the init passes and packets on the state the last trac
     // Y 0x40 is never stored: both tracks read it unset.
     try testing.expectEqual(@as(u64, 2), unset.y);
     try testing.expectEqual(@as(?u32, 0x40), unset.first_y);
+}
+
+test "an image's .mode sets the Y map play runs with (960)" {
+    const gpa = testing.allocator;
+    var img = try imageOf(gpa,
+        \\.mode 3
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        lde e8, #0x2DA3
+        \\        x19.ld s3, #4, e8, #2
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    try testing.expectEqual(@as(?u8, 3), img.mode());
+    // The host's Y write lands, but the DSP's read of Y:0x2DA3 is outside mode 3's map.
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    var tr: Tracer = .{ .gpa = gpa, .out = &out.writer, .left = 10 };
+    var r = try play(gpa, &img, &.{"a"}, .{ .y_writes = &.{.{ .addr = 0x2DA3, .value = 0x1234 }}, .tracer = &tr });
+    defer r.deinit(gpa);
+    try testing.expect(std.mem.indexOf(u8, out.written(), "rY[0x2da3]=0x0") != null);
+    try testing.expect(std.mem.indexOf(u8, out.written(), "s3 ") == null);
 }
 
 test "play --stop-at stops before the first decoder bundle at q and dumps the state" {
