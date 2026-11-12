@@ -100,31 +100,29 @@ fn jsonMem(gpa: std.mem.Allocator, w: *std.Io.Writer, name: []const u8, mem: *co
     try w.writeAll("}");
 }
 
-/// One line per bundle run for the first `left` bundles: where it ran, its syllables and
-/// disasm, then the registers and predicates it changed and its X / Y reads and writes.
+/// One line per bundle run for the first `left` bundles (from packet `from` on, when set):
+/// where it ran, its syllables and disasm, then the registers and predicates it changed and
+/// its X / Y reads and writes.
 pub const Tracer = struct {
     const Regs = struct { s: [16]u32, e: [16]u32, r: [16]u32, a: [32]u32, p: [16]u8, v: [4]u32 };
-    const Mem = std.AutoHashMapUnmanaged(u32, u32);
     const Write = struct { addr: u32, old: ?u32, new: u32 };
 
     gpa: std.mem.Allocator,
     out: *std.Io.Writer,
     left: usize,
+    /// When set, init passes and packets before this one are not traced.
+    from: ?usize = null,
     /// Set by play: the packet being fed, null in an init pass.
     packet: ?usize = null,
     pass: u8 = 0,
     state: *emu.State = undefined,
     log: emu.ReadLog = .{},
+    wlog: emu.WriteLog = .{},
     regs: Regs = undefined,
-    y: Mem = .{},
-    x: Mem = .{},
     /// A write or allocation failed; the trace is cut short.
     failed: bool = false,
 
-    pub fn deinit(self: *Tracer) void {
-        self.y.deinit(self.gpa);
-        self.x.deinit(self.gpa);
-    }
+    pub fn deinit(_: *Tracer) void {}
 
     fn attach(self: *Tracer, state: *emu.State) void {
         self.state = state;
@@ -135,36 +133,37 @@ pub const Tracer = struct {
         return .{ .s = st.s, .e = st.e, .r = st.r, .a = st.a, .p = st.p, .v = st.v };
     }
 
+    fn active(self: *const Tracer) bool {
+        if (self.left == 0 or self.failed) return false;
+        const f = self.from orelse return true;
+        const i = self.packet orelse return false;
+        return i >= f;
+    }
+
     fn hook(ctx: *anyopaque, phase: emu.BundlePhase, pc: usize, bundle: []const u32) void {
         const self: *Tracer = @ptrCast(@alignCast(ctx));
-        if (self.left == 0 or self.failed) {
+        if (!self.active()) {
             self.state.read_log = null;
+            self.state.write_log = null;
             return;
         }
         switch (phase) {
-            .before => self.before() catch {
-                self.failed = true;
+            .before => {
+                self.regs = regsOf(self.state);
+                self.log = .{};
+                self.wlog = .{};
+                self.state.read_log = &self.log;
+                self.state.write_log = &self.wlog;
             },
             .after => {
                 self.state.read_log = null;
+                self.state.write_log = null;
                 self.after(pc, bundle) catch {
                     self.failed = true;
                 };
                 self.left -= 1;
             },
         }
-    }
-
-    fn before(self: *Tracer) !void {
-        self.regs = regsOf(self.state);
-        self.y.deinit(self.gpa);
-        self.x.deinit(self.gpa);
-        self.y = .{};
-        self.x = .{};
-        self.y = try self.state.y_mem.clone(self.gpa);
-        self.x = try self.state.x_mem.clone(self.gpa);
-        self.log = .{};
-        self.state.read_log = &self.log;
     }
 
     fn after(self: *Tracer, pc: usize, bundle: []const u32) !void {
@@ -188,8 +187,9 @@ pub const Tracer = struct {
             if (r.value) |v| try w.print("0x{x}", .{v}) else try w.writeAll("unset");
         }
         if (self.log.n > self.log.items.len) try w.print(" (+{d} reads)", .{self.log.n - self.log.items.len});
-        try self.memDiffs(w, 'X', &self.x, &self.state.x_mem);
-        try self.memDiffs(w, 'Y', &self.y, &self.state.y_mem);
+        try self.memDiffs(w, .x, &self.state.x_mem);
+        try self.memDiffs(w, .y, &self.state.y_mem);
+        if (self.wlog.n > self.wlog.items.len) try w.print(" (+{d} writes)", .{self.wlog.n - self.wlog.items.len});
         if (self.state.stream_starved) try w.writeAll(" (waits for the stream; did not run)");
     }
 
@@ -207,21 +207,26 @@ pub const Tracer = struct {
         for (old, new, 0..) |o, n, k| if (o != n) try w.print(" {s}{d} 0x{x}->0x{x}", .{ name, k, o, n });
     }
 
-    fn memDiffs(self: *Tracer, w: *std.Io.Writer, bank: u8, old: *const Mem, new: *const Mem) !void {
+    /// The bank's stores this bundle, by address: the word before the first and the one left
+    /// now, kept only where they differ.
+    fn memDiffs(self: *Tracer, w: *std.Io.Writer, bank: emu.ReadLog.Bank, mem: anytype) !void {
         var list: std.ArrayList(Write) = .empty;
         defer list.deinit(self.gpa);
-        var it = new.iterator();
-        while (it.next()) |kv| {
-            const o = old.get(kv.key_ptr.*);
-            if (o == null or o.? != kv.value_ptr.*) try list.append(self.gpa, .{ .addr = kv.key_ptr.*, .old = o, .new = kv.value_ptr.* });
+        const ws = self.wlog.writes();
+        outer: for (ws, 0..) |x, k| {
+            if (x.bank != bank) continue;
+            for (ws[0..k]) |y| if (y.bank == bank and y.addr == x.addr) continue :outer;
+            const now = mem.get(x.addr) orelse continue;
+            if (x.old == null or x.old.? != now) try list.append(self.gpa, .{ .addr = x.addr, .old = x.old, .new = now });
         }
         std.mem.sort(Write, list.items, {}, struct {
             fn lt(_: void, a: Write, b: Write) bool {
                 return a.addr < b.addr;
             }
         }.lt);
+        const c: u8 = if (bank == .x) 'X' else 'Y';
         for (list.items) |x| {
-            try w.print(" w{c}[0x{x}]=0x{x}", .{ bank, x.addr, x.new });
+            try w.print(" w{c}[0x{x}]=0x{x}", .{ c, x.addr, x.new });
             if (x.old) |o| try w.print(" (was 0x{x})", .{o});
         }
     }
@@ -793,6 +798,31 @@ test "play --trace prints the first N bundles with their changes, reads and writ
     try testing.expect(std.mem.indexOf(u8, text, "s3 0x0->0x1234 e8 0x40->0x41 rY[0x40]=0x1234\n") != null);
     try testing.expect(std.mem.indexOf(u8, text, "wY[0x80]=0x1234\n") != null);
     try testing.expect(std.mem.indexOf(u8, text, "q 0x109") == null);
+}
+
+test "play --trace-from skips the init passes and earlier packets" {
+    const gpa = testing.allocator;
+    var img = try imageOf(gpa,
+        \\.pass init
+        \\        x17.halt
+        \\.pass decoder
+        \\        lde e6, #0x80
+        \\        x17.sty e6, #3, #0
+        \\        x17.halt
+    );
+    defer img.deinit(gpa);
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    var tr: Tracer = .{ .gpa = gpa, .out = &out.writer, .left = 2, .from = 1 };
+    defer tr.deinit();
+    var r = try play(gpa, &img, &.{ "a", "b" }, .{ .tracer = &tr });
+    defer r.deinit(gpa);
+    const text = out.written();
+    try testing.expect(std.mem.indexOf(u8, text, "pass ") == null);
+    try testing.expect(std.mem.indexOf(u8, text, "pkt 0") == null);
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, text, "pkt 1 q 0x"));
+    // s3 is 0 and Y 0x80 already holds 0 from packet 0: the store changes nothing.
+    try testing.expect(std.mem.indexOf(u8, text, "wY[") == null);
 }
 
 test "play --stop-at stops before the first decoder bundle at q and dumps the state" {

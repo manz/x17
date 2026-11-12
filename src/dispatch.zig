@@ -340,6 +340,7 @@ const play_params = clap.parseParamsComptime(
     \\    --max-bundles <usize> bundle budget per packet, default 2^26
     \\    --trap-list          skip refused bundles as nops; rank them by hits (hints only)
     \\    --trace <usize>      print the first N bundles run: changes, X / Y reads and writes
+    \\    --trace-from <usize> with --trace: start at this packet (init passes not traced)
     \\    --stop-at <usize>    stop before the first decoder bundle at this q
     \\    --stop-skip <usize>  with --stop-at: run through this many arrivals first
     \\    --stop-after <usize> stop once this many bundles have run (init passes included)
@@ -364,7 +365,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
     defer parsed.deinit();
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] [--configure-arm] [--profile N [--debug FILE]] <image.x17i>\n");
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N [--trace-from PKT]] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] [--configure-arm] [--profile N [--debug FILE]] <image.x17i>\n");
         return;
     }
     const img_path = parsed.positionals[0] orelse {
@@ -409,7 +410,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
 
     var tl: play_mod.TrapList = .{ .gpa = gpa };
     defer tl.deinit();
-    var tracer: play_mod.Tracer = .{ .gpa = gpa, .out = out, .left = parsed.args.trace orelse 0 };
+    var tracer: play_mod.Tracer = .{ .gpa = gpa, .out = out, .left = parsed.args.trace orelse 0, .from = parsed.args.@"trace-from" };
     defer tracer.deinit();
     var dump: std.Io.Writer.Allocating = .init(gpa);
     defer dump.deinit();
