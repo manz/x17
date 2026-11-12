@@ -1188,6 +1188,12 @@ fn assembleX17(head: Token, lex: *Lexer, src: []const u8, env: ?*const Env) Resu
         b.words[op.syll] = op.place(b.words[op.syll], field);
     }
     isa.applyTies(ops, b.words[0..b.len]);
+    if (wrapWithoutModulo(ops, b.words[0..b.len])) {
+        var d = Diagnostic{ .code = .e0029_form_collision, .span = tokSpan(head) };
+        d.setMsg("#k wraps only with fn 6..11; this fn never wraps (fact 963)");
+        d.setHint("use the fn's wrapping twin (fn + 6, e.g. #8 for x+r) or drop #k");
+        return .{ .err = d };
+    }
 
     const tail = switch (lex.next()) {
         .tok => |t| t,
@@ -1245,6 +1251,17 @@ comptime {
 }
 
 /// Operand values that turn a sub-form's bundle into a different form.
+/// A nonzero `k` (the wrap register) on a form whose agu_xr fn never wraps: only fn 6..11 do (963).
+fn wrapWithoutModulo(ops: []const isa.Operand, words: []const u32) bool {
+    var k: u32 = 0;
+    for (ops) |o| {
+        if (std.mem.eql(u8, o.name, "?k") and o.syll < words.len) k = o.valueIn(words);
+    }
+    if (k == 0 or words.len < 3) return false;
+    const f = (words[2] >> 22) & 0x1F;
+    return f < 6 or f > 11;
+}
+
 fn collides(form: []const u8, operand: []const u8, v: u32) ?Collision {
     for (class_rules) |r| {
         if (!std.mem.eql(u8, r.operand, operand)) continue;

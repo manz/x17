@@ -800,15 +800,14 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         // into s0 is never seen (652).
         try execX02Xrd(gpa, state, bundle);
         try execX02Mpy(gpa, state, bundle);
-        // No wrap here: k = 1 leaves the sum as is (962).
-        try execX02Ainc(gpa, state, bundle, false);
+        try execX02Ainc(gpa, state, bundle);
         try execX02X3Pre(gpa, state, bundle, s_pre);
         return true;
     }
     if (w4_mode == 0) {
         // The third slot runs here too (fact 549, own-x02t3).
         const s_pre = state.s;
-        try execX02Ainc(gpa, state, bundle, true);
+        try execX02Ainc(gpa, state, bundle);
         try execX02X3Pre(gpa, state, bundle, s_pre);
         return true;
     }
@@ -818,8 +817,8 @@ fn execX02Mode(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunEr
         try execX02Mpy(gpa, state, bundle);
         try execX02Xrd(gpa, state, bundle); // esrc path
         // The A slot runs here too: asrc and esrc name A1 as its destination, so asrc An
-        // sets A1 <- An + 1 and esrc steps A1 (157, 795).  The wrap is unmeasured here.
-        try execX02Ainc(gpa, state, bundle, true);
+        // sets A1 <- An + 1 and esrc steps A1 (157, 795).
+        try execX02Ainc(gpa, state, bundle);
         return true;
     }
     return false;
@@ -889,8 +888,8 @@ fn x02Common(state: *const State, bundle: []const u32) RunError!X02Common {
                 const y: u32 = state.r[(w5 >> 22) & 0xF];
                 break :blk if ((w5 >> 11) & 1 == 1) try agu10Eval(fn_op, x, y) else agu10bEval(fn_op, x, y);
             },
-            // The A slot's sum, wrapped by R<w3[18:15]> (566, 567).
-            2 => wrapOnce(state, aguXrEval((w2 >> 22) & 0x1F, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]), (w3 >> 15) & 0xF),
+            // The A slot's sum, wrapped by R<w3[18:15]> for fn 6..11 (566, 567, 963).
+            2 => wrapOnce(state, aguXrEval((w2 >> 22) & 0x1F, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]), if (x02Wraps((w2 >> 22) & 0x1F)) (w3 >> 15) & 0xF else 0),
             else => return RunError.UnknownForm,
         };
     }
@@ -904,7 +903,7 @@ fn x02YSide(state: *const State, bundle: []const u32) u32 {
     return state.getY(state.e[(bundle[3] >> 27) & 0xF]) orelse 0;
 }
 
-fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32, wrap: bool) RunError!void {
+fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunError!void {
     _ = gpa;
     const w2 = bundle[2];
     const w3 = bundle[3];
@@ -915,10 +914,9 @@ fn execX02Ainc(gpa: std.mem.Allocator, state: *State, bundle: []const u32, wrap:
     const fn_op: u32 = (w2 >> 22) & 0x1F;
     const dest_a: u32 = (w2 >> 17) & 0x1F;
     const dest_b: u32 = (w3 >> 10) & 0x1F;
-    // Wrapped once by R<w3[18:15]> where `wrap` (567); the second write's add is not wrapped
-    // (626).  The mode-5 bundle does not wrap (962).
-    const raw = aguXrEval(fn_op, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]);
-    const sum = if (wrap) wrapOnce(state, raw, (w3 >> 15) & 0xF) else raw;
+    // Wrapped once by R<w3[18:15]> for fn 6..11 only (567, 963); the second write adds to the
+    // wrapped sum, unwrapped (626, 963).  962's mode-5 probe ran fn 2; mode 5 with fn 6..11 is OPEN.
+    const sum = wrapOnce(state, aguXrEval(fn_op, state.a[w3 & 0x1F], state.r[(w5 >> 22) & 0xF]), if (x02Wraps(fn_op)) (w3 >> 15) & 0xF else 0);
     if (dest_a != 0) state.a[dest_a] = if ((w5 >> 18) & 1 == 1) state.yd else sum;
     if (dest_b != 0) {
         if ((w5 >> 21) & 1 == 1) {
@@ -7114,6 +7112,12 @@ fn execRagu0c(state: *State, head: u32) RunError!void {
 /// agu_xr (fact 338, 385): the x19mac A slot and the 0x0C R form.
 /// agu_xr's once-only wrap (fact 566-568): with M = R<k>, a sum >= M becomes sum - M and
 /// a negative one (16-bit signed) sum + M.  k = 0 (no wrap) needs no case: R0 reads 0.
+/// x02's agu_xr sum wraps for fn 6..11 only; the others never do (963).
+fn x02Wraps(fn_op: u32) bool {
+    return fn_op >= 6 and fn_op <= 11;
+}
+
+/// agu_xr's once-only modulo (566-568).
 fn wrapOnce(state: *const State, sum: u32, k: u32) u32 {
     const m: u32 = state.r[k];
     if (sum & 0x8000 != 0) return (sum +% m) & 0xFFFF;

@@ -3853,7 +3853,7 @@ test "the mode-5 x02 A step does not wrap by R<w3[18:15]> (962)" {
 }
 
 test "agu_xr's once-only wrap on x02's A sum and R slot (fact 566, 567)" {
-    // A9 = 0x200, R9 = 0x50 (y), R3 = 0x40 (M, w3[18:15] = 3): fn 2 sum 0x250 wraps to 0x210 in
+    // A9 = 0x200, R9 = 0x50 (y), R3 = 0x40 (M, w3[18:15] = 3): fn 8 sum 0x250 wraps to 0x210 in
     // A1 (w5[27] = 0) and in R9 (w5[27:26] = 10); M field 0 leaves 0x250.
     const gpa = testing.allocator;
     for ([_]struct { w3: u32, w5: u32, a1: u32, r9: u32 }{
@@ -3866,7 +3866,7 @@ test "agu_xr's once-only wrap on x02's A sum and R slot (fact 566, 567)" {
         state.a[9] = 0x200;
         state.r[9] = 0x50;
         state.r[3] = 0x40;
-        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0, 0x00820000, c.w3, 0, c.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0, 0x02020000, c.w3, 0, c.w5, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c.a1, state.a[1]);
         try testing.expectEqual(c.r9, state.r[9]);
     }
@@ -3876,7 +3876,7 @@ test "agu_xr's once-only wrap on x02's A sum and R slot (fact 566, 567)" {
         defer state.deinit(gpa);
         state.a[9] = c[0];
         state.r[3] = 9;
-        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0, 0x00820000, 0x00018009, 0, 0x00000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0, 0x02020000, 0x00018009, 0, 0x00000000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c[1], state.a[1]);
     }
     // own-x02wrap (626): A1 <- (sum mod M) + A9, the add unwrapped.  fn 8, A9 = 0x200, R9 = 0x50.
@@ -3888,6 +3888,26 @@ test "agu_xr's once-only wrap on x02's A sum and R slot (fact 566, 567)" {
         w.r[3] = c[0];
         _ = try emu.runFrom(gpa, &w, &.{ 0x00000002, 0, 0x02000000, 0x00018529, 0, 0x02400000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
         try testing.expectEqual(c[1], w.a[1]);
+    }
+}
+
+test "x02's A sum wraps for fn 6..11 only (963)" {
+    // 963's sweep: A11 = 0x200, R3 = 0x50, M = R1 = 0x40, A12 = 0xB00; A8 = A11 + A12.
+    const gpa = testing.allocator;
+    const plain = [_]u32{ 0x201, 0x1FF, 0x250, 0x1B0, 0xFE00, 0x200 };
+    const wrapped = [_]u32{ 0x1C1, 0x1BF, 0x210, 0x170, 0xFE40, 0x1C0 };
+    for (0..16) |f| {
+        var state = emu.State{};
+        defer state.deinit(gpa);
+        state.a[11] = 0x200;
+        state.a[12] = 0xB00;
+        state.r[1] = 0x40;
+        state.r[3] = 0x50;
+        const w2: u32 = @as(u32, @intCast(f)) << 22 | 0x160000;
+        _ = try emu.runFrom(gpa, &state, &.{ 0x00000002, 0, w2, 0x0000a18b, 0, 0x00c00000, 0x00000017, 0x31308000, 0xA0000000 }, 0, 16);
+        const want = if (f >= 6 and f <= 11) wrapped[f % 6] else plain[f % 6];
+        try testing.expectEqual(want, state.a[11]);
+        try testing.expectEqual((want + 0xB00) & 0xFFFF, state.a[8]);
     }
 }
 

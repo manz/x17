@@ -734,7 +734,6 @@ Six-syllable VLIW that increments an A register (A<w2[21:17]> <- A<w3[4:0]> + 1)
 |---|---|---|---|
 | dest_a | imm | s2 | [21:17] |
 | src_a | imm | s3 | [4:0] |
-| k (optional, 0 if left out) | imm | s3 | [18:15] |
 
 ### `x18.eagu`
 
@@ -3108,6 +3107,7 @@ Like x02.v, with the third slot's operation code exposed: adder variants or arit
 | fn | imm | s2 | [26:22] |
 | r | r_reg | s5 | [25:22] |
 | add (optional, 0 if left out) | a_reg | s3 | [9:5] |
+| k (optional, 0 if left out) | imm | s3 | [18:15] |
 
 ### `x02.vs`
 
@@ -3139,6 +3139,7 @@ Like x02.v but with an X store of a sign-extended value at the old A address, wh
 | fn | imm | s2 | [26:22] |
 | r | r_reg | s5 | [25:22] |
 | add (optional, 0 if left out) | a_reg | s3 | [9:5] |
+| k (optional, 0 if left out) | imm | s3 | [18:15] |
 
 ### `x02.aa`
 
