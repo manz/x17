@@ -146,9 +146,10 @@ fn roundTrip(src: []const u8) ![]const u8 {
 }
 
 test "the x02 A-step forms take an optional trailing #k at w3[18:15] (567)" {
+    try testing.expectError(error.AssemblyFailed, asm_mod.assembleOne("x02.aa A2, A1, R2, #0x2, A3, A4, #0x1"));
+    _ = try asm_mod.assembleOne("x02.vc s0, A0, A2, A3, A1, s0, s0, s0, s0, #0x0, #0x0, #0x0, s0, s0, #0x0, #0x0, #0x0, #0x8, R2, A4, #0x1");
     for ([_][2][]const u8{
-        .{ "x02.aa A2, A1, R2, #0x2, A3, A4, #0x5", "x02.aa A2, A1, R2, #0x2, A3, A4" },
-        .{ "x02.ainc #0x2, #0x1, #0x5", "x02.ainc #0x2, #0x1" },
+        .{ "x02.aa A2, A1, R2, #0x8, A3, A4, #0x5", "x02.aa A2, A1, R2, #0x8, A3, A4" },
     }) |k| {
         const with = try asm_mod.assembleOne(k[0]);
         const without = try asm_mod.assembleOne(k[1]);
