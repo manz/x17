@@ -523,10 +523,10 @@ A block is 0x80 words, so an entry covers addresses `first*0x80 .. (last+1)*0x80
 
 | Entry | Covers | Status |
 |---|---|---|
-| 2 | X | *inferred*: mode 0's last block 0x37 ends X at 0x1BFF, the boundary fact 653 measured |
-| 3 | a second X range | *inferred*; only mode 3 sets it |
-| 10 | 16-bit Y | measured (fact 960, mode 3; fact 758, mode 0) |
-| 11 | the 32-bit Y window | measured (fact 960, mode 3; §656, mode 0) |
+| 2 | X | measured (fact 961, modes 0, 1, 3; mode 0's 0x1BFF is fact 653's boundary) |
+| 3 | more X after entry 2's | measured (fact 961, mode 3, the only mode that sets it) |
+| 10 | 16-bit Y | measured (fact 960, mode 3; fact 961, mode 1; fact 758, mode 0) |
+| 11 | the 32-bit Y window | measured (fact 960, mode 3; fact 961, mode 1; §656, mode 0) |
 | 12 | Y:0xFD80..0xFDFF, the parameter block and status mailbox | the same word in every mode |
 | 0, 1, 4..9, 13..17 | nothing | 0 in every mode seen |
 
@@ -543,23 +543,26 @@ tracks of each format). Modes 3 and 5 are not identified.
 |---|---|---|---|---|
 | 0 | 0..0x1BFF | 0..0x2E7F | 0x2E80..0x2EFF | 84006E00 / 0 / C600B800 / 848CBA5D |
 | 1 | 0..0x11FF | 0..0x177F | 0x1780..0x187F | 84004600 / 0 / C6005C00 / 8544602F |
-| 3 | 0..0x1FFF and 0x2000..0x20FF | 0..0x227F | 0x2400..0x267F | 84007E00 / 85808240 / C6008800 / 84D49848 |
+| 3 | 0..0x20FF (entries 2 and 3) | 0..0x227F | 0x2400..0x267F | 84007E00 / 85808240 / C6008800 / 84D49848 |
 | 5 | 0..0x37F | 0..0x15FF | 0x2000..0x20FF | 84000C00 / 0 / C6005600 / 84B08240 |
 
 Every mode adds entry 12 (C013F7FB): Y:0xFD80..0xFDFF. Modes 0 and 1's entries 2, 10 and 11
 were read off the engine after the host configured it, and mode 3's table was read live
-(fact 960). Mode 5's words are decoded from the host's setup only.
+(fact 960). The maps of modes 0, 1 and 3 are measured by store and read-back (facts 960, 961).
+Mode 5's words are decoded from the host's setup only, and its map is unmeasured.
 
 ### What a program sees
 
-- **Outside the map, a store is dropped and a load reads 0** (fact 960, measured on Y in mode 3:
-  Y:0x2280, 0x23FF, 0x2680, 0x2D00, 0x2E00 and 0x2E80 read 0 after a store, while 0x227F, 0x2400
-  and 0x267F read back). X above mode 0's 0x1BFF behaves the same way (§653).
+- **Outside the map, a store is dropped and a load reads 0**, on X and Y alike (facts 960, 961). In
+  mode 3, Y:0x2280, 0x23FF, 0x2680, 0x2D00, 0x2E00 and 0x2E80 read 0 after a store, while 0x227F,
+  0x2400 and 0x267F read back; X:0x20FF reads back and 0x2100 reads 0. In mode 1, X:0x11FF reads
+  back and 0x1200 reads 0.
 - **Gaps are real.** Mode 3 has no Y between 0x2280 and 0x23FF. A program built for one mode and
   run in another fails silently: its state reads back as 0, not as a fault. Fact 959's branch was
   this: a loop bound kept at Y:0x2DA3 read 0 under mode 3.
 - **The window is 32-bit cells.** A store into it keeps s[23:0]; the host sees one 32-bit word per
-  address (§656, mode 0). That the same holds in the other modes' windows is *inferred*.
+  address (§656, mode 0). Through the DSP, mode 1's window round-trips 16-bit values like mode 0's
+  (fact 961). How the host sees modes 1, 3 and 5's windows is unmeasured.
 - **The parameter block and mailbox** (Y:0xFD80..0xFDFF) exist in every mode, so the host contract
   of chapter 11 does not depend on the mode.
 - **Budget.** Pick the mode by the memory the codec needs: mode 1 is the tightest Y (0x1880 words
@@ -568,10 +571,10 @@ were read off the engine after the host configured it, and mode 3's table was re
 ### In x17
 
 - `.mode N` (N = 0, 1, 3 or 5) in an image source records the mode; the image carries it as a
-  kind-5 section. With it, `.ydata` must sit in that mode's 16-bit Y range (ASSEMBLY.md).
-- `x17 play` runs with the mode the x17i records, or `--mode N` (default 0). Its Y map drops stores and
-  reads 0 outside the table's entries 10, 11 and 12.
-- X maps are not modelled: entries 2 and 3 are inferred only.
+  kind-5 section. With it, `.xdata` must sit in that mode's X map and `.ydata` in its 16-bit Y
+  range (ASSEMBLY.md).
+- `x17 play` runs with the mode the x17i records, or `--mode N` (default 0). Its X and Y maps drop
+  stores and read 0 outside the table's entries 2 and 3 (X) and 10, 11 and 12 (Y).
 
 ### Open
 
@@ -580,7 +583,7 @@ were read off the engine after the host configured it, and mode 3's table was re
   read back past 0x177F.
 - Flags a and c, and what +4 selects. Probe: one entry at a time, change a field and redo fact
   960's store and read-back.
-- Entries 2 and 3 as the X map in modes 1, 3 and 5. Probe: fact 960's round trip on X.
+- Mode 5's map: table-only. Probe: fact 961's round trip.
 - How the host sees modes 1, 3 and 5's windows.
 - Mode numbers other than 0, 1, 3 and 5: the host leaves the table as its template, with no X
   entry and no parameter block. Undefined.

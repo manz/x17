@@ -136,10 +136,11 @@ data directives.
 - Bundles pack in q order, `q = 8*(row/2) + 2*lane + row%2` (fact 45); a
   row holds 4 syllables, one per lane, and rows go in pairs.
 - `.mode N` (optional, once, before the first `.pass`): the configure mode the
-  image is built for, 0, 1, 3 or 5.  Each mode maps its own DSP Y (fact 960);
-  with a mode, `.ydata` must sit in that mode's 16-bit range (mode 0
-  0..0x2E7F, 1 0..0x177F, 3 0..0x227F, 5 0..0x15FF), and `x17 play` runs
-  with that map (a different `--mode` is refused).
+  image is built for, 0, 1, 3 or 5.  Each mode maps its own DSP X and Y
+  (facts 960, 961); with a mode, `.xdata` must sit in that mode's X map
+  (mode 0 0..0x1BFF, 1 0..0x11FF, 3 0..0x20FF, 5 0..0x37F) and `.ydata` in its
+  16-bit Y range (mode 0 0..0x2E7F, 1 0..0x177F, 3 0..0x227F, 5 0..0x15FF),
+  and `x17 play` runs with those maps (a different `--mode` is refused).
 - `.pass init` / `.pass decoder`: init passes come first, in load order;
   at most one decoder, last.  A source with no `.pass` is one init pass.
   Every pass needs at least one bundle.  Labels are q values, so a decoder
