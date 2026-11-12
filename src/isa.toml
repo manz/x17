@@ -304,6 +304,7 @@ ref = "fact 31-32: needed by every completing program; bit sweep - only [4:0] = 
 # x17 S1 class 000 + S2 class 010: e<S1[19:16]> <- s<S2[28:25]> (+1 when S1[9]) with head[27] set and head[10] clear,
 # else 0; S1[15:12] zero e1/e2/e4/e8, S1[23:20] zero s1/s2/s4/s8; S2[9]/[11]/[12] wedge (fact 142, own-x17mve).
 # x17mve negative (959): a result with bit 23 set leaves e = 0xFFFF (0xFFEFFE + 1 read back 0xFFFF, not 0xEFFF); a positive result past 0xFFFF is OPEN and refused.
+# Y map (960): per configure mode, the descriptor table's 16-bit entry and window entry in 0x80-word blocks, plus the 0xFD80 block.  Mode 0 0..0x2EFF (760), 1 0..0x187F, 3 0..0x227F and 0x2400..0x267F, 5 0..0x15FF and 0x2000..0x20FF.  Outside it a DSP store drops and ldy reads 0 (measured on mode 3).  X per entries 2 / 3 is INFERRED and not modelled.  `x17 play --mode`.
 # low5 0x19 (4 words) is a VLIW like x17: the syllable classes pick the slots (fact 143).  x and y are e<w3[28:25]>
 # and R<w3[14:11]> in both measured forms.  Classes (0,0,0): R<w3[10:7]>, e<w1[23:20]> <- AGU10[w1[27:24]](x, y), w1[18]
 # required (own-x19agu).  Classes (0,0,7) with w3[1:0] = 3, w3[11:10] = 1: s<w2[13:10]> <- Y:[x];

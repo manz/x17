@@ -103,6 +103,26 @@ pub const Error = emu.RunError || error{
     OverwroteOwnedBuffer,
 };
 
+/// The DSP's Y map per configure mode (fact 960): the descriptor table's 16-bit Y entry and
+/// its window entry, in 0x80-word blocks, plus the parameter block every mode maps.  Modes
+/// without a table are null.
+pub fn yMap(mode: u8) ?[]const [2]u32 {
+    const param_block = [2]u32{ 0xFD80, 0xFDFF };
+    const S = struct {
+        const m0 = [_][2]u32{ .{ 0, 0x2E7F }, .{ 0x2E80, 0x2EFF }, param_block };
+        const m1 = [_][2]u32{ .{ 0, 0x177F }, .{ 0x1780, 0x187F }, param_block };
+        const m3 = [_][2]u32{ .{ 0, 0x227F }, .{ 0x2400, 0x267F }, param_block };
+        const m5 = [_][2]u32{ .{ 0, 0x15FF }, .{ 0x2000, 0x20FF }, param_block };
+    };
+    return switch (mode) {
+        0 => &S.m0,
+        1 => &S.m1,
+        3 => &S.m3,
+        5 => &S.m5,
+        else => null,
+    };
+}
+
 pub const Host = struct {
     gpa: std.mem.Allocator,
     cfg: Config,
@@ -305,6 +325,20 @@ test "reconfigure drops the stream enable and the unread stream, and keeps regis
     try testing.expectEqual(@as(usize, 0), h.state.stream.items.len);
     try testing.expectEqual(@as(usize, 0), h.state.stream_bit);
     try testing.expectEqual(@as(u32, 0x123), h.state.s[3]);
+}
+
+test "the mode 3 Y map drops stores outside it and reads them as 0 (960)" {
+    var st: emu.State = .{ .y_map = yMap(3).? };
+    defer st.deinit(testing.allocator);
+    const in_map = [_]u32{ 0x0100, 0x2200, 0x227F, 0x2400, 0x2402, 0x267F, 0xFD90 };
+    const out_map = [_]u32{ 0x2280, 0x23FF, 0x2680, 0x2D00, 0x2DA3, 0x2E00, 0x2E80 };
+    for (in_map ++ out_map, 0..) |a, k| try st.putY(testing.allocator, a, 0x1100 + @as(u32, @intCast(k)));
+    for (in_map, 0..) |a, k| try testing.expectEqual(@as(?u32, 0x1100 + @as(u32, @intCast(k))), st.getY(a));
+    for (out_map) |a| try testing.expectEqual(@as(?u32, 0), st.getY(a));
+    // Mode 0 is 760's flat Y below 0x2F00.
+    try testing.expectEqual(@as(?[]const [2]u32, null), yMap(2));
+    st.y_map = yMap(0).?;
+    try testing.expect(st.yMapped(0x2EFF) and !st.yMapped(0x2F00) and st.yMapped(0xFDFF));
 }
 
 test "init writes the parameter block" {

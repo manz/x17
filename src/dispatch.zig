@@ -349,6 +349,7 @@ const play_params = clap.parseParamsComptime(
     \\    --poison <usize>     start dirty: registers, p and unstored X / Y words read as junk from this seed
     \\    --chain <usize>      play the image N times on one engine, each track reconfigured over the last one's state
     \\    --unset-reads        count X / Y reads of words nothing stored, with the first address of each
+    \\    --mode <usize>       configure mode for the DSP's Y map: 0 (default), 1, 3 or 5; outside it stores drop and loads read 0
     \\    --configure-arm      945's arming: one run at configure, packet 1 only queued, then one run per packet
     \\    --profile <usize>    print the decoder's hot list, N rows per table: packets, P use, functions, blocks, bundles
     \\    --debug <str>        sidecar for --profile labels and lines (default: the image path with .json)
@@ -368,7 +369,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     var parsed = try parseVerb(&play_params, gpa, args, "play", out, &iter);
     defer parsed.deinit();
     if (parsed.args.help != 0) {
-        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N [--trace-from PKT]] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] [--poison SEED] [--chain N] [--unset-reads] [--configure-arm] [--profile N [--debug FILE]] <image.x17i>\n");
+        try out.writeAll("usage: x17 play -p <packets> -o <out.pcm> [-r HZ] [-y ADDR=VAL]... [--max-bundles N] [--trap-list] [--trace N [--trace-from PKT]] [--stop-at Q [--stop-skip K] | --stop-after N] [--dump FILE] [--p-entry BITS] [--poison SEED] [--mode M] [--chain N] [--unset-reads] [--configure-arm] [--profile N [--debug FILE]] <image.x17i>\n");
         return;
     }
     const img_path = parsed.positionals[0] orelse {
@@ -411,6 +412,11 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
     };
     defer gpa.free(pkts);
 
+    const mode: u8 = std.math.cast(u8, parsed.args.mode orelse 0) orelse 0xFF;
+    if (host_mod.yMap(mode) == null) {
+        try out.print("play: no Y map for mode {d}; known modes are 0, 1, 3 and 5\n", .{parsed.args.mode orelse 0});
+        return error.InvalidArgument;
+    }
     var tl: play_mod.TrapList = .{ .gpa = gpa };
     defer tl.deinit();
     var tracer: play_mod.Tracer = .{ .gpa = gpa, .out = out, .left = parsed.args.trace orelse 0, .from = parsed.args.@"trace-from" };
@@ -432,6 +438,7 @@ fn cmdPlay(gpa: std.mem.Allocator, args: []const []const u8, out: *Writer) !void
         .dump = if (parsed.args.dump != null) &dump.writer else null,
         .p_entry = @truncate(parsed.args.@"p-entry" orelse 0),
         .chain = parsed.args.chain orelse 1,
+        .mode = mode,
         .unset = if (parsed.args.@"unset-reads" != 0) &unset else null,
         .poison = if (parsed.args.poison) |v| @intCast(v) else null,
         .configure_arm = parsed.args.@"configure-arm" != 0,
