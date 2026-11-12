@@ -44,12 +44,13 @@ configurable VLIW data engine. The patent lineage is AudioDE (US 7,920,584 B2) a
 | Y | 16-bit halfword | `0x22038000 + 2*a` | 16-bit addresses; only some windows exist (below) |
 | P | 32-bit syllable | lane n at `0x22020000 + n*0x4000 + 4*row` | 4 lanes x 0x1000 rows = 0x4000 syllables (§2) |
 
-- **Y windows.** A 0x120-byte table the host uploads at +0x938 sets which Y windows exist; some are
-  32 bits wide (§2). That the engine translates through this table is *inferred*.
-  Y:0xFD80..0xFDFF sits at 0x2203FF00, and the status mailbox is Y:0xFD94 = 0x2203FF28 (§18, §81).
+- **Y windows.** The descriptor table the host uploads at +0x938 sets which X and Y ranges the
+  program can reach, per codec mode (fact 960); some Y ranges are 32 bits wide (§2). Chapter 12
+  covers it. Y:0xFD80..0xFDFF sits at 0x2203FF00 in every mode, and the status mailbox is
+  Y:0xFD94 = 0x2203FF28 (§18, §81).
 - **Program order.** The sequencer's q order runs column-major over row pairs:
   `q = 8*(row/2) + 2*lane + (row%2)` (§45). The pc counts syllables in q order.
-- **Mode 0** programs use X:0..0x1BFF. X is 0x1C00 words with no alias: above it, stores vanish
+- **Mode 0** (chapter 12) programs use X:0..0x1BFF. X is 0x1C00 words with no alias: above it, stores vanish
   and reads give 0 (§649, §653). Y:0..0x2E7F is 16-bit and host-visible in place (§653).
   Y:0x2E80..0x2EFF is one 32-bit host word per address: a store keeps s[23:0] in bytes 0..2 and
   leaves byte 3 untouched, so the host masks or sign-extends it (§656). 128 24-bit samples per
@@ -500,7 +501,91 @@ Offsets are from the sm1 block's MMIO base.
 The codec-side contract (parameter block, input stream, output ring) is in `src/host.zig` and
 sosumi's `specs/questions.md`.
 
-## 12. Instruction reference
+## 12. Memory modes
+
+The program does not see a fixed memory. Before it loads a codec's program, the host writes an
+18-word **descriptor table** at +0x938 + 4i (one word per entry i), and the engine takes from it
+which X and Y addresses exist. The host builds that table from a **codec mode**, a small number
+it picks per stream format. The mode number itself never reaches the engine: only the table does.
+
+### The descriptor word
+
+| Bits | Field | Meaning |
+|---|---|---|
+| 31 | flag a | 1 on every entry in use |
+| 30 | flag b | 1 on the halfword Y entries (10, 12), 0 on the 32-bit-cell ones (2, 3, 11): *inferred* to be the cell width |
+| 29 | flag c | 0 on every entry seen |
+| 28:18 | +4 | unknown (below) |
+| 17:9 | last | last block, inclusive |
+| 8:0 | first | first block |
+
+A block is 0x80 words, so an entry covers addresses `first*0x80 .. (last+1)*0x80 - 1` (fact 960).
+
+| Entry | Covers | Status |
+|---|---|---|
+| 2 | X | *inferred*: mode 0's last block 0x37 ends X at 0x1BFF, the boundary fact 653 measured |
+| 3 | a second X range | *inferred*; only mode 3 sets it |
+| 10 | 16-bit Y | measured (fact 960, mode 3; fact 758, mode 0) |
+| 11 | the 32-bit Y window | measured (fact 960, mode 3; §656, mode 0) |
+| 12 | Y:0xFD80..0xFDFF, the parameter block and status mailbox | the same word in every mode |
+| 0, 1, 4..9, 13..17 | nothing | 0 in every mode seen |
+
+**+4.** For entries 2 and 10, `0x22020000 + 0x100 * +4` is the host-view base of X and Y
+(0x22030000, 0x22038000; §2). Entries 3, 11 and 12 do not fit that reading: 11's value moves with
+the mode (0x123, 0x151, 0x135, 0x12C) and 12's is 4. Its meaning is unknown.
+
+### The four modes
+
+The host picks mode 0 for AAC streams and mode 1 for MP3 (measured by watching the host on
+tracks of each format). Modes 3 and 5 are not identified.
+
+| Mode | X | 16-bit Y | Y window (32-bit) | Table words 2 / 3 / 10 / 11 |
+|---|---|---|---|---|
+| 0 | 0..0x1BFF | 0..0x2E7F | 0x2E80..0x2EFF | 84006E00 / 0 / C600B800 / 848CBA5D |
+| 1 | 0..0x11FF | 0..0x177F | 0x1780..0x187F | 84004600 / 0 / C6005C00 / 8544602F |
+| 3 | 0..0x1FFF and 0x2000..0x20FF | 0..0x227F | 0x2400..0x267F | 84007E00 / 85808240 / C6008800 / 84D49848 |
+| 5 | 0..0x37F | 0..0x15FF | 0x2000..0x20FF | 84000C00 / 0 / C6005600 / 84B08240 |
+
+Every mode adds entry 12 (C013F7FB): Y:0xFD80..0xFDFF. Modes 0 and 1's entries 2, 10 and 11
+were read off the engine after the host configured it, and mode 3's table was read live
+(fact 960). Mode 5's words are decoded from the host's setup only.
+
+### What a program sees
+
+- **Outside the map, a store is dropped and a load reads 0** (fact 960, measured on Y in mode 3:
+  Y:0x2280, 0x23FF, 0x2680, 0x2D00, 0x2E00 and 0x2E80 read 0 after a store, while 0x227F, 0x2400
+  and 0x267F read back). X above mode 0's 0x1BFF behaves the same way (§653).
+- **Gaps are real.** Mode 3 has no Y between 0x2280 and 0x23FF. A program built for one mode and
+  run in another fails silently: its state reads back as 0, not as a fault. Fact 959's branch was
+  this: a loop bound kept at Y:0x2DA3 read 0 under mode 3.
+- **The window is 32-bit cells.** A store into it keeps s[23:0]; the host sees one 32-bit word per
+  address (§656, mode 0). That the same holds in the other modes' windows is *inferred*.
+- **The parameter block and mailbox** (Y:0xFD80..0xFDFF) exist in every mode, so the host contract
+  of chapter 11 does not depend on the mode.
+- **Budget.** Pick the mode by the memory the codec needs: mode 1 is the tightest Y (0x1880 words
+  with the window), mode 3 the largest X (0x2100 words), mode 5 almost no X (0x380 words).
+
+### In x17
+
+- `.mode N` (N = 0, 1, 3 or 5) in an image source records the mode; the image carries it as a
+  kind-5 section. With it, `.ydata` must sit in that mode's 16-bit Y range (ASSEMBLY.md).
+- `x17 play` runs with the mode the x17i records, or `--mode N` (default 0). Its Y map drops stores and
+  reads 0 outside the table's entries 10, 11 and 12.
+- X maps are not modelled: entries 2 and 3 are inferred only.
+
+### Open
+
+- Whether a table the host writes itself takes effect, so that a codec could get a larger map
+  than its mode's (sosumi Q32). Probe: write mode 1 with entry 10's last block raised, store and
+  read back past 0x177F.
+- Flags a and c, and what +4 selects. Probe: one entry at a time, change a field and redo fact
+  960's store and read-back.
+- Entries 2 and 3 as the X map in modes 1, 3 and 5. Probe: fact 960's round trip on X.
+- How the host sees modes 1, 3 and 5's windows.
+- Mode numbers other than 0, 1, 3 and 5: the host leaves the table as its template, with no X
+  entry and no parameter block. Undefined.
+
+## 13. Instruction reference
 
 `reference.md` is generated by `x17 doc` from `src/isa.toml`, `src/subforms.txt`,
 `src/operands.txt` and the emulator handlers' notes. Each form lists its encoding, operand fields,
@@ -520,6 +605,8 @@ guessing.
 - x16alu post-op cells outside the six measured (op, S1[15]) rows.
 - Every bit a form's reference entry marks OPEN, and every bit it marks as a wedge gate.
 - Power-on register values.
+- X or Y outside the mode's map (chapter 12): stores drop and loads read 0, which a program must
+  not use as a feature. Codec modes other than 0, 1, 3 and 5.
 
 ## Appendix B. Evidence
 
