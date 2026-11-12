@@ -113,6 +113,8 @@ pub const State = struct {
     /// When set (`x17 play --mode`), the DSP's Y map as inclusive [lo, hi] ranges (fact 960):
     /// outside it a store is dropped and a load reads 0.  Null: flat Y.
     y_map: ?[]const [2]u32 = null,
+    /// The DSP's X map the same way (fact 961).  Null: flat X.
+    x_map: ?[]const [2]u32 = null,
     /// When set (`x17 play --poison`), X / Y words nothing stored read as junk from this seed.
     poison: ?u64 = null,
     /// When set, X / Y stores are logged here with the word they replace (`x17 play --trace`).
@@ -173,6 +175,13 @@ pub const State = struct {
         return if (v) |w| w & 0xFFFF else null;
     }
 
+    /// Whether the DSP sees X:[addr] under the current map (fact 961).
+    pub fn xMapped(self: *const State, addr: u32) bool {
+        const m = self.x_map orelse return true;
+        for (m) |r| if (addr >= r[0] and addr <= r[1]) return true;
+        return false;
+    }
+
     /// Whether the DSP sees Y:[addr] under the current map (fact 960).
     pub fn yMapped(self: *const State, addr: u32) bool {
         const m = self.y_map orelse return true;
@@ -187,6 +196,10 @@ pub const State = struct {
     }
 
     pub fn getX(self: *const State, addr: u32) ?u32 {
+        if (!self.xMapped(addr)) {
+            if (self.read_log) |l| l.add(.x, addr, 0);
+            return 0;
+        }
         const v = self.x_mem.get(addr);
         if (self.read_log) |l| l.add(.x, addr, v);
         if (v == null) if (self.unset_reads) |u| {
@@ -214,6 +227,7 @@ pub const State = struct {
     }
 
     pub fn putX(self: *State, gpa: std.mem.Allocator, addr: u32, v: u32) error{OutOfMemory}!void {
+        if (!self.xMapped(addr)) return;
         if (self.write_log) |l| l.add(.x, addr, self.x_mem.get(addr));
         try self.x_mem.put(gpa, addr, v);
     }
