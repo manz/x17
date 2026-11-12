@@ -771,6 +771,43 @@ test "x02.ainc's template leaves s2 (954) and x18.rag's steps e7" {
     try testing.expectEqual(@as(u32, 0x2401), state.e[7]);
 }
 
+test "x17.mve of a negative s leaves e = 0xFFFF, so the a3's x + 1 wraps R7 to 0 (959)" {
+    // The ALAC loop bound: s13 = 0xFFEFFE, e6 <- s13 + 1, R7 <- AGU10 fn 2 (e6 + 1).
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\ldi s13, #0x1000
+        \\ldi s12, #0xfffe
+        \\alu s13, s12, s13, #0x10
+        \\x17.mve e6, s13
+        \\x19.a3 s0, R7, e6, #0x19, #0x2, #0x0
+        \\x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    _ = try emu.runFrom(gpa, &state, prog, 0, 64);
+    try testing.expectEqual(@as(u32, 0xFFEFFE), state.s[13]);
+    try testing.expectEqual(@as(u32, 0xFFFF), state.e[6]);
+    try testing.expectEqual(@as(u32, 0), state.r[7]);
+}
+
+test "x17.mve of a positive result past 0xFFFF is refused (959 leaves it OPEN)" {
+    const gpa = testing.allocator;
+    const prog = try assemble(gpa,
+        \\ldi s13, #0x7FFF
+        \\alu s13, s13, s13, #0xe
+        \\alu s13, s13, s13, #0xe
+        \\x17.mve e6, s13
+        \\x17.halt
+        \\
+    );
+    defer gpa.free(prog);
+    var state = emu.State{};
+    defer state.deinit(gpa);
+    try testing.expectError(error.UnknownForm, emu.runFrom(gpa, &state, prog, 0, 64));
+}
+
 test "x18 class 101 also writes its R slot sum to A<2*w1[3:0] + head[31]> (955)" {
     // The AAC TNS loop's rag101 (80000018 00001002 60000000 A0262980): R3 and A5 <- A12 + R5.
     const gpa = testing.allocator;
