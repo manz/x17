@@ -5793,7 +5793,11 @@ fn execX17Mve(gpa: std.mem.Allocator, state: *State, bundle: []const u32) RunErr
     const pv: u8 = @intFromBool(rCond((h >> 22) & 0xF, state.r[(s2 >> 1) & 0xF]));
 
     const src_val: u32 = if (src_s == 0) 0 else state.s[src_s];
-    state.e[dest_e] = (src_val +% 1) & M24;
+    const v: u32 = (src_val +% 1) & M24;
+    // 959: a negative result leaves e = 0xFFFF (s = 0xFFEFFE read back 0xFFFF, not 0xEFFF).
+    // Whether a positive one past 16 bits clamps too is OPEN: refused.
+    if (v & 0x800000 == 0 and v > 0xFFFF) return RunError.UnknownForm;
+    state.e[dest_e] = if (v & 0x800000 != 0) 0xFFFF else v;
     if (pd != 0) state.p[pd] = pv;
 }
 
