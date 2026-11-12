@@ -2849,6 +2849,8 @@ fn execStreamRead(state: *State, bundle: []const u32) RunError!void {
     const count: usize = ((s2 >> 4) & 0xF) + 1;
     if (count > 13) return RunError.UnknownForm;
     const dest: u32 = 2 * k + 1;
+    // With the enable off (783, or dropped by a configure, 958) the read is unmeasured:
+    // silicon's ~18 s packets hint at a wait, but x17 keeps A <- 0.
     if ((h >> 25) & 0x3F != 0x20 or !state.stream_on) {
         state.a[dest] = 0;
         return;
