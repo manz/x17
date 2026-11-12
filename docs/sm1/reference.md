@@ -734,6 +734,7 @@ Six-syllable VLIW that increments an A register (A<w2[21:17]> <- A<w3[4:0]> + 1)
 |---|---|---|---|
 | dest_a | imm | s2 | [21:17] |
 | src_a | imm | s3 | [4:0] |
+| k (optional, 0 if left out) | imm | s3 | [18:15] |
 
 ### `x18.eagu`
 
@@ -3076,6 +3077,7 @@ Six-syllable bundle: X read into s, two A increments, a multiply into s with its
 | x3_b | s | s4 | [29:26] |
 | x3_op | imm | s5 | [8:6] |
 | x3_sh | imm | s5 | [5:2] |
+| k (optional, 0 if left out) | imm | s3 | [18:15] |
 
 ### `x02.vc`
 
@@ -3105,6 +3107,7 @@ Like x02.v, with the third slot's operation code exposed: adder variants or arit
 | code | imm | head | [10:5] |
 | fn | imm | s2 | [26:22] |
 | r | r_reg | s5 | [25:22] |
+| k (optional, 0 if left out) | imm | s3 | [18:15] |
 
 ### `x02.vs`
 
@@ -3135,6 +3138,7 @@ Like x02.v but with an X store of a sign-extended value at the old A address, wh
 | st_hi | imm | s2 | [0:0] |
 | fn | imm | s2 | [26:22] |
 | r | r_reg | s5 | [25:22] |
+| k (optional, 0 if left out) | imm | s3 | [18:15] |
 
 ### `x02.aa`
 
@@ -3151,6 +3155,7 @@ Computes an address-unit sum from an A register and an R register, writing it to
 | fn | imm | s2 | [26:22] |
 | dest2_A | a_reg | s3 | [14:10] |
 | add_A | a_reg | s3 | [9:5] |
+| k (optional, 0 if left out) | imm | s3 | [18:15] |
 
 ### `ragu`
 

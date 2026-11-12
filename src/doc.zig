@@ -124,10 +124,12 @@ fn renderOperands(out: *Writer, name: []const u8) !void {
     if (ops.len == 0) return;
     try out.writeAll("| operand | kind | syllable | bits |\n|---|---|---|---|\n");
     for (ops) |o| {
+        const shown = if (o.isOptional()) o.name[1..] else o.name;
+        const opt: []const u8 = if (o.isOptional()) " (optional, 0 if left out)" else "";
         if (o.syll == 0) {
-            try out.print("| {s} | {s} | head | [{d}:{d}] |\n", .{ o.name, @tagName(o.kind), o.hi, o.lo });
+            try out.print("| {s}{s} | {s} | head | [{d}:{d}] |\n", .{ shown, opt, @tagName(o.kind), o.hi, o.lo });
         } else {
-            try out.print("| {s} | {s} | s{d} | [{d}:{d}] |\n", .{ o.name, @tagName(o.kind), o.syll, o.hi, o.lo });
+            try out.print("| {s}{s} | {s} | s{d} | [{d}:{d}] |\n", .{ shown, opt, @tagName(o.kind), o.syll, o.hi, o.lo });
         }
     }
     try out.writeAll("\n");
