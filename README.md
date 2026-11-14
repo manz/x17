@@ -1,20 +1,21 @@
 # x17
 
-Dev rig for **Samsung sm1**'s DSP, the hardware audio decoder in the iPod
-Classic 6G (S5L8702) and friends.  Three Zig tools sharing `data/isa.toml`
-as the one source of truth:
+Assembler, emulator and test rig for **sm1**, the audio decode engine in the
+iPod Classic 6G's Samsung S5L8702 SoC.  sm1 is an ARM-licensed block, not a Samsung
+DSP core: its PrimeCell ID reads designer ARM, part 0x902, which OpenOCD's part
+table names OptimoDE DESS, ARM's configurable VLIW data engine.  Its ISA is not public; every
+encoding here comes from probe programs run on silicon (docs/sm1/handbook.md).
+`src/isa.toml` is the one source of truth:
 
-- **Assembler**: reads x17 source (`.s`), emits a `.bin` the sm1 loader
-  takes.  isa.toml is embedded at compile time; a malformed table fails the
-  build, not some codec's first run.
-- **Emulator**: CPU-side bit-exact oracle.  Ported from a Python ISA model
-  to Zig for CI-scale throughput.
-- **Bit-exact test harness**: pytest-shaped; feeds an input bitstream + our
-  `.s` through assembler + emulator and diffs the PCM against
-  libav/ffmpeg's reference decode.  Zero diff is the gate.
+- **Assembler** (`x17 asm`, `x17 image`): reads x17 source (`.sm`) and emits
+  an image of init passes, the decoder and its host data.  isa.toml is
+  embedded at compile time; a malformed table fails the build.
+- **Emulator** (`x17 run`, `x17 play`): checked byte-exact against
+  silicon probe runs, and run over a packet stream through a model of the host.
+- **Test rig**: codec repos run their images through `x17 play` in CI and diff
+  the PCM against a reference decode.
 
-End users (codec authors) write `.s` files, commit them,
-CI runs the harness.  Nobody but codec authors touches this repo.
+Codec authors write `.sm` files, commit them, and CI runs them.
 
 ## Using in CI
 
@@ -38,10 +39,15 @@ stripped aarch64-linux binary, smoke-tests it and attaches it to the release.
 
     build.zig / build.zig.zon
     src/
-      main.zig              CLI stub
-      isa.zig               isa.toml -> comptime-typed layout table
-    data/
-      isa.toml              single source of truth
+      isa.toml              the forms, their fields and their fact notes
+      operands.txt          operand bit positions per form
+      subforms.txt          multi-syllable bundle bases
+      asm.zig, image.zig    assembler and image writer
+      emu.zig, host.zig     emulator and host model
+      play.zig              x17 play
+    docs/sm1/
+      handbook.md           programmer's handbook
+      reference.md          instruction reference (x17 doc)
 
 ## Status (2026-11-06)
 
